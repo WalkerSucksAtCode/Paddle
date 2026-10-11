@@ -16,6 +16,10 @@ final class AppModel {
     private(set) var configError: String?
     let web = WebEnvironment()
     let downloads = DownloadStore()
+    /// Browsing history (history.sqlite); nil when historyDays is 0 or the database can't be opened.
+    @ObservationIgnored private(set) var history: HistoryStore?
+    /// Bumped whenever history changes, so an open History window refreshes.
+    private(set) var historyGeneration = 0
     /// Total footprint of every WebContent process Paddle's tabs use.
     private(set) var totalWebMemory: UInt64 = 0
 
@@ -38,6 +42,7 @@ final class AppModel {
     func start(openingURLs urls: [URL]) async {
         Paths.ensure()
         loadConfig()
+        openHistory()
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         await web.loadContentBlockers()
@@ -74,6 +79,7 @@ final class AppModel {
     /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/ and block lists.
     func reloadConfig() async {
         loadConfig()
+        openHistory()
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         await web.loadContentBlockers()
@@ -90,6 +96,103 @@ final class AppModel {
                 + "\n\nUser CSS, scripts and site user agents apply when a page next loads. userAgentSuffix applies to new tabs."
         }
         alert.runModal()
+    }
+
+    // MARK: - History
+
+    /// Opens history.sqlite and drops visits older than `historyDays`. With historyDays 0 nothing is recorded
+    /// (the file is left as it is; Clear History still empties it).
+    private func openHistory() {
+        defer { historyGeneration += 1 }
+        guard config.historyDays > 0 else {
+            history = nil
+            return
+        }
+        if history == nil {
+            do {
+                history = try HistoryStore(path: Paths.history.path)
+            } catch {
+                log.error("history unavailable: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+        }
+        pruneHistory()
+    }
+
+    @ObservationIgnored private var lastHistoryPrune = Date.distantPast
+
+    /// Retention: drops visits older than `historyDays`. Runs at launch, on Reload Config and daily from the sweep timer.
+    private func pruneHistory() {
+        guard let history else { return }
+        lastHistoryPrune = Date()
+        do {
+            try history.prune(olderThan: Date().addingTimeInterval(-Double(config.historyDays) * 86_400))
+        } catch {
+            log.error("history prune failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func recordVisit(_ url: URL, title: String, typed: Bool) {
+        guard let history, HistoryStore.isRecordable(url) else { return }
+        do {
+            try history.recordVisit(url: url, title: title, typed: typed, at: Date())
+            historyGeneration += 1
+        } catch {
+            log.error("history write failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func updateHistoryTitle(_ url: URL, _ title: String) {
+        guard let history, !title.isEmpty, HistoryStore.isRecordable(url) else { return }
+        try? history.updateTitle(url: url, title: title)
+        historyGeneration += 1
+    }
+
+    func removeFromHistory(_ url: String) {
+        guard let history else { return }
+        try? history.remove(url: url)
+        historyGeneration += 1
+    }
+
+    /// Opens a history page in the front window: in its current tab, or a new tab. No window: a new one.
+    func openFromHistory(_ url: URL, newTab: Bool) {
+        guard let front = frontWindow else {
+            openWindow(url: url)
+            return
+        }
+        if newTab {
+            front.model.newTab(url: url, select: false)
+        } else {
+            front.model.go(to: url, typed: false)
+        }
+        front.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Clears visits since `date`, or everything when nil, plus recently closed tabs. Works with history turned
+    /// off too: the file from before is cleared, or deleted when clearing everything.
+    func clearHistory(since date: Date?) {
+        defer { historyGeneration += 1 }
+        windows.forEach { $0.model.forgetClosedTabs() }
+        saveSessionNow()
+        do {
+            if let history {
+                if let date { try history.removeVisits(since: date) } else { try history.removeAll() }
+            } else if FileManager.default.fileExists(atPath: Paths.history.path) {
+                if let date {
+                    try HistoryStore(path: Paths.history.path).removeVisits(since: date)
+                } else {
+                    for suffix in ["", "-wal", "-shm"] {
+                        try? FileManager.default.removeItem(atPath: Paths.history.path + suffix)
+                    }
+                }
+            }
+        } catch {
+            log.error("clear history failed: \(error.localizedDescription, privacy: .public)")
+            let alert = NSAlert()
+            alert.messageText = "History couldn't be cleared"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     // MARK: - Windows
@@ -116,9 +219,11 @@ final class AppModel {
         sessionChanged()
     }
 
+    /// The browser window the user was last in, even when another kind of window (History) is in front.
     var frontWindow: BrowserWindowController? {
         (NSApp.keyWindow?.windowController as? BrowserWindowController)
             ?? (NSApp.mainWindow?.windowController as? BrowserWindowController)
+            ?? NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first
             ?? windows.last
     }
 
@@ -177,7 +282,11 @@ final class AppModel {
             MainActor.assumeIsolated { AppModel.shared.sampleMemory() }
         }
         sweepTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
-            MainActor.assumeIsolated { AppModel.shared.sweepSleepingTabs() }
+            MainActor.assumeIsolated {
+                let app = AppModel.shared
+                app.sweepSleepingTabs()
+                if Date().timeIntervalSince(app.lastHistoryPrune) > 86_400 { app.pruneHistory() }
+            }
         }
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)

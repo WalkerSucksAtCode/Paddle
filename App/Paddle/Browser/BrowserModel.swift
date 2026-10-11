@@ -14,6 +14,9 @@ final class BrowserModel {
     /// Incremented to ask the view to focus the address field.
     var focusAddressRequest = 0
 
+    /// The address-bar dropdown.
+    let suggestions = AddressSuggestions()
+
     var findVisible = false
     var findText = ""
     var findFocusRequest = 0
@@ -21,6 +24,11 @@ final class BrowserModel {
 
     @ObservationIgnored weak var controller: BrowserWindowController?
     @ObservationIgnored private var closedTabs: [TabRecord] = []
+
+    /// Clear History also forgets recently closed tabs, which carry their own back/forward lists.
+    func forgetClosedTabs() {
+        closedTabs = []
+    }
 
     var selectedTab: Tab? { tabs.first { $0.id == selectedID } }
 
@@ -78,6 +86,7 @@ final class BrowserModel {
         tab.lastActive = now
         tab.wake()
         tab.resumeSelectionWaiters(true)
+        suggestions.dismiss()
         syncAddress()
         findNoMatch = false
         controller?.focusWebView()
@@ -171,16 +180,73 @@ final class BrowserModel {
 
     // MARK: - Navigation
 
+    /// Return in the address field: the highlighted suggestion, or what was typed.
+    func submitAddress() {
+        if suggestions.highlighted > 0, let row = suggestions.highlightedRow {
+            open(row)
+        } else {
+            navigate(addressText)
+        }
+    }
+
     func navigate(_ input: String) {
         guard let url = AddressResolver(searchTemplate: config.searchTemplate).resolve(input) else { return }
+        go(to: url, typed: true)
+    }
+
+    /// Loads `url` in the selected tab (a new one if there is none).
+    func go(to url: URL, typed: Bool) {
         let tab = selectedTab ?? newTab(url: nil)
         // Typed by the user: keep the tab even if the URL turns out to be a download.
         tab.closesIfOnlyDownload = false
+        tab.typedNavigationPending = typed
+        tab.skipNextCommitInHistory = false
         tab.load(url)
         tab.wake()
+        suggestions.dismiss()
         isEditingAddress = false
         addressText = Self.displayString(url)
         controller?.focusWebView()
+    }
+
+    /// A row picked in the address-bar dropdown. Picking counts as typing for history ranking.
+    func open(_ suggestion: Suggestion) {
+        switch suggestion.kind {
+        case .openTab(let id):
+            suggestions.dismiss()
+            isEditingAddress = false
+            // Leave the field here too, in case the tab is in another window.
+            controller?.window?.makeFirstResponder(nil)
+            guard let window = AppModel.shared.windows.first(where: { $0.model.tabs.contains { $0.id == id } }),
+                  let tab = window.model.tabs.first(where: { $0.id == id }) else { return }
+            syncAddress()
+            window.model.select(tab)
+            window.window?.makeKeyAndOrderFront(nil)
+        case .search:
+            if let query = suggestion.query, let url = AddressResolver(searchTemplate: config.searchTemplate).searchURL(for: query) {
+                go(to: url, typed: true)
+            }
+        case .history, .bookmark, .url:
+            if let string = suggestion.url, let url = URL(string: string) { go(to: url, typed: true) }
+        }
+    }
+
+    /// The user edited the address text: refresh suggestions and, when they typed at the end, complete a known
+    /// host inline (Safari style). Returns the completed text and where the typed part ends, or nil.
+    func addressEdited(from old: String, to new: String) -> (text: String, typedEnd: String.Index)? {
+        guard isEditingAddress else { return nil }
+        let typed = suggestions.typedText
+        suggestions.update(for: new, in: self)
+        // Only one key added to what was typed (typing over a shown completion counts), or a first key replacing
+        // the whole field: not a paste, a deletion, or IME text still being composed.
+        let composing = (controller?.window?.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+        let oneKey = new.count == 1 || (new.count == typed.count + 1 && new.hasPrefix(typed))
+        guard !composing, oneKey,
+              let completion = suggestions.inlineCompletion(for: new),
+              completion.count > new.count, completion.lowercased().hasPrefix(new.lowercased()) else { return nil }
+        let text = new + completion.dropFirst(new.count)
+        suggestions.completionApplied(text)
+        return (text, text.index(text.startIndex, offsetBy: new.count))
     }
 
     func tabURLChanged(_ tab: Tab) {

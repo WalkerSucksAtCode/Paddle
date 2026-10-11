@@ -10,6 +10,8 @@ struct BrowserView: View {
             TabStrip(model: model)
                 .frame(height: 38)
             NavigationBar(model: model, app: app)
+                // The suggestion dropdown hangs below the bar, over the page.
+                .zIndex(1)
             if let error = app.configError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 11))
@@ -214,6 +216,9 @@ private struct NavigationBar: View {
     @Bindable var model: BrowserModel
     let app: AppModel
     @FocusState private var addressFocused: Bool
+    @State private var addressSelection: TextSelection?
+    /// Set while Paddle itself writes an inline completion, so that edit isn't treated as typing.
+    @State private var applyingCompletion = false
     @State private var showActivity = false
     @State private var showDownloads = false
 
@@ -246,28 +251,63 @@ private struct NavigationBar: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .frame(width: 14)
-            TextField("Search or enter address", text: $model.addressText)
+            TextField("Search or enter address", text: $model.addressText, selection: $addressSelection)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .focused($addressFocused)
-                .onSubmit { model.navigate(model.addressText) }
+                .onSubmit { model.submitAddress() }
+                .onChange(of: model.addressText) { old, new in
+                    if applyingCompletion {
+                        applyingCompletion = false
+                        return
+                    }
+                    guard let completed = model.addressEdited(from: old, to: new) else { return }
+                    // Show the completed host with the added part selected, so typing on replaces it.
+                    applyingCompletion = true
+                    model.addressText = completed.text
+                    addressSelection = TextSelection(range: completed.typedEnd..<completed.text.endIndex)
+                }
+                .onKeyPress(.downArrow) { moveHighlight(by: 1) }
+                .onKeyPress(.upArrow) { moveHighlight(by: -1) }
                 .onExitCommand {
-                    model.isEditingAddress = false
-                    model.syncAddress()
+                    // First Escape closes the suggestions, the next one gives up editing.
+                    if model.suggestions.isVisible {
+                        model.suggestions.dismiss()
+                        return
+                    }
+                    // Really leave the field (also with no page showing); onChange(addressFocused) resyncs.
+                    addressFocused = false
                     model.controller?.focusWebView()
                 }
         }
         .padding(.horizontal, 10)
         .frame(height: 28)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
+        .overlay(alignment: .topLeading) {
+            if model.suggestions.isVisible {
+                SuggestionList(suggestions: model.suggestions) { model.open($0) }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .top)
+                    .offset(y: 32)
+            }
+        }
         .onChange(of: addressFocused) { _, focused in
             model.isEditingAddress = focused
-            if !focused { model.syncAddress() }
+            if !focused {
+                model.suggestions.dismiss()
+                model.syncAddress()
+            }
         }
         .onChange(of: model.focusAddressRequest) {
             addressFocused = true
             DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
         }
+    }
+
+    private func moveHighlight(by delta: Int) -> KeyPress.Result {
+        guard model.suggestions.isVisible else { return .ignored }
+        model.suggestions.moveHighlight(by: delta)
+        return .handled
     }
 
     private var addressIcon: String {

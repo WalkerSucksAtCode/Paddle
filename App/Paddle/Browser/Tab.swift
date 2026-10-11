@@ -49,6 +49,14 @@ final class Tab: Identifiable {
     /// Opened for one URL (a link, a popup, a URL from another app): if that load only downloads a file, the tab
     /// closes. Not set for tabs the user types into.
     @ObservationIgnored var closesIfOnlyDownload = false
+    /// The page whose title may still update history: the one last recorded in this tab, not an error page,
+    /// a restored page or one still loading.
+    @ObservationIgnored var historyURL: URL?
+    @ObservationIgnored var historyTitle = ""
+    /// The next committed page was typed into the address bar (history ranks typed pages higher).
+    @ObservationIgnored var typedNavigationPending = false
+    /// The next commit is Paddle's own error or crash page, or a sleeping tab's page coming back; neither is a visit.
+    @ObservationIgnored var skipNextCommitInHistory = false
     /// Recent web process crashes, with the host that was showing.
     @ObservationIgnored private var crashes: [(date: Date, host: String?)] = []
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -84,6 +92,7 @@ final class Tab: Identifiable {
         let webView = WKWebView(frame: .zero, configuration: AppModel.shared.web.makeConfiguration())
         attach(webView)
         if let savedState {
+            skipNextCommitInHistory = true
             webView.interactionState = savedState
         } else if let url {
             webView.load(URLRequest(url: url))
@@ -166,6 +175,7 @@ final class Tab: Identifiable {
                 message: "Its web process stopped \(crashes.count) times in the last minute, so Paddle stopped reloading it.",
                 url: url
             )
+            skipNextCommitInHistory = true
             webView.loadHTMLString(html, baseURL: url)
         }
     }
@@ -220,7 +230,13 @@ final class Tab: Identifiable {
             }
         }
         observations = [
-            watch(\.title) { tab, webView in tab.title = webView.title ?? "" },
+            watch(\.title) { tab, webView in
+                tab.title = webView.title ?? ""
+                // One write per real title change of the recorded page.
+                guard let url = tab.historyURL, webView.url == url, !tab.title.isEmpty, tab.title != tab.historyTitle else { return }
+                tab.historyTitle = tab.title
+                AppModel.shared.updateHistoryTitle(url, tab.title)
+            },
             watch(\.url) { tab, webView in
                 guard let url = webView.url else { return }
                 tab.url = url

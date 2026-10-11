@@ -15,8 +15,10 @@
 		243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */; };
 		2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3E212F72DAF671F028B0F4 /* MainMenu.swift */; };
 		2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881BDAB3248D8FEB481C88A /* BrowserView.swift */; };
+		445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */; };
 		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
 		6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE304A3A835594677036488 /* ProcessMemory.swift */; };
+		87C6D0593E0ED2F7BE658144 /* AddressSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */; };
 		A136EA310CE39E5B3601C8CA /* PaddleCore in Frameworks */ = {isa = PBXBuildFile; productRef = BD5C9C757A3417F27389B736 /* PaddleCore */; };
 		BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */; };
 		CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */; };
@@ -37,10 +39,12 @@
 		8E3E212F72DAF671F028B0F4 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 		952BF713553853D7D819E091 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		9881BDAB3248D8FEB481C88A /* BrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserView.swift; sourceTree = "<group>"; };
+		9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryWindow.swift; sourceTree = "<group>"; };
 		ADA58B4D797F83211511883E /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
 		E05B63171469865BF8E8104E /* Paddle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paddle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaddleApp.swift; sourceTree = "<group>"; };
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
+		F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressSuggestions.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,7 +82,9 @@
 			isa = PBXGroup;
 			children = (
 				952BF713553853D7D819E091 /* ActivityView.swift */,
+				F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */,
 				9881BDAB3248D8FEB481C88A /* BrowserView.swift */,
+				9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */,
 				42172FC8B6D57C89A373242D /* WebContainer.swift */,
 			);
 			path = UI;
@@ -206,11 +212,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				078157F3D8E0845D5FC7959B /* ActivityView.swift in Sources */,
+				87C6D0593E0ED2F7BE658144 /* AddressSuggestions.swift in Sources */,
 				DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */,
 				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
 				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
 				BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */,
 				5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */,
+				445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */,
 				2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */,
 				243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */,
 				155D75229E6FB2CCF84341A8 /* Paths.swift in Sources */,

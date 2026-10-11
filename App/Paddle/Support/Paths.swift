@@ -13,6 +13,7 @@ enum Paths {
     static let filters = support.appending(path: "filters", directoryHint: .isDirectory)
     static let userFilters = support.appending(path: "user-filters.txt")
     static let session = support.appending(path: "session.json")
+    static let history = support.appending(path: "history.sqlite")
     static let compiledRules = support.appending(path: "compiled-rules", directoryHint: .isDirectory)
 
     /// Creates the folder layout and starter files on first launch. Never overwrites existing files.

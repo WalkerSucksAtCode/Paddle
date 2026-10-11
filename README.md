@@ -16,6 +16,8 @@ Only include the keys you change.
 | `homepage` | `about:blank` | Page for a new window (`about:blank` = empty, address bar focused) |
 | `newTabPage` | `about:blank` | Page for a new tab |
 | `searchTemplate` | `https://duckduckgo.com/?q=%s` | Search URL, `%s` = query |
+| `searchSuggestTemplate` | `https://duckduckgo.com/ac/?q=%s&type=list` | Address-bar search suggestions (OpenSearch or DuckDuckGo JSON). Only search words typed key by key are sent, never addresses, paths or pastes; `""` = off |
+| `historyDays` | `365` | Days of history kept in `history.sqlite` (0 = no history) |
 | `tabSleepAfterMinutes` | `30` | Idle minutes before a background tab sleeps (0 = never) |
 | `maxAwakeTabs` | `10` | Most tabs awake at once (0 = no cap) |
 | `sleepPinnedTabs` | `false` | Let pinned tabs sleep too |
@@ -27,12 +29,13 @@ Only include the keys you change.
 | `developerTools` | `true` | Inspect Element in the context menu |
 | `shortcuts` | `{}` | Rebind menu commands, e.g. `{"nextTab": "cmd+option+right", "closeTab": "none"}` |
 
-Shortcut action names: `settings`, `openConfigFolder`, `reloadConfig`, `updateFilterLists`, `hide`, `hideOthers`, `quit`, `newTab`, `newWindow`, `openLocation`, `closeTab`, `closeWindow`, `reopenClosedTab`, `undo`, `redo`, `cut`, `copy`, `paste`, `pasteAndMatchStyle`, `selectAll`, `find`, `findNext`, `findPrevious`, `reload`, `hardReload`, `stop`, `zoomIn`, `zoomOut`, `actualSize`, `webInspector`, `fullScreen`, `back`, `forward`, `nextTab`, `previousTab`, `togglePin`, `duplicateTab`, `sleepBackgroundTabs`, `tab1` … `tab9`, `minimize`.
+Shortcut action names: `settings`, `openConfigFolder`, `reloadConfig`, `updateFilterLists`, `hide`, `hideOthers`, `quit`, `newTab`, `newWindow`, `openLocation`, `closeTab`, `closeWindow`, `reopenClosedTab`, `undo`, `redo`, `cut`, `copy`, `paste`, `pasteAndMatchStyle`, `selectAll`, `find`, `findNext`, `findPrevious`, `reload`, `hardReload`, `stop`, `zoomIn`, `zoomOut`, `actualSize`, `webInspector`, `fullScreen`, `back`, `forward`, `showHistory`, `clearHistory`, `nextTab`, `previousTab`, `togglePin`, `duplicateTab`, `sleepBackgroundTabs`, `tab1` … `tab9`, `minimize`.
 
 Modifiers: `cmd`, `shift`, `option`/`alt`, `ctrl`. Named keys: `left right up down tab return escape delete space home end pageup pagedown f1`–`f12`.
 
 ## Other files
 
+- `history.sqlite`: browsing history (History > Show All History, ⌘Y). The address bar suggests open tabs, history and search phrases as you type and completes known hosts inline.
 - `user.css`: applied to every page.
 - `user-filters.txt`: your own Adblock Plus rules (`||host^`, `site.com##.selector`, `@@||site^$document` to allowlist a site).
 - `userscripts/*.js`: Greasemonkey-style scripts (`@match`, `@include`, `@exclude`, `@run-at`, `@noframes`, `@inject-into content`). A file without a header runs everywhere. `GM_*` APIs are not provided.

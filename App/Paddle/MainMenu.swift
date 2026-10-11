@@ -68,6 +68,12 @@ enum MainMenu {
         let history = submenu(main, "History")
         add(history, "back", "Back", #selector(BrowserWindowController.paddleBack(_:)), "[")
         add(history, "forward", "Forward", #selector(BrowserWindowController.paddleForward(_:)), "]")
+        history.addItem(.separator())
+        add(history, "showHistory", "Show All History", #selector(AppDelegate.paddleShowHistory(_:)), "y", target: appDelegate)
+        // Recently visited pages go here, filled in by HistoryMenuDelegate when the menu opens.
+        history.addItem(.separator())
+        add(history, "clearHistory", "Clear History…", #selector(AppDelegate.paddleClearHistory(_:)), "", target: appDelegate)
+        history.delegate = HistoryMenuDelegate.shared
 
         let tabs = submenu(main, "Tabs")
         add(tabs, "nextTab", "Show Next Tab", #selector(BrowserWindowController.paddleNextTab(_:)), "\t", [.control])

@@ -39,6 +39,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let url = navigationAction.request.url else { return (.allow, preferences) }
         let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? false
         let byUser = Self.isUserInitiated(navigationAction)
+        if isMainFrame { mainFrameNavigationType = navigationAction.navigationType }
 
         // mailto:, zoommtg:, slack: ... hand off to the right app. A real click opens it; a script or redirect
         // (a "Launch meeting" page) asks first, so pages can't launch apps unprompted.
@@ -173,6 +174,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// file link, a file URL from another app) closes, as in Chrome, and stays out of Reopen Closed Tab, which
     /// would download the file again. A tab the user typed the URL into goes back to the start page.
     private func tabShowsNothingAfterDownload(_ webView: WKWebView) {
+        tab?.typedNavigationPending = false
         guard let tab, webView.backForwardList.currentItem == nil, let browser = tab.browser else { return }
         DispatchQueue.main.async {
             if tab.closesIfOnlyDownload, browser.tabs.count > 1 {
@@ -224,9 +226,47 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         return (.useCredential, URLCredential(user: user.stringValue, password: password.stringValue, persistence: .forSession))
     }
 
+    // MARK: - History
+
+    /// How the pending main-frame navigation started; reloads, back/forward and session restores aren't new visits.
+    private var mainFrameNavigationType: WKNavigationType?
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard let tab, let url = webView.url else { return }
+        defer {
+            tab.typedNavigationPending = false
+            mainFrameNavigationType = nil
+        }
+        tab.historyURL = nil
+        if tab.skipNextCommitInHistory {
+            tab.skipNextCommitInHistory = false
+            return
+        }
+        if let type = mainFrameNavigationType, [.backForward, .reload, .formResubmitted].contains(type) { return }
+        recordInHistory(url, webView, typed: tab.typedNavigationPending)
+    }
+
+    private func recordInHistory(_ url: URL, _ webView: WKWebView, typed: Bool) {
+        guard let tab else { return }
+        let title = webView.title ?? ""
+        AppModel.shared.recordVisit(url, title: title, typed: typed)
+        tab.historyURL = url
+        tab.historyTitle = title
+    }
+
+    /// Private WebKit delegate callback for history.pushState and friends: single-page sites (YouTube, GitHub)
+    /// change pages without a commit. Only pushes are new pages; anchors, replaces and pops are not.
+    @objc(_webView:navigation:didSameDocumentNavigation:)
+    func webView(_ webView: WKWebView, navigation: WKNavigation?, didSameDocumentNavigation type: Int) {
+        let sessionStatePush = 1
+        guard type == sessionStatePush, let url = webView.url else { return }
+        recordInHistory(url, webView, typed: false)
+    }
+
     // MARK: - Failures
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        tab?.typedNavigationPending = false
         showErrorPage(webView, error)
     }
 
@@ -246,6 +286,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
         let failing = (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? tab?.url
         let html = Self.errorPage(title: "Can't open this page", message: nsError.localizedDescription, url: failing)
+        tab?.skipNextCommitInHistory = true
         webView.loadHTMLString(html, baseURL: failing)
     }
 

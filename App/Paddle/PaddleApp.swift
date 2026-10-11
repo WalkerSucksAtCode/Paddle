@@ -73,6 +73,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func paddleSleepBackgroundTabs(_ sender: Any?) { AppModel.shared.sleepBackgroundTabs() }
 
+    @objc func paddleShowHistory(_ sender: Any?) { HistoryWindowController.show() }
+
+    @objc func paddleClearHistory(_ sender: Any?) { ClearHistoryPrompt.run(for: NSApp.keyWindow) }
+
+    /// A recent page from the History menu.
+    @objc func paddleOpenHistoryItem(_ sender: Any?) {
+        guard let string = (sender as? NSMenuItem)?.representedObject as? String, let url = URL(string: string) else { return }
+        AppModel.shared.openFromHistory(url, newTab: false)
+    }
+
     @objc func paddleUpdateFilterLists(_ sender: Any?) {
         Task {
             let report = await AppModel.shared.web.updateFilterLists()

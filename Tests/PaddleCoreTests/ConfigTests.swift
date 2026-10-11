@@ -9,6 +9,8 @@ struct ConfigTests {
         #expect(config.searchTemplate == "https://kagi.com/search?q=%s")
         #expect(config.tabSleepAfterMinutes == PaddleConfig().tabSleepAfterMinutes)
         #expect(config.filterLists == PaddleConfig.defaultFilterLists)
+        #expect(config.historyDays == 365)
+        #expect(config.searchSuggestTemplate.contains("%s"))
     }
 
     @Test func roundTrips() throws {

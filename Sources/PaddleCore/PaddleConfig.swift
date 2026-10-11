@@ -9,6 +9,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabPage: String
     /// Search URL; `%s` is replaced by the query.
     public var searchTemplate: String
+    /// Search-suggestion endpoint for the address bar (OpenSearch or DuckDuckGo JSON); `%s` is the typed text.
+    /// Empty turns search suggestions off, so nothing you type is sent anywhere before you press Return.
+    public var searchSuggestTemplate: String
+    /// Days of browsing history kept in history.sqlite. 0 turns history off.
+    public var historyDays: Int
 
     /// Background tabs idle longer than this are put to sleep (their web process exits). 0 disables idle sleep.
     public var tabSleepAfterMinutes: Double
@@ -44,6 +49,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         homepage: String = "about:blank",
         newTabPage: String = "about:blank",
         searchTemplate: String = "https://duckduckgo.com/?q=%s",
+        searchSuggestTemplate: String = "https://duckduckgo.com/ac/?q=%s&type=list",
+        historyDays: Int = 365,
         tabSleepAfterMinutes: Double = 30,
         maxAwakeTabs: Int = 10,
         sleepPinnedTabs: Bool = false,
@@ -58,6 +65,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.homepage = homepage
         self.newTabPage = newTabPage
         self.searchTemplate = searchTemplate
+        self.searchSuggestTemplate = searchSuggestTemplate
+        self.historyDays = historyDays
         self.tabSleepAfterMinutes = tabSleepAfterMinutes
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
@@ -76,6 +85,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         homepage = try c.decodeIfPresent(String.self, forKey: .homepage) ?? d.homepage
         newTabPage = try c.decodeIfPresent(String.self, forKey: .newTabPage) ?? d.newTabPage
         searchTemplate = try c.decodeIfPresent(String.self, forKey: .searchTemplate) ?? d.searchTemplate
+        searchSuggestTemplate = try c.decodeIfPresent(String.self, forKey: .searchSuggestTemplate) ?? d.searchSuggestTemplate
+        historyDays = try c.decodeIfPresent(Int.self, forKey: .historyDays) ?? d.historyDays
         tabSleepAfterMinutes = try c.decodeIfPresent(Double.self, forKey: .tabSleepAfterMinutes) ?? d.tabSleepAfterMinutes
         maxAwakeTabs = try c.decodeIfPresent(Int.self, forKey: .maxAwakeTabs) ?? d.maxAwakeTabs
         sleepPinnedTabs = try c.decodeIfPresent(Bool.self, forKey: .sleepPinnedTabs) ?? d.sleepPinnedTabs

@@ -26,6 +26,42 @@ struct HistoryStoreTests {
         #expect(try store.visits(matching: nil, limit: 10).count == 3)
     }
 
+    @Test func hostPrefixOutranksBusierPages() throws {
+        let store = try store()
+        for n in 0..<40 {
+            try store.recordVisit(url: url("https://duckduckgo.com/?q=thing\(n)"), title: "Search \(n)", typed: true, at: ago(days: 0))
+        }
+        try store.recordVisit(url: url("https://www.stackoverflow.com/questions"), title: "Questions", typed: false, at: ago(days: 8))
+        let results = try store.search("st", limit: 5, now: now)
+        #expect(results.first?.url == "https://www.stackoverflow.com/questions")
+    }
+
+    @Test func schemeDoesNotMatch() throws {
+        let store = try store()
+        try store.recordVisit(url: url("https://example.com/"), title: "Example", typed: false, at: ago(days: 0))
+        #expect(try store.search("https", limit: 5, now: now).isEmpty)
+        #expect(try store.visits(matching: "http", limit: 5).isEmpty)
+        #expect(try store.search("example.com", limit: 5, now: now).count == 1)
+    }
+
+    @Test func credentialsAndTokensAreNotStored() throws {
+        let store = try store()
+        try store.recordVisit(url: url("https://me:secret@example.com/app#access_token=abc"), title: "App", typed: false, at: ago(days: 0))
+        try store.recordVisit(url: url("https://example.com/docs#install"), title: "Docs", typed: false, at: ago(days: 0))
+        let urls = try store.recentPages(limit: 5).map(\.url)
+        #expect(urls.contains("https://example.com/app"))
+        #expect(urls.contains("https://example.com/docs#install"))
+        #expect(!urls.joined().contains("secret"))
+    }
+
+    @Test func partialClearRestoresEarlierTitle() throws {
+        let store = try store()
+        try store.recordVisit(url: url("https://example.com/"), title: "Old title", typed: false, at: ago(days: 3))
+        try store.recordVisit(url: url("https://example.com/"), title: "Embarrassing title", typed: false, at: ago(days: 0))
+        try store.removeVisits(since: ago(days: 1))
+        #expect(try store.recentPages(limit: 1).first?.title == "Old title")
+    }
+
     @Test func emptyTitleKeepsExistingTitle() throws {
         let store = try store()
         try store.recordVisit(url: url("https://example.com/"), title: "Home", typed: false, at: ago(days: 1))

@@ -85,6 +85,7 @@ public final class HistoryStore {
         db = opened
         sqlite3_busy_timeout(db, 2_000)
         try execute("PRAGMA foreign_keys = ON")
+        _ = try rows("PRAGMA secure_delete = ON", []) { _ in 0 }
         if path != ":memory:", !path.isEmpty {
             try execute("PRAGMA journal_mode = WAL")
         }
@@ -103,11 +104,24 @@ public final class HistoryStore {
         return scheme == "http" || scheme == "https"
     }
 
+    /// The form a URL is stored and looked up in: without `user:password@`, and without a fragment that carries
+    /// sign-in output (`#access_token=…`). Other fragments stay, since single-page sites use them as routes.
+    public static func storedURL(_ url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
+        parts.user = nil
+        parts.password = nil
+        if let fragment = parts.fragment?.lowercased(),
+           ["access_token=", "id_token=", "code=", "token=", "state="].contains(where: fragment.contains) {
+            parts.fragment = nil
+        }
+        return parts.string ?? url.absoluteString
+    }
+
     /// Adds a visit and updates the page row. Does nothing for URLs that are not recordable.
     /// An empty `title` keeps whatever title the page already has.
     public func recordVisit(url: URL, title: String, typed: Bool, at date: Date) throws {
         guard Self.isRecordable(url) else { return }
-        let address = url.absoluteString
+        let address = Self.storedURL(url)
         let stamp = date.timeIntervalSince1970
         let typedValue: Int64 = typed ? 1 : 0
         try transaction {
@@ -131,7 +145,7 @@ public final class HistoryStore {
     /// loaded yet reports one).
     public func updateTitle(url: URL, title: String) throws {
         guard !title.isEmpty else { return }
-        let address = url.absoluteString
+        let address = Self.storedURL(url)
         try transaction {
             try execute("UPDATE pages SET title = ? WHERE url = ?", [.text(title), .text(address)])
             try execute("""
@@ -144,28 +158,37 @@ public final class HistoryStore {
 
     // MARK: - Queries
 
-    /// Pages whose title or URL contains every whitespace-separated word of `query`, best frecency first
-    /// (ties: most recently visited first). An empty query returns the top-frecency pages.
+    /// Pages whose title or URL contains every whitespace-separated word of `query`. Pages whose host starts
+    /// with the first word come first ("go" finds golang.org even among many busier pages), then best frecency,
+    /// then most recent. An empty query returns the top-frecency pages. URLs are matched without their scheme,
+    /// so "https" doesn't match everything.
     public func search(_ query: String, limit: Int, now: Date) throws -> [HistoryEntry] {
         guard limit > 0 else { return [] }
-        let (clause, params) = Self.wordClause(query, titleColumn: "title", urlColumn: "url")
-        let candidates = try rows("""
+        let (clause, params) = Self.wordClause(query, titleColumn: "title", urlColumn: Self.urlWithoutScheme)
+        let first = query.split(whereSeparator: \.isWhitespace).first.map { Self.escapeLike(String($0)) } ?? ""
+        // Frecency is computed in SQL (same buckets as `Frecency.score`) so only `limit` rows come back to Swift;
+        // SQLite still scans the matching pages. Named parameters come after the clause's `?`s, in this order.
+        return try rows("""
             SELECT url, title, visit_count, typed_count, last_visit FROM pages \(clause)
-            """, params, Self.entry)
-        let ranked = candidates
-            .map { (entry: $0, score: Frecency.score(visitCount: $0.visitCount, typedCount: $0.typedCount, lastVisit: $0.lastVisit, now: now)) }
-            .sorted {
-                if $0.score != $1.score { return $0.score > $1.score }
-                if $0.entry.lastVisit != $1.entry.lastVisit { return $0.entry.lastVisit > $1.entry.lastVisit }
-                return $0.entry.url < $1.entry.url
-            }
-        return ranked.prefix(limit).map(\.entry)
+            ORDER BY (:first <> '' AND (\(Self.urlWithoutScheme) LIKE :first || '%' ESCAPE '\\'
+                                    OR \(Self.urlWithoutScheme) LIKE 'www.' || :first || '%' ESCAPE '\\')) DESC,
+                (max(visit_count, 0) + 2 * max(typed_count, 0)) * (CASE
+                WHEN :now - last_visit <= \(4 * 86_400) THEN 100
+                WHEN :now - last_visit <= \(14 * 86_400) THEN 70
+                WHEN :now - last_visit <= \(31 * 86_400) THEN 50
+                WHEN :now - last_visit <= \(90 * 86_400) THEN 30
+                ELSE 10 END) DESC, last_visit DESC, url ASC
+            LIMIT :limit
+            """, params + [.text(first), .double(now.timeIntervalSince1970), .int(Int64(limit))], Self.entry)
     }
+
+    /// The stored URL without `scheme://`, for matching.
+    private static let urlWithoutScheme = "substr(url, instr(url, '://') + 3)"
 
     /// Visits newest first, optionally narrowed to those whose title or URL contains every word of `query`.
     public func visits(matching query: String?, limit: Int, offset: Int = 0) throws -> [HistoryVisit] {
         guard limit > 0 else { return [] }
-        let (clause, params) = Self.wordClause(query ?? "", titleColumn: "v.title", urlColumn: "p.url")
+        let (clause, params) = Self.wordClause(query ?? "", titleColumn: "v.title", urlColumn: "substr(p.url, instr(p.url, '://') + 3)")
         return try rows("""
             SELECT v.id, p.url, v.title, v.date FROM visits v JOIN pages p ON p.id = v.page_id \(clause)
             ORDER BY v.date DESC, v.id DESC LIMIT ? OFFSET ?
@@ -202,6 +225,7 @@ public final class HistoryStore {
             try execute("DELETE FROM visits WHERE page_id IN (SELECT id FROM pages WHERE url = ?)", [.text(url)])
             try execute("DELETE FROM pages WHERE url = ?", [.text(url)])
         }
+        try scrubDeleted()
     }
 
     /// "Clear recent history": deletes visits at or after `date`. Pages left with no visits are deleted; the
@@ -216,10 +240,13 @@ public final class HistoryStore {
                 UPDATE pages SET
                     visit_count = (SELECT count(*) FROM visits WHERE page_id = pages.id),
                     typed_count = (SELECT coalesce(sum(typed), 0) FROM visits WHERE page_id = pages.id),
-                    last_visit = (SELECT max(date) FROM visits WHERE page_id = pages.id)
+                    last_visit = (SELECT max(date) FROM visits WHERE page_id = pages.id),
+                    title = coalesce((SELECT title FROM visits WHERE page_id = pages.id AND title <> ''
+                                      ORDER BY date DESC, id DESC LIMIT 1), title)
                 WHERE last_visit >= ?
                 """, [.double(stamp)])
         }
+        try scrubDeleted()
     }
 
     /// Deletes everything.
@@ -228,6 +255,13 @@ public final class HistoryStore {
             try execute("DELETE FROM visits")
             try execute("DELETE FROM pages")
         }
+        try scrubDeleted()
+    }
+
+    /// Cleared history must not stay readable on disk: deleted rows are zeroed (`secure_delete`, set at open)
+    /// and the write-ahead log, which still holds the old pages, is folded in and truncated.
+    private func scrubDeleted() throws {
+        _ = try rows("PRAGMA wal_checkpoint(TRUNCATE)", []) { _ in 0 }
     }
 
     /// Retention: drops visits before `date`, then pages with no visits left. Surviving pages keep their
@@ -288,15 +322,19 @@ public final class HistoryStore {
         guard !words.isEmpty else { return ("", []) }
         var params: [Param] = []
         let terms = words.map { word -> String in
-            let escaped = word
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "%", with: "\\%")
-                .replacingOccurrences(of: "_", with: "\\_")
+            let escaped = escapeLike(word)
             params.append(.text("%\(escaped)%"))
             params.append(.text("%\(escaped)%"))
             return "(\(titleColumn) LIKE ? ESCAPE '\\' OR \(urlColumn) LIKE ? ESCAPE '\\')"
         }
         return ("WHERE " + terms.joined(separator: " AND "), params)
+    }
+
+    /// Escapes `\`, `%` and `_` so they match literally in `LIKE … ESCAPE '\'`.
+    private static func escapeLike(_ word: String) -> String {
+        word.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
     }
 
     private static func entry(_ stmt: OpaquePointer) -> HistoryEntry {

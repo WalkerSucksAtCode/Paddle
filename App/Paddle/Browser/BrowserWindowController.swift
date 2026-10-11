@@ -92,6 +92,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         model.selectedTab?.lastActive = Date()
     }
 
+    func windowDidResignKey(_ notification: Notification) {
+        model.suggestions.dismiss()
+    }
+
     private var tab: Tab? { model.selectedTab }
     private var webView: WKWebView? { model.selectedTab?.webView }
 
