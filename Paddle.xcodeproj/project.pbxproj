@@ -1,0 +1,437 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		078157F3D8E0845D5FC7959B /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 952BF713553853D7D819E091 /* ActivityView.swift */; };
+		11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796C7AE983E4F84683CFAFB2 /* Tab.swift */; };
+		13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5298F39D453DAE403A0126 /* BrowserModel.swift */; };
+		155D75229E6FB2CCF84341A8 /* Paths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E5FE7EECAC5C0800D39F69 /* Paths.swift */; };
+		20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */; };
+		243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */; };
+		2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3E212F72DAF671F028B0F4 /* MainMenu.swift */; };
+		2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881BDAB3248D8FEB481C88A /* BrowserView.swift */; };
+		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
+		6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE304A3A835594677036488 /* ProcessMemory.swift */; };
+		A136EA310CE39E5B3601C8CA /* PaddleCore in Frameworks */ = {isa = PBXBuildFile; productRef = BD5C9C757A3417F27389B736 /* PaddleCore */; };
+		BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */; };
+		CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */; };
+		DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488DDEB21AAB3C480FC2F0F /* AppModel.swift */; };
+		FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42172FC8B6D57C89A373242D /* WebContainer.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		11E5FE7EECAC5C0800D39F69 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
+		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
+		25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEnvironment.swift; sourceTree = "<group>"; };
+		42172FC8B6D57C89A373242D /* WebContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebContainer.swift; sourceTree = "<group>"; };
+		46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabWebDelegate.swift; sourceTree = "<group>"; };
+		67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowController.swift; sourceTree = "<group>"; };
+		796C7AE983E4F84683CFAFB2 /* Tab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tab.swift; sourceTree = "<group>"; };
+		7EE304A3A835594677036488 /* ProcessMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemory.swift; sourceTree = "<group>"; };
+		8488DDEB21AAB3C480FC2F0F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		8E3E212F72DAF671F028B0F4 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
+		952BF713553853D7D819E091 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
+		9881BDAB3248D8FEB481C88A /* BrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserView.swift; sourceTree = "<group>"; };
+		ADA58B4D797F83211511883E /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
+		E05B63171469865BF8E8104E /* Paddle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paddle.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaddleApp.swift; sourceTree = "<group>"; };
+		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E435D2DA003D7901E39FAB71 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A136EA310CE39E5B3601C8CA /* PaddleCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		10838493A659EFDBD9C11899 = {
+			isa = PBXGroup;
+			children = (
+				9054632723F111944EFA8F01 /* App */,
+				EE9A42472076AC52EB1A94D9 /* Packages */,
+				88DF677DEB01B39B88C589E0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		262F6F6BBABDFEAB73CA91F0 /* Web */ = {
+			isa = PBXGroup;
+			children = (
+				ADA58B4D797F83211511883E /* Downloads.swift */,
+				46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */,
+				25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */,
+			);
+			path = Web;
+			sourceTree = "<group>";
+		};
+		2CCE77CDBB6F6ABEFCA1BDAE /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				952BF713553853D7D819E091 /* ActivityView.swift */,
+				9881BDAB3248D8FEB481C88A /* BrowserView.swift */,
+				42172FC8B6D57C89A373242D /* WebContainer.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		5CFB9E3FDD7366BDD5A56707 /* Browser */ = {
+			isa = PBXGroup;
+			children = (
+				EE5298F39D453DAE403A0126 /* BrowserModel.swift */,
+				67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */,
+				796C7AE983E4F84683CFAFB2 /* Tab.swift */,
+			);
+			path = Browser;
+			sourceTree = "<group>";
+		};
+		62C65D5FFDCE8D96C837513C /* Paddle */ = {
+			isa = PBXGroup;
+			children = (
+				8488DDEB21AAB3C480FC2F0F /* AppModel.swift */,
+				8E3E212F72DAF671F028B0F4 /* MainMenu.swift */,
+				EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */,
+				5CFB9E3FDD7366BDD5A56707 /* Browser */,
+				E866DFFDF107D654001FDD29 /* Support */,
+				2CCE77CDBB6F6ABEFCA1BDAE /* UI */,
+				262F6F6BBABDFEAB73CA91F0 /* Web */,
+			);
+			path = Paddle;
+			sourceTree = "<group>";
+		};
+		88DF677DEB01B39B88C589E0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E05B63171469865BF8E8104E /* Paddle.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9054632723F111944EFA8F01 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				62C65D5FFDCE8D96C837513C /* Paddle */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		E866DFFDF107D654001FDD29 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				11E5FE7EECAC5C0800D39F69 /* Paths.swift */,
+				7EE304A3A835594677036488 /* ProcessMemory.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		EE9A42472076AC52EB1A94D9 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				20B7618470421579DB9FBC74 /* Paddle */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		212A3C2757FF9631D94A4C90 /* Paddle */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 91EA981C7CC446BF8FCD3363 /* Build configuration list for PBXNativeTarget "Paddle" */;
+			buildPhases = (
+				76A41CEB417F9394A9EC0EC6 /* Sources */,
+				E435D2DA003D7901E39FAB71 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Paddle;
+			packageProductDependencies = (
+				BD5C9C757A3417F27389B736 /* PaddleCore */,
+			);
+			productName = Paddle;
+			productReference = E05B63171469865BF8E8104E /* Paddle.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4BD3DE7F1FCB748C8D7B5255 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					212A3C2757FF9631D94A4C90 = {
+						DevelopmentTeam = VB3UP263YT;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 2731B2BBD48E0011C9C0038D /* Build configuration list for PBXProject "Paddle" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 10838493A659EFDBD9C11899;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DF06638B385EBFA500779F4B /* XCLocalSwiftPackageReference "." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 88DF677DEB01B39B88C589E0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				212A3C2757FF9631D94A4C90 /* Paddle */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		76A41CEB417F9394A9EC0EC6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				078157F3D8E0845D5FC7959B /* ActivityView.swift in Sources */,
+				DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */,
+				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
+				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
+				BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */,
+				5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */,
+				2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */,
+				243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */,
+				155D75229E6FB2CCF84341A8 /* Paths.swift in Sources */,
+				6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */,
+				11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */,
+				20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */,
+				FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */,
+				CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BF70992D55BABDAFE7D5366C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Paddle/Paddle.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Paddle/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.walker.Paddle;
+				PRODUCT_NAME = Paddle;
+				SDKROOT = macosx;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+			};
+			name = Debug;
+		};
+		C874765190ACD65515B81766 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = VB3UP263YT;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		CE2A7F12B2EA704AE406AF5C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Paddle/Paddle.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Paddle/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.walker.Paddle;
+				PRODUCT_NAME = Paddle;
+				SDKROOT = macosx;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+			};
+			name = Release;
+		};
+		F32BD9C72E25204CFF30938F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = VB3UP263YT;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2731B2BBD48E0011C9C0038D /* Build configuration list for PBXProject "Paddle" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F32BD9C72E25204CFF30938F /* Debug */,
+				C874765190ACD65515B81766 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		91EA981C7CC446BF8FCD3363 /* Build configuration list for PBXNativeTarget "Paddle" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BF70992D55BABDAFE7D5366C /* Debug */,
+				CE2A7F12B2EA704AE406AF5C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		DF06638B385EBFA500779F4B /* XCLocalSwiftPackageReference "." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = .;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		BD5C9C757A3417F27389B736 /* PaddleCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PaddleCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 4BD3DE7F1FCB748C8D7B5255 /* Project object */;
+}

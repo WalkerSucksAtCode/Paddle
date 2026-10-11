@@ -1,0 +1,56 @@
+name: Paddle
+options:
+  bundleIdPrefix: com.walker
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+  xcodeVersion: "16.0"
+
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    DEVELOPMENT_TEAM: VB3UP263YT
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_HARDENED_RUNTIME: YES
+    CODE_SIGN_STYLE: Automatic
+
+packages:
+  PaddlePackage:
+    path: .
+
+targets:
+  Paddle:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Paddle
+        excludes:
+          - Info.plist
+          - Paddle.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.walker.Paddle
+        PRODUCT_NAME: Paddle
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: App/Paddle/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Paddle/Paddle.entitlements
+        CODE_SIGN_IDENTITY[sdk=macosx*]: Apple Development
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+    dependencies:
+      - package: PaddlePackage
+        product: PaddleCore
+    scheme:
+      testTargets: []
+
+schemes:
+  Paddle:
+    build:
+      targets:
+        Paddle: all
