@@ -11,7 +11,7 @@ enum PaddleMain {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var started = false
     private var pendingURLs: [URL] = []
 
@@ -58,6 +58,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - App-level commands (work with no window open)
 
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(paddleToggleBookmarksBar(_:)) {
+            menuItem.title = AppModel.shared.showBookmarksBar ? "Hide Bookmarks Bar" : "Show Bookmarks Bar"
+        }
+        return true
+    }
+
     @objc func paddleNewWindow(_ sender: Any?) { AppModel.shared.openWindow() }
 
     /// Reached only when no browser window is key: open a window instead of a tab.
@@ -77,10 +84,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func paddleClearHistory(_ sender: Any?) { ClearHistoryPrompt.run(for: NSApp.keyWindow) }
 
+    @objc func paddleShowBookmarks(_ sender: Any?) { BookmarksWindowController.show() }
+
+    @objc func paddleToggleBookmarksBar(_ sender: Any?) { AppModel.shared.showBookmarksBar.toggle() }
+
+    @objc func paddleImportBookmarks(_ sender: Any?) { BookmarkFiles.importFile() }
+
+    @objc func paddleExportBookmarks(_ sender: Any?) { BookmarkFiles.exportFile() }
+
+    /// A bookmark from the Bookmarks menu; Command opens it in a background tab.
+    @objc func paddleOpenBookmarkItem(_ sender: Any?) {
+        guard let string = (sender as? NSMenuItem)?.representedObject as? String, let url = URL(string: string) else { return }
+        AppModel.shared.openInFrontWindow(url, newTab: NSEvent.modifierFlags.contains(.command))
+    }
+
     /// A recent page from the History menu.
     @objc func paddleOpenHistoryItem(_ sender: Any?) {
         guard let string = (sender as? NSMenuItem)?.representedObject as? String, let url = URL(string: string) else { return }
-        AppModel.shared.openFromHistory(url, newTab: false)
+        AppModel.shared.openInFrontWindow(url, newTab: false)
     }
 
     @objc func paddleUpdateFilterLists(_ sender: Any?) {

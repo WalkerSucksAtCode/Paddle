@@ -139,6 +139,9 @@ final class AddressSuggestions {
             guard tab !== current, let url = tab.url, HistoryStore.isRecordable(url) else { return nil }
             return SuggestionSource(kind: .openTab(tab.id), title: tab.displayTitle, url: url.absoluteString)
         }
+        pages += app.bookmarks.tree.search(query).prefix(20).compactMap { bookmark in
+            bookmark.url.map { SuggestionSource(kind: .bookmark, title: bookmark.title, url: $0) }
+        }
         let now = Date()
         if let entries = try? app.history?.search(query, limit: 30, now: now) {
             pages += entries.map {
@@ -198,10 +201,16 @@ private struct SuggestionRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 12))
-                .frame(width: 16)
-                .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            Group {
+                if let url = row.url.flatMap(URL.init(string:)), row.kind != .url {
+                    FaviconView(url: url, fallback: icon, size: 14, fallbackStyle: highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 12))
+                        .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                }
+            }
+            .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(row.title)
                     .font(.system(size: 13))

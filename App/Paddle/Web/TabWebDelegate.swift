@@ -263,6 +263,10 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         recordInHistory(url, webView, typed: false)
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        Task { await AppModel.shared.favicons.refresh(for: webView) }
+    }
+
     // MARK: - Failures
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {

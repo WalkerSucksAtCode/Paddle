@@ -126,6 +126,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
+
+    // MARK: - Bookmarks
+
+    @objc func paddleToggleBookmark(_ sender: Any?) {
+        guard let tab, let url = tab.url, HistoryStore.isRecordable(url) else { return }
+        AppModel.shared.bookmarks.toggle(url: url, title: tab.title)
+    }
     @objc func paddleForward(_ sender: Any?) { webView?.goForward() }
 
     // MARK: - Find
@@ -172,6 +179,10 @@ extension BrowserWindowController: NSMenuItemValidation {
              #selector(paddleZoomIn(_:)), #selector(paddleZoomOut(_:)), #selector(paddleActualSize(_:)),
              #selector(paddleWebInspector(_:)):
             return webView != nil
+        case #selector(paddleToggleBookmark(_:)):
+            let bookmarked = AppModel.shared.bookmarks.isBookmarked(tab?.url)
+            menuItem.title = bookmarked ? "Remove Bookmark" : "Bookmark This Page"
+            return tab?.url.map(HistoryStore.isRecordable) ?? false
         case #selector(paddleSelectTab(_:)):
             return menuItem.tag == 9 ? !model.tabs.isEmpty : model.tabs.count >= menuItem.tag
         default:

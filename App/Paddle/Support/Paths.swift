@@ -14,12 +14,14 @@ enum Paths {
     static let userFilters = support.appending(path: "user-filters.txt")
     static let session = support.appending(path: "session.json")
     static let history = support.appending(path: "history.sqlite")
+    static let bookmarks = support.appending(path: "bookmarks.json")
+    static let favicons = support.appending(path: "favicons", directoryHint: .isDirectory)
     static let compiledRules = support.appending(path: "compiled-rules", directoryHint: .isDirectory)
 
     /// Creates the folder layout and starter files on first launch. Never overwrites existing files.
     static func ensure() {
         let fm = FileManager.default
-        for dir in [support, userScripts, filters, compiledRules] {
+        for dir in [support, userScripts, filters, compiledRules, favicons] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         if !fm.fileExists(atPath: config.path), let data = try? PaddleConfig().encoded() {

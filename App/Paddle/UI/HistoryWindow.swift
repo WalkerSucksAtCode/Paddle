@@ -76,7 +76,7 @@ private struct HistoryView: View {
                 list
             }
             Divider()
-            Text("\(pageCount.formatted()) pages")
+            Text(pageCount == 1 ? "1 page" : "\(pageCount.formatted()) pages")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,6 +115,7 @@ private struct HistoryView: View {
 
     private func row(_ visit: HistoryVisit) -> some View {
         HStack(spacing: 8) {
+            FaviconView(url: URL(string: visit.url))
             VStack(alignment: .leading, spacing: 1) {
                 Text(visit.title.isEmpty ? SuggestionRanker.displayURL(visit.url) : visit.title)
                     .lineLimit(1)
@@ -165,7 +166,7 @@ private struct HistoryView: View {
     private func open(_ ids: Set<Int64>, newTab: Bool) {
         let urls = urls(ids)
         for (index, url) in urls.enumerated() {
-            AppModel.shared.openFromHistory(url, newTab: newTab || index > 0)
+            AppModel.shared.openInFrontWindow(url, newTab: newTab || index > 0)
         }
     }
 

@@ -1,0 +1,192 @@
+import AppKit
+import os
+import PaddleCore
+import SwiftUI
+import WebKit
+
+/// Site icons for tabs, bookmarks, suggestions and history: one 32 px PNG per site in favicons/, refetched
+/// weekly when a page from that site finishes loading. WebKit loads and decodes the icon (size-capped, through its
+/// own networking, in its sandboxed web process), so Paddle never parses page-chosen image bytes itself.
+@Observable
+final class FaviconStore {
+    /// Loaded icons by site key. Observed, so views redraw when an icon arrives.
+    private var images: [String: NSImage] = [:]
+    @ObservationIgnored private var fetchedAt: [String: Date] = [:]
+    @ObservationIgnored private var missing: Set<String> = []
+    @ObservationIgnored private var pendingDiskLoads: Set<String> = []
+    @ObservationIgnored private var inFlight: Set<String> = []
+    private let log = Logger(subsystem: "com.walker.Paddle", category: "favicons")
+
+    private static let maxBytes = 512 * 1024
+    private static let pixels: CGFloat = 32
+    private static let loadSelector = NSSelectorFromString("_loadAndDecodeImage:constrainedToSize:maximumBytesFromNetwork:completionHandler:")
+
+    /// The page's icon links, its address, the hosts it loaded resources from and its user agent.
+    private struct PageIcons: Decodable {
+        var icons: [IconCandidate]
+        var href: String
+        var hosts: [String]
+        var userAgent: String
+    }
+
+    private static let pageScript = """
+        return JSON.stringify({
+            icons: JSON.parse(\(FaviconPicker.collectScript)),
+            href: location.href,
+            hosts: Array.from(new Set(performance.getEntriesByType('resource').map(function (entry) {
+                try { return new URL(entry.name).hostname; } catch (e) { return ''; }
+            }))),
+            userAgent: navigator.userAgent
+        })
+        """
+
+    /// The icon for `url`'s site if Paddle has one. A miss starts a disk load (never a network fetch) and the
+    /// view redraws when it lands, so this is safe to call while drawing.
+    func image(for url: URL?) -> NSImage? {
+        guard let url, let key = FaviconPicker.cacheKey(for: url) else { return nil }
+        if let image = images[key] { return image }
+        if !missing.contains(key), pendingDiskLoads.insert(key).inserted {
+            DispatchQueue.main.async { [weak self] in self?.loadFromDisk(key) }
+        }
+        return nil
+    }
+
+    /// For menus, which don't redraw when an icon arrives: a miss reads the disk right away.
+    func cachedImage(for url: URL) -> NSImage? {
+        guard let key = FaviconPicker.cacheKey(for: url) else { return nil }
+        if images[key] == nil, !missing.contains(key) { loadFromDisk(key) }
+        return images[key]
+    }
+
+    /// Called when a page finishes loading: fetches its site's icon unless a fresh one is on disk. With history
+    /// off, icons are kept on disk only for sites you have bookmarked.
+    func refresh(for webView: WKWebView) async {
+        guard let url = webView.url, HistoryStore.isRecordable(url), webView.responds(to: Self.loadSelector) else { return }
+        // Read from an isolated script world, out of the page's reach. The address comes from the document
+        // itself, so a navigation starting meanwhile can't file this icon under another site.
+        guard let raw = try? await webView.callAsyncJavaScript(Self.pageScript, contentWorld: .defaultClient) as? String,
+              let page = try? JSONDecoder().decode(PageIcons.self, from: Data(raw.utf8)),
+              let pageURL = URL(string: page.href), HistoryStore.isRecordable(pageURL),
+              let key = FaviconPicker.cacheKey(for: pageURL) else { return }
+        if images[key] == nil { loadFromDisk(key) }
+        if let date = fetchedAt[key], !FaviconPicker.isStale(fetchedAt: date, now: Date()) { return }
+        guard inFlight.insert(key).inserted else { return }
+        defer { inFlight.remove(key) }
+
+        // Only from hosts the page already loaded from (so the content blockers allowed them), else the site's
+        // own /favicon.ico, which is also the fallback when the chosen icon fails.
+        let allowed = Set((page.hosts + [pageURL.host() ?? ""]).map { $0.lowercased() })
+        var choices: [URL] = []
+        if let best = FaviconPicker.bestIcon(page.icons, pageURL: pageURL),
+           best.scheme == "data" || allowed.contains(best.host()?.lowercased() ?? "") {
+            choices.append(best)
+        }
+        if let fallback = FaviconPicker.bestIcon([], pageURL: pageURL), !choices.contains(fallback) {
+            choices.append(fallback)
+        }
+        var icon: NSImage?
+        for choice in choices where icon == nil {
+            icon = await Self.load(choice, userAgent: page.userAgent, in: webView)
+        }
+        fetchedAt[key] = Date()   // found or not, try again next week, not on every load
+        guard let icon, let png = Self.png(icon), let image = Self.image(png) else {
+            log.info("no usable icon for \(key, privacy: .public)")
+            return
+        }
+        images[key] = image
+        missing.remove(key)
+        guard AppModel.shared.history != nil || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
+        do {
+            try FileManager.default.createDirectory(at: Paths.favicons, withIntermediateDirectories: true)
+            try png.write(to: Paths.favicons.appending(path: FaviconPicker.fileName(forKey: key)), options: .atomic)
+        } catch {
+            log.error("icon write failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// History > Clear History: drops icons fetched since `date` (all when nil), except for sites in `keeping`.
+    func forget(since date: Date?, keeping keys: Set<String>) {
+        let kept = Set(keys.map(FaviconPicker.fileName(forKey:)))
+        let files = (try? FileManager.default.contentsOfDirectory(at: Paths.favicons, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for file in files where !kept.contains(file.lastPathComponent) {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantFuture
+            if date.map({ modified >= $0 }) ?? true { try? FileManager.default.removeItem(at: file) }
+        }
+        images = images.filter { keys.contains($0.key) }
+        fetchedAt = fetchedAt.filter { keys.contains($0.key) }
+        missing.removeAll()
+    }
+
+    private func loadFromDisk(_ key: String) {
+        pendingDiskLoads.remove(key)
+        let file = Paths.favicons.appending(path: FaviconPicker.fileName(forKey: key))
+        guard let data = try? Data(contentsOf: file), let image = Self.image(data) else {
+            missing.insert(key)
+            return
+        }
+        images[key] = image
+        let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        fetchedAt[key] = modified
+    }
+
+    /// A stored 32 px icon, sized 16 pt so it is crisp on 2x screens (menus use the size as is).
+    private static func image(_ png: Data) -> NSImage? {
+        guard let image = NSImage(data: png) else { return nil }
+        image.size = NSSize(width: 16, height: 16)
+        return image
+    }
+
+    /// WebKit's image loader (private API, guarded by the caller): loads with the page's networking and cookies,
+    /// gives up past `maxBytes` and decodes in the web content process. It would send WebKit's networking user
+    /// agent, so the page's is set instead.
+    private static func load(_ url: URL, userAgent: String, in webView: WKWebView) async -> NSImage? {
+        typealias Load = @convention(c) (WKWebView, Selector, NSURLRequest, CGSize, Int, @escaping @convention(block) (NSImage?, NSError?) -> Void) -> Void
+        let load = unsafeBitCast(webView.method(for: loadSelector), to: Load.self)
+        var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 15)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        return await withCheckedContinuation { continuation in
+            load(webView, loadSelector, request as NSURLRequest, CGSize(width: pixels, height: pixels), maxBytes) { image, _ in
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
+    /// Redraws the icon at 32 px and encodes it as PNG.
+    private static func png(_ image: NSImage) -> Data? {
+        guard image.size.width > 0, image.size.height > 0,
+              let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(pixels), pixelsHigh: Int(pixels), bitsPerSample: 8,
+                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+              ) else { return nil }
+        rep.size = NSSize(width: pixels, height: pixels)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
+    }
+}
+
+/// A site's icon, or an SF Symbol until Paddle has one.
+struct FaviconView: View {
+    let url: URL?
+    var fallback = "globe"
+    var size: CGFloat = 14
+    var fallbackStyle = AnyShapeStyle(.secondary)
+
+    var body: some View {
+        if let image = AppModel.shared.favicons.image(for: url) {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 2))
+        } else {
+            Image(systemName: fallback)
+                .font(.system(size: size * 0.8))
+                .foregroundStyle(fallbackStyle)
+                .frame(width: size, height: size)
+        }
+    }
+}

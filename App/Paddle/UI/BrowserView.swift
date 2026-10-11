@@ -1,4 +1,5 @@
 import AppKit
+import PaddleCore
 import SwiftUI
 
 struct BrowserView: View {
@@ -10,8 +11,11 @@ struct BrowserView: View {
             TabStrip(model: model)
                 .frame(height: 38)
             NavigationBar(model: model, app: app)
-                // The suggestion dropdown hangs below the bar, over the page.
+                // The suggestion dropdown hangs below the bar, over the page and the bookmarks bar.
                 .zIndex(1)
+            if app.showBookmarksBar {
+                BookmarksBar(app: app)
+            }
             if let error = app.configError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 11))
@@ -187,10 +191,8 @@ private struct TabButton: View {
                 Image(systemName: "video.fill")
             } else if !tab.isAwake {
                 Image(systemName: "moon.zzz")
-            } else if tab.isPinned {
-                Image(systemName: "pin.fill")
             } else {
-                Image(systemName: "globe")
+                FaviconView(url: tab.url, fallback: tab.isPinned ? "pin.fill" : "globe")
             }
         }
         .font(.system(size: 11))
@@ -279,8 +281,23 @@ private struct NavigationBar: View {
                     addressFocused = false
                     model.controller?.focusWebView()
                 }
+            if let url = tab?.url, HistoryStore.isRecordable(url), !addressFocused {
+                let bookmarked = app.bookmarks.isBookmarked(url)
+                Button {
+                    app.bookmarks.toggle(url: url, title: tab?.title ?? "")
+                } label: {
+                    Image(systemName: bookmarked ? "star.fill" : "star")
+                        .font(.system(size: 12))
+                        .foregroundStyle(bookmarked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help(bookmarked ? "Remove Bookmark" : "Bookmark This Page (⌘D)")
+            }
         }
-        .padding(.horizontal, 10)
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
         .frame(height: 28)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
         .overlay(alignment: .topLeading) {

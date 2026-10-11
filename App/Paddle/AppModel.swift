@@ -16,6 +16,12 @@ final class AppModel {
     private(set) var configError: String?
     let web = WebEnvironment()
     let downloads = DownloadStore()
+    let bookmarks = BookmarkStore()
+    let favicons = FaviconStore()
+    /// Bookmarks > Show/Hide Bookmarks Bar. Window state, so it lives in user defaults rather than config.json.
+    var showBookmarksBar = UserDefaults.standard.object(forKey: "showBookmarksBar") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showBookmarksBar, forKey: "showBookmarksBar") }
+    }
     /// Browsing history (history.sqlite); nil when historyDays is 0 or the database can't be opened.
     @ObservationIgnored private(set) var history: HistoryStore?
     /// Bumped whenever history changes, so an open History window refreshes.
@@ -43,6 +49,7 @@ final class AppModel {
         Paths.ensure()
         loadConfig()
         openHistory()
+        bookmarks.load()
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         await web.loadContentBlockers()
@@ -61,6 +68,7 @@ final class AppModel {
 
     func willTerminate() {
         downloads.discardRunning()
+        bookmarks.saveNow()
         saveSessionNow()
     }
 
@@ -80,6 +88,7 @@ final class AppModel {
     func reloadConfig() async {
         loadConfig()
         openHistory()
+        bookmarks.load()
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         await web.loadContentBlockers()
@@ -154,8 +163,9 @@ final class AppModel {
         historyGeneration += 1
     }
 
-    /// Opens a history page in the front window: in its current tab, or a new tab. No window: a new one.
-    func openFromHistory(_ url: URL, newTab: Bool) {
+    /// Opens a page from history or bookmarks in the front window: in its current tab, or a background tab.
+    /// No window: a new one.
+    func openInFrontWindow(_ url: URL, newTab: Bool) {
         guard let front = frontWindow else {
             openWindow(url: url)
             return
@@ -174,6 +184,7 @@ final class AppModel {
         defer { historyGeneration += 1 }
         windows.forEach { $0.model.forgetClosedTabs() }
         saveSessionNow()
+        favicons.forget(since: date, keeping: bookmarks.siteKeys)
         do {
             if let history {
                 if let date { try history.removeVisits(since: date) } else { try history.removeAll() }

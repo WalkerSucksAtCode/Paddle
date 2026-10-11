@@ -75,6 +75,16 @@ enum MainMenu {
         add(history, "clearHistory", "Clear History…", #selector(AppDelegate.paddleClearHistory(_:)), "", target: appDelegate)
         history.delegate = HistoryMenuDelegate.shared
 
+        let bookmarks = submenu(main, "Bookmarks")
+        add(bookmarks, "addBookmark", "Bookmark This Page", #selector(BrowserWindowController.paddleToggleBookmark(_:)), "d")
+        add(bookmarks, "showBookmarks", "Show Bookmarks", #selector(AppDelegate.paddleShowBookmarks(_:)), "b", [.command, .option], target: appDelegate)
+        add(bookmarks, "toggleBookmarksBar", "Hide Bookmarks Bar", #selector(AppDelegate.paddleToggleBookmarksBar(_:)), "b", [.command, .shift], target: appDelegate)
+        bookmarks.addItem(.separator())
+        add(bookmarks, "importBookmarks", "Import Bookmarks…", #selector(AppDelegate.paddleImportBookmarks(_:)), "", target: appDelegate)
+        add(bookmarks, "exportBookmarks", "Export Bookmarks…", #selector(AppDelegate.paddleExportBookmarks(_:)), "", target: appDelegate)
+        // Bookmarks themselves are listed below, filled in by BookmarksMenuDelegate when the menu opens.
+        bookmarks.delegate = BookmarksMenuDelegate.shared
+
         let tabs = submenu(main, "Tabs")
         add(tabs, "nextTab", "Show Next Tab", #selector(BrowserWindowController.paddleNextTab(_:)), "\t", [.control])
         hidden(tabs, "Show Next Tab", #selector(BrowserWindowController.paddleNextTab(_:)), "]", [.command, .shift])
