@@ -78,11 +78,107 @@ struct FilterListConverterTests {
         example.com#?#div:has-text(Sponsored)
         ||x.test^$redirect=noop.js
         ||y.test^$csp=script-src 'none'
+        ||z.test^$replace=/ads/news/
+        ||w.test^$csp=default-src 'self' https://w.test
+        /ads(?=x)/
         ||ok.test^
         """
         let result = FilterListConverter.convert(text)
-        #expect(result.ruleCount == 1)
+        // ok.test, the translated regex; `#@#` is an exception, not a rule.
+        #expect(result.ruleCount == 2)
         #expect(result.skippedLines == 6)
+        #expect(result.regexTranslated == 1)
+        #expect(result.regexRefused == 1)
+        // Options holding "/" are options, not part of a URL pattern.
+        #expect(!result.json.contains("replace"))
+        #expect(!result.json.contains("default-src"))
+    }
+
+    @Test func regexRulesKeepTheirOptions() throws {
+        let r = try rules(#"/ads\d{1,2}\.js$/$script,domain=a.test"# + "\n" + #"@@/(good|fine)\.test\/x/"#)
+        #expect(r.count == 3)
+        #expect(trigger(r[0])["url-filter"] as? String == #"ads[0-9][0-9]?\.js$"#)
+        #expect(trigger(r[0])["resource-type"] as? [String] == ["script"])
+        #expect(trigger(r[0])["if-domain"] as? [String] == ["*a.test"])
+        #expect(r[1...].allSatisfy { action($0)["type"] as? String == "ignore-previous-rules" })
+        #expect(r[1...].compactMap { trigger($0)["url-filter"] as? String } == [#"good\.test/x"#, #"fine\.test/x"#])
+        // A regex that matches every URL needs something to narrow it, like a plain `*` rule.
+        #expect(FilterListConverter.convert("/.*/").regexRefused == 1)
+        #expect(FilterListConverter.convert("/.*/$script").regexTranslated == 1)
+    }
+
+    /// `#@#` on a generic selector: the selector leaves the shared chunk for a rule of its own that skips the
+    /// excepted domains (subdomains included).
+    @Test func genericCosmeticExceptionBecomesUnlessDomainRule() throws {
+        let text = """
+        ##.ad
+        ##.banner
+        ##.promo
+        a.test,b.test#@#.banner
+        c.test#@#.banner
+        #@#.promo
+        """
+        let r = try rules(text)
+        #expect(r.count == 2)
+        #expect(action(r[0])["selector"] as? String == ".ad")
+        #expect(trigger(r[0])["unless-domain"] == nil)
+        #expect(action(r[1])["selector"] as? String == ".banner")
+        #expect(action(r[1])["type"] as? String == "css-display-none")
+        #expect(trigger(r[1])["unless-domain"] as? [String] == ["*a.test", "*b.test", "*c.test"])
+        #expect(!FilterListConverter.convert(text).json.contains("promo"))  // excepted everywhere
+        #expect(FilterListConverter.convert(text).skippedLines == 0)
+    }
+
+    /// A per-domain `##` that a `#@#` touches (same domain, parent or subdomain) is dropped for that domain list;
+    /// an exception for an unrelated site leaves it alone.
+    @Test func domainCosmeticExceptionDropsTheSelectorForThatKey() throws {
+        let text = """
+        site.test##.x
+        site.test##.y
+        other.test##.y
+        ~skip.test##.z
+        sub.site.test#@#.x
+        elsewhere.test#@#.y
+        else.test#@#.z
+        """
+        let r = try rules(text)
+        let selectors = r.map { (action($0)["selector"] as? String ?? "", trigger($0)) }
+        #expect(selectors.count == 3)
+        #expect(selectors[0].0 == ".y" && selectors[0].1["if-domain"] as? [String] == ["*site.test"])
+        #expect(selectors[1].0 == ".y" && selectors[1].1["if-domain"] as? [String] == ["*other.test"])
+        #expect(selectors[2].0 == ".z" && selectors[2].1["unless-domain"] as? [String] == ["*skip.test", "*else.test"])
+    }
+
+    /// The user's `@@` and `#@#` lines ride at the end of another list; the cache fingerprint follows them.
+    @Test func sharedExceptionsAreAppendedToEveryList() throws {
+        let shared = SharedExceptions(userFilters: "! mine\n@@||ads.test^\nsite.test#@#.ad\n||blocked.test^")
+        let result = FilterListConverter.convert("||ads.test^\n##.ad\n@@||own.test^", shared: shared)
+        let r = try #require(JSONSerialization.jsonObject(with: Data(result.json.utf8)) as? [[String: Any]])
+        #expect(r.count == 4)
+        #expect(action(r[0])["type"] as? String == "block")
+        #expect(trigger(r[1])["unless-domain"] as? [String] == ["*site.test"])
+        #expect((trigger(r[2])["url-filter"] as? String)?.contains("own") == true)
+        #expect(action(r[3])["type"] as? String == "ignore-previous-rules")
+        #expect((trigger(r[3])["url-filter"] as? String)?.contains(#"ads\.test"#) == true)
+        #expect(!result.json.contains("blocked"))  // only exceptions are shared
+
+        #expect(SharedExceptions.none.fingerprint.isEmpty)
+        #expect(SharedExceptions(userFilters: "||only-blocks.test^\n##.x").fingerprint.isEmpty)
+        #expect(shared.fingerprint == SharedExceptions(userFilters: "site.test#@#.ad\n@@||ads.test^").fingerprint)
+        #expect(shared.fingerprint != SharedExceptions(userFilters: "@@||ads.test^").fingerprint)
+        // user-filters.txt already holds its own exceptions.
+        #expect(shared.forUserFilters.isEmpty)
+    }
+
+    @Test func blockingOffHostsBecomeSiteExceptions() throws {
+        let shared = SharedExceptions(userFilters: "", blockingOffHosts: ["News.Test.", "bad host", "a.test"])
+        let r = try rules("||ads.test^").count
+        let result = FilterListConverter.convert("||ads.test^", shared: shared)
+        let json = try #require(JSONSerialization.jsonObject(with: Data(result.json.utf8)) as? [[String: Any]])
+        #expect(json.count == r + 2)
+        #expect(json[1...].map { trigger($0)["if-domain"] as? [String] } == [["*a.test"], ["*news.test"]])
+        #expect(json[1...].allSatisfy { action($0)["type"] as? String == "ignore-previous-rules" })
+        #expect(shared.forUserFilters.fingerprint == shared.fingerprint)
     }
 
     /// `{style}` and `:style(` lines inject CSS; they are counted apart and must never become `display: none`
@@ -197,6 +293,16 @@ struct FilterListConverterTests {
         #expect(list != nil)
     }
 
+    /// `~a.com#@#.foo` has no positive domain; it must not leave an empty `unless-domain` that WebKit rejects.
+    @MainActor
+    @Test func negatedOnlyCosmeticExceptionCompiles() async throws {
+        let result = FilterListConverter.convert("##.foo\n~a.com#@#.foo")
+        #expect(!result.json.contains("\"unless-domain\":[]"))
+        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let list = try await store.compileContentRuleList(forIdentifier: "test", encodedContentRuleList: result.json)
+        #expect(list != nil)
+    }
+
     /// A chunk with one selector WebKit's parser refuses, validated by that parser (`document.querySelector` in a
     /// windowless web view, as the app does): the bad one goes, the neighbours stay in the JSON, and WebKit
     /// compiles the result. Unvalidated, WebKit would drop the whole chunk and the neighbours with it.
@@ -222,6 +328,82 @@ struct FilterListConverterTests {
         let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
         let list = try await store.compileContentRuleList(forIdentifier: "validated", encodedContentRuleList: result.json)
         #expect(list != nil)
+    }
+
+    /// Every EasyList regex rule, translated and compiled by WebKit in well under the time a list reload can spare.
+    @MainActor
+    @Test func easyListRegexSetCompilesQuickly() async throws {
+        let start = ContinuousClock.now
+        let result = FilterListConverter.convert(easyListRegexRules)
+        #expect(result.regexTranslated + result.regexRefused == 22)
+        #expect(result.regexTranslated > 0)
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try #require(WKContentRuleListStore(url: directory))
+        let list = try await store.compileContentRuleList(forIdentifier: "regex", encodedContentRuleList: result.json)
+        #expect(list != nil)
+        #expect(ContinuousClock.now - start < .seconds(5))
+    }
+
+    /// The cross-list fix, end to end in a windowless web view: "another list" blocks `ads.test`, and the user's
+    /// `@@||ads.test^` only un-blocks it once appended to that list. Loads go through a scheme handler, which
+    /// sees exactly the requests WebKit did not block.
+    @MainActor
+    @Test func userExceptionUnblocksAnotherListsBlock() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try #require(WKContentRuleListStore(url: directory))
+        let userText = "@@||ads.test^"
+        let shared = SharedExceptions(userFilters: userText)
+        let user = try #require(try await store.compileContentRuleList(
+            forIdentifier: "user", encodedContentRuleList: FilterListConverter.convert(userText, shared: shared.forUserFilters).json))
+        let other = try #require(try await store.compileContentRuleList(
+            forIdentifier: "other", encodedContentRuleList: FilterListConverter.convert("||ads.test^").json))
+        let otherShared = try #require(try await store.compileContentRuleList(
+            forIdentifier: "other-shared", encodedContentRuleList: FilterListConverter.convert("||ads.test^", shared: shared).json))
+
+        // Without the shared exceptions the user's own list cannot help: the other list still blocks.
+        #expect(try await Self.requestedHosts(lists: [other, user]) == ["site.test"])
+        #expect(try await Self.requestedHosts(lists: [otherShared, user]) == ["site.test", "ads.test"])
+    }
+
+    /// Loads a page from `paddle-test://site.test/` that pulls a script from `paddle-test://ads.test/`, with `lists`
+    /// installed, and returns the hosts the scheme handler was asked for, in order.
+    @MainActor
+    static func requestedHosts(lists: [WKContentRuleList]) async throws -> [String] {
+        let handler = RecordingSchemeHandler()
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(handler, forURLScheme: "paddle-test")
+        for list in lists { configuration.userContentController.add(list) }
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.load(URLRequest(url: URL(string: "paddle-test://site.test/index.html")!))
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(50))
+            if (try? await webView.evaluateJavaScript("window.done === true") as? Bool) == true { break }
+        }
+        #expect((try? await webView.evaluateJavaScript("window.done === true") as? Bool) == true)
+        return handler.hosts
+    }
+
+    @MainActor
+    final class RecordingSchemeHandler: NSObject, WKURLSchemeHandler {
+        var hosts: [String] = []
+
+        func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
+            let url = task.request.url!
+            hosts.append(url.host() ?? "")
+            let isPage = url.host() == "site.test"
+            let body = isPage
+                ? #"<script src="paddle-test://ads.test/ad.js" onload="window.done = true" onerror="window.done = true"></script>"#
+                : "window.adLoaded = true;"
+            task.didReceive(URLResponse(url: url, mimeType: isPage ? "text/html" : "text/javascript",
+                                        expectedContentLength: body.utf8.count, textEncodingName: "utf-8"))
+            task.didReceive(Data(body.utf8))
+            task.didFinish()
+        }
+
+        func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {}
     }
 
     @MainActor

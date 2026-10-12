@@ -62,6 +62,13 @@ final class FaviconStore {
     /// off, icons are kept on disk only for sites you have bookmarked.
     func refresh(for webView: WKWebView) async {
         guard let url = webView.url, HistoryStore.isRecordable(url), webView.responds(to: Self.loadSelector) else { return }
+        // Most loads are on a site whose icon is fresh or already being fetched: settle that from the address
+        // before running a script in the page. The document's own address below still decides where an icon goes.
+        if let key = FaviconPicker.cacheKey(for: url) {
+            if images[key] == nil, !missing.contains(key) { loadFromDisk(key) }
+            if let date = fetchedAt[key], !FaviconPicker.isStale(fetchedAt: date, now: Date()) { return }
+            if inFlight.contains(key) { return }
+        }
         // Read from an isolated script world, out of the page's reach. The address comes from the document
         // itself, so a navigation starting meanwhile can't file this icon under another site.
         guard let raw = try? await webView.callAsyncJavaScript(Self.pageScript, contentWorld: .defaultClient) as? String,

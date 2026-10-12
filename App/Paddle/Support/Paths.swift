@@ -13,6 +13,8 @@ enum Paths {
     static let filters = support.appending(path: "filters", directoryHint: .isDirectory)
     static let userFilters = support.appending(path: "user-filters.txt")
     static let session = support.appending(path: "session.json")
+    /// Each saved tab's back/forward state, `<tab id>.state`, named from session.json (`SessionStore`).
+    static let sessions = support.appending(path: "sessions", directoryHint: .isDirectory)
     static let history = support.appending(path: "history.sqlite")
     static let bookmarks = support.appending(path: "bookmarks.json")
     static let favicons = support.appending(path: "favicons", directoryHint: .isDirectory)
@@ -45,7 +47,7 @@ enum Paths {
         ! Your own blocking rules, Adblock Plus syntax. Paddle > Reload Config to apply.
         ! ||annoying-widget.example^         block a host
         ! example.com##.newsletter-popup     hide an element on one site
-        ! @@||mybank.example^$document       exception: cancels only rules in this file, not the downloaded lists
+        ! @@||mybank.example^$document       exception: no blocking on that site, in every list (EasyList too)
 
         """)
     }

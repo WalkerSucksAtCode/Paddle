@@ -21,6 +21,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var maxAwakeTabs: Int
     /// Pinned tabs never sleep unless this is true.
     public var sleepPinnedTabs: Bool
+    /// Tabs whose back/forward history the saved session keeps: the most recently used ones, plus pinned tabs. The
+    /// others come back on their page with no Back history.
+    public var sessionHistoryTabs: Int
 
     /// Ad and tracker blocking with the lists below plus `user-filters.txt`.
     public var contentBlocking: Bool
@@ -61,7 +64,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs
+        case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays
         case userAgentSuffix, siteUserAgents, sites
         case showTabMemory, developerTools
@@ -78,6 +81,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         tabSleepAfterMinutes: Double = 30,
         maxAwakeTabs: Int = 10,
         sleepPinnedTabs: Bool = false,
+        sessionHistoryTabs: Int = 30,
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
         filterUpdateDays: Int = 7,
@@ -98,6 +102,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.tabSleepAfterMinutes = tabSleepAfterMinutes
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
+        self.sessionHistoryTabs = sessionHistoryTabs
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
         self.filterUpdateDays = filterUpdateDays
@@ -122,6 +127,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         tabSleepAfterMinutes = try c.decodeIfPresent(Double.self, forKey: .tabSleepAfterMinutes) ?? d.tabSleepAfterMinutes
         maxAwakeTabs = try c.decodeIfPresent(Int.self, forKey: .maxAwakeTabs) ?? d.maxAwakeTabs
         sleepPinnedTabs = try c.decodeIfPresent(Bool.self, forKey: .sleepPinnedTabs) ?? d.sleepPinnedTabs
+        sessionHistoryTabs = try c.decodeIfPresent(Int.self, forKey: .sessionHistoryTabs) ?? d.sessionHistoryTabs
         contentBlocking = try c.decodeIfPresent(Bool.self, forKey: .contentBlocking) ?? d.contentBlocking
         filterLists = try c.decodeIfPresent([String].self, forKey: .filterLists) ?? d.filterLists
         filterUpdateDays = try c.decodeIfPresent(Int.self, forKey: .filterUpdateDays) ?? d.filterUpdateDays

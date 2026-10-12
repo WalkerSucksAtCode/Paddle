@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Websites you allow can use the camera.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Websites you allow can use your location.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Websites you allow can use your location.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Websites you allow can use the microphone.</string>
 	<key>CFBundleURLTypes</key>

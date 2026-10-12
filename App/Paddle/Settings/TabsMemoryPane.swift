@@ -17,6 +17,15 @@ struct TabsMemoryPane: View {
                     set: { value in Task { await model.saveKey(.sleepPinnedTabs, .bool(value)) } }
                 ))
                 .help("sleepPinnedTabs in config.json")
+                Picker("Save Back history for", selection: Binding(
+                    get: { model.file.sessionHistoryTabs },
+                    set: { value in Task { await model.saveKey(.sessionHistoryTabs, .number(Double(value))) } }
+                )) {
+                    ForEach(Set([0, 10, 30, 50, 100, model.file.sessionHistoryTabs]).sorted(), id: \.self) { count in
+                        Text(count == 0 ? "Pinned tabs only" : "\(count) most recent tabs, plus pinned").tag(count)
+                    }
+                }
+                .help("sessionHistoryTabs in config.json: other tabs reopen at next launch on their page, with no Back history")
                 SettingsCaption("A sleeping tab's web process exits; the tab reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake.")
             }
             .disabled(model.controlsDisabled)

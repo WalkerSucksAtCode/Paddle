@@ -49,6 +49,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let byUser = Self.isUserInitiated(navigationAction)
         if isMainFrame {
             mainFrameNavigationType = navigationAction.navigationType
+            mainFrameIsPost = navigationAction.request.httpMethod?.uppercased() == "POST"
             mainFrameResponded = false
         }
 
@@ -91,9 +92,36 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
 
         if isMainFrame, let host = url.host() {
+            if Self.isWebPage(url) { Self.apply(AppModel.shared.config.sitePolicy(forHost: host), to: preferences) }
             return (applySiteUserAgent(for: host, navigationAction, preferences, in: webView) ? .allow : .cancel, preferences)
         }
         return (.allow, preferences)
+    }
+
+    private static let setAutoplayPolicy = NSSelectorFromString("_setAutoplayPolicy:")
+
+    /// WebKit's private per-navigation autoplay policy (`WKWebpagePreferences._autoplayPolicy`) exists. Without it
+    /// every site gets the configuration's default (media may autoplay muted) and per-site autoplay does nothing.
+    static let supportsSiteAutoplay = WKWebpagePreferences.instancesRespond(to: setAutoplayPolicy)
+
+    /// The host's `sites` settings for this main-frame navigation only: JavaScript, and autoplay where WebKit has
+    /// the private policy. Zoom is set when the page commits (`Tab.applySiteZoom`); content blocking is compiled
+    /// into the block lists (`WebEnvironment.performBlockerLoad`).
+    private static func apply(_ policy: SitePolicy, to preferences: WKWebpagePreferences) {
+        preferences.allowsContentJavaScript = policy.javaScript
+        guard supportsSiteAutoplay else { return }
+        // `_WKWebsiteAutoplayPolicy`: 0 is the configuration's default (sound waits for a click or key, the "muted"
+        // setting), 1 allows sound, 3 denies all autoplay. WebKit uses a non-default value instead of the
+        // configuration's `mediaTypesRequiringUserActionForPlayback`.
+        let value: Int
+        switch policy.autoplay {
+        case .muted: value = 0
+        case .allow: value = 1
+        case .block: value = 3
+        }
+        typealias SetPolicy = @convention(c) (AnyObject, Selector, Int) -> Void
+        let set = unsafeBitCast(preferences.method(for: setAutoplayPolicy), to: SetPolicy.self)
+        set(preferences, setAutoplayPolicy, value)
     }
 
     private static let setCustomUserAgent = NSSelectorFromString("_setCustomUserAgent:")
@@ -171,23 +199,18 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private func allowsDownloads(from site: String, filename: String) async -> Bool {
-        let key = "download \(site)"
-        if AppModel.shared.grantedPermissions.contains(key) { return true }
-        if AppModel.shared.refusedPermissions.contains(key) { return false }
+        let app = AppModel.shared
+        let isPrivate = tab?.isPrivate ?? true
+        if let answer = app[permissionsFor: isPrivate].answer(site: site, kind: .downloads) { return answer }
         let alert = NSAlert()
         alert.messageText = "Allow downloads from \(site)?"
         alert.informativeText = "A frame from \(site) on this page wants to download “\(filename)”."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
-        let app = AppModel.shared
-        let response = await present(alert) { !app.grantedPermissions.contains(key) && !app.refusedPermissions.contains(key) }
-        if response == .abort { return app.grantedPermissions.contains(key) }
+        let response = await present(alert) { app[permissionsFor: isPrivate].answer(site: site, kind: .downloads) == nil }
+        if response == .abort { return app[permissionsFor: isPrivate].answer(site: site, kind: .downloads) ?? false }
         let allow = response == .alertFirstButtonReturn
-        if allow {
-            app.grantedPermissions.insert(key)
-        } else {
-            app.refusedPermissions.insert(key)
-        }
+        app[permissionsFor: isPrivate].record(allow, site: site, kinds: [.downloads])
         return allow
     }
 
@@ -261,9 +284,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// How the pending main-frame navigation started; reloads, back/forward and session restores aren't new visits.
     private var mainFrameNavigationType: WKNavigationType?
+    /// The pending main-frame navigation sends a form post (`Tab.committedPost`).
+    private var mainFrameIsPost = false
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         trackErrorPageItem(webView)
+        tab?.committedPost = mainFrameIsPost
         tab?.pageCommitted()
         guard let tab, let url = webView.url else { return }
         defer {
@@ -529,27 +555,74 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         initiatedBy frame: WKFrameInfo,
         type: WKMediaCaptureType
     ) async -> WKPermissionDecision {
-        let devices: [String]
+        let devices: [SessionPermissions.Kind]
         switch type {
-        case .camera: devices = ["camera"]
-        case .microphone: devices = ["microphone"]
-        default: devices = ["camera", "microphone"]
+        case .camera: devices = [.camera]
+        case .microphone: devices = [.microphone]
+        default: devices = [.camera, .microphone]
         }
-        // Granted per device, so allowing camera and microphone also covers a later microphone-only request.
-        let site = "\(origin.protocol)://\(origin.host):\(origin.port)"
-        let keys = devices.map { "\(site) \($0)" }
-        if keys.allSatisfy(AppModel.shared.grantedPermissions.contains) { return .grant }
+        // Granted per device, so allowing camera and microphone also covers a later microphone-only request. Only
+        // grants are kept: a refused site asks again next time.
+        let site = Self.site(of: origin)
+        let app = AppModel.shared
+        let isPrivate = tab?.isPrivate ?? true
+        if app[permissionsFor: isPrivate].allows(site: site, kinds: devices) { return .grant }
 
         let alert = NSAlert()
-        alert.messageText = "Allow \(origin.host) to use your \(devices.joined(separator: " and "))?"
+        alert.messageText = "Allow \(origin.host) to use your \(devices.map(\.rawValue).joined(separator: " and "))?"
         alert.informativeText = "If you allow, Paddle won’t ask again for this site until it quits."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
-        let app = AppModel.shared
-        let response = await present(alert) { !keys.allSatisfy(app.grantedPermissions.contains) }
-        if response == .abort { return keys.allSatisfy(app.grantedPermissions.contains) ? .grant : .deny }
+        let response = await present(alert) { !app[permissionsFor: isPrivate].allows(site: site, kinds: devices) }
+        if response == .abort { return app[permissionsFor: isPrivate].allows(site: site, kinds: devices) ? .grant : .deny }
         let allowed = response == .alertFirstButtonReturn
-        if allowed { app.grantedPermissions.formUnion(keys) }
+        if allowed { app[permissionsFor: isPrivate].record(true, site: site, kinds: devices) }
+        return allowed ? .grant : .deny
+    }
+
+    /// `https://example.com:443`: the key session answers for capture and location use.
+    private static func site(of origin: WKSecurityOrigin) -> String {
+        "\(origin.protocol)://\(origin.host):\(origin.port)"
+    }
+
+    /// Geolocation: `sites.<host>.location` allow or deny answers without asking. Otherwise Paddle asks once per
+    /// site per session; "Remember" also writes the answer to `sites.<host>.location` (not offered in private
+    /// windows, which write nothing to config.json). macOS then asks once whether Paddle may use Location Services.
+    func webView(
+        _ webView: WKWebView,
+        requestGeolocationPermissionFor origin: WKSecurityOrigin,
+        initiatedBy frame: WKFrameInfo
+    ) async -> WKPermissionDecision {
+        let app = AppModel.shared
+        let host = origin.host
+        switch app.config.sitePolicy(forHost: host).location {
+        case .allow: return .grant
+        case .deny: return .deny
+        case .ask: break
+        }
+        let site = Self.site(of: origin)
+        let isPrivate = tab?.isPrivate ?? true
+        if let answer = app[permissionsFor: isPrivate].answer(site: site, kind: .location) { return answer ? .grant : .deny }
+
+        let alert = NSAlert()
+        alert.messageText = "Allow \(host.isEmpty ? "this page" : host) to use your location?"
+        alert.informativeText = "Paddle won’t ask again for this site until it quits."
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Don't Allow")
+        if !isPrivate, !host.isEmpty {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "Remember for \(host)"
+            alert.suppressionButton?.state = .off
+        }
+        let response = await present(alert) { app[permissionsFor: isPrivate].answer(site: site, kind: .location) == nil }
+        if response == .abort { return app[permissionsFor: isPrivate].answer(site: site, kind: .location) == true ? .grant : .deny }
+        let allowed = response == .alertFirstButtonReturn
+        app[permissionsFor: isPrivate].record(allowed, site: site, kinds: [.location])
+        if alert.showsSuppressionButton, alert.suppressionButton?.state == .on {
+            let value: SiteSettings.Location = allowed ? .allow : .deny
+            let key = app.config.siteKey(forHost: host)
+            Task { await app.writeSiteSetting(.location, .string(value.rawValue), forKey: key) }
+        }
         return allowed ? .grant : .deny
     }
 }

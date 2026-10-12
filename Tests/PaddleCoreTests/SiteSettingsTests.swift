@@ -86,4 +86,12 @@ struct SiteSettingsTests {
         #expect(Set(coded).subtracting(documented).isEmpty, "PaddleConfig keys missing from README")
         #expect(documented.count == Set(documented).count, "duplicate README rows")
     }
+
+    @Test func userAgentPresetsRoundTripTheirStrings() {
+        for preset in UserAgentPreset.allCases {
+            #expect(UserAgentPreset(value: preset.value) == preset)
+            #expect(preset.value.hasPrefix("Mozilla/5.0 (Macintosh;"))
+        }
+        #expect(UserAgentPreset(value: "Mozilla/5.0 custom") == nil)
+    }
 }

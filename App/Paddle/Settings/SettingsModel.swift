@@ -132,6 +132,16 @@ final class SettingsModel {
         await serialized { await self.write(changes, basedOn: snapshot) }
     }
 
+    /// Saves the changes `build` makes from the bytes the write is based on, once every queued write is done: for
+    /// an edit of one member of an entry (a `sites` field) that must keep an edit queued just before it.
+    func save(building build: @escaping @MainActor (Data) -> [ConfigChange]) async {
+        await serialized {
+            let changes = build(self.base)
+            guard !changes.isEmpty else { return }
+            await self.write(changes)
+        }
+    }
+
     private func write(_ changes: [ConfigChange], basedOn snapshot: Data? = nil) async {
         guard !controlsDisabled else { return }
         switch await AppModel.shared.writeConfig(changes, base: snapshot ?? base) {

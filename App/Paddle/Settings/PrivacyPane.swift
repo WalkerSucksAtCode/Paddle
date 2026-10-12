@@ -317,7 +317,7 @@ private struct UserFilterRows: View {
         if empty {
             SettingsCaption("Your rules block nothing yet: the file is empty or only comments.")
         }
-        SettingsCaption("An @@ exception here cancels only rules in this file, not EasyList's or EasyPrivacy's.")
+        SettingsCaption("@@ and #@# exceptions here also apply to EasyList and the other lists; changing them recompiles every list.")
     }
 }
 

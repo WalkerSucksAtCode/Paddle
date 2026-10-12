@@ -6,7 +6,7 @@ import Foundation
 public struct RuleListSummary: Codable, Sendable, Equatable {
     /// WebKit rules after conversion (cosmetic rules are chunked, so this is not a line count).
     public var ruleCount: Int
-    /// Lines the converter could not express (regex rules, scriptlets, unsupported options or selectors).
+    /// Lines the converter could not express (scriptlets, unsupported options or selectors).
     public var skipped: Int
     /// `!` comment and `[Adblock …]` header lines.
     public var commentLines: Int
@@ -16,6 +16,9 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
     public var styleInjection: Int
     /// `##` selectors dropped because WebKit would have rejected them (and silently dropped their chunk-mates).
     public var invalidSelectors: Int
+    /// `/regex/` lines rewritten as url-filters, and those refused (no exact url-filter equivalent).
+    public var regexTranslated: Int
+    public var regexRefused: Int
     /// Why WebKit refused the converted JSON, when it did. Saved so the list is not converted again on every
     /// load just to fail the same way; the sidecar is keyed by list text and converter version, so a change to
     /// either retries.
@@ -26,7 +29,8 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
 
     public init(
         ruleCount: Int, skipped: Int, commentLines: Int, truncated: Bool,
-        styleInjection: Int = 0, invalidSelectors: Int = 0, compileFailure: String? = nil
+        styleInjection: Int = 0, invalidSelectors: Int = 0, regexTranslated: Int = 0, regexRefused: Int = 0,
+        compileFailure: String? = nil
     ) {
         self.ruleCount = ruleCount
         self.skipped = skipped
@@ -34,6 +38,8 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
         self.truncated = truncated
         self.styleInjection = styleInjection
         self.invalidSelectors = invalidSelectors
+        self.regexTranslated = regexTranslated
+        self.regexRefused = regexRefused
         self.compileFailure = compileFailure
     }
 
@@ -45,11 +51,13 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
             commentLines: Self.commentLineCount(text),
             truncated: result.truncated,
             styleInjection: result.styleInjection,
-            invalidSelectors: result.invalidSelectors
+            invalidSelectors: result.invalidSelectors,
+            regexTranslated: result.regexTranslated,
+            regexRefused: result.regexRefused
         )
     }
 
-    /// Sidecars written before the selector counts existed decode with zeros, so cached lists keep their line.
+    /// Sidecars written before the selector and regex counts existed decode with zeros, so cached lists keep their line.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         ruleCount = try c.decode(Int.self, forKey: .ruleCount)
@@ -58,6 +66,8 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
         truncated = try c.decode(Bool.self, forKey: .truncated)
         styleInjection = try c.decodeIfPresent(Int.self, forKey: .styleInjection) ?? 0
         invalidSelectors = try c.decodeIfPresent(Int.self, forKey: .invalidSelectors) ?? 0
+        regexTranslated = try c.decodeIfPresent(Int.self, forKey: .regexTranslated) ?? 0
+        regexRefused = try c.decodeIfPresent(Int.self, forKey: .regexRefused) ?? 0
         compileFailure = try c.decodeIfPresent(String.self, forKey: .compileFailure)
     }
 
@@ -69,7 +79,8 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
         })
     }
 
-    /// "easylist: 61,234 rules (1,830 lines unsupported; 40 style rules; 3 invalid selectors; cached)",
+    /// "easylist: 61,234 rules (1,830 lines unsupported; 40 style rules; 3 invalid selectors; regex: 8 translated,
+    /// 14 refused; cached)",
     /// "user-filters: empty", "user-filters: 0 rules (4 comment lines; 2 lines unsupported)",
     /// "user-filters: failed to compile (invalid or unsupported regular expression)".
     public func statusLine(name: String, cached: Bool, locale: Locale = .current) -> String {
@@ -77,7 +88,9 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
             "\(n.formatted(.number.locale(locale))) \(n == 1 ? singular : plural)"
         }
         if let compileFailure { return "\(name): failed to compile (\(compileFailure))" }
-        if ruleCount == 0, skipped == 0, commentLines == 0, styleInjection == 0, invalidSelectors == 0 { return "\(name): empty" }
+        if ruleCount == 0, skipped == 0, commentLines == 0, styleInjection == 0, invalidSelectors == 0, regexRefused == 0 {
+            return "\(name): empty"
+        }
 
         var notes: [String] = []
         if truncated { notes.append("truncated") }
@@ -85,6 +98,10 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
         if skipped > 0 { notes.append(count(skipped, "line unsupported", "lines unsupported")) }
         if styleInjection > 0 { notes.append(count(styleInjection, "style rule", "style rules")) }
         if invalidSelectors > 0 { notes.append(count(invalidSelectors, "invalid selector", "invalid selectors")) }
+        if regexTranslated > 0 || regexRefused > 0 {
+            let n = { (value: Int) in value.formatted(.number.locale(locale)) }
+            notes.append("regex: \(n(regexTranslated)) translated, \(n(regexRefused)) refused")
+        }
         if cached, ruleCount > 0 { notes.append("cached") }
         let head = "\(name): \(count(ruleCount, "rule", "rules"))"
         return notes.isEmpty ? head : "\(head) (\(notes.joined(separator: "; ")))"

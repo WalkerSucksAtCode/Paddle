@@ -30,18 +30,18 @@ struct RuleListSummaryTests {
     @Test func allUnsupported() {
         let s = summary("""
         [Adblock Plus 2.0]
-        ! two scriptlets and a regex rule
+        ! two scriptlets and a regex rule WebKit can't express
         example.com##+js(set-constant, x, 1)
         example.com#$#abort-on-property-read x
-        /ads[0-9]+\\.js/
+        /ads(?=[0-9]+)/
         """)
         #expect(s.ruleCount == 0)
         #expect(s.statusLine(name: "user-filters", cached: false, locale: us)
-            == "user-filters: 0 rules (2 comment lines; 3 lines unsupported)")
+            == "user-filters: 0 rules (2 comment lines; 2 lines unsupported; regex: 0 translated, 1 refused)")
     }
 
     @Test func oneOfEach() {
-        let s = summary("! c\n||ads.example^\n/regex/")
+        let s = summary("! c\n||ads.example^\nexample.com##+js(x)")
         #expect(s.statusLine(name: "mine", cached: false, locale: us) == "mine: 1 rule (1 line unsupported)")
     }
 
@@ -60,7 +60,9 @@ struct RuleListSummaryTests {
         let data = try JSONEncoder().encode(s)
         #expect(try JSONDecoder().decode(RuleListSummary.self, from: data) == s)
         let keys = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
-        #expect(Set(keys) == ["ruleCount", "skipped", "commentLines", "truncated", "styleInjection", "invalidSelectors"])
+        #expect(Set(keys) == [
+            "ruleCount", "skipped", "commentLines", "truncated", "styleInjection", "invalidSelectors", "regexTranslated", "regexRefused",
+        ])
     }
 
     /// A list WebKit refused is remembered with its reason, keeps its counts, and is never installable.
@@ -90,7 +92,7 @@ struct RuleListSummaryTests {
         ##.x:style(top: 0)
         ##article:has(header:has(.sponsored))
         ##.ad
-        /regex/
+        example.com##+js(nowebrtc)
         """)
         #expect(s == RuleListSummary(ruleCount: 1, skipped: 1, commentLines: 0, truncated: false, styleInjection: 2, invalidSelectors: 1))
         #expect(s.statusLine(name: "mine", cached: true, locale: us) == "mine: 1 rule (1 line unsupported; 2 style rules; 1 invalid selector; cached)")
@@ -99,6 +101,16 @@ struct RuleListSummaryTests {
         let big = RuleListSummary(ruleCount: 61_234, skipped: 1_830, commentLines: 120, truncated: false, styleInjection: 40, invalidSelectors: 3)
         #expect(big.statusLine(name: "easylist", cached: true, locale: us)
             == "easylist: 61,234 rules (1,830 lines unsupported; 40 style rules; 3 invalid selectors; cached)")
+    }
+
+    @Test func regexCountsShowInTheStatusLine() {
+        let s = summary("/ads\\d+\\.js/\n/(?=x)ads/\n/\\bads/\n||ok.test^")
+        #expect(s == RuleListSummary(ruleCount: 2, skipped: 0, commentLines: 0, truncated: false, regexTranslated: 1, regexRefused: 2))
+        #expect(s.statusLine(name: "mine", cached: false, locale: us) == "mine: 2 rules (regex: 1 translated, 2 refused)")
+        // Only refused regex lines: not "empty", since the file has rules Paddle could not use.
+        #expect(summary("/(?=x)/").statusLine(name: "mine", cached: false, locale: us) == "mine: 0 rules (regex: 0 translated, 1 refused)")
+        let old = Data(#"{"ruleCount":1,"skipped":0,"commentLines":0,"truncated":false,"styleInjection":0,"invalidSelectors":0}"#.utf8)
+        #expect(try! JSONDecoder().decode(RuleListSummary.self, from: old).regexRefused == 0)
     }
 
     @Test func compileFailureReasons() {

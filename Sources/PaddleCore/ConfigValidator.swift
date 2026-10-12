@@ -47,6 +47,7 @@ public enum ConfigValidator {
             (PaddleConfig.CodingKeys.historyDays, Double(config.historyDays)),
             (.tabSleepAfterMinutes, config.tabSleepAfterMinutes),
             (.maxAwakeTabs, Double(config.maxAwakeTabs)),
+            (.sessionHistoryTabs, Double(config.sessionHistoryTabs)),
             (.filterUpdateDays, Double(config.filterUpdateDays)),
         ] where value < 0 {
             issues.append(ConfigIssue(key: key, severity: .error, message: "Can't be negative (0 turns it off)."))

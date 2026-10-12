@@ -37,7 +37,8 @@ enum SettingsPane: String, CaseIterable {
         }
     }
 
-    static let width: CGFloat = 640
+    /// Sites is wider: its table has seven columns, each a pop-up or checkbox that must show its value.
+    var width: CGFloat { self == .sites ? 760 : 640 }
 }
 
 /// Paddle > Settings… (⌘,): a preferences-style toolbar of panes over `config.json`. Exists only while open:
@@ -179,7 +180,7 @@ private struct SettingsPaneView: View {
                 content
             }
         }
-        .frame(width: SettingsPane.width, height: pane.fixedHeight, alignment: .top)
+        .frame(width: pane.width, height: pane.fixedHeight, alignment: .top)
         .fixedSize(horizontal: false, vertical: pane.fixedHeight == nil)
     }
 

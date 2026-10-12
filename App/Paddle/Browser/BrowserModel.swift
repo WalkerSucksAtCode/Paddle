@@ -173,10 +173,17 @@ final class BrowserModel {
     @discardableResult
     func duplicate(_ tab: Tab) -> Tab {
         let copy = tab.sourceHTML.map { Tab(sourceHTML: $0, title: tab.title, isPrivate: isPrivate) }
-            ?? Tab(record: tab.record, isPrivate: isPrivate)
+            ?? Tab(record: Self.copied(tab.record), isPrivate: isPrivate)
         copy.setMuted(tab.isMuted)
         insert(copy, after: tab, select: true)
         return copy
+    }
+
+    /// A record for a second tab: without the session id, which names the original's state file.
+    private static func copied(_ record: TabRecord) -> TabRecord {
+        var record = record
+        record.id = nil
+        return record
     }
 
     /// `extensionsInPrivate` was turned off while this private window was open (the host has already been told

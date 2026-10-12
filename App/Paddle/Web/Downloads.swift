@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import WebKit
 
 /// One download, shown in the toolbar's downloads popover.
@@ -48,15 +49,19 @@ final class DownloadStore {
     func track(_ download: WKDownload, isPrivate: Bool) {
         let item = DownloadItem(download: download, isPrivate: isPrivate)
         download.delegate = delegate
-        // Progress KVO can fire on any thread, so this closure is explicitly non-isolated and hops to main.
+        // Progress KVO can fire on any thread, so this closure is explicitly non-isolated and hops to main. It fires
+        // for every chunk received; the coalescer turns that into at most four updates a second, each reading the
+        // latest counts.
+        let coalescer = ProgressCoalescer()
         item.progressObservation = download.progress.observe(\.completedUnitCount) { @Sendable [weak item] progress, _ in
-            let received = progress.completedUnitCount
-            let total = progress.totalUnitCount
-            Task { @MainActor in
+            coalescer.schedule {
+                let received = progress.completedUnitCount
+                let total = progress.totalUnitCount
                 guard let item, received >= item.receivedBytes else { return }
                 item.receivedBytes = received
                 item.expectedBytes = total > 0 ? total : nil
-                item.fraction = total > 0 ? Double(received) / Double(total) : 0
+                // An update landing after the finish leaves its fraction of 1.
+                if item.state == .running { item.fraction = total > 0 ? Double(received) / Double(total) : 0 }
             }
         }
         items.insert(item, at: 0)
@@ -122,6 +127,30 @@ final class DownloadStore {
             n += 1
         }
         return candidate
+    }
+}
+
+/// Runs a main-thread update at most once per `interval`, however often `schedule` is called from any thread: the
+/// first call in a quiet period schedules the update, later ones until it runs are dropped (the update reads the
+/// latest values when it runs, so nothing is lost but the in-between steps).
+nonisolated final class ProgressCoalescer: Sendable {
+    private let interval: TimeInterval
+    private let pending = OSAllocatedUnfairLock(initialState: false)
+
+    init(interval: TimeInterval = 0.25) {
+        self.interval = interval
+    }
+
+    func schedule(_ update: @escaping @MainActor @Sendable () -> Void) {
+        let first = pending.withLock { pending in
+            defer { pending = true }
+            return !pending
+        }
+        guard first else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + interval) { [pending] in
+            pending.withLock { $0 = false }
+            MainActor.assumeIsolated { update() }
+        }
     }
 }
 

@@ -42,6 +42,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if let record {
             if let frame = record.frame { window.setFrame(NSRectFromString(frame), display: false) }
             let tabs = record.tabs.map { Tab(record: $0, isPrivate: isPrivate) }
+            // An old-format record has no lastActive; rank earlier tabs as more recent (1 s apart) so the history
+            // cap doesn't favour the end of the strip.
+            let now = Date()
+            for (i, tab) in tabs.enumerated() where record.tabs[i].lastActive == nil {
+                tab.lastActive = now.addingTimeInterval(-Double(i + 1))
+            }
             for tab in tabs {
                 tab.browser = model
                 model.tabs.append(tab)
@@ -176,9 +182,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleReload(_ sender: Any?) { webView?.reload() }
     @objc func paddleHardReload(_ sender: Any?) { webView?.reloadFromOrigin() }
     @objc func paddleStop(_ sender: Any?) { webView?.stopLoading() }
-    @objc func paddleZoomIn(_ sender: Any?) { if let webView { webView.pageZoom = min(webView.pageZoom + 0.1, 3) } }
-    @objc func paddleZoomOut(_ sender: Any?) { if let webView { webView.pageZoom = max(webView.pageZoom - 0.1, 0.3) } }
-    @objc func paddleActualSize(_ sender: Any?) { webView?.pageZoom = 1 }
+    // The zoom is remembered for the site (`Tab.setZoom`).
+    @objc func paddleZoomIn(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom + SitePolicy.zoomStep) } }
+    @objc func paddleZoomOut(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom - SitePolicy.zoomStep) } }
+    @objc func paddleActualSize(_ sender: Any?) { tab?.setZoom(1) }
 
     @objc func paddleWebInspector(_ sender: Any?) {
         if let webView { WebInspector.show(webView) }

@@ -30,6 +30,10 @@ targets:
         excludes:
           - Info.plist
           - Paddle.entitlements
+      # Bundled EasyList and EasyPrivacy snapshots for a first launch (`BundledFilterSnapshots`).
+      - path: Resources/FilterSnapshots
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.walker.Paddle

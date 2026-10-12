@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import PaddleCore
 import WebKit
 
@@ -7,6 +8,8 @@ import WebKit
 /// their URL, title and WebKit's saved back/forward state, and cost almost nothing.
 @Observable
 final class Tab: Identifiable {
+    private static let log = Logger(subsystem: "com.walker.Paddle", category: "tab")
+
     let id = UUID()
     var title: String
     var url: URL?
@@ -33,6 +36,9 @@ final class Tab: Identifiable {
     /// Another tab shares the same WebContent process, so `memoryBytes` is a shared total.
     var sharesProcess = false
     var lastActive = Date()
+    /// Names this tab's state file in sessions/ (`SessionStore`): the id it was saved under, kept across launches
+    /// so an unchanged state isn't written again; nil until restored, then `id` stands in.
+    @ObservationIgnored private var sessionID: String?
     /// Bumped whenever the web view is created or dropped, so the view layer re-attaches it.
     var generation = 0
 
@@ -87,6 +93,16 @@ final class Tab: Identifiable {
     /// Showing the "Extension not loaded" page. The tab keeps its extension URL and saved history meanwhile, so it
     /// comes back (and is saved in the session) as that page, not as the error page's about:blank.
     @ObservationIgnored private(set) var showsExtensionUnavailable = false
+    /// The web view exists but its first page waits for the block lists (`WebEnvironment.blockersReady`); the page
+    /// to load is still in `savedState` / `url`.
+    @ObservationIgnored private var awaitingBlockers = false
+    /// The current page committed before every block list was installed (startup, after the gate's timeout).
+    /// It reloads once when they are (`reloadIfLoadedUnblocked`).
+    @ObservationIgnored private(set) var loadedUnblocked = false
+    /// The current main-frame page came from a form post. Set by `TabWebDelegate` just before `pageCommitted()`.
+    @ObservationIgnored var committedPost = false
+    /// Main-frame commits so far, so an answer that took a round trip can tell whether the page changed meanwhile.
+    @ObservationIgnored private var commitCount = 0
 
     init(url: URL?, title: String = "", isPinned: Bool = false, savedState: Any? = nil, isPrivate: Bool = false) {
         self.url = url
@@ -101,6 +117,8 @@ final class Tab: Identifiable {
             url: URL(string: record.url), title: record.title, isPinned: record.isPinned, savedState: record.interactionState,
             isPrivate: isPrivate
         )
+        sessionID = record.id
+        if let date = record.lastActive { lastActive = date }
     }
 
     /// A View Source tab showing `html` (built by `ViewSource.page`), titled until its page sets the title.
@@ -120,8 +138,11 @@ final class Tab: Identifiable {
     }
 
     var record: TabRecord {
-        let state = (showsExtensionUnavailable ? savedState : webView?.interactionState ?? savedState) as? Data
-        return TabRecord(url: url?.absoluteString ?? "", title: title, isPinned: isPinned, interactionState: state)
+        let state = (showsExtensionUnavailable || awaitingBlockers ? savedState : webView?.interactionState ?? savedState) as? Data
+        return TabRecord(
+            url: url?.absoluteString ?? "", title: title, isPinned: isPinned, interactionState: state,
+            id: sessionID ?? id.uuidString, lastActive: lastActive
+        )
     }
 
     // MARK: - Wake / sleep
@@ -129,6 +150,8 @@ final class Tab: Identifiable {
     /// Creates the web view if the tab is asleep, restoring its page and history. An extension page needs that
     /// extension's own configuration; until its extension has loaded (startup, Reload Extensions) the wake is
     /// deferred and nil comes back. If the extension isn't loaded at all, an ordinary web view shows an error page.
+    /// An ordinary web view's first page waits for the block lists (`WebEnvironment.blockersReady`, at most 3 s
+    /// after startup); the web view comes back at once.
     @discardableResult
     func wake() -> WKWebView? {
         if let webView { return webView }
@@ -152,14 +175,57 @@ final class Tab: Identifiable {
             skipNextCommitInHistory = true
             pendingOwnPage = .source
             webView.loadHTMLString(sourceHTML, baseURL: nil)
-        } else if let savedState {
+        } else if pageID == nil, !AppModel.shared.web.blockersReady.isOpen {
+            waitForBlockers(webView)
+            return webView
+        } else {
+            startFirstLoad(webView)
+        }
+        savedState = nil
+        return webView
+    }
+
+    /// Restores the saved page and history, or loads `url`.
+    private func startFirstLoad(_ webView: WKWebView) {
+        if let savedState {
             skipNextCommitInHistory = true
             webView.interactionState = savedState
         } else if let url {
             webView.load(URLRequest(url: url))
         }
-        savedState = nil
-        return webView
+    }
+
+    /// Starts the first load once the block lists are in, unless the tab slept or got another web view meanwhile.
+    /// `savedState` stays set until then, so the session and a sleep keep the restored history.
+    private func waitForBlockers(_ webView: WKWebView) {
+        awaitingBlockers = true
+        let gate = AppModel.shared.web.blockersReady
+        let started = ContinuousClock.now
+        Task { [weak self] in
+            await gate.wait()
+            let waited = (ContinuousClock.now - started).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
+            Self.log.info("first page load waited \(waited, privacy: .public) for the block lists (\(gate.isReady ? "installed" : "timed out", privacy: .public))")
+            guard let self, self.webView === webView, awaitingBlockers else { return }
+            awaitingBlockers = false
+            startFirstLoad(webView)
+            savedState = nil
+        }
+    }
+
+    /// The block lists are installed: a page that committed before then reloads once, unless it came from a form
+    /// post, is playing media or using the camera or microphone, or the user typed into it (`UnblockedReload`).
+    func reloadIfLoadedUnblocked() async {
+        guard loadedUnblocked, let webView else { return }
+        loadedUnblocked = false
+        let page = commitCount
+        let post = committedPost
+        let busy = await isBusy()
+        let typed = (try? await webView.evaluateJavaScript(UnblockedReload.typedProbeScript, in: nil, contentWorld: .defaultClient) as? Bool) ?? true
+        // The page may have changed while those answers came back; a newer page committed with the block lists.
+        guard self.webView === webView, commitCount == page else { return }
+        let decision = UnblockedReload.decide(loadedUnblocked: true, isPost: post, isBusy: busy, userTyped: typed)
+        Self.log.info("unblocked startup page: \(String(describing: decision), privacy: .public)")
+        if decision == .reload { webView.reload() }
     }
 
     /// Drops the current web view and loads `url` in a fresh one, chosen for `url` (extension page or web page).
@@ -227,10 +293,12 @@ final class Tab: Identifiable {
         guard let webView else { return }
         // Before the first page commits there is no history worth keeping; waking then loads the URL again. The
         // "Extension not loaded" page keeps the history it was standing in for.
-        if !showsExtensionUnavailable {
+        if !showsExtensionUnavailable && !awaitingBlockers {
             savedState = webView.backForwardList.currentItem == nil ? nil : webView.interactionState
         }
         showsExtensionUnavailable = false
+        awaitingBlockers = false
+        loadedUnblocked = false
         committedErrorPage = false
         pendingOwnPage = nil
         resumeSelectionWaiters(false)
@@ -265,6 +333,9 @@ final class Tab: Identifiable {
         if let webView {
             if ExtensionIdentity.identifier(of: url) != extensionPageID {
                 replaceWebView(loading: url)
+            } else if awaitingBlockers {
+                // The first load, still waiting for the block lists, loads this URL instead.
+                savedState = nil
             } else {
                 webView.load(URLRequest(url: url))
             }
@@ -279,8 +350,14 @@ final class Tab: Identifiable {
     func pageCommitted() {
         let own = pendingOwnPage
         pendingOwnPage = nil
+        commitCount += 1
         committedErrorPage = own == .error
         if own == nil { sourceHTML = nil }
+        // Extension pages and Paddle's own pages get no block lists, so they never need the reload.
+        loadedUnblocked = own == nil && extensionPageID == nil && !AppModel.shared.web.blockersReady.isReady
+        applySiteZoom()
+        // A navigation inside the tab is a session change too (its URL and history), not only tab and window changes.
+        if !isPrivate { AppModel.shared.sessionChanged() }
     }
 
     /// The web process crashed or was killed. A background tab just goes to sleep. The visible tab reloads,
@@ -384,6 +461,34 @@ final class Tab: Identifiable {
         typealias Set = @convention(c) (AnyObject, Selector, UInt64) -> Void
         let set = unsafeBitCast(webView.method(for: Self.setPageMutedSelector), to: Set.self)
         set(webView, Self.setPageMutedSelector, MediaMutedState.settingAudio(isMuted, in: current))
+    }
+
+    // MARK: - Site settings
+
+    /// The site of a web page (http or https) showing in an ordinary web view; nil for extension pages and others.
+    private var siteHost: String? {
+        guard extensionPageID == nil, let url = webView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return url.host()
+    }
+
+    /// Sets the page's zoom to its site's (`AppModel.siteZoom`), or 100 % for a page with no site (Paddle's own
+    /// pages, file:, about:blank), so the last site's zoom doesn't carry over. When a page commits and when `sites`
+    /// changes.
+    func applySiteZoom() {
+        guard let webView else { return }
+        let own = pendingOwnPage != nil || committedErrorPage || sourceHTML != nil
+        let zoom = own ? 1 : siteHost.map { AppModel.shared.siteZoom(forHost: $0, isPrivate: isPrivate) } ?? 1
+        if webView.pageZoom != zoom { webView.pageZoom = zoom }
+    }
+
+    /// View > Zoom In / Zoom Out / Actual Size: zooms the page and remembers the zoom for its site (for this run
+    /// only in a private window).
+    func setZoom(_ zoom: Double) {
+        guard let webView else { return }
+        let zoom = SitePolicy.normalizedZoom(zoom)
+        webView.pageZoom = zoom
+        guard let host = siteHost else { return }
+        AppModel.shared.rememberZoom(zoom, forHost: host, isPrivate: isPrivate)
     }
 
     // MARK: - KVO

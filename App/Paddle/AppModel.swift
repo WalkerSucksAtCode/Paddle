@@ -33,9 +33,22 @@ final class AppModel {
     /// The same memory split into the Activity popover's rows.
     private(set) var memoryBreakdown = ProcessBreakdown()
 
-    /// Per-session answers to permission prompts (camera, microphone, downloads), keyed by site and kind.
-    @ObservationIgnored var grantedPermissions: Set<String> = []
-    @ObservationIgnored var refusedPermissions: Set<String> = []
+    /// Answers to permission prompts (camera, microphone, location, downloads) for this run only, by site and
+    /// kind. Settings lists them under "This session" (`forgetSessionAnswers`).
+    var sessionPermissions = SessionPermissions()
+    /// The same for private windows, kept apart so an answer given in one kind of window doesn't carry to the
+    /// other. Not listed in Settings, and dropped when the last private window closes.
+    @ObservationIgnored var privatePermissions = SessionPermissions()
+
+    /// `sessionPermissions`, or `privatePermissions` for a private window's tab.
+    subscript(permissionsFor isPrivate: Bool) -> SessionPermissions {
+        get { isPrivate ? privatePermissions : sessionPermissions }
+        set { if isPrivate { privatePermissions = newValue } else { sessionPermissions = newValue } }
+    }
+    /// Zoom set in private windows, by `sites` key, for this run only: private windows write nothing to config.json.
+    @ObservationIgnored var privateZooms: [String: Double] = [:]
+    /// Zoom changes waiting to be written to config.json, by `sites` key (`rememberZoom`).
+    @ObservationIgnored private var pendingZoomWrites: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private(set) var windows: [BrowserWindowController] = []
     @ObservationIgnored private var sampleTimer: Timer?
     @ObservationIgnored private var sweepTimer: Timer?
@@ -48,12 +61,19 @@ final class AppModel {
     @ObservationIgnored private var isRestoring = false
     /// False until session.json has been read, so quitting during startup can't overwrite it with no windows.
     @ObservationIgnored private var didRestore = false
+    /// session.json and the per-tab state files in sessions/.
+    @ObservationIgnored private var sessionStore = SessionStore(file: Paths.session, stateDirectory: Paths.sessions)
+    /// When the oldest change not yet saved happened, for the save's maximum delay (`SessionSaveTiming`).
+    @ObservationIgnored private var unsavedSince: Date?
+    /// Set once the final save has run at quit, so windows closing during teardown can't save a smaller session.
+    @ObservationIgnored private var isTerminating = false
 
     private init() {}
 
     // MARK: - Lifecycle
 
     func start(openingURLs urls: [URL]) async {
+        let launched = ContinuousClock.now
         Paths.ensure()
         if let loaded = readConfig() { config = loaded }
         openHistory()
@@ -61,26 +81,42 @@ final class AppModel {
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         extensions.prepare(config: config)
-        await web.loadContentBlockers()
+
+        // Windows open before the block lists are in: tabs make their web views now, and their first page loads
+        // wait on `web.blockersReady` (every list installed, or 3 s). Starts once `start` first suspends.
+        Task {
+            await web.loadContentBlockers()
+            reloadUnblockedTabs()
+            // After the startup compile and the first windows, so a download never holds up a page.
+            await updateFilterListsIfDue()
+        }
 
         restoreSession()
         if windows.isEmpty { openWindow() }
         open(urls)
+        let elapsed = (ContinuousClock.now - launched).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
+        log.info("startup: \(self.windows.count, privacy: .public) windows open \(elapsed, privacy: .public) after start")
 
         startMonitoring()
 
         // Windows are on screen; extensions find them through the registered windows. Session-restored extension
         // pages wait for this (deferred wake).
         await extensions.loadAll(config: config)
+    }
 
-        // After the startup compile and the first windows, and not awaited, so a download never holds up a page.
-        Task { await updateFilterListsIfDue() }
+    /// Pages that loaded while startup block lists were still compiling (after the gate's timeout) reload once,
+    /// now that every list is installed. Nothing to do when the gate opened on time.
+    private func reloadUnblockedTabs() {
+        for tab in allTabs where tab.loadedUnblocked {
+            Task { await tab.reloadIfLoadedUnblocked() }
+        }
     }
 
     func willTerminate() {
         downloads.discardRunning()
         bookmarks.saveNow()
         saveSessionNow()
+        isTerminating = true
     }
 
     // MARK: - Config
@@ -188,6 +224,7 @@ final class AppModel {
     func apply(_ new: PaddleConfig, reloading: Bool = false) async {
         let changed = Self.changedKeys(config, new)
         let keys = reloading ? Set(PaddleConfig.CodingKeys.allCases) : changed
+        let old = config
         config = new
         guard !keys.isEmpty else { return }
 
@@ -212,7 +249,11 @@ final class AppModel {
             }
             updateSampler()
         }
-        if !keys.isDisjoint(with: [.contentBlocking, .filterLists]) { await web.loadContentBlockers() }
+        if keys.contains(.sites) { applySiteZoom() }
+        if !keys.isDisjoint(with: [.contentBlocking, .filterLists])
+            || (keys.contains(.sites) && old.blockingOffHosts != new.blockingOffHosts) {
+            await web.loadContentBlockers()
+        }
         // A newly listed (or re-enabled) list has no file yet, so it is due now rather than at the hourly check.
         if !changed.isDisjoint(with: [.contentBlocking, .filterLists, .filterUpdateDays]) {
             Task { await updateFilterListsIfDue() }
@@ -244,6 +285,7 @@ final class AppModel {
             case .tabSleepAfterMinutes: old.tabSleepAfterMinutes != new.tabSleepAfterMinutes
             case .maxAwakeTabs: old.maxAwakeTabs != new.maxAwakeTabs
             case .sleepPinnedTabs: old.sleepPinnedTabs != new.sleepPinnedTabs
+            case .sessionHistoryTabs: old.sessionHistoryTabs != new.sessionHistoryTabs
             case .contentBlocking: old.contentBlocking != new.contentBlocking
             case .filterLists: old.filterLists != new.filterLists
             case .filterUpdateDays: old.filterUpdateDays != new.filterUpdateDays
@@ -257,6 +299,82 @@ final class AppModel {
             case .extensionsInPrivate: old.extensionsInPrivate != new.extensionsInPrivate
             }
         })
+    }
+
+    // MARK: - Sites
+
+    /// Sets one field of `sites.<key>` in config.json through `writeConfig`, starting from the entry as it is on
+    /// disk now (other members, unknown ones included, stay). A value equal to Paddle's default removes the field,
+    /// and an entry left empty is removed. `key` is a `sites` key as written in the file, or a new host.
+    @discardableResult
+    func writeSiteSetting(_ field: SiteSettings.Field, _ value: JSONValue?, forKey key: String) async -> ConfigWriteResult {
+        let disk: Data
+        let existing: JSONValue?
+        do {
+            disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
+            let blank = disk.drop { [0x20, 0x09, 0x0A, 0x0D, 0xEF, 0xBB, 0xBF].contains($0) }.isEmpty
+            existing = blank ? nil : try JSONSpans.scan(disk).object["sites"]?.objectValue?[key]
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+        let result = await writeConfig([ConfigChange("sites", key, SiteSettings.entry(existing, setting: field, to: value))], base: disk)
+        switch result {
+        case .written: break
+        case .conflict(let paths):
+            log.error("sites.\(key, privacy: .private).\(field.rawValue, privacy: .public) not written: changed on disk (\(paths.count) paths)")
+        case .failed(let reason):
+            log.error("sites.\(key, privacy: .private).\(field.rawValue, privacy: .public) not written: \(reason, privacy: .public)")
+        }
+        return result
+    }
+
+    /// The zoom a page on `host` opens at: `sites` in ordinary windows; in private ones what was set there this
+    /// run, falling back to `sites`.
+    func siteZoom(forHost host: String, isPrivate: Bool) -> Double {
+        if isPrivate, let zoom = privateZooms[config.zoomKey(forHost: host)] { return zoom }
+        return pendingZooms[config.zoomKey(forHost: host)] ?? config.sitePolicy(forHost: host).zoom
+    }
+
+    /// Zoom values not yet in config.json, so a page committing meanwhile opens at the new zoom.
+    @ObservationIgnored private var pendingZooms: [String: Double] = [:]
+
+    /// Remembers a zoom set with Zoom In / Zoom Out / Actual Size on `host`: in a private window for this run only,
+    /// else in `sites.<key>.zoom` (`PaddleConfig.zoomKey`), written once the keys stop for a second so a run of
+    /// steps is one write. Other tabs on the site follow when config.json is applied.
+    func rememberZoom(_ zoom: Double, forHost host: String, isPrivate: Bool) {
+        let key = config.zoomKey(forHost: host)
+        let zoom = SitePolicy.normalizedZoom(zoom)
+        if isPrivate {
+            privateZooms[key] = zoom
+            return
+        }
+        pendingZooms[key] = zoom
+        pendingZoomWrites[key]?.cancel()
+        pendingZoomWrites[key] = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            pendingZoomWrites[key] = nil
+            // Already the zoom config.json gives (Actual Size on a site with none): nothing to write.
+            if (config.sites[key]?.zoom ?? SitePolicy.defaults.zoom) != zoom {
+                await writeSiteSetting(.zoom, .number(zoom), forKey: key)
+            }
+            if pendingZoomWrites[key] == nil { pendingZooms[key] = nil }
+        }
+    }
+
+    /// `sites` changed: awake ordinary tabs take their site's zoom now (other per-site settings apply at the next
+    /// page load). Tabs whose site has a zoom write still pending keep theirs.
+    private func applySiteZoom() {
+        for tab in allTabs where !tab.isPrivate {
+            guard let host = tab.webView?.url?.host(), pendingZoomWrites[config.zoomKey(forHost: host)] == nil else { continue }
+            tab.applySiteZoom()
+        }
+    }
+
+    /// Settings' "This session: Forget": the next camera, microphone, location or download request from `host`
+    /// asks again.
+    func forgetSessionAnswers(forHost host: String) {
+        sessionPermissions.forget(host: host)
     }
 
     /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/, block lists, extension folders and
@@ -443,9 +561,12 @@ final class AppModel {
             // The private session ends: a new private window starts with an empty data store.
             web.endPrivateSession()
             downloads.forgetPrivate()
+            privateZooms.removeAll()
+            privatePermissions = SessionPermissions()
             log.info("last private window closed: private data store released")
         }
-        sessionChanged()
+        // At once rather than debounced: a closed window is a change worth having on disk right away.
+        saveSessionNow()
     }
 
     /// The browser window the user was last in, even when another kind of window (History) is in front.
@@ -501,32 +622,53 @@ final class AppModel {
 
     private func restoreSession() {
         defer { didRestore = true }
-        guard let data = try? Data(contentsOf: Paths.session),
-              let session = try? JSONDecoder().decode(SessionRecord.self, from: data) else { return }
-        isRestoring = true
-        defer { isRestoring = false }
-        for record in session.windows where !record.tabs.isEmpty {
-            openWindow(record: record)
+        guard let session = sessionStore.load() else {
+            if FileManager.default.fileExists(atPath: sessionStore.badFile.path) {
+                log.error("session.json.bad is there: a saved session that didn't decode, kept with its tab histories")
+            }
+            return
         }
+        do {
+            isRestoring = true
+            defer { isRestoring = false }
+            for record in session.windows where !record.tabs.isEmpty {
+                openWindow(record: record)
+            }
+        }
+        // A session.json from before sessions/ existed is rewritten in the new form by the next save.
+        sessionChanged()
     }
 
-    /// Debounced save; called on every tab change.
+    /// Debounced save; called on every tab change. Runs `SessionSaveTiming.debounce` after the latest change, and
+    /// no later than `maxLatency` after the first unsaved one, so steady tab switching can't put it off.
     func sessionChanged() {
         guard !isRestoring else { return }
+        let now = Date()
+        let first = unsavedSince ?? now
+        unsavedSince = first
         saveWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { self?.saveSessionNow() }
         }
         saveWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        let delay = SessionSaveTiming.deadline(lastChange: now, firstUnsaved: first).timeIntervalSince(now)
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(delay, 0), execute: work)
     }
 
+    /// Writes only what changed (`SessionStore.save`): back/forward states whose bytes changed, and session.json
+    /// unless its bytes are the same. History is kept for the `sessionHistoryTabs` most recent tabs plus pinned ones.
     func saveSessionNow() {
         saveWork?.cancel()
-        guard didRestore else { return }
+        saveWork = nil
+        unsavedSince = nil
+        guard didRestore, !isTerminating else { return }
         let session = SessionRecord.saving(windows, isPrivate: \.model.isPrivate, record: \.model.record)
+            .cappingStates(to: config.sessionHistoryTabs)
         do {
-            try JSONEncoder().encode(session).write(to: Paths.session, options: .atomic)
+            let result = try sessionStore.save(session)
+            if result.wroteSession || !result.statesWritten.isEmpty || !result.statesDeleted.isEmpty {
+                log.debug("session saved: json \(result.wroteSession), \(result.statesWritten.count) states written, \(result.statesDeleted.count) deleted")
+            }
         } catch {
             log.error("session save failed: \(error.localizedDescription, privacy: .public)")
         }
