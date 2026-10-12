@@ -72,3 +72,60 @@ public struct TabSleepPolicy: Sendable, Equatable {
         return chosen.sorted { order[$0, default: 0] < order[$1, default: 0] }
     }
 }
+
+/// The Mac's power situation as the sleep policy sees it: Low Power Mode and the thermal state
+/// (`ProcessInfo.isLowPowerModeEnabled`, `ProcessInfo.thermalState`).
+public struct PowerConditions: Sendable, Equatable {
+    public enum Thermal: Int, Sendable, Comparable {
+        case nominal, fair, serious, critical
+
+        public static func < (a: Thermal, b: Thermal) -> Bool { a.rawValue < b.rawValue }
+    }
+
+    public var lowPowerMode: Bool
+    public var thermal: Thermal
+
+    public init(lowPowerMode: Bool = false, thermal: Thermal = .nominal) {
+        self.lowPowerMode = lowPowerMode
+        self.thermal = thermal
+    }
+
+    public static let normal = PowerConditions()
+
+    /// Low Power Mode, or a thermal state of serious or worse: the policy trades tabs staying loaded for power.
+    public var isConstrained: Bool { lowPowerMode || thermal >= .serious }
+
+    /// "Low Power Mode", "the Mac running hot", or both; nil when not constrained.
+    public var reason: String? {
+        var reasons: [String] = []
+        if lowPowerMode { reasons.append("Low Power Mode") }
+        if thermal >= .serious { reasons.append(thermal == .critical ? "the Mac running very hot" : "the Mac running hot") }
+        return reasons.isEmpty ? nil : reasons.joined(separator: " and ")
+    }
+}
+
+extension TabSleepPolicy {
+    /// Idle limit and awake-tab cap while power is constrained (`PowerConditions.isConstrained`).
+    public static let constrainedSleepAfter: TimeInterval = 5 * 60
+    public static let criticalSleepAfter: TimeInterval = 60
+    public static let criticalMaxAwakeTabs = 2
+
+    /// The policy for `power`. Outside constrained states it is self, the user's values. When constrained, tabs
+    /// sleep sooner and fewer stay awake, never looser than the user's own values:
+    /// - Low Power Mode or serious heat: idle sleep after at most 5 minutes; the cap halved (rounded up, at least 2).
+    /// - Critical heat: idle sleep after at most 1 minute; at most 2 tabs awake.
+    /// A value the user turned off (0) stays off: Paddle doesn't start sleeping tabs the user asked it never to.
+    public func adjusted(for power: PowerConditions) -> TabSleepPolicy {
+        guard power.isConstrained else { return self }
+        var policy = self
+        let critical = power.thermal == .critical
+        if sleepAfter > 0 {
+            policy.sleepAfter = min(sleepAfter, critical ? Self.criticalSleepAfter : Self.constrainedSleepAfter)
+        }
+        if maxAwakeTabs > 0 {
+            let lowered = critical ? Self.criticalMaxAwakeTabs : max(2, (maxAwakeTabs + 1) / 2)
+            policy.maxAwakeTabs = min(maxAwakeTabs, lowered)
+        }
+        return policy
+    }
+}

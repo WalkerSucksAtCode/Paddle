@@ -22,7 +22,7 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `searchSuggestTemplate` | `https://duckduckgo.com/ac/?q=%s&type=list` | Address-bar search suggestions (OpenSearch or DuckDuckGo JSON). Only search words typed key by key are sent, never addresses, paths or pastes; `""` = off |
 | `historyDays` | `365` | Days of history kept in `history.sqlite` (0 = no history; the file is kept until you clear it). Settings asks before a shorter value deletes visits and says how many |
 | `tabSleepAfterMinutes` | `30` | Idle minutes before a background tab sleeps (0 = never) |
-| `maxAwakeTabs` | `10` | Most tabs awake at once (0 = no cap) |
+| `maxAwakeTabs` | `10` | Most tabs awake at once (0 = no cap). In Low Power Mode or when the Mac runs hot, tabs sleep after at most 5 minutes and the cap is halved (at least 2); when it runs very hot, 1 minute and 2 tabs. Never looser than these values, and a value set to 0 stays off. The Activity popover says when this is in effect |
 | `sleepPinnedTabs` | `false` | Let pinned tabs sleep too |
 | `sessionHistoryTabs` | `30` | Tabs whose back/forward history the saved session keeps: the most recently used ones, plus every pinned tab. The rest come back on their page with no Back history. Each kept history is its own file in `sessions/`, rewritten only when it changes; `session.json` names them (0 = pinned tabs only) |
 | `contentBlocking` | `true` | Ad and tracker blocking |

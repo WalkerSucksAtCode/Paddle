@@ -56,6 +56,10 @@ final class AppModel {
     @ObservationIgnored private var memoryReaders = 0
     /// Activation and window-occlusion observers that start and stop the sampler.
     @ObservationIgnored private var samplerObservers: [any NSObjectProtocol] = []
+    /// Low Power Mode and the thermal state, kept current by `updatePower`. While they constrain power, the sleep
+    /// sweep uses a stricter policy than the configured one (`TabSleepPolicy.adjusted(for:)`).
+    private(set) var power = PowerConditions.normal
+    @ObservationIgnored private var powerObservers: [any NSObjectProtocol] = []
     @ObservationIgnored private var memoryPressureSource: (any DispatchSourceMemoryPressure)?
     @ObservationIgnored private var saveWork: DispatchWorkItem?
     @ObservationIgnored private var isRestoring = false
@@ -692,6 +696,14 @@ final class AppModel {
             })
         }
         updateSampler()
+        // Low Power Mode and thermal changes: the sleep policy tightens at once rather than at the next sweep.
+        for name in [Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification] {
+            powerObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { AppModel.shared.updatePower() }
+            })
+        }
+        updatePower()
+        // Nothing here opts out of App Nap, so macOS naps Paddle (and this timer) while its windows are hidden.
         let sweep = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated {
                 let app = AppModel.shared
@@ -814,8 +826,48 @@ final class AppModel {
 
     /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),
     /// and tabs playing media or using the camera/mic stay awake.
+    /// The sleep policy now: the configured values, tightened while Low Power Mode or heat constrains power.
+    var effectiveSleepPolicy: TabSleepPolicy { TabSleepPolicy(config: config).adjusted(for: power) }
+
+    /// Re-reads Low Power Mode and the thermal state; when power becomes constrained, sweeps at once.
+    func updatePower() {
+        let now = Self.readPowerConditions()
+        guard now != power else { return }
+        let wasConstrained = power.isConstrained
+        power = now
+        if let reason = now.reason {
+            let policy = effectiveSleepPolicy
+            log.info("power constrained by \(reason, privacy: .public): tabs sleep after \(Int(policy.sleepAfter / 60), privacy: .public) min idle, at most \(policy.maxAwakeTabs, privacy: .public) awake (0 = off)")
+            sweepSleepingTabs()
+        } else if wasConstrained {
+            log.info("power back to normal: the configured sleep settings apply")
+        }
+    }
+
+    private static func readPowerConditions() -> PowerConditions {
+        #if DEBUG
+        // Debug builds only: `-PaddleSimulatePower lowPower|serious|critical` on the command line exercises this path
+        // without changing the Mac's settings.
+        switch UserDefaults.standard.string(forKey: "PaddleSimulatePower") {
+        case "lowPower": return PowerConditions(lowPowerMode: true)
+        case "serious": return PowerConditions(thermal: .serious)
+        case "critical": return PowerConditions(thermal: .critical)
+        default: break
+        }
+        #endif
+        let info = ProcessInfo.processInfo
+        let thermal: PowerConditions.Thermal = switch info.thermalState {
+        case .nominal: .nominal
+        case .fair: .fair
+        case .serious: .serious
+        case .critical: .critical
+        @unknown default: .nominal
+        }
+        return PowerConditions(lowPowerMode: info.isLowPowerModeEnabled, thermal: thermal)
+    }
+
     func sweepSleepingTabs(memoryPressure: Bool = false) {
-        let policy = TabSleepPolicy(config: config)
+        let policy = effectiveSleepPolicy
         Task {
             // Asking each page whether it is playing media is a round trip, and the user can switch tabs
             // meanwhile, so the snapshots are taken from live state after the last await.

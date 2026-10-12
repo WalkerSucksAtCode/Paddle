@@ -40,6 +40,17 @@ struct ActivityView: View {
 
             breakdownRows
 
+            if let reason = app.power.reason {
+                let policy = app.effectiveSleepPolicy
+                Label(
+                    "Saving power (\(reason)): \(policy.sleepAfter > 0 ? "tabs sleep after \(Int(policy.sleepAfter / 60)) min" : "idle sleep is off")\(policy.maxAwakeTabs > 0 ? ", at most \(policy.maxAwakeTabs) awake" : "").",
+                    systemImage: "leaf"
+                )
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
             HStack {
                 Button("Sleep Background Tabs") { app.sleepBackgroundTabs() }
                 Spacer()

@@ -38,4 +38,52 @@ struct TabSleepPolicyTests {
         let a = tab(1, selected: true), b = tab(1), c = tab(2, pinned: true), d = tab(3, busy: true)
         #expect(policy.tabsToSleep([a, b, c, d], now: now, memoryPressure: true) == [c.id, b.id])
     }
+
+    // MARK: - Power
+
+    private let configured = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 10, sleepPinnedTabs: false)
+
+    @Test func normalPowerKeepsTheUsersValues() {
+        #expect(configured.adjusted(for: .normal) == configured)
+        #expect(configured.adjusted(for: PowerConditions(thermal: .fair)) == configured)
+    }
+
+    @Test func lowPowerModeOrSeriousHeatSleepsSoonerWithFewerAwake() {
+        for power in [PowerConditions(lowPowerMode: true), PowerConditions(thermal: .serious)] {
+            let policy = configured.adjusted(for: power)
+            #expect(policy.sleepAfter == 5 * 60)
+            #expect(policy.maxAwakeTabs == 5)
+            #expect(policy.sleepPinnedTabs == configured.sleepPinnedTabs)
+        }
+        // A tab idle for 10 minutes sleeps under Low Power Mode, not otherwise.
+        let a = tab(1, selected: true), b = tab(10)
+        #expect(configured.tabsToSleep([a, b], now: now).isEmpty)
+        #expect(configured.adjusted(for: PowerConditions(lowPowerMode: true)).tabsToSleep([a, b], now: now) == [b.id])
+    }
+
+    @Test func criticalHeatIsStricter() {
+        let policy = configured.adjusted(for: PowerConditions(lowPowerMode: true, thermal: .critical))
+        #expect(policy.sleepAfter == 60)
+        #expect(policy.maxAwakeTabs == 2)
+    }
+
+    @Test func neverLooserThanTheUsersOwnValues() {
+        let strict = TabSleepPolicy(sleepAfter: 2 * 60, maxAwakeTabs: 3, sleepPinnedTabs: true)
+        let adjusted = strict.adjusted(for: PowerConditions(lowPowerMode: true))
+        #expect(adjusted.sleepAfter == 2 * 60)
+        #expect(adjusted.maxAwakeTabs == 2)
+        #expect(TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 1, sleepPinnedTabs: false).adjusted(for: PowerConditions(lowPowerMode: true)).maxAwakeTabs == 1)
+    }
+
+    @Test func settingsTheUserTurnedOffStayOff() {
+        let off = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: false)
+        #expect(off.adjusted(for: PowerConditions(lowPowerMode: true, thermal: .critical)) == off)
+    }
+
+    @Test func reasonNamesWhatConstrainsPower() {
+        #expect(PowerConditions.normal.reason == nil)
+        #expect(PowerConditions(lowPowerMode: true).reason == "Low Power Mode")
+        #expect(PowerConditions(lowPowerMode: true, thermal: .serious).reason == "Low Power Mode and the Mac running hot")
+        #expect(PowerConditions(thermal: .critical).reason == "the Mac running very hot")
+    }
 }
