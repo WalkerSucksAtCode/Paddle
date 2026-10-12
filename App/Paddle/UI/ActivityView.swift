@@ -44,6 +44,10 @@ struct ActivityView: View {
                 ForEach(app.web.blockerStatus, id: \.self) { line in
                     Text(line).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
+                ForEach(app.web.filterUpdateProblems.values.sorted(), id: \.self) { line in
+                    Label(line, systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 11))
+                }
             }
         }
         .padding(14)

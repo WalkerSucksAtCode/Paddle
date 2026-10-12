@@ -23,6 +23,7 @@
 		3F06817D9FA61E3D47C1696C /* ExtensionAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = B638B1EE7C20C00722F34C1E /* ExtensionAdapters.swift */; };
 		42D28E30C000EE2D21CEB1E2 /* Glyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA6FEB74A284AD57FB757A0 /* Glyph.swift */; };
 		445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */; };
+		5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */; };
 		51F4933CF1904CF98671BEBC /* ExtensionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */; };
 		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
 		6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE304A3A835594677036488 /* ProcessMemory.swift */; };
@@ -57,6 +58,7 @@
 		796C7AE983E4F84683CFAFB2 /* Tab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tab.swift; sourceTree = "<group>"; };
 		7EE304A3A835594677036488 /* ProcessMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemory.swift; sourceTree = "<group>"; };
 		8488DDEB21AAB3C480FC2F0F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultBrowser.swift; sourceTree = "<group>"; };
 		8E3E212F72DAF671F028B0F4 /* MainMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenu.swift; sourceTree = "<group>"; };
 		952BF713553853D7D819E091 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
 		9881BDAB3248D8FEB481C88A /* BrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserView.swift; sourceTree = "<group>"; };
@@ -180,6 +182,7 @@
 		E866DFFDF107D654001FDD29 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */,
 				11E5FE7EECAC5C0800D39F69 /* Paths.swift */,
 				7EE304A3A835594677036488 /* ProcessMemory.swift */,
 			);
@@ -278,6 +281,7 @@
 				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
 				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
 				BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */,
+				5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */,
 				5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */,
 				3F06817D9FA61E3D47C1696C /* ExtensionAdapters.swift in Sources */,
 				3368759BF5D44C36AF5D4C0B /* ExtensionControllerDelegate.swift in Sources */,

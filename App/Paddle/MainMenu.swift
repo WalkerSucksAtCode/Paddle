@@ -21,6 +21,7 @@ enum MainMenu {
         add(app, "openConfigFolder", "Open Config Folder", #selector(AppDelegate.paddleOpenConfigFolder(_:)), "", target: appDelegate)
         add(app, "reloadConfig", "Reload Config", #selector(AppDelegate.paddleReloadConfig(_:)), ",", [.command, .option], target: appDelegate)
         add(app, "updateFilterLists", "Update Filter Lists", #selector(AppDelegate.paddleUpdateFilterLists(_:)), "", target: appDelegate)
+        add(app, "makeDefaultBrowser", "Make Paddle the Default Browser…", #selector(AppDelegate.paddleMakeDefaultBrowser(_:)), "", target: appDelegate)
         app.addItem(.separator())
         add(app, "hide", "Hide Paddle", #selector(NSApplication.hide(_:)), "h")
         add(app, "hideOthers", "Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])

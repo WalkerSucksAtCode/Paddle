@@ -180,39 +180,79 @@ final class WebEnvironment {
         }
     }
 
-    /// Downloads every list in `config.filterLists` into `filters/`, then recompiles.
-    func updateFilterLists() async -> String {
-        guard !isUpdatingFilters else { return "Already updating." }
+    /// What one Update Filter Lists run did: a line per list, and how many lists were written or failed.
+    struct FilterUpdateReport {
+        var lines: [String] = []
+        var written = 0
+        var failures = 0
+        /// Another update was already running, so this one did nothing.
+        var skipped = false
+        var text: String { lines.joined(separator: "\n") }
+    }
+
+    /// Lists whose last automatic or manual download failed, keyed by file name, e.g.
+    /// "easyprivacy: update failed (404), last downloaded 9 days ago". Shown under Content blocking in Activity.
+    private(set) var filterUpdateProblems: [String: String] = [:]
+
+    /// Downloads `lists` (default: every list in `config.filterLists`) into `filters/`, then recompiles if any
+    /// list was written. Used by Paddle > Update Filter Lists and by the automatic update (`filterUpdateDays`).
+    func updateFilterLists(_ lists: [String]? = nil) async -> FilterUpdateReport {
+        guard !isUpdatingFilters else { return FilterUpdateReport(lines: ["Already updating."], skipped: true) }
         isUpdatingFilters = true
         defer { isUpdatingFilters = false }
 
-        var report: [String] = []
-        for string in config.filterLists {
-            guard let url = URL(string: string), url.scheme == "https" else {
-                report.append("Skipped \(string): not an https URL")
+        let configured = Set(config.filterLists.compactMap(FilterUpdatePolicy.fileName(forList:)))
+        filterUpdateProblems = filterUpdateProblems.filter { configured.contains($0.key) }
+
+        var report = FilterUpdateReport()
+        for string in lists ?? config.filterLists {
+            guard let file = FilterUpdatePolicy.fileName(forList: string), let url = URL(string: string) else {
+                report.lines.append("Skipped \(string): not an https URL")
+                report.failures += 1
                 continue
+            }
+            let name = (file as NSString).deletingPathExtension
+            let destination = Paths.filters.appending(path: file)
+            func failed(_ reason: String) {
+                report.lines.append("\(name): \(reason)")
+                report.failures += 1
+                filterUpdateProblems[file] = "\(name): update failed (\(reason)), \(Self.downloadedAge(destination))"
             }
             do {
                 let (data, response) = try await URLSession.shared.data(from: url)
-                guard (response as? HTTPURLResponse)?.statusCode == 200, let text = String(data: data, encoding: .utf8),
-                      text.hasPrefix("[Adblock") || text.hasPrefix("!") else {
-                    report.append("\(url.lastPathComponent): not a filter list")
-                    continue
-                }
-                let name = url.deletingPathExtension().lastPathComponent
-                try data.write(to: Paths.filters.appending(path: "\(name).txt"))
-                report.append("\(name): \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard status == 200 else { failed("HTTP \(status)"); continue }
+                guard let text = String(data: data, encoding: .utf8), text.hasPrefix("[Adblock") || text.hasPrefix("!")
+                else { failed("not a filter list"); continue }
+                try data.write(to: destination, options: .atomic)
+                report.lines.append("\(name): \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
+                report.written += 1
+                filterUpdateProblems[file] = nil
             } catch {
-                report.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                failed(error.localizedDescription)
             }
         }
-        await loadContentBlockers()
-        return report.joined(separator: "\n")
+        // Nothing new on disk means the installed rule lists are already current.
+        if report.written > 0 { await loadContentBlockers() }
+        return report
     }
 
-    var hasDownloadedFilters: Bool {
-        let files = (try? FileManager.default.contentsOfDirectory(at: Paths.filters, includingPropertiesForKeys: nil)) ?? []
-        return files.contains { $0.pathExtension == "txt" }
+    /// "last downloaded 3 days ago", or "never downloaded" when the list's file does not exist.
+    private static func downloadedAge(_ file: URL) -> String {
+        guard let date = modificationDate(file) else { return "never downloaded" }
+        let days = Int(Date().timeIntervalSince(date) / 86_400)
+        return days <= 0 ? "last downloaded today" : "last downloaded \(days) day\(days == 1 ? "" : "s") ago"
+    }
+
+    private static func modificationDate(_ file: URL) -> Date? {
+        try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    }
+
+    /// The configured lists due for an automatic download: each judged on its own file in `filters/`.
+    func filterListsDue(now: Date) -> [String] {
+        FilterUpdatePolicy.dueLists(config.filterLists, now: now, days: config.filterUpdateDays) { file in
+            Self.modificationDate(Paths.filters.appending(path: file))
+        }
     }
 }
 

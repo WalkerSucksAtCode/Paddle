@@ -23,6 +23,7 @@ Only include the keys you change.
 | `sleepPinnedTabs` | `false` | Let pinned tabs sleep too |
 | `contentBlocking` | `true` | Ad and tracker blocking |
 | `filterLists` | EasyList, EasyPrivacy | Adblock Plus lists fetched by Paddle > Update Filter Lists |
+| `filterUpdateDays` | `7` | Days between automatic downloads of `filterLists`, checked at launch and hourly. Each list is judged by its own file in `filters/`: a list is fetched when its file is missing (new or never downloaded) or older than this, so a failed list is retried at the next hourly check. Failures show under Content blocking in the Activity popover. `0` = only by hand, except a list whose file is missing |
 | `userAgentSuffix` | `""` | Replaces `Version/… Safari/…` (empty = match installed Safari) |
 | `siteUserAgents` | `{}` | Full user agent per site, e.g. `{"example.com": "Mozilla/5.0 …"}` |
 | `showTabMemory` | `true` | Memory readout in the toolbar |
@@ -30,7 +31,7 @@ Only include the keys you change.
 | `extensions` | `{}` | Turn an extension off by its folder name, e.g. `{"protonpass": false}`. Folders not listed are on |
 | `shortcuts` | `{}` | Rebind menu commands, e.g. `{"nextTab": "cmd+option+right", "closeTab": "none"}` |
 
-Shortcut action names: `settings`, `openConfigFolder`, `reloadConfig`, `updateFilterLists`, `hide`, `hideOthers`, `quit`, `newTab`, `newWindow`, `openLocation`, `closeTab`, `closeWindow`, `reopenClosedTab`, `undo`, `redo`, `cut`, `copy`, `paste`, `pasteAndMatchStyle`, `selectAll`, `find`, `findNext`, `findPrevious`, `reload`, `hardReload`, `stop`, `zoomIn`, `zoomOut`, `actualSize`, `webInspector`, `fullScreen`, `back`, `forward`, `showHistory`, `clearHistory`, `addBookmark`, `showBookmarks`, `toggleBookmarksBar`, `importBookmarks`, `exportBookmarks`, `nextTab`, `previousTab`, `togglePin`, `duplicateTab`, `sleepBackgroundTabs`, `tab1` … `tab9`, `openExtensionsFolder`, `reloadExtensions`, `minimize`.
+Shortcut action names: `settings`, `openConfigFolder`, `reloadConfig`, `updateFilterLists`, `makeDefaultBrowser`, `hide`, `hideOthers`, `quit`, `newTab`, `newWindow`, `openLocation`, `closeTab`, `closeWindow`, `reopenClosedTab`, `undo`, `redo`, `cut`, `copy`, `paste`, `pasteAndMatchStyle`, `selectAll`, `find`, `findNext`, `findPrevious`, `reload`, `hardReload`, `stop`, `zoomIn`, `zoomOut`, `actualSize`, `webInspector`, `fullScreen`, `back`, `forward`, `showHistory`, `clearHistory`, `addBookmark`, `showBookmarks`, `toggleBookmarksBar`, `importBookmarks`, `exportBookmarks`, `nextTab`, `previousTab`, `togglePin`, `duplicateTab`, `sleepBackgroundTabs`, `tab1` … `tab9`, `openExtensionsFolder`, `reloadExtensions`, `minimize`.
 
 Modifiers: `cmd`, `shift`, `option`/`alt`, `ctrl`. Named keys: `left right up down tab return escape delete space home end pageup pagedown f1`–`f12`.
 
@@ -53,6 +54,16 @@ Paddle runs WebExtensions (the Chrome and Firefox add-on format) on WebKit's own
 - `user.css`: applied to every page.
 - `user-filters.txt`: your own Adblock Plus rules (`||host^`, `site.com##.selector`, `@@||site^$document` to allowlist a site).
 - `userscripts/*.js`: Greasemonkey-style scripts (`@match`, `@include`, `@exclude`, `@run-at`, `@noframes`, `@inject-into content`). A file without a header runs everywhere. `GM_*` APIs are not provided.
+
+## Install
+
+`scripts/release.sh` builds a Release signed with Developer ID (hardened runtime, secure timestamp), checks it with `codesign --verify --deep --strict` and refuses a build carrying `get-task-allow`. Every step prints PASS or FAIL, and a summary marks steps that didn't run as SKIP (a step that dies on an unexpected error or Ctrl-C shows as FAIL).
+
+- no flags: build, sign, verify, and zip to `dist/Paddle-<version>-<build>-unnotarized.zip`.
+- `--notarize`: also submit a scratch zip with `notarytool` (keychain profile `walker-notary`, or `NOTARY_PROFILE`), staple the app and check it with `spctl`. Only then is `dist/Paddle-<version>-<build>.zip` written, from the stapled app.
+- `--install`: also quit a running Paddle, verify a staged copy, swap it into `/Applications/Paddle.app` (the old copy is restored if anything fails), and print the installed version and Gatekeeper's verdict. Without `--notarize` that line says UNNOTARIZED.
+
+`SIGN_IDENTITY` picks a certificate by SHA-1 when more than one Developer ID matches. Once Paddle is in `/Applications`, Paddle > Make Paddle the Default Browser… asks macOS to make it the default; copies run from elsewhere (debug builds) refuse.
 
 ## Build
 

@@ -71,6 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if menuItem.action == #selector(paddleToggleBookmarksBar(_:)) {
             menuItem.title = AppModel.shared.showBookmarksBar ? "Hide Bookmarks Bar" : "Show Bookmarks Bar"
         }
+        if menuItem.action == #selector(paddleMakeDefaultBrowser(_:)) {
+            let isDefault = DefaultBrowser.isDefault
+            menuItem.title = isDefault ? "Paddle Is the Default Browser" : "Make Paddle the Default Browser…"
+            return !isDefault
+        }
         return true
     }
 
@@ -121,9 +126,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Task {
             let report = await AppModel.shared.web.updateFilterLists()
             let alert = NSAlert()
-            alert.messageText = "Filter lists updated"
-            alert.informativeText = report + "\n\n" + AppModel.shared.web.blockerStatus.joined(separator: "\n")
+            if report.failures > 0 {
+                alert.alertStyle = .warning
+                alert.messageText = report.failures == 1
+                    ? "A filter list couldn't be updated" : "\(report.failures) filter lists couldn't be updated"
+            } else {
+                alert.messageText = report.skipped ? "Filter lists are already updating" : "Filter lists updated"
+            }
+            alert.informativeText = report.text + "\n\n" + AppModel.shared.web.blockerStatus.joined(separator: "\n")
             alert.runModal()
         }
     }
+
+    @objc func paddleMakeDefaultBrowser(_ sender: Any?) { DefaultBrowser.make() }
 }

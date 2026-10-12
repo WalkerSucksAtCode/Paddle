@@ -26,6 +26,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var contentBlocking: Bool
     /// Adblock Plus-syntax filter lists, fetched with Paddle > Update Filter Lists.
     public var filterLists: [String]
+    /// Days between automatic filter-list downloads, checked at launch and hourly, per list. 0 = only by hand
+    /// (a list whose file in filters/ is missing is still fetched once).
+    public var filterUpdateDays: Int
 
     /// Appended to WebKit's user agent. Empty means "match the installed Safari", which most sites expect.
     public var userAgentSuffix: String
@@ -59,6 +62,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sleepPinnedTabs: Bool = false,
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
+        filterUpdateDays: Int = 7,
         userAgentSuffix: String = "",
         siteUserAgents: [String: String] = [:],
         showTabMemory: Bool = true,
@@ -76,6 +80,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.sleepPinnedTabs = sleepPinnedTabs
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
+        self.filterUpdateDays = filterUpdateDays
         self.userAgentSuffix = userAgentSuffix
         self.siteUserAgents = siteUserAgents
         self.showTabMemory = showTabMemory
@@ -97,6 +102,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sleepPinnedTabs = try c.decodeIfPresent(Bool.self, forKey: .sleepPinnedTabs) ?? d.sleepPinnedTabs
         contentBlocking = try c.decodeIfPresent(Bool.self, forKey: .contentBlocking) ?? d.contentBlocking
         filterLists = try c.decodeIfPresent([String].self, forKey: .filterLists) ?? d.filterLists
+        filterUpdateDays = try c.decodeIfPresent(Int.self, forKey: .filterUpdateDays) ?? d.filterUpdateDays
         userAgentSuffix = try c.decodeIfPresent(String.self, forKey: .userAgentSuffix) ?? d.userAgentSuffix
         siteUserAgents = try c.decodeIfPresent([String: String].self, forKey: .siteUserAgents) ?? d.siteUserAgents
         showTabMemory = try c.decodeIfPresent(Bool.self, forKey: .showTabMemory) ?? d.showTabMemory

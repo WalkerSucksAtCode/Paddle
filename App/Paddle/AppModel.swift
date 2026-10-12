@@ -66,10 +66,8 @@ final class AppModel {
         // pages wait for this (deferred wake).
         await extensions.loadAll(config: config)
 
-        if config.contentBlocking, !config.filterLists.isEmpty, !web.hasDownloadedFilters {
-            let report = await web.updateFilterLists()
-            log.info("first-run filter download:\n\(report, privacy: .public)")
-        }
+        // After the startup compile and the first windows, and not awaited, so a download never holds up a page.
+        Task { await updateFilterListsIfDue() }
     }
 
     func willTerminate() {
@@ -122,6 +120,29 @@ final class AppModel {
         alert.messageText = "Extensions reloaded"
         alert.informativeText = extensions.statusLines.joined(separator: "\n")
         alert.runModal()
+    }
+
+    // MARK: - Filter lists
+
+    @ObservationIgnored private var lastFilterCheck = Date.distantPast
+
+    /// Automatic filter-list update: the same download as Paddle > Update Filter Lists, but only for lists that are
+    /// due (file missing, or older than `filterUpdateDays`), and without an alert. Runs at launch and at most hourly
+    /// from the sweep timer. A failed list writes nothing, so it is due again at the next hourly check; the failure
+    /// shows under Content blocking in the Activity popover (`WebEnvironment.filterUpdateProblems`) and in the log.
+    func updateFilterListsIfDue() async {
+        let now = Date()
+        lastFilterCheck = now
+        guard config.contentBlocking, !web.isUpdatingFilters else { return }
+        let due = web.filterListsDue(now: now)
+        guard !due.isEmpty else { return }
+        let report = await web.updateFilterLists(due)
+        if report.skipped { return }
+        if report.failures == 0 {
+            log.info("automatic filter update:\n\(report.text, privacy: .public)")
+        } else {
+            log.error("automatic filter update, \(report.failures) failed:\n\(report.text, privacy: .public)")
+        }
     }
 
     // MARK: - History
@@ -320,6 +341,7 @@ final class AppModel {
                 let app = AppModel.shared
                 app.sweepSleepingTabs()
                 if Date().timeIntervalSince(app.lastHistoryPrune) > 86_400 { app.pruneHistory() }
+                if Date().timeIntervalSince(app.lastFilterCheck) > 3_600 { Task { await app.updateFilterListsIfDue() } }
             }
         }
 
