@@ -24,6 +24,27 @@ struct BrowserView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
             }
+            if let banner = app.extensions.bannerText {
+                HStack(alignment: .top, spacing: 8) {
+                    Label(banner, systemImage: "puzzlepiece.extension")
+                        .font(.system(size: 11))
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        app.extensions.dismissBanner()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Dismiss")
+                    .accessibilityLabel("Dismiss")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+            }
             if model.findVisible {
                 FindBar(model: model)
             }
@@ -235,6 +256,7 @@ private struct NavigationBar: View {
             }
             addressField
                 .padding(.horizontal, 4)
+            ExtensionToolbar(host: app.extensions, tab: tab)
             if app.config.showTabMemory {
                 memoryButton
             }

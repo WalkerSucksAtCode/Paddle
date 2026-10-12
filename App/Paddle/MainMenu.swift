@@ -100,6 +100,12 @@ enum MainMenu {
             item.tag = n
         }
 
+        let extensions = submenu(main, "Extensions")
+        add(extensions, "openExtensionsFolder", "Open Extensions Folder", #selector(AppDelegate.paddleOpenExtensionsFolder(_:)), "", target: appDelegate)
+        add(extensions, "reloadExtensions", "Reload Extensions", #selector(AppDelegate.paddleReloadExtensions(_:)), "", target: appDelegate)
+        // Each running extension and the load status lines follow, filled in by ExtensionsMenuDelegate when the menu opens.
+        extensions.delegate = ExtensionsMenuDelegate.shared
+
         let window = submenu(main, "Window")
         add(window, "minimize", "Minimize", #selector(NSWindow.performMiniaturize(_:)), "m")
         window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
@@ -155,6 +161,33 @@ enum MainMenu {
             if key.hasPrefix("f"), let n = Int(key.dropFirst()), (1...12).contains(n) { return function(NSF1FunctionKey + n - 1) }
             return key
         }
+    }
+
+    /// True when an item in the menu bar (hidden ones included) has this key equivalent, compared in key-equivalent
+    /// form: an uppercase letter implies Shift. Used to leave Paddle's own shortcuts to the menu when an extension
+    /// command is bound to the same key. Items of the Extensions menu's extension submenus exist only while it is
+    /// open, so they never match.
+    static func usesKeyEquivalent(_ key: String?, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard let key, !key.isEmpty, let menu = NSApp.mainMenu else { return false }
+        let target = normalized(key, modifiers)
+        func search(_ menu: NSMenu) -> Bool {
+            menu.items.contains { item in
+                if !item.keyEquivalent.isEmpty, normalized(item.keyEquivalent, item.keyEquivalentModifierMask) == target { return true }
+                return item.submenu.map(search) ?? false
+            }
+        }
+        return search(menu)
+    }
+
+    private struct KeyEquivalent: Equatable {
+        let key: String
+        let modifiers: NSEvent.ModifierFlags.RawValue
+    }
+
+    private static func normalized(_ key: String, _ modifiers: NSEvent.ModifierFlags) -> KeyEquivalent {
+        var flags = modifiers.intersection([.command, .shift, .option, .control])
+        if key != key.lowercased() { flags.insert(.shift) }
+        return KeyEquivalent(key: key.lowercased(), modifiers: flags.rawValue)
     }
 
     // MARK: - Helpers

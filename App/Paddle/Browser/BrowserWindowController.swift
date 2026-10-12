@@ -121,11 +121,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleActualSize(_ sender: Any?) { webView?.pageZoom = 1 }
 
     @objc func paddleWebInspector(_ sender: Any?) {
-        // `_inspector` is private WebKit API (personal build); does nothing if it ever goes away.
-        guard let webView, webView.responds(to: NSSelectorFromString("_inspector")),
-              let inspector = webView.value(forKey: "_inspector") as? NSObject,
-              inspector.responds(to: NSSelectorFromString("show")) else { return }
-        inspector.perform(NSSelectorFromString("show"))
+        if let webView { WebInspector.show(webView) }
     }
 
     // MARK: - History
@@ -162,6 +158,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
 /// Ctrl-Tab is AppKit's keyboard-focus key: a focused web view passes it on to the key view loop, so the
 /// Tabs menu never saw it and focus jumped to the address field instead. Offer it to the menu first, as Safari does.
+///
+/// Extension commands (manifest `commands`) don't come through here: `ExtensionHost` runs them before dispatch,
+/// before the page sees the key, unless one of Paddle's menu items uses that key.
 final class BrowserWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == 48, event.modifierFlags.contains(.control),

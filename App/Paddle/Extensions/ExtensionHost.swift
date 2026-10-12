@@ -22,7 +22,14 @@ final class LoadedExtension: Identifiable {
     let context: WKWebExtensionContext
     /// Permission names and match-pattern strings the manifest asks for; the keys of its permission record.
     let requested: (permissions: Set<String>, hosts: Set<String>)
+    /// The manifest declares a toolbar action (`action`, or MV2's `browser_action` / `page_action`), so it gets a
+    /// toolbar button. WebKit hands back an action object for every extension, so the manifest decides. Read once:
+    /// the manifest doesn't change while the extension is loaded.
+    let hasAction: Bool
     var problems: [String]
+    /// Bumped when WebKit reports a change to this extension's action as the toolbar shows it; only its own
+    /// buttons redraw.
+    var actionGeneration = 0
 
     init(name: String, id: String, entry: ExtensionEntry, manifest: ExtensionManifest, webExtension: WKWebExtension,
          context: WKWebExtensionContext, requested: (permissions: Set<String>, hosts: Set<String>), problems: [String]) {
@@ -34,6 +41,8 @@ final class LoadedExtension: Identifiable {
         self.context = context
         self.requested = requested
         self.problems = problems
+        let manifest = webExtension.manifest
+        hasAction = manifest["action"] != nil || manifest["browser_action"] != nil || manifest["page_action"] != nil
     }
 
     var displayName: String { ExtensionPermissionText.sanitize(webExtension.displayName ?? name) }
@@ -53,12 +62,12 @@ final class ExtensionHost {
     private(set) var statusLines: [String] = []
     /// Load failures at startup, for a banner in the window.
     private(set) var bannerText: String?
-    /// Bumped whenever an action's icon, badge or label changes.
-    private(set) var actionGeneration = 0
 
     @ObservationIgnored private(set) var controller: WKWebExtensionController?
     /// The controller holds its delegate weakly; the host keeps it alive.
     @ObservationIgnored private let controllerDelegate = ExtensionControllerDelegate()
+    /// Shows action popups, one at a time.
+    @ObservationIgnored let popups = ExtensionPopupPresenter()
     @ObservationIgnored private var decisions = ExtensionDecisions()
     /// The permissions file is unreadable: nothing loads and the file is never overwritten.
     @ObservationIgnored private var decisionsError: String?
@@ -86,6 +95,10 @@ final class ExtensionHost {
     @ObservationIgnored private weak var reportedFocus: BrowserWindowController?
     @ObservationIgnored private var reportedNoFocus = false
     @ObservationIgnored private var permissionObservers: [any NSObjectProtocol] = []
+    /// Runs extension commands before the page sees the key.
+    @ObservationIgnored private var keyMonitor: Any?
+    /// Extensions (context ids) whose toolbar buttons redraw on the next run-loop turn.
+    @ObservationIgnored private var pendingActionRedraws: Set<String> = []
 
     private var web: WebEnvironment { AppModel.shared.web }
 
@@ -101,6 +114,7 @@ final class ExtensionHost {
         readDecisions()
         rescan()
         observePermissionChanges()
+        installKeyMonitor()
         let allowed = entries.filter { config.isExtensionEnabled($0.name) && decisionsAllowRunning($0) }
         if allowed.isEmpty {
             log.info("extensions: none enabled, controller not created")
@@ -393,13 +407,18 @@ final class ExtensionHost {
     private func liveSnapshot(_ ext: LoadedExtension) -> ExtensionSnapshot {
         let context = ext.context
         let current = decisions.byFolder[ext.name]
+        // Only When I Click hosts are in neither of WebKit's sets; carried over from the file (in WebKit's spelling,
+        // as `editedItems` compares them) so a save doesn't drop them and re-prompt.
+        let clickHosts = Set((current?.hosts ?? [:]).filter { $0.value == .click }.keys.compactMap {
+            (try? WKWebExtension.MatchPattern(string: $0))?.string
+        })
         return ExtensionSnapshot.from(
             name: ext.displayName, version: ext.version, run: current != nil ? current?.run : .allow,
             granted: Dictionary(uniqueKeysWithValues: context.grantedPermissions.map { ($0.key.rawValue, $0.value) }),
             denied: Dictionary(uniqueKeysWithValues: context.deniedPermissions.map { ($0.key.rawValue, $0.value) }),
             grantedHosts: Dictionary(context.grantedPermissionMatchPatterns.map { ($0.key.string, $0.value) }, uniquingKeysWith: { a, _ in a }),
             deniedHosts: Dictionary(context.deniedPermissionMatchPatterns.map { ($0.key.string, $0.value) }, uniquingKeysWith: { a, _ in a }),
-            now: Date()
+            clickHosts: clickHosts, now: Date()
         )
     }
 
@@ -468,7 +487,7 @@ final class ExtensionHost {
                 manifest = try ExtensionManifest(data: JSONSerialization.data(withJSONObject: webExtension.manifest))
             } catch {
                 status[entry.name] = "failed: manifest unreadable (\(error.localizedDescription))"
-                failures.append("Extension “\(displayName)” didn't load: manifest unreadable")
+                failures.append(ExtensionPermissionText.sanitize("Extension “\(displayName)” didn't load: manifest unreadable", max: 240))
                 continue
             }
 
@@ -476,7 +495,8 @@ final class ExtensionHost {
             if let first = missing.background.first {
                 // A missing service worker hangs the background with no error, so it never gets that far.
                 status[entry.name] = "background file \(first) missing, not loaded"
-                failures.append("Extension “\(displayName)” didn't load: background file \(first) missing")
+                // `first` comes from the manifest: one sanitized line, like every banner line.
+                failures.append(ExtensionPermissionText.sanitize("Extension “\(displayName)” didn't load: background file \(first) missing", max: 240))
                 log.error("\(entry.name, privacy: .public): background file \(first, privacy: .public) missing")
                 continue
             }
@@ -540,7 +560,13 @@ final class ExtensionHost {
                     log.error("\(entry.name, privacy: .public): ignoring invalid pattern \(string, privacy: .public) in extension-permissions.json")
                     continue
                 }
-                if decision == .allow { grantedHosts[pattern] = .distantFuture } else { deniedHosts[pattern] = .distantFuture }
+                switch decision {
+                case .allow: grantedHosts[pattern] = .distantFuture
+                case .deny: deniedHosts[pattern] = .distantFuture
+                // Only When I Click: neither, so the pattern stays requested and WebKit's `activeTab` grant on a
+                // click can reach the page. An explicit denial would block that grant.
+                case .click: break
+                }
             }
             context.grantedPermissions = granted
             context.deniedPermissions = denied
@@ -577,6 +603,9 @@ final class ExtensionHost {
 
     /// Unloads one extension. Its open pages close (removed or turned off) or sleep until it is back (reload).
     private func unload(_ ext: LoadedExtension, closingTabs: Bool) {
+        // The popup on screen is usually the tab's own action's (a click runs `performAction(for: tab)`), not the
+        // default action's; the presenter knows which one it showed.
+        popups.close(for: ext.context)
         ext.context.action(for: nil)?.closePopup()
         for window in registeredWindows.compactMap(\.value) {
             for tab in window.model.tabs where ExtensionIdentity.identifier(of: tab.url) == ext.id {
@@ -653,7 +682,8 @@ final class ExtensionHost {
                 host: targetTab?.url?.host()
             )
             // The popup that asked would close when the alert takes focus; keep it until the answer is in.
-            let popover = ext.context.action(for: nil)?.popupPopover
+            // (`popups.shownPopover`, not `action.popupPopover`: reading that creates a popup web view.)
+            let popover = self.popups.shownPopover
             let behavior = popover?.behavior
             if popover?.isShown == true { popover?.behavior = .applicationDefined }
             defer { if let behavior, popover?.isShown == true { popover?.behavior = behavior } }
@@ -819,17 +849,97 @@ final class ExtensionHost {
 
     // MARK: - Actions and commands
 
+    /// The toolbar button or the Extensions menu. WebKit grants `activeTab` for the tab on this click
+    /// (`shouldGrantPermissionsOnUserGesture`), then fires the action's event or asks the delegate to show the
+    /// popup, which the presenter shows because Paddle noted the user action first.
     func performAction(_ ext: LoadedExtension, in tab: Tab?) {
+        popups.noteUserAction(for: ext.context)
         ext.context.performAction(for: tab?.extensionTab)
     }
 
-    /// A key event no Paddle shortcut claimed: the first extension command bound to it runs.
-    func performCommand(for event: NSEvent) -> Bool {
-        guard controller != nil else { return false }
-        return loaded.contains { $0.context.performCommand(for: event) }
+    /// An extension command chosen from the Extensions menu.
+    func performCommand(_ command: WKWebExtension.Command, of ext: LoadedExtension) {
+        popups.noteUserAction(for: ext.context)
+        ext.context.performCommand(command)
     }
 
-    func actionUpdated() {
-        actionGeneration += 1
+    /// Extension commands run before the page and the window see the key, as in Chrome, so a page that handles
+    /// the same key (Google Docs and ⌘⇧L) can't swallow them. A key one of Paddle's menu items uses is left to
+    /// the menu. Only in browser windows, and not while a sheet is up.
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Local monitors run on the main thread, inside the app's event dispatch.
+            nonisolated(unsafe) let keyEvent = event
+            let handled = MainActor.assumeIsolated { AppModel.shared.extensions.performCommandBeforeDispatch(keyEvent) }
+            return handled ? nil : event
+        }
+    }
+
+    private func performCommandBeforeDispatch(_ event: NSEvent) -> Bool {
+        guard controller != nil, !loaded.isEmpty, let window = event.window as? BrowserWindow,
+              window.isKeyWindow, window.attachedSheet == nil else { return false }
+        for ext in loaded {
+            guard let command = ext.context.command(for: event) else { continue }
+            if MainMenu.usesKeyEquivalent(command.activationKey, modifiers: command.modifierFlags) {
+                log.debug("command \(command.id, privacy: .public) of \(ext.name, privacy: .public): key taken by Paddle's menu")
+                return false
+            }
+            popups.noteUserAction(for: ext.context)
+            ext.context.performCommand(command)
+            return true
+        }
+        return false
+    }
+
+    /// `didUpdate action`: redraws that extension's buttons on the next run-loop turn, once however many updates
+    /// arrive (a blocker's badge count changes per blocked request). Updates to a tab's action are skipped unless
+    /// that tab is selected in its window; the toolbar fetches it fresh when the tab is selected.
+    func actionUpdated(_ action: WKWebExtension.Action, for context: WKWebExtensionContext) {
+        if action.associatedTab != nil {
+            guard let tab = (action.associatedTab as? ExtensionTab)?.tab, tab.browser?.selectedID == tab.id else { return }
+        }
+        let wasEmpty = pendingActionRedraws.isEmpty
+        pendingActionRedraws.insert(context.uniqueIdentifier)
+        guard wasEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let ids = pendingActionRedraws
+            pendingActionRedraws = []
+            for ext in loaded where ids.contains(ext.id) { ext.actionGeneration += 1 }
+        }
+    }
+
+    /// `runtime.openOptionsPage()`, the menus and the button's right-click: the options page in a tab of the front
+    /// window, selecting an existing one.
+    func openOptionsPage(for context: WKWebExtensionContext) throws {
+        guard let url = context.optionsPageURL else { throw PaddleExtensionError.noOptions }
+        let app = AppModel.shared
+        for window in app.windows {
+            if let tab = window.model.tabs.first(where: { $0.url == url }) {
+                window.model.select(tab)
+                window.window?.makeKeyAndOrderFront(nil)
+                return
+            }
+        }
+        guard let front = app.frontWindow else {
+            app.openWindow(url: url)
+            return
+        }
+        front.model.newTab(url: url, select: true)
+        front.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The background page's web view, through WebKit's private `_backgroundWebView` (personal build; nil when the
+    /// API is gone or the background isn't running).
+    func backgroundWebView(of ext: LoadedExtension) -> WKWebView? {
+        let key = "_backgroundWebView"
+        guard ext.context.responds(to: NSSelectorFromString(key)) else { return nil }
+        return ext.context.value(forKey: key) as? WKWebView
+    }
+
+    /// The window banner's close button. The lines stay in the Extensions menu.
+    func dismissBanner() {
+        bannerText = nil
     }
 }

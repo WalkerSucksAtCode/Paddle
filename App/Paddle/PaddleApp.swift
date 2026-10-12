@@ -89,6 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func paddleSleepBackgroundTabs(_ sender: Any?) { AppModel.shared.sleepBackgroundTabs() }
 
+    @objc func paddleOpenExtensionsFolder(_ sender: Any?) { NSWorkspace.shared.open(Paths.extensions) }
+
+    @objc func paddleReloadExtensions(_ sender: Any?) { Task { await AppModel.shared.reloadExtensions() } }
+
     @objc func paddleShowHistory(_ sender: Any?) { HistoryWindowController.show() }
 
     @objc func paddleClearHistory(_ sender: Any?) { ClearHistoryPrompt.run(for: NSApp.keyWindow) }

@@ -75,20 +75,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, openOptionsPageFor extensionContext: WKWebExtensionContext) async throws {
-        guard let url = extensionContext.optionsPageURL else { throw PaddleExtensionError.noOptions }
-        for window in app.windows {
-            if let tab = window.model.tabs.first(where: { $0.url == url }) {
-                window.model.select(tab)
-                window.window?.makeKeyAndOrderFront(nil)
-                return
-            }
-        }
-        guard let front = app.frontWindow else {
-            app.openWindow(url: url)
-            return
-        }
-        front.model.newTab(url: url, select: true)
-        front.window?.makeKeyAndOrderFront(nil)
+        try host.openOptionsPage(for: extensionContext)
     }
 
     // MARK: - Permissions
@@ -135,15 +122,18 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     // MARK: - Actions
 
     func webExtensionController(_ controller: WKWebExtensionController, didUpdate action: WKWebExtension.Action, forExtensionContext context: WKWebExtensionContext) {
-        host.actionUpdated()
+        host.actionUpdated(action, for: context)
     }
 
-    /// The toolbar button and popover arrive with the next sub-wave; until then a popup request is logged and
-    /// closed so the popup web view doesn't linger.
+    /// A click on the button, or the extension's `action.openPopup()`: WebKit's popover at the toolbar button.
     func webExtensionController(_ controller: WKWebExtensionController, presentActionPopup action: WKWebExtension.Action, for context: WKWebExtensionContext) async throws {
-        log.notice("popup requested by \(context.uniqueIdentifier, privacy: .public): no toolbar yet, closing it")
-        action.closePopup()
-        throw PaddleExtensionError.noPopup
+        do {
+            try host.popups.present(action, for: context)
+        } catch {
+            log.error("popup for \(context.uniqueIdentifier, privacy: .public) not shown: \(error.localizedDescription, privacy: .public)")
+            action.closePopup()
+            throw error
+        }
     }
 
     // MARK: - Native messaging: never

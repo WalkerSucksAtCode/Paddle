@@ -7,6 +7,7 @@ enum PaddleExtensionError: LocalizedError {
     case tabAsleep
     case noWindow
     case noPopup
+    case noUserAction
     case noOptions
     case unsupported(String)
 
@@ -15,6 +16,7 @@ enum PaddleExtensionError: LocalizedError {
         case .tabAsleep: "The tab is asleep"
         case .noWindow: "No browser window"
         case .noPopup: "The action has no popup"
+        case .noUserAction: "A popup opens only when the user clicks the extension's button"
         case .noOptions: "The extension has no options page"
         case .unsupported(let what): "\(what) is not supported in Paddle"
         }

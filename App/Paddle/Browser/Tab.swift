@@ -154,7 +154,8 @@ final class Tab: Identifiable {
     /// whose page configuration the web view was made with, nil for an ordinary web view.
     func attach(_ webView: WKWebView, extensionPageID: String?) {
         self.extensionPageID = extensionPageID
-        webView.isInspectable = true
+        // Remote inspection (Safari's Develop menu) follows `developerTools`, extension pages included.
+        webView.isInspectable = AppModel.shared.config.developerTools
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         let delegate = TabWebDelegate(tab: self)

@@ -1,6 +1,11 @@
 import Foundation
 
-public enum PermissionDecision: String, Codable, Sendable { case allow, deny }
+public enum PermissionDecision: String, Codable, Sendable {
+    case allow, deny
+    /// Hosts only (Only When I Click): neither granted nor denied to WebKit, so a click on the extension's button
+    /// grants that tab through `activeTab` for that click. An explicit denial would block that grant.
+    case click
+}
 
 /// What the user decided for one extension, as stored in `extension-permissions.json`.
 public struct ExtensionSnapshot: Codable, Sendable, Equatable {
@@ -40,7 +45,7 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     public var isFullyDeclined: Bool {
         switch run {
         case .deny: true
-        case .allow: false
+        case .allow, .click: false  // `.click` is for hosts; never written as `run`
         case nil: !permissions.values.contains(.allow) && !hosts.values.contains(.allow)
         }
     }
@@ -48,8 +53,8 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     /// Records an install-alert answer. `undecided` are the items the alert listed; the rest of `requested` were
     /// answered before (a newer version asking for more). The answer covers the whole extension, not just the list:
     /// - Allow grants the listed items; earlier answers stay.
-    /// - Only When I Click grants the listed permission names and denies every requested host pattern, earlier
-    ///   ones included, so pages are reachable only through `activeTab`.
+    /// - Only When I Click grants the listed permission names and marks every requested host pattern `.click`,
+    ///   earlier grants included, so pages are reachable only through `activeTab` on a click.
     /// - Don't Allow denies everything requested and stops the extension running.
     /// Items in `alwaysDenied` (nativeMessaging) are denied whatever the answer.
     public mutating func apply(
@@ -62,7 +67,7 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
             for host in undecided.hosts { hosts[host] = .allow }
         case .onlyWhenClicked:
             for permission in undecided.permissions { permissions[permission] = .allow }
-            for host in requested.hosts.union(undecided.hosts) { hosts[host] = .deny }
+            for host in requested.hosts.union(undecided.hosts) { hosts[host] = .click }
         case .deny:
             for permission in requested.permissions.union(undecided.permissions) { permissions[permission] = .deny }
             for host in requested.hosts.union(undecided.hosts) { hosts[host] = .deny }
@@ -76,9 +81,12 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     /// Builds a snapshot from WebKit's four permission dictionaries (item to expiry date). Only entries expiring
     /// more than 10 years from `now` are kept: WebKit reports "no expiry" as 4001-01-01, while grants made by a
     /// user gesture (`activeTab`) carry a short expiry and must not be persisted. A denial beats a grant for the same item.
+    /// `clickHosts`: patterns recorded as `.click`; WebKit holds no lasting state for them, so each one that is still
+    /// neither granted nor denied stays `.click`.
     public static func from(name: String, version: String, run: PermissionDecision? = nil,
                             granted: [String: Date], denied: [String: Date],
-                            grantedHosts: [String: Date], deniedHosts: [String: Date], now: Date) -> ExtensionSnapshot {
+                            grantedHosts: [String: Date], deniedHosts: [String: Date],
+                            clickHosts: Set<String> = [], now: Date) -> ExtensionSnapshot {
         let cutoff = now.addingTimeInterval(10 * 365 * 86_400)
         func decisions(_ allowed: [String: Date], _ refused: [String: Date]) -> [String: PermissionDecision] {
             var result: [String: PermissionDecision] = [:]
@@ -88,15 +96,17 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
         }
         // Whole seconds: the file stores ISO 8601 without fractions.
         let stamp = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
+        var hosts = decisions(grantedHosts, deniedHosts)
+        for host in clickHosts where hosts[host] == nil { hosts[host] = .click }
         return ExtensionSnapshot(name: name, version: version, decided: stamp,
-                                 permissions: decisions(granted, denied), hosts: decisions(grantedHosts, deniedHosts), run: run)
+                                 permissions: decisions(granted, denied), hosts: hosts, run: run)
     }
 }
 
 /// The install alert's three answers.
 public enum ExtensionInstallAnswer: Sendable, Equatable {
     case allow
-    /// Permission names granted, every host pattern denied: pages are reachable only through `activeTab`.
+    /// Permission names granted, every host pattern `.click`: pages are reachable only through `activeTab` on a click.
     case onlyWhenClicked
     case deny
 }
