@@ -49,11 +49,20 @@ extension PaddleConfig {
         SitePolicy(siteSettings(forHost: host))
     }
 
-    /// `sites` keys with `contentBlocking: false`, for `SharedExceptions(blockingOffHosts:)`. An exception covers the
-    /// key's subdomains too, so a subdomain entry setting `contentBlocking: true` under such a key can't turn
-    /// blocking back on there.
+    /// Hosts of `sites` keys with `contentBlocking: false`, for the block lists' site exceptions
+    /// (`SharedExceptions`) and the scriptlets' excludes: normalized (`normalizedHost`), deduplicated, and only
+    /// keys that are plain hosts, so both see the same hosts and a key like `host:8080` or `*` is left out rather than
+    /// matching nothing or everything. An exception covers the host's subdomains too, so a subdomain entry setting
+    /// `contentBlocking: true` under such a key can't turn blocking back on there.
     public var blockingOffHosts: [String] {
-        sites.filter { $0.value.contentBlocking == false }.keys.sorted()
+        let hosts = sites.filter { $0.value.contentBlocking == false }.keys.map(PaddleConfig.normalizedHost)
+        return Set(hosts).filter(PaddleConfig.isPlainHost).sorted()
+    }
+
+    /// Letters, digits, dots and hyphens, not starting or ending with a dot: a host a match pattern or rule can name.
+    public static func isPlainHost(_ host: String) -> Bool {
+        !host.isEmpty && !host.hasPrefix(".") && !host.hasSuffix(".") && !host.contains("..")
+            && host.allSatisfy { ($0.isASCII && ($0.isLetter || $0.isNumber)) || $0 == "." || $0 == "-" }
     }
 
     /// The `sites` key a zoom change on `host` is remembered under: the most specific entry that already sets a zoom

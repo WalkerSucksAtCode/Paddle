@@ -4,6 +4,14 @@ import PaddleCore
 /// What the Privacy & Blocking pane reads from disk: how many visits a shorter history would delete, which
 /// files in `filters/` no list uses, and each list's state. Nothing here is kept between calls.
 enum PrivacySettings {
+    /// uBlock Origin's lists Settings offers to add (uAssets, the same files uBO itself uses).
+    static let uBlockLists: [(title: String, url: String)] = [
+        ("uBlock filters", "https://ublockorigin.github.io/uAssets/filters/filters.txt"),
+        ("uBlock filters – Quick fixes", "https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt"),
+        ("uBlock filters – Privacy", "https://ublockorigin.github.io/uAssets/filters/privacy.txt"),
+        ("uBlock filters – Unbreak", "https://ublockorigin.github.io/uAssets/filters/unbreak.txt"),
+    ]
+
     /// Visits that keeping `days` of history deletes (`AppModel.pruneHistory` uses the same cutoff), or nil when
     /// history.sqlite can't be read. `days` 0 deletes nothing: history stops recording and the file is kept.
     static func visitsDeleted(keepingDays days: Int, now: Date = Date()) -> Int? {

@@ -32,6 +32,12 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Days between automatic filter-list downloads, checked at launch and hourly, per list. 0 = only by hand
     /// (a list whose file in filters/ is missing is still fetched once).
     public var filterUpdateDays: Int
+    /// Run the scriptlets (`##+js(…)` lines) of those lists and `user-filters.txt`: Paddle's own small scripts for
+    /// an allowlisted set of names, given the line's arguments as strings. See `ScriptletParser`.
+    public var scriptlets: Bool
+    /// Lists (by URL, as in `filterLists`) whose `trusted-*` scriptlets may run. Paddle implements none of those
+    /// yet, so this only stops them being counted as refused once it does.
+    public var trustedLists: [String]
 
     /// Appended to WebKit's user agent. Empty means "match the installed Safari", which most sites expect.
     public var userAgentSuffix: String
@@ -65,7 +71,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
         case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, sessionHistoryTabs
-        case contentBlocking, filterLists, filterUpdateDays
+        case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites
         case showTabMemory, developerTools
         case shortcuts
@@ -85,6 +91,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
         filterUpdateDays: Int = 7,
+        scriptlets: Bool = true,
+        trustedLists: [String] = [],
         userAgentSuffix: String = "",
         siteUserAgents: [String: String] = [:],
         sites: [String: SiteSettings] = [:],
@@ -106,6 +114,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
         self.filterUpdateDays = filterUpdateDays
+        self.scriptlets = scriptlets
+        self.trustedLists = trustedLists
         self.userAgentSuffix = userAgentSuffix
         self.siteUserAgents = siteUserAgents
         self.sites = sites
@@ -131,6 +141,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         contentBlocking = try c.decodeIfPresent(Bool.self, forKey: .contentBlocking) ?? d.contentBlocking
         filterLists = try c.decodeIfPresent([String].self, forKey: .filterLists) ?? d.filterLists
         filterUpdateDays = try c.decodeIfPresent(Int.self, forKey: .filterUpdateDays) ?? d.filterUpdateDays
+        scriptlets = try c.decodeIfPresent(Bool.self, forKey: .scriptlets) ?? d.scriptlets
+        trustedLists = try c.decodeIfPresent([String].self, forKey: .trustedLists) ?? d.trustedLists
         userAgentSuffix = try c.decodeIfPresent(String.self, forKey: .userAgentSuffix) ?? d.userAgentSuffix
         siteUserAgents = try c.decodeIfPresent([String: String].self, forKey: .siteUserAgents) ?? d.siteUserAgents
         sites = try c.decodeIfPresent([String: SiteSettings].self, forKey: .sites) ?? d.sites

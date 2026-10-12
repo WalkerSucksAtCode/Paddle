@@ -54,6 +54,17 @@ private struct BlockingRows: View {
         .help("contentBlocking in config.json")
         .disabled(model.controlsDisabled)
 
+        Toggle("Run the lists' scriptlets", isOn: Binding(
+            get: { model.file.scriptlets },
+            set: { value in Task { await model.saveKey(.scriptlets, .bool(value)) } }
+        ))
+        .help("scriptlets in config.json. ##+js(…) lines: Paddle's own small scripts for a fixed set of names, run on the sites the lines name, which defuse ad scripts and anti-adblock walls that blocking alone can't.")
+        .disabled(model.controlsDisabled || !model.file.contentBlocking)
+        if model.file.scriptlets, model.file.contentBlocking,
+           let line = web.blockerStatus.first(where: { $0.hasPrefix("scriptlets: ") }) {
+            SettingsCaption("S" + line.dropFirst())
+        }
+
         Picker("Download list updates", selection: Binding(
             get: { model.file.filterUpdateDays },
             set: { value in Task { await model.saveKey(.filterUpdateDays, .number(Double(value))) } }
@@ -136,6 +147,22 @@ private struct FilterListRows: View {
         }
         .help("Appends to filterLists in config.json. The list downloads at once.")
         .disabled(model.controlsDisabled)
+
+        let missing = PrivacySettings.uBlockLists.filter { !model.file.filterLists.contains($0.url) }
+        LabeledContent("uBlock Origin lists") {
+            Menu("Add") {
+                ForEach(missing, id: \.url) { preset in
+                    Button(preset.title) { addLists([preset.url]) }
+                }
+                if missing.count > 1 {
+                    Divider()
+                    Button("All of Them") { addLists(missing.map(\.url)) }
+                }
+            }
+            .fixedSize()
+            .disabled(missing.isEmpty || model.controlsDisabled)
+        }
+        .help("uBlock Origin's own lists. Many of their fixes are scriptlets, so they need \"Run the lists' scriptlets\". Each list adds to every web process's memory; see Activity.")
         if let addProblem {
             ConfigIssueList(issues: [ConfigIssue(key: .filterLists, severity: .error, message: addProblem)])
         }
@@ -243,7 +270,11 @@ private struct FilterListRows: View {
         }
         addProblem = nil
         newList = ""
-        let lists = model.file.filterLists + [list]
+        addLists([list])
+    }
+
+    private func addLists(_ urls: [String]) {
+        let lists = model.file.filterLists + urls.filter { !model.file.filterLists.contains($0) }
         Task { await model.saveKey(.filterLists, .array(lists.map(JSONValue.string))) }
     }
 

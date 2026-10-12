@@ -22,8 +22,12 @@ final class WebEnvironment {
     /// is never started.
     @ObservationIgnored var extensionController: WKWebExtensionController?
 
-    /// One line per block list for the Content Blocking status item, e.g. "easylist: 61,204 rules".
+    /// One line per block list for the Content Blocking status item, e.g. "easylist: 61,204 rules", then one for
+    /// the lists' scriptlets.
     private(set) var blockerStatus: [String] = []
+    /// The lists' scriptlets as user scripts (`Scriptlets`), rebuilt with the block lists and added after user.css
+    /// and userscripts by `reloadUserScripts`.
+    @ObservationIgnored private var scriptletScripts: [WKUserScript] = []
     private(set) var isUpdatingFilters = false
 
     /// `Version/27.0 Safari/605.1.15` from the installed Safari, so sites treat Paddle as Safari.
@@ -161,6 +165,8 @@ final class WebEnvironment {
             ))
             log.info("user script loaded: \(script.name, privacy: .public)")
         }
+
+        for script in scriptletScripts { contentController.addUserScript(script) }
     }
 
     private static func hasRealCSS(_ css: String) -> Bool {
@@ -243,6 +249,10 @@ final class WebEnvironment {
         guard config.contentBlocking else {
             contentController.removeAllContentRuleLists()
             installedRuleLists.removeAll()
+            if !scriptletScripts.isEmpty {
+                scriptletScripts = []
+                reloadUserScripts()
+            }
             blockerStatus = ["Off (contentBlocking is false in config.json)"]
             return
         }
@@ -274,6 +284,7 @@ final class WebEnvironment {
             SharedExceptions(userFilters: userFiltersText, blockingOffHosts: blockingOff)
         }.value
 
+        var scriptletInputs: [(text: String, trusted: Bool)] = []
         var wanted: [String: WKContentRuleList] = [:]
         // Sidecars of lists that are current but not installed (no rules, or WebKit refused them).
         var sidecars: Set<String> = []
@@ -285,6 +296,9 @@ final class WebEnvironment {
                 status.append("\(name): \(exists ? "unreadable (not UTF-8 text)" : file == Paths.userFilters ? "no file" : "not downloaded yet")")
                 continue
             }
+            // user-filters.txt is the user's own, so it counts as trusted.
+            let trusted = file == Paths.userFilters || config.trustedLists.contains { FilterUpdatePolicy.fileName(forList: $0) == file.lastPathComponent }
+            scriptletInputs.append((text, trusted))
             let listShared = file == Paths.userFilters ? shared.forUserFilters : shared
             let fingerprint = listShared.fingerprint
             let keyText = fingerprint.isEmpty ? text : text + "\n\u{0}shared exceptions\n" + fingerprint
@@ -310,6 +324,8 @@ final class WebEnvironment {
             jobs.append(CompileJob(index: status.count, name: name, identifier: identifier, text: text, shared: listShared))
             status.append("\(name): compiling")
         }
+        // Scriptlets are in place before the startup gate opens, like the cached lists.
+        if let line = await loadScriptlets(scriptletInputs) { status.append(line) }
         blockerStatus = status
 
         if !jobs.isEmpty {
@@ -334,6 +350,38 @@ final class WebEnvironment {
         installedRuleLists = wanted
         blockerStatus = status
         await removeStaleCompiledLists(keeping: Set(wanted.keys), sidecars: sidecars)
+    }
+
+    /// Parses every list's scriptlet lines off the main thread, builds their user scripts and installs them (with
+    /// user.css and userscripts). Returns the status line, nil when `scriptlets` is off.
+    private func loadScriptlets(_ inputs: [(text: String, trusted: Bool)]) async -> String? {
+        guard config.scriptlets else {
+            if !scriptletScripts.isEmpty {
+                scriptletScripts = []
+                reloadUserScripts()
+            }
+            return nil
+        }
+        let (rules, summaries) = await Task.detached(priority: .userInitiated) { ScriptletSet.rules(from: inputs) }.value
+        let built = Scriptlets.build(rules, blockingOffHosts: config.blockingOffHosts)
+        scriptletScripts = built.scripts
+        reloadUserScripts()
+        let total = summaries.reduce(ScriptletSummary(), +)
+        log.info("scriptlets: \(rules.count) rules (\(built.matched) by site, \(built.dispatched) in the shared script), \(total.accepted) lines accepted, \(total.refusedUnknown + total.refusedTrusted + total.malformed) skipped")
+        return Self.scriptletStatusLine(rules: rules.count, summary: total)
+    }
+
+    /// "scriptlets: 23 rules from 23 lines; 6 lines skipped (names Paddle doesn't run: set-cookie, …)".
+    static func scriptletStatusLine(rules: Int, summary: ScriptletSummary) -> String {
+        var line = "scriptlets: \(rules.formatted()) \(rules == 1 ? "rule" : "rules") from \(summary.accepted.formatted()) \(summary.accepted == 1 ? "line" : "lines")"
+        let skipped = summary.refusedUnknown + summary.refusedTrusted + summary.malformed
+        if skipped > 0 {
+            line += "; \(skipped.formatted()) skipped"
+            if !summary.topRefused.isEmpty {
+                line += " (names Paddle doesn't run: \(summary.topRefused.prefix(4).joined(separator: ", "))\(summary.topRefused.count > 4 ? ", …" : ""))"
+            }
+        }
+        return line
     }
 
     /// Adds a list to the content controller now, so later page loads use it before the rest of the load is done.

@@ -250,7 +250,8 @@ final class AppModel {
             updateSampler()
         }
         if keys.contains(.sites) { applySiteZoom() }
-        if !keys.isDisjoint(with: [.contentBlocking, .filterLists])
+        // Scriptlets come from the same list files, so they are rebuilt with the block lists.
+        if !keys.isDisjoint(with: [.contentBlocking, .filterLists, .scriptlets, .trustedLists])
             || (keys.contains(.sites) && old.blockingOffHosts != new.blockingOffHosts) {
             await web.loadContentBlockers()
         }
@@ -289,6 +290,8 @@ final class AppModel {
             case .contentBlocking: old.contentBlocking != new.contentBlocking
             case .filterLists: old.filterLists != new.filterLists
             case .filterUpdateDays: old.filterUpdateDays != new.filterUpdateDays
+            case .scriptlets: old.scriptlets != new.scriptlets
+            case .trustedLists: old.trustedLists != new.trustedLists
             case .userAgentSuffix: old.userAgentSuffix != new.userAgentSuffix
             case .siteUserAgents: old.siteUserAgents != new.siteUserAgents
             case .sites: old.sites != new.sites

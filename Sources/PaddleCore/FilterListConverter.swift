@@ -508,7 +508,7 @@ public enum FilterListConverter {
         return scan
     }
 
-    static let unsupportedMarkers = ["#?#", "#$#", "#%#", "#@$#", "#@?#", "$$", "##+js(", "##^"]
+    static let unsupportedMarkers = ["#?#", "#$#", "#%#", "#@$#", "#@?#", "$$", "##+js(", "#@#+js(", "##^"]
     static let extendedSelectorMarkers = [
         ":-abp-", ":has-text(", ":contains(", ":xpath(", ":matches-css", ":upward(", ":remove(",
         ":min-text-length(", ":watch-attr(", ":matches-path(", ":matches-attr(", ":matches-prop(",
@@ -599,9 +599,7 @@ public struct SharedExceptions: Sendable {
         userRules = parsed.exceptions
         cosmetic = parsed.cosmeticExceptions
         globalCosmetic = parsed.globalExceptions
-        let hosts = Set(blockingOffHosts.map(PaddleConfig.normalizedHost)).filter { host in
-            !host.isEmpty && !host.hasPrefix(".") && host.allSatisfy { ($0.isASCII && ($0.isLetter || $0.isNumber)) || $0 == "." || $0 == "-" }
-        }
+        let hosts = Set(blockingOffHosts.map(PaddleConfig.normalizedHost)).filter(PaddleConfig.isPlainHost)
         siteRules = hosts.sorted().map(FilterListConverter.siteAllowRule)
     }
 

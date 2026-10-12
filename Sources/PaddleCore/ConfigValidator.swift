@@ -53,6 +53,13 @@ public enum ConfigValidator {
             issues.append(ConfigIssue(key: key, severity: .error, message: "Can't be negative (0 turns it off)."))
         }
 
+        for (index, list) in config.trustedLists.enumerated() where !config.filterLists.contains(list) {
+            issues.append(ConfigIssue(
+                key: .trustedLists, path: ["trustedLists", String(index)], severity: .warning,
+                message: "\"\(list)\" isn't in filterLists, so trusting it does nothing."
+            ))
+        }
+
         for (index, list) in config.filterLists.enumerated() where FilterUpdatePolicy.fileName(forList: list) == nil {
             issues.append(ConfigIssue(
                 key: .filterLists, path: ["filterLists", String(index)], severity: .warning,
