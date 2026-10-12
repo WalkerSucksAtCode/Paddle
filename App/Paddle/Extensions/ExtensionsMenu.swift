@@ -56,10 +56,15 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     private func submenu(for ext: LoadedExtension) -> NSMenu {
         let menu = NSMenu(title: ext.displayName)
         let context = ext.context
+        // A private window extensions can't see is in front: actions and commands would act on (and grant
+        // activeTab to) a hidden window's tab, so they are disabled (no action).
+        let frontIsHidden = AppModel.shared.frontWindowIsHiddenFromExtensions
         if ext.hasAction {
-            let tab = AppModel.shared.frontWindow?.model.selectedTab
+            let tab = AppModel.shared.frontExtensionWindow?.model.selectedTab
             let presentsPopup = context.action(for: tab?.extensionTab)?.presentsPopup ?? false
-            menu.addItem(own(presentsPopup ? "Show Popup" : "Run Action", #selector(performAction(_:)), ext))
+            let item = own(presentsPopup ? "Show Popup" : "Run Action", #selector(performAction(_:)), ext)
+            if frontIsHidden { item.action = nil }
+            menu.addItem(item)
         }
         if context.optionsPageURL != nil {
             menu.addItem(own("Options…", #selector(openOptions(_:)), ext))
@@ -83,7 +88,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
             menu.addItem(.sectionHeader(title: "Commands from \(ext.displayName)"))
             for command in commands {
                 let title = ExtensionPermissionText.sanitize(command.title, max: 80)
-                let item = NSMenuItem(title: title.isEmpty ? ExtensionPermissionText.sanitize(command.id, max: 80) : title, action: #selector(performCommand(_:)), keyEquivalent: command.activationKey ?? "")
+                let item = NSMenuItem(title: title.isEmpty ? ExtensionPermissionText.sanitize(command.id, max: 80) : title, action: frontIsHidden ? nil : #selector(performCommand(_:)), keyEquivalent: command.activationKey ?? "")
                 item.keyEquivalentModifierMask = command.modifierFlags
                 item.target = self
                 item.representedObject = CommandChoice(ext: ext, command: command)
@@ -100,7 +105,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
 
     @objc private func performCommand(_ sender: Any?) {
         guard let choice = (sender as? NSMenuItem)?.representedObject as? CommandChoice,
-              host.loaded.contains(where: { $0 === choice.ext }) else { return }
+              host.loaded.contains(where: { $0 === choice.ext }), !AppModel.shared.frontWindowIsHiddenFromExtensions else { return }
         host.performCommand(choice.command, of: choice.ext)
     }
 
@@ -118,8 +123,8 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     @objc private func performAction(_ sender: Any?) {
-        guard let ext = ext(sender) else { return }
-        host.performAction(ext, in: AppModel.shared.frontWindow?.model.selectedTab)
+        guard let ext = ext(sender), !AppModel.shared.frontWindowIsHiddenFromExtensions else { return }
+        host.performAction(ext, in: AppModel.shared.frontExtensionWindow?.model.selectedTab)
     }
 
     @objc private func openOptions(_ sender: Any?) {

@@ -20,12 +20,17 @@ final class DownloadItem: Identifiable {
     /// Total size, or nil when the server didn't say (no Content-Length).
     var expectedBytes: Int64?
     var state: State = .running
+    /// Started in a private window: dropped from the list when the last private window closes.
+    let isPrivate: Bool
+    /// A private download still running when the last private window closed: it leaves the list when it ends.
+    @ObservationIgnored var outlivedPrivateWindows = false
 
     @ObservationIgnored let download: WKDownload
     @ObservationIgnored var progressObservation: NSKeyValueObservation?
 
-    init(download: WKDownload) {
+    init(download: WKDownload, isPrivate: Bool) {
         self.download = download
+        self.isPrivate = isPrivate
         self.filename = download.originalRequest?.url?.lastPathComponent ?? "Download"
     }
 }
@@ -39,8 +44,9 @@ final class DownloadStore {
 
     var activeCount: Int { items.filter { $0.state == .running }.count }
 
-    func track(_ download: WKDownload) {
-        let item = DownloadItem(download: download)
+    /// The list lives in memory only; Paddle keeps no download history on disk, private or not.
+    func track(_ download: WKDownload, isPrivate: Bool) {
+        let item = DownloadItem(download: download, isPrivate: isPrivate)
         download.delegate = delegate
         // Progress KVO can fire on any thread, so this closure is explicitly non-isolated and hops to main.
         item.progressObservation = download.progress.observe(\.completedUnitCount) { @Sendable [weak item] progress, _ in
@@ -65,6 +71,13 @@ final class DownloadStore {
         item.download.cancel { _ in
             Task { @MainActor in Self.removePartialFile(of: item) }
         }
+        ended(item)
+    }
+
+    /// A download finished, failed or was cancelled. One that outlived the private windows it came from goes.
+    func ended(_ item: DownloadItem) {
+        guard item.outlivedPrivateWindows else { return }
+        items.removeAll { $0 === item }
     }
 
     /// Quitting stops running downloads; their partial files go with them.
@@ -84,6 +97,13 @@ final class DownloadStore {
 
     func clearFinished() {
         items.removeAll { $0.state != .running }
+    }
+
+    /// The last private window closed: its finished, failed and cancelled downloads leave the list (the files
+    /// stay). Running ones stay, so they can still be watched or cancelled, and leave on their own when they end.
+    func forgetPrivate() {
+        for item in items where item.isPrivate && item.state == .running { item.outlivedPrivateWindows = true }
+        items.removeAll { $0.isPrivate && $0.state != .running }
     }
 
     /// A free name in ~/Downloads: "name (1).ext" when "name.ext" exists on disk or belongs to a running download.
@@ -130,6 +150,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
             // Bounces the Downloads stack in the Dock, as Safari does.
             DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"), object: path)
         }
+        store?.ended(item)
     }
 
     func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
@@ -140,6 +161,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
         if !(nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteFileExistsError) {
             DownloadStore.removePartialFile(of: item)
         }
+        store?.ended(item)
     }
 
 }

@@ -45,6 +45,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
 
     /// Turn an extension off by its folder name in `extensions/`, e.g. `{"bitwarden": false}`. Folders not listed are on.
     public var extensions: [String: Bool]
+    /// Run extensions in private windows too. Off by default: private windows and their tabs are hidden from
+    /// extensions, and their web views don't carry the extension controller.
+    public var extensionsInPrivate: Bool
 
     public static let defaultFilterLists = [
         "https://easylist.to/easylist/easylist.txt",
@@ -68,7 +71,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         showTabMemory: Bool = true,
         developerTools: Bool = true,
         shortcuts: [String: String] = [:],
-        extensions: [String: Bool] = [:]
+        extensions: [String: Bool] = [:],
+        extensionsInPrivate: Bool = false
     ) {
         self.homepage = homepage
         self.newTabPage = newTabPage
@@ -87,6 +91,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.developerTools = developerTools
         self.shortcuts = shortcuts
         self.extensions = extensions
+        self.extensionsInPrivate = extensionsInPrivate
     }
 
     public init(from decoder: any Decoder) throws {
@@ -109,6 +114,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools = try c.decodeIfPresent(Bool.self, forKey: .developerTools) ?? d.developerTools
         shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? d.shortcuts
         extensions = try c.decodeIfPresent([String: Bool].self, forKey: .extensions) ?? d.extensions
+        extensionsInPrivate = try c.decodeIfPresent(Bool.self, forKey: .extensionsInPrivate) ?? d.extensionsInPrivate
     }
 
     public static func decode(_ data: Data) throws -> PaddleConfig {

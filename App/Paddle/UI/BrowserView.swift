@@ -53,6 +53,7 @@ struct BrowserView: View {
         }
         .background(.bar)
         .ignoresSafeArea(.container, edges: .top)
+        .onChange(of: model.windowTitle, initial: true) { _, title in model.controller?.window?.title = title }
     }
 
     @ViewBuilder
@@ -150,6 +151,7 @@ private struct TabButton: View {
     @State private var hovering = false
 
     private var isSelected: Bool { model.selectedID == tab.id }
+    private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -161,6 +163,21 @@ private struct TabButton: View {
                     .truncationMode(.tail)
                     .foregroundStyle(tab.isAwake || isSelected ? .primary : .secondary)
                 Spacer(minLength: 0)
+                if audio != .none {
+                    Button {
+                        model.toggleMute(tab)
+                    } label: {
+                        Image(systemName: audio == .muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 16, height: 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!Tab.supportsMuting)
+                    .help(audio == .muted ? "Unmute Tab" : "Mute Tab")
+                    .accessibilityLabel(audio == .muted ? "Unmute Tab" : "Mute Tab")
+                }
                 if hovering || isSelected {
                     Button {
                         model.close(tab)
@@ -195,6 +212,8 @@ private struct TabButton: View {
         .contextMenu {
             Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") { model.togglePin(tab) }
             Button("Duplicate Tab") { model.duplicate(tab) }
+            Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") { model.toggleMute(tab) }
+                .disabled(!Tab.supportsMuting)
             Button("Put Tab to Sleep") { model.sleep(tab) }
                 .disabled(!tab.isAwake || isSelected)
             Divider()
@@ -219,11 +238,28 @@ private struct TabButton: View {
         .font(.system(size: 11))
         .foregroundStyle(.secondary)
         .frame(width: 14, height: 14)
+        // Pinned tabs have no room for a button: a small speaker on the icon; mute from the context menu.
+        .overlay(alignment: .bottomTrailing) {
+            if tab.isPinned, audio != .none {
+                Image(systemName: audio == .muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .padding(1)
+                    .background(Circle().fill(.background))
+                    .offset(x: 5, y: 4)
+                    .accessibilityLabel(audio == .muted ? "Muted" : "Playing audio")
+            }
+        }
     }
 
     private var tooltip: String {
         var lines = [tab.displayTitle]
         if let url = tab.url { lines.append(url.absoluteString) }
+        switch audio {
+        case .playing: lines.append("Playing audio")
+        case .muted: lines.append("Muted")
+        case .none: break
+        }
         if !tab.isAwake {
             lines.append("Asleep: no memory used. Click to wake.")
         } else if let bytes = tab.memoryBytes {
@@ -254,9 +290,18 @@ private struct NavigationBar: View {
             iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil) {
                 if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.webView?.reload() }
             }
+            if model.isPrivate {
+                Label("Private", systemImage: "eye.slash")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+                    .help("Private window: no history, no saved session, and cookies and site data are forgotten when the last private window closes.")
+            }
             addressField
                 .padding(.horizontal, 4)
-            ExtensionToolbar(host: app.extensions, tab: tab)
+            if model.extensionsAllowed {
+                ExtensionToolbar(host: app.extensions, tab: tab)
+            }
             if app.config.showTabMemory {
                 memoryButton
             }
@@ -320,7 +365,8 @@ private struct NavigationBar: View {
         .padding(.leading, 10)
         .padding(.trailing, 4)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.07)))
+        // Private windows: a faint indigo field (with the "Private" label beside it, not color alone).
+        .background(RoundedRectangle(cornerRadius: 8).fill(model.isPrivate ? Color.indigo.opacity(0.16) : Color.primary.opacity(0.07)))
         .overlay(alignment: .topLeading) {
             if model.suggestions.isVisible {
                 SuggestionList(suggestions: model.suggestions) { model.open($0) }
@@ -374,7 +420,7 @@ private struct NavigationBar: View {
         .buttonStyle(.borderless)
         .help("Memory: this tab · all tabs. Click for details.")
         .popover(isPresented: $showActivity, arrowEdge: .bottom) {
-            ActivityView(app: app)
+            ActivityView(app: app, browser: model)
         }
     }
 

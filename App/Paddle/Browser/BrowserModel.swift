@@ -6,6 +6,17 @@ import WebKit
 /// The tabs and chrome state of one browser window.
 @Observable
 final class BrowserModel {
+    /// A private window: non-persistent data store, no history, favicons, session or recently closed tabs.
+    let isPrivate: Bool
+    /// Extensions see this window and its web views carry the extension controller. Always for normal windows;
+    /// private windows only with `extensionsInPrivate`, as it was when the window opened, until it is turned off.
+    private(set) var extensionsAllowed: Bool
+
+    init(isPrivate: Bool = false, extensionsAllowed: Bool = true) {
+        self.isPrivate = isPrivate
+        self.extensionsAllowed = extensionsAllowed
+    }
+
     var tabs: [Tab] = []
     var selectedID: UUID?
 
@@ -32,6 +43,13 @@ final class BrowserModel {
 
     var selectedTab: Tab? { tabs.first { $0.id == selectedID } }
 
+    /// The window's title (hidden in the title bar; shown in the Window menu, Mission Control and the Dock).
+    /// Private windows get a fixed title: window titles reach other apps (window server, Accessibility), and
+    /// time trackers log them.
+    var windowTitle: String {
+        isPrivate ? "Private Window" : selectedTab?.displayTitle ?? "Paddle"
+    }
+
     private var config: PaddleConfig { AppModel.shared.config }
 
     // MARK: - Opening and selecting
@@ -39,7 +57,7 @@ final class BrowserModel {
     /// A tab for `url`; with `anchor`, a link opened from that tab.
     @discardableResult
     func newTab(url: URL?, select: Bool = true, after anchor: Tab? = nil) -> Tab {
-        let tab = Tab(url: url)
+        let tab = Tab(url: url, isPrivate: isPrivate)
         tab.opener = anchor
         tab.closesIfOnlyDownload = url != nil
         insert(tab, after: anchor, select: select)
@@ -113,11 +131,11 @@ final class BrowserModel {
     // MARK: - Closing
 
     /// - Parameters:
-    ///   - remember: offer the tab in Reopen Closed Tab.
+    ///   - remember: offer the tab in Reopen Closed Tab. Never for private windows or View Source tabs.
     ///   - returnToOpener: select the tab's opener next; by default only for a popup the user hasn't left.
     func close(_ tab: Tab, remember: Bool = true, returnToOpener: Bool? = nil) {
         guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
-        if remember {
+        if remember, !isPrivate, tab.sourceHTML == nil {
             closedTabs.append(tab.record)
             if closedTabs.count > 50 { closedTabs.removeFirst() }
         }
@@ -149,14 +167,62 @@ final class BrowserModel {
 
     func reopenClosedTab() {
         guard let record = closedTabs.popLast() else { return }
-        insert(Tab(record: record), after: selectedTab, select: true)
+        insert(Tab(record: record, isPrivate: isPrivate), after: selectedTab, select: true)
     }
 
     @discardableResult
     func duplicate(_ tab: Tab) -> Tab {
-        let copy = Tab(record: tab.record)
+        let copy = tab.sourceHTML.map { Tab(sourceHTML: $0, title: tab.title, isPrivate: isPrivate) }
+            ?? Tab(record: tab.record, isPrivate: isPrivate)
+        copy.setMuted(tab.isMuted)
         insert(copy, after: tab, select: true)
         return copy
+    }
+
+    /// `extensionsInPrivate` was turned off while this private window was open (the host has already been told
+    /// it closed). Awake web views were made with the extension controller, so they are dropped; the selected tab
+    /// comes back in an ordinary web view with its history, other tabs when next selected.
+    func withdrawExtensions() {
+        extensionsAllowed = false
+        for tab in tabs where tab.isAwake { tab.sleep() }
+        selectedTab?.wake()
+    }
+
+    // MARK: - Sound
+
+    /// Tabs > Mute Tab, the tab strip's speaker and the tab context menu. Kept while the tab sleeps, not across
+    /// relaunches.
+    func toggleMute(_ tab: Tab) {
+        tab.setMuted(!tab.isMuted)
+    }
+
+    // MARK: - View Source
+
+    /// View > View Source: the page's current DOM, read from the open page in an isolated script world (no new
+    /// request to the site), shown as escaped text in a new tab after this one.
+    func viewSource(of tab: Tab) async {
+        guard let webView = tab.webView else { return }
+        let script = """
+            const doctype = document.doctype ? new XMLSerializer().serializeToString(document.doctype) + "\\n" : "";
+            return doctype + (document.documentElement ? document.documentElement.outerHTML : "");
+            """
+        let source: String
+        do {
+            source = (try await webView.callAsyncJavaScript(script, contentWorld: .defaultClient) as? String) ?? ""
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Can't show the source of this page"
+            alert.informativeText = error.localizedDescription
+            _ = await tab.present(alert)
+            return
+        }
+        guard tabs.contains(where: { $0 === tab }) else { return }
+        let pageURL = webView.url ?? tab.url
+        let sourceTab = Tab(
+            sourceHTML: ViewSource.page(source: source, url: pageURL), title: ViewSource.title(for: pageURL), isPrivate: isPrivate
+        )
+        sourceTab.opener = tab
+        insert(sourceTab, after: tab, select: true)
     }
 
     // MARK: - Tab state
@@ -325,10 +391,10 @@ final class BrowserModel {
 
     // MARK: - Session
 
+    /// This window for session.json, without View Source tabs. Private windows are never saved (`AppModel`).
     var record: WindowRecord {
-        WindowRecord(
-            tabs: tabs.map(\.record),
-            selectedIndex: tabs.firstIndex { $0.id == selectedID } ?? 0,
+        WindowRecord.saving(
+            tabs, selected: { $0.id == self.selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
             frame: controller?.window.map { NSStringFromRect($0.frame) }
         )
     }

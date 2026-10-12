@@ -81,6 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func paddleNewWindow(_ sender: Any?) { AppModel.shared.openWindow() }
 
+    @objc func paddleNewPrivateWindow(_ sender: Any?) { AppModel.shared.openWindow(isPrivate: true) }
+
     /// Reached only when no browser window is key: open a window instead of a tab.
     @objc func paddleNewTab(_ sender: Any?) { AppModel.shared.openWindow() }
 

@@ -97,6 +97,15 @@ final class AppModel {
         MainMenu.applyShortcuts(config.shortcuts)
         await web.loadContentBlockers()
         await extensions.reconcile(config: config)
+        for ext in extensions.loaded { ext.context.hasAccessToPrivateData = config.extensionsInPrivate }
+        // Turning extensionsInPrivate off takes extensions out of private windows already open (turning it on
+        // applies to new private windows only).
+        if !config.extensionsInPrivate {
+            for controller in windows where controller.model.isPrivate && controller.model.extensionsAllowed {
+                extensions.windowClosing(controller)
+                controller.model.withdrawExtensions()
+            }
+        }
         sweepSleepingTabs()
 
         let alert = NSAlert()
@@ -246,11 +255,15 @@ final class AppModel {
 
     // MARK: - Windows
 
+    /// `isPrivate`: File > New Private Window. Private windows are never restored, so they never have a `record`.
+    /// Extensions are told about a window only when they may see it (private ones need `extensionsInPrivate`).
     @discardableResult
-    func openWindow(record: WindowRecord? = nil, url: URL? = nil) -> BrowserWindowController {
-        let controller = BrowserWindowController(record: record)
+    func openWindow(record: WindowRecord? = nil, url: URL? = nil, isPrivate: Bool = false) -> BrowserWindowController {
+        let controller = BrowserWindowController(
+            record: isPrivate ? nil : record, isPrivate: isPrivate, extensionsAllowed: !isPrivate || config.extensionsInPrivate
+        )
         windows.append(controller)
-        extensions.windowOpened(controller)
+        if controller.model.extensionsAllowed { extensions.windowOpened(controller) }
         if record == nil {
             if let url {
                 controller.model.newTab(url: url)
@@ -266,6 +279,12 @@ final class AppModel {
 
     func windowClosed(_ controller: BrowserWindowController) {
         windows.removeAll { $0 === controller }
+        if controller.model.isPrivate, !windows.contains(where: { $0.model.isPrivate }) {
+            // The private session ends: a new private window starts with an empty data store.
+            web.endPrivateSession()
+            downloads.forgetPrivate()
+            log.info("last private window closed: private data store released")
+        }
         sessionChanged()
     }
 
@@ -277,9 +296,32 @@ final class AppModel {
             ?? windows.last
     }
 
+    /// The front window extensions may see and open things in: the front browser window when the extension host
+    /// knows it, else the frontmost one it knows. Private windows aren't known unless `extensionsInPrivate`.
+    var frontExtensionWindow: BrowserWindowController? {
+        if let front = frontWindow, extensions.isRegistered(front) { return front }
+        return NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first { self.extensions.isRegistered($0) }
+            ?? extensions.registered(windows).last
+    }
+
+    /// The browser window the user is in is a private one extensions can't see. Extension actions and commands
+    /// started from the menu then do nothing rather than act on a window behind it.
+    var frontWindowIsHiddenFromExtensions: Bool {
+        guard let front = frontWindow else { return false }
+        return !extensions.isRegistered(front)
+    }
+
+    /// The front normal (non-private) window, for links from other apps.
+    var frontNormalWindow: BrowserWindowController? {
+        if let front = frontWindow, !front.model.isPrivate { return front }
+        return NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first { !$0.model.isPrivate }
+            ?? windows.last { !$0.model.isPrivate }
+    }
+
+    /// Links from other apps open in a normal window, never a private one, as in Safari and Chrome.
     func open(_ urls: [URL]) {
         for url in urls {
-            if let front = frontWindow {
+            if let front = frontNormalWindow {
                 front.model.newTab(url: url)
                 front.window?.makeKeyAndOrderFront(nil)
             } else {
@@ -322,7 +364,7 @@ final class AppModel {
     func saveSessionNow() {
         saveWork?.cancel()
         guard didRestore else { return }
-        let session = SessionRecord(windows: windows.map(\.model.record))
+        let session = SessionRecord.saving(windows, isPrivate: \.model.isPrivate, record: \.model.record)
         do {
             try JSONEncoder().encode(session).write(to: Paths.session, options: .atomic)
         } catch {

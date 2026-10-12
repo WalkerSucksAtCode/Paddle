@@ -113,7 +113,7 @@ final class ExtensionPopupPresenter {
             throw PaddleExtensionError.noUserAction
         }
         guard action.presentsPopup, let popover = action.popupPopover else { throw PaddleExtensionError.noPopup }
-        let controller = (action.associatedTab as? ExtensionTab)?.tab?.browser?.controller ?? AppModel.shared.frontWindow
+        let controller = (action.associatedTab as? ExtensionTab)?.tab?.browser?.controller ?? AppModel.shared.frontExtensionWindow
         guard let window = controller?.window, let contentView = window.contentView else { throw PaddleExtensionError.noWindow }
 
         if let shownPopover, shownPopover !== popover, shownPopover.isShown {
@@ -235,7 +235,7 @@ final class ExtensionPopupWebDelegate: NSObject, WKUIDelegate, WKNavigationDeleg
     }
 
     private func openAsTab(_ url: URL) {
-        guard let front = AppModel.shared.frontWindow else {
+        guard let front = AppModel.shared.frontExtensionWindow else {
             AppModel.shared.openWindow(url: url)
             return
         }

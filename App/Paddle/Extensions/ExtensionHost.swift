@@ -553,6 +553,8 @@ final class ExtensionHost {
         context.baseURL = ExtensionIdentity.baseURL(for: id)
         context.isInspectable = config.developerTools
         context.inspectionName = "\(displayName) — Paddle"
+        // Private windows (only registered with `extensionsInPrivate`) are visible to the extension only with this.
+        context.hasAccessToPrivateData = config.extensionsInPrivate
 
         if let snapshot = decisions.byFolder[entry.name] {
             var granted: [WKWebExtension.Permission: Date] = [:]
@@ -932,7 +934,8 @@ final class ExtensionHost {
 
     private func performCommandBeforeDispatch(_ event: NSEvent) -> Bool {
         guard controller != nil, !loaded.isEmpty, let window = event.window as? BrowserWindow,
-              window.isKeyWindow, window.attachedSheet == nil else { return false }
+              window.isKeyWindow, window.attachedSheet == nil,
+              let browser = window.windowController as? BrowserWindowController, isRegistered(browser) else { return false }
         for ext in loaded {
             guard let command = ext.context.command(for: event) else { continue }
             if MainMenu.usesKeyEquivalent(command.activationKey, modifiers: command.modifierFlags) {
@@ -969,14 +972,14 @@ final class ExtensionHost {
     func openOptionsPage(for context: WKWebExtensionContext) throws {
         guard let url = context.optionsPageURL else { throw PaddleExtensionError.noOptions }
         let app = AppModel.shared
-        for window in app.windows {
+        for window in registered(app.windows) {
             if let tab = window.model.tabs.first(where: { $0.url == url }) {
                 window.model.select(tab)
                 window.window?.makeKeyAndOrderFront(nil)
                 return
             }
         }
-        guard let front = app.frontWindow else {
+        guard let front = app.frontExtensionWindow else {
             app.openWindow(url: url)
             return
         }

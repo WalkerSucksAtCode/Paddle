@@ -46,7 +46,7 @@ final class AddressSuggestions {
         }
         // Phrases for "padd" still help while "paddl" is on its way; unrelated ones don't.
         if !query.lowercased().hasPrefix(phrasesQuery.lowercased()) { phrases = [] }
-        pages = Self.candidatePages(for: query, excluding: browser.selectedTab)
+        pages = Self.candidatePages(for: query, excluding: browser.selectedTab, in: browser)
         // New text starts at the top row; only arriving search phrases keep a moved highlight.
         highlighted = 0
         rebuild()
@@ -133,10 +133,13 @@ final class AddressSuggestions {
         }
     }
 
-    private static func candidatePages(for query: String, excluding current: Tab?) -> [SuggestionSource] {
+    /// Open tabs, bookmarks and history. History is only read here, private windows included. A private window's
+    /// tabs are offered only in that window.
+    private static func candidatePages(for query: String, excluding current: Tab?, in browser: BrowserModel) -> [SuggestionSource] {
         let app = AppModel.shared
         var pages: [SuggestionSource] = app.allTabs.compactMap { tab in
-            guard tab !== current, let url = tab.url, HistoryStore.isRecordable(url) else { return nil }
+            guard tab !== current, !tab.isPrivate || tab.browser === browser,
+                  let url = tab.url, HistoryStore.isRecordable(url) else { return nil }
             return SuggestionSource(kind: .openTab(tab.id), title: tab.displayTitle, url: url.absoluteString)
         }
         pages += app.bookmarks.tree.search(query).prefix(20).compactMap { bookmark in

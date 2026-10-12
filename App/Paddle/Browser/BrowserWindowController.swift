@@ -1,14 +1,16 @@
 import AppKit
 import PaddleCore
 import SwiftUI
+import UniformTypeIdentifiers
 import WebKit
 
 /// One browser window. Menu commands reach it through the responder chain (it is the window's delegate),
 /// so every action works whether the page or the address field has focus.
 final class BrowserWindowController: NSWindowController, NSWindowDelegate {
-    let model = BrowserModel()
+    let model: BrowserModel
 
-    init(record: WindowRecord?) {
+    init(record: WindowRecord?, isPrivate: Bool = false, extensionsAllowed: Bool = true) {
+        model = BrowserModel(isPrivate: isPrivate, extensionsAllowed: extensionsAllowed)
         let window = BrowserWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -39,7 +41,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
         if let record {
             if let frame = record.frame { window.setFrame(NSRectFromString(frame), display: false) }
-            let tabs = record.tabs.map(Tab.init(record:))
+            let tabs = record.tabs.map { Tab(record: $0, isPrivate: isPrivate) }
             for tab in tabs {
                 tab.browser = model
                 model.tabs.append(tab)
@@ -111,6 +113,64 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleCloseTab(_ sender: Any?) { if let tab { model.close(tab) } }
     @objc func paddleReopenClosedTab(_ sender: Any?) { model.reopenClosedTab() }
 
+    /// Print, Save Page As and View Source need the site's page showing: not the start page, a sleeping tab, a tab
+    /// waiting for its extension or one of Paddle's error pages. And no sheet up already (the save or print panel,
+    /// a page's alert), which AppKit would queue a second sheet behind, for whatever tab was current then.
+    private var canActOnPage: Bool {
+        guard let tab, webView != nil, tab.url != nil, !tab.isShowingErrorPage else { return false }
+        return window?.attachedSheet == nil
+    }
+
+    /// File > Print…: WebKit's print operation for the page, as a sheet on this window.
+    @objc func paddlePrint(_ sender: Any?) {
+        guard canActOnPage, let webView, let window else { return }
+        let info = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo.shared
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.isHorizontallyCentered = true
+        info.isVerticallyCentered = false
+        let operation = webView.printOperation(with: info)
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        operation.jobTitle = tab?.displayTitle ?? "Page"
+        // WebKit's print view has no size of its own; without one the operation can print blank pages.
+        operation.view?.frame = webView.bounds
+        operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// File > Save Page As…: the page as a Web Archive (`createWebArchiveData`: the page and its loaded
+    /// resources, as WebKit holds them now).
+    @objc func paddleSavePage(_ sender: Any?) {
+        guard canActOnPage, let tab, let webView, let window else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.webArchive]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = Self.fileName(for: tab) + ".webarchive"
+        Task {
+            guard await panel.beginSheetModal(for: window) == .OK, let destination = panel.url else { return }
+            webView.createWebArchiveData { result in
+                do {
+                    try result.get().write(to: destination, options: .atomic)
+                } catch {
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "The page couldn't be saved"
+                    alert.informativeText = error.localizedDescription
+                    alert.beginSheetModal(for: window) { _ in }
+                }
+            }
+        }
+    }
+
+    /// A file name from the page title (or host), without characters Finder or the shell trip over.
+    private static func fileName(for tab: Tab) -> String {
+        let raw = tab.title.isEmpty ? (tab.url?.host() ?? "Page") : tab.title
+        let cleaned = raw.components(separatedBy: CharacterSet(charactersIn: "/:\\\0").union(.newlines)).joined(separator: "-")
+            .trimmingCharacters(in: .whitespaces)
+        return String((cleaned.isEmpty ? "Page" : cleaned).prefix(120))
+    }
+
     // MARK: - View
 
     @objc func paddleReload(_ sender: Any?) { webView?.reload() }
@@ -122,6 +182,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func paddleWebInspector(_ sender: Any?) {
         if let webView { WebInspector.show(webView) }
+    }
+
+    @objc func paddleViewSource(_ sender: Any?) {
+        guard canActOnPage, let tab else { return }
+        Task { await model.viewSource(of: tab) }
     }
 
     // MARK: - History
@@ -148,6 +213,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddlePreviousTab(_ sender: Any?) { model.selectNeighbor(offset: -1) }
     @objc func paddleTogglePin(_ sender: Any?) { if let tab { model.togglePin(tab) } }
     @objc func paddleDuplicateTab(_ sender: Any?) { if let tab { model.duplicate(tab) } }
+    @objc func paddleToggleMute(_ sender: Any?) { if let tab { model.toggleMute(tab) } }
     @objc func paddleSleepBackgroundTabs(_ sender: Any?) { AppModel.shared.sleepBackgroundTabs() }
 
     @objc func paddleSelectTab(_ sender: Any?) {
@@ -179,6 +245,11 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleTogglePin(_:)):
             menuItem.title = tab?.isPinned == true ? "Unpin Tab" : "Pin Tab"
             return tab != nil
+        case #selector(paddleToggleMute(_:)):
+            menuItem.title = tab?.isMuted == true ? "Unmute Tab" : "Mute Tab"
+            return tab != nil && Tab.supportsMuting
+        case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleViewSource(_:)):
+            return canActOnPage
         case #selector(paddleReload(_:)), #selector(paddleHardReload(_:)), #selector(paddleStop(_:)),
              #selector(paddleZoomIn(_:)), #selector(paddleZoomOut(_:)), #selector(paddleActualSize(_:)),
              #selector(paddleWebInspector(_:)):

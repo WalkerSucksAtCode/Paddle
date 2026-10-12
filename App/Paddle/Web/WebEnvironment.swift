@@ -5,7 +5,8 @@ import PaddleCore
 import WebKit
 
 /// Shared WebKit setup for every tab: one content controller (user scripts, user CSS, block lists),
-/// the default website data store (cookies and logins persist), and the user agent.
+/// the default website data store (cookies and logins persist; private windows get a non-persistent one), and the
+/// user agent.
 @Observable
 final class WebEnvironment {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "web")
@@ -36,19 +37,37 @@ final class WebEnvironment {
         config.userAgentSuffix.isEmpty ? Self.safariApplicationName : config.userAgentSuffix
     }
 
-    func makeConfiguration() -> WKWebViewConfiguration {
+    /// One non-persistent data store shared by every private window, made with the first one and dropped when the
+    /// last one closes (`endPrivateSession`), so the next private window starts with no cookies or storage.
+    @ObservationIgnored private var privateDataStore: WKWebsiteDataStore?
+
+    /// Web views of private windows get the private store and, unless `extensions` (config `extensionsInPrivate`),
+    /// no extension controller. Content blockers, user CSS and userscripts are the same as everywhere.
+    func makeConfiguration(isPrivate: Bool, extensions: Bool) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
         c.userContentController = contentController
-        c.websiteDataStore = dataStore
+        if isPrivate {
+            let store = privateDataStore ?? .nonPersistent()
+            privateDataStore = store
+            c.websiteDataStore = store
+        } else {
+            c.websiteDataStore = dataStore
+        }
         c.applicationNameForUserAgent = applicationName
         c.preferences.isElementFullscreenEnabled = true
         c.preferences.isFraudulentWebsiteWarningEnabled = true
         c.preferences.javaScriptCanOpenWindowsAutomatically = false
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         c.allowsAirPlayForMediaPlayback = true
-        c.webExtensionController = extensionController
+        c.webExtensionController = extensions ? extensionController : nil
         Self.enableWebFeatures(c.preferences)
         return c
+    }
+
+    /// The last private window closed: forget the private store. Its web views are gone (closing a window sleeps
+    /// every tab), so WebKit discards its cookies, caches and storage with it.
+    func endPrivateSession() {
+        privateDataStore = nil
     }
 
     /// WebKit features Chrome and Firefox ship on that WebKit ships off: `requestIdleCallback`, which extensions

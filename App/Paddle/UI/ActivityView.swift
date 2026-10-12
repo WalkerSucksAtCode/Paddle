@@ -2,12 +2,19 @@ import AppKit
 import SwiftUI
 
 /// Popover from the memory button: every tab's memory and sleep state, plus content-blocking status.
+/// Other private windows' tabs are not listed one by one (their titles would show in any window), only counted.
 struct ActivityView: View {
     let app: AppModel
+    /// The window the popover belongs to; its own private tabs are listed.
+    let browser: BrowserModel
+
+    private func isListed(_ tab: Tab) -> Bool { !tab.isPrivate || tab.browser === browser }
 
     private var tabs: [Tab] {
-        app.allTabs.sorted { ($0.memoryBytes ?? 0) > ($1.memoryBytes ?? 0) }
+        app.allTabs.filter(isListed).sorted { ($0.memoryBytes ?? 0) > ($1.memoryBytes ?? 0) }
     }
+
+    private var hiddenPrivateTabs: [Tab] { app.allTabs.filter { !isListed($0) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -23,6 +30,9 @@ struct ActivityView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(tabs) { tab in
                         row(tab)
+                    }
+                    if !hiddenPrivateTabs.isEmpty {
+                        privateSummary(hiddenPrivateTabs)
                     }
                 }
             }
@@ -52,6 +62,24 @@ struct ActivityView: View {
         }
         .padding(14)
         .frame(width: 380)
+    }
+
+    /// One line for other private windows: tab count and memory, no titles and no way to bring them forward.
+    private func privateSummary(_ tabs: [Tab]) -> some View {
+        let bytes = tabs.compactMap(\.memoryBytes).reduce(0, +)
+        return HStack(spacing: 8) {
+            Image(systemName: "eye.slash")
+                .font(.system(size: 10))
+                .frame(width: 12, height: 12)
+            Text("Other private windows (\(tabs.count) \(tabs.count == 1 ? "tab" : "tabs"))")
+                .lineLimit(1)
+                .font(.system(size: 12))
+            Spacer()
+            Text(bytes > 0 ? ProcessMemory.format(bytes) : "–")
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .foregroundStyle(.secondary)
     }
 
     private func row(_ tab: Tab) -> some View {

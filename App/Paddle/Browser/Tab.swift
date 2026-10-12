@@ -19,6 +19,15 @@ final class Tab: Identifiable {
     var isAwake = false
     /// Using the camera or microphone. Such tabs never sleep.
     var isCapturing = false
+    /// The page is making sound (WebKit's private `_isPlayingAudio`; stays false where that is missing).
+    var isPlayingAudio = false
+    /// Muted by the user. Kept while the tab sleeps and applied again to the next web view.
+    private(set) var isMuted = false
+    /// Belongs to a private window: its web views use the private data store, and nothing it does is written to
+    /// history, favicons or the session. Fixed for the tab's life (tabs never move between windows).
+    let isPrivate: Bool
+    /// A View Source tab: shows this HTML instead of loading `url` (about:blank). Not saved in the session.
+    @ObservationIgnored private(set) var sourceHTML: String?
     /// Physical footprint of this tab's WebContent process, refreshed every few seconds.
     var memoryBytes: UInt64?
     /// Another tab shares the same WebContent process, so `memoryBytes` is a shared total.
@@ -37,6 +46,7 @@ final class Tab: Identifiable {
     }()
     @ObservationIgnored private var savedState: Any?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
+    @ObservationIgnored private var audioObserver: AudioPlaybackObserver?
     @ObservationIgnored private var delegate: TabWebDelegate?
     @ObservationIgnored weak var browser: BrowserModel?
     /// The tab this one was opened from (a popup, or a Cmd-clicked link).
@@ -57,6 +67,14 @@ final class Tab: Identifiable {
     @ObservationIgnored var typedNavigationPending = false
     /// The next commit is Paddle's own error or crash page, or a sleeping tab's page coming back; neither is a visit.
     @ObservationIgnored var skipNextCommitInHistory = false
+    /// Which of Paddle's own pages (`loadHTMLString`) the next main-frame commit is; nil means the site's page.
+    /// Set just before each such load and consumed by `pageCommitted()`.
+    @ObservationIgnored var pendingOwnPage: OwnPage?
+    enum OwnPage { case source, error }
+    /// Showing one of Paddle's error pages (load failure, crash loop, extension unavailable), not the site's page:
+    /// Print, Save Page As and View Source are off then.
+    var isShowingErrorPage: Bool { committedErrorPage || showsExtensionUnavailable }
+    @ObservationIgnored private var committedErrorPage = false
     /// Recent web process crashes, with the host that was showing.
     @ObservationIgnored private var crashes: [(date: Date, host: String?)] = []
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -70,16 +88,30 @@ final class Tab: Identifiable {
     /// comes back (and is saved in the session) as that page, not as the error page's about:blank.
     @ObservationIgnored private(set) var showsExtensionUnavailable = false
 
-    init(url: URL?, title: String = "", isPinned: Bool = false, savedState: Any? = nil) {
+    init(url: URL?, title: String = "", isPinned: Bool = false, savedState: Any? = nil, isPrivate: Bool = false) {
         self.url = url
         self.title = title
         self.isPinned = isPinned
         self.savedState = savedState
+        self.isPrivate = isPrivate
     }
 
-    convenience init(record: TabRecord) {
-        self.init(url: URL(string: record.url), title: record.title, isPinned: record.isPinned, savedState: record.interactionState)
+    convenience init(record: TabRecord, isPrivate: Bool = false) {
+        self.init(
+            url: URL(string: record.url), title: record.title, isPinned: record.isPinned, savedState: record.interactionState,
+            isPrivate: isPrivate
+        )
     }
+
+    /// A View Source tab showing `html` (built by `ViewSource.page`), titled until its page sets the title.
+    convenience init(sourceHTML html: String, title: String, isPrivate: Bool) {
+        self.init(url: URL(string: "about:blank"), title: title, isPrivate: isPrivate)
+        sourceHTML = html
+    }
+
+    /// Whether this tab's web views may carry the extension controller: its window's setting, fixed when the
+    /// window opened (private windows only with `extensionsInPrivate`).
+    var extensionsAllowed: Bool { browser?.extensionsAllowed ?? !isPrivate }
 
     var displayTitle: String {
         if !title.isEmpty { return title }
@@ -104,17 +136,23 @@ final class Tab: Identifiable {
         let configuration: WKWebViewConfiguration
         let pageID = ExtensionIdentity.identifier(of: url)
         if let url, pageID != nil {
+            // A private window without extensions shows no extension page (it would run outside the private store).
+            guard extensionsAllowed else { return showExtensionUnavailable(inPrivateWindow: true) }
             guard let pageConfiguration = host.pageConfiguration(for: url) else {
                 if host.deferWake(self) { return nil }
                 return showExtensionUnavailable()
             }
             configuration = pageConfiguration
         } else {
-            configuration = AppModel.shared.web.makeConfiguration()
+            configuration = makeWebConfiguration()
         }
         let webView = WKWebView(frame: .zero, configuration: configuration)
         attach(webView, extensionPageID: pageID)
-        if let savedState {
+        if let sourceHTML {
+            skipNextCommitInHistory = true
+            pendingOwnPage = .source
+            webView.loadHTMLString(sourceHTML, baseURL: nil)
+        } else if let savedState {
             skipNextCommitInHistory = true
             webView.interactionState = savedState
         } else if let url {
@@ -129,6 +167,7 @@ final class Tab: Identifiable {
     func replaceWebView(loading url: URL) {
         sleep()
         savedState = nil
+        sourceHTML = nil
         self.url = url
         wake()
     }
@@ -136,16 +175,23 @@ final class Tab: Identifiable {
     /// An extension page whose extension isn't loaded (declined, off, failed, removed): a plain error page in an
     /// ordinary web view. Its "Try Again" button can't reach the extension page, by design; the tab keeps the
     /// page's URL and history, and the host swaps the page back in once the extension runs again.
-    private func showExtensionUnavailable() -> WKWebView {
-        let webView = WKWebView(frame: .zero, configuration: AppModel.shared.web.makeConfiguration())
+    private func showExtensionUnavailable(inPrivateWindow: Bool = false) -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: makeWebConfiguration())
         attach(webView, extensionPageID: nil)
         showsExtensionUnavailable = true
-        let html = TabWebDelegate.errorPage(
-            title: "Extension not loaded",
-            message: "This page belongs to an extension that isn't running (turned off, declined, removed, or it failed to load).",
-            url: url
-        )
+        let html = inPrivateWindow
+            ? TabWebDelegate.errorPage(
+                title: "Extensions are off in private windows",
+                message: "Open this page in a normal window, or set \"extensionsInPrivate\": true in config.json and open a new private window.",
+                url: url
+            )
+            : TabWebDelegate.errorPage(
+                title: "Extension not loaded",
+                message: "This page belongs to an extension that isn't running (turned off, declined, removed, or it failed to load).",
+                url: url
+            )
         skipNextCommitInHistory = true
+        pendingOwnPage = .error
         webView.loadHTMLString(html, baseURL: nil)
         return webView
     }
@@ -167,6 +213,8 @@ final class Tab: Identifiable {
         webView.autoresizingMask = [.width, .height]
         container.addSubview(webView)
         observe(webView)
+        audioObserver = AudioPlaybackObserver(webView) { [weak self] playing in self?.isPlayingAudio = playing }
+        if isMuted { applyMute(to: webView) }
         isAwake = true
         generation += 1
         // No tab-change notice here or in `sleep()`: WebKit asks `webView(for:)` when it needs the view, and a
@@ -183,9 +231,14 @@ final class Tab: Identifiable {
             savedState = webView.backForwardList.currentItem == nil ? nil : webView.interactionState
         }
         showsExtensionUnavailable = false
+        committedErrorPage = false
+        pendingOwnPage = nil
         resumeSelectionWaiters(false)
         observations.forEach { $0.invalidate() }
         observations = []
+        audioObserver?.invalidate()
+        audioObserver = nil
+        isPlayingAudio = false
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -207,6 +260,8 @@ final class Tab: Identifiable {
     func load(_ url: URL) {
         self.url = url
         showsExtensionUnavailable = false
+        sourceHTML = nil
+        committedErrorPage = false
         if let webView {
             if ExtensionIdentity.identifier(of: url) != extensionPageID {
                 replaceWebView(loading: url)
@@ -216,6 +271,16 @@ final class Tab: Identifiable {
         } else {
             savedState = nil
         }
+    }
+
+    /// A main-frame page committed (`TabWebDelegate.didCommit`). Anything but Paddle's own source or error page
+    /// is a real page: a View Source tab that navigated away (a dropped link or file) stops being one, so it
+    /// sleeps, wakes and is saved as that page.
+    func pageCommitted() {
+        let own = pendingOwnPage
+        pendingOwnPage = nil
+        committedErrorPage = own == .error
+        if own == nil { sourceHTML = nil }
     }
 
     /// The web process crashed or was killed. A background tab just goes to sleep. The visible tab reloads,
@@ -243,6 +308,7 @@ final class Tab: Identifiable {
                 url: url
             )
             skipNextCommitInHistory = true
+            pendingOwnPage = .error
             webView.loadHTMLString(html, baseURL: url)
         }
     }
@@ -277,11 +343,42 @@ final class Tab: Identifiable {
         waiters.forEach { $0.resume(returning: selected) }
     }
 
-    /// Playing audio/video or using camera/mic: never put to sleep.
+    /// Playing audio/video or using camera/mic: never put to sleep. Muted tabs count too (`MediaActivity`).
     func isBusy() async -> Bool {
         guard let webView else { return false }
-        if isCapturing { return true }
-        return await webView.requestMediaPlaybackState() == .playing
+        if MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: false) { return true }
+        let playing = await webView.requestMediaPlaybackState() == .playing
+        return MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: playing)
+    }
+
+    // MARK: - Mute
+
+    private static let setPageMutedSelector = NSSelectorFromString("_setPageMuted:")
+    private static let mediaMutedStateSelector = NSSelectorFromString("_mediaMutedState")
+
+    /// WebKit's private `_setPageMuted:` exists. Without it Paddle has no way to mute, so Mute Tab is disabled.
+    static let supportsMuting = WKWebView.instancesRespond(to: setPageMutedSelector)
+
+    /// Tabs > Mute Tab and the tab strip's speaker. A sleeping tab is muted when it wakes.
+    func setMuted(_ muted: Bool) {
+        guard Self.supportsMuting, muted != isMuted else { return }
+        isMuted = muted
+        if let webView { applyMute(to: webView) }
+    }
+
+    /// Private WebKit API (`_setPageMuted:` with `_WKMediaMutedState`), guarded by `supportsMuting`. Only the audio
+    /// bit changes, read from `_mediaMutedState` when that exists.
+    private func applyMute(to webView: WKWebView) {
+        guard webView.responds(to: Self.setPageMutedSelector) else { return }
+        var current: UInt64 = 0
+        if webView.responds(to: Self.mediaMutedStateSelector) {
+            typealias Get = @convention(c) (AnyObject, Selector) -> UInt64
+            let get = unsafeBitCast(webView.method(for: Self.mediaMutedStateSelector), to: Get.self)
+            current = get(webView, Self.mediaMutedStateSelector)
+        }
+        typealias Set = @convention(c) (AnyObject, Selector, UInt64) -> Void
+        let set = unsafeBitCast(webView.method(for: Self.setPageMutedSelector), to: Set.self)
+        set(webView, Self.setPageMutedSelector, MediaMutedState.settingAudio(isMuted, in: current))
     }
 
     // MARK: - KVO
@@ -326,5 +423,40 @@ final class Tab: Identifiable {
 
     private func updateCapturing(_ webView: WKWebView) {
         isCapturing = webView.cameraCaptureState != .none || webView.microphoneCaptureState != .none
+    }
+
+    /// The configuration for this tab's ordinary pages: the private data store in a private window,
+    /// and the extension controller only where extensions are allowed.
+    private func makeWebConfiguration() -> WKWebViewConfiguration {
+        AppModel.shared.web.makeConfiguration(isPrivate: isPrivate, extensions: extensionsAllowed)
+    }
+}
+
+/// KVO on WebKit's private `_isPlayingAudio`, which has no Swift key path. `init` returns nil when the property is
+/// missing, so the tab simply shows no speaker. Call `invalidate()` before dropping the web view.
+final class AudioPlaybackObserver: NSObject {
+    private static let key = "_isPlayingAudio"
+    private weak var webView: WKWebView?
+    private let onChange: (Bool) -> Void
+
+    init?(_ webView: WKWebView, onChange: @escaping (Bool) -> Void) {
+        guard webView.responds(to: NSSelectorFromString(Self.key)) else { return nil }
+        self.webView = webView
+        self.onChange = onChange
+        super.init()
+        webView.addObserver(self, forKeyPath: Self.key, options: [.initial, .new], context: nil)
+    }
+
+    func invalidate() {
+        webView?.removeObserver(self, forKeyPath: Self.key)
+        webView = nil
+    }
+
+    /// WebKit changes this property on the main thread.
+    nonisolated override func observeValue(
+        forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
+    ) {
+        let playing = (change?[.newKey] as? Bool) ?? false
+        MainActor.assumeIsolated { onChange(playing) }
     }
 }

@@ -28,7 +28,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
 
     /// Always the front browser window, even while Paddle is inactive: Chrome's "last focused" window.
     func webExtensionController(_ controller: WKWebExtensionController, focusedWindowFor extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
-        guard let front = app.frontWindow, host.isRegistered(front) else { return nil }
+        guard let front = app.frontExtensionWindow else { return nil }
         return front.extensionWindow
     }
 
@@ -39,7 +39,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     ) async throws -> (any WKWebExtensionTab)? {
         if let url = configuration.url { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
         let url = configuration.url ?? app.newTabPageURL
-        let target = (configuration.window as? ExtensionWindow)?.controller ?? app.frontWindow
+        let target = (configuration.window as? ExtensionWindow)?.controller ?? app.frontExtensionWindow
         guard let target else {
             let window = app.openWindow(url: url)
             return window.model.selectedTab?.extensionTab

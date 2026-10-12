@@ -228,7 +228,7 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     }
 
     func isPrivate(for context: WKWebExtensionContext) -> Bool {
-        false
+        controller?.model.isPrivate ?? false
     }
 
     func screenFrame(for context: WKWebExtensionContext) -> CGRect {

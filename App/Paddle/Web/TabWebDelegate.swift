@@ -64,7 +64,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // `Tab.load` (address bar, extension `tabs.update`) goes that way. Subframes are left to WebKit's rules.
         let targetExtension = ExtensionIdentity.identifier(of: url)
         if isMainFrame, let tab, targetExtension != nil, targetExtension != tab.extensionPageID {
-            Self.log.notice("blocked navigation to \(url.absoluteString, privacy: .public) from \(webView.url?.absoluteString ?? "-", privacy: .public)")
+            // URLs are `.private`: the unified log keeps notices on disk, and this can be a private window's page.
+            Self.log.notice("blocked navigation to \(url.absoluteString, privacy: .private) from \(webView.url?.absoluteString ?? "-", privacy: .private)")
             return (.cancel, preferences)
         }
 
@@ -187,12 +188,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        AppModel.shared.downloads.track(download)
+        AppModel.shared.downloads.track(download, isPrivate: tab?.isPrivate ?? false)
         tabShowsNothingAfterDownload(webView)
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        AppModel.shared.downloads.track(download)
+        AppModel.shared.downloads.track(download, isPrivate: tab?.isPrivate ?? false)
         tabShowsNothingAfterDownload(webView)
     }
 
@@ -258,6 +259,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var mainFrameNavigationType: WKNavigationType?
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        tab?.pageCommitted()
         guard let tab, let url = webView.url else { return }
         defer {
             tab.typedNavigationPending = false
@@ -272,8 +274,9 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         recordInHistory(url, webView, typed: tab.typedNavigationPending)
     }
 
+    /// Private windows record nothing; `historyURL` stays nil, so title changes write nothing either.
     private func recordInHistory(_ url: URL, _ webView: WKWebView, typed: Bool) {
-        guard let tab else { return }
+        guard let tab, !tab.isPrivate else { return }
         let title = webView.title ?? ""
         AppModel.shared.recordVisit(url, title: title, typed: typed)
         tab.historyURL = url
@@ -289,7 +292,10 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         recordInHistory(url, webView, typed: false)
     }
 
+    /// Private windows fetch no icons (nothing reaches favicons/ or the in-memory cache); they show icons already
+    /// on disk from normal browsing.
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard tab?.isPrivate == false else { return }
         Task { await AppModel.shared.favicons.refresh(for: webView) }
     }
 
@@ -317,6 +323,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let failing = (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? tab?.url
         let html = Self.errorPage(title: "Can't open this page", message: nsError.localizedDescription, url: failing)
         tab?.skipNextCommitInHistory = true
+        tab?.pendingOwnPage = .error
         webView.loadHTMLString(html, baseURL: failing)
     }
 
@@ -375,17 +382,17 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             }
             let scheme = requestURL?.scheme?.lowercased() ?? ""
             guard requestURL == nil || ["about", "blob", "data"].contains(scheme) || targetExtension == pageID else {
-                Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .public) from \(webView.url?.absoluteString ?? "-", privacy: .public)")
+                Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .private) from \(webView.url?.absoluteString ?? "-", privacy: .private)")
                 return nil
             }
         } else if targetExtension != nil {
-            Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .public) from \(webView.url?.absoluteString ?? "-", privacy: .public)")
+            Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .private) from \(webView.url?.absoluteString ?? "-", privacy: .private)")
             return nil
         }
         let popup = WKWebView(frame: .zero, configuration: configuration)
         // window.open() with no URL has no request URL; about:blank keeps the tab showing its web view
         // (which the opener may write into) instead of the start page.
-        let newTab = Tab(url: navigationAction.request.url ?? URL(string: "about:blank"))
+        let newTab = Tab(url: navigationAction.request.url ?? URL(string: "about:blank"), isPrivate: tab.isPrivate)
         newTab.opener = tab
         newTab.returnsToOpener = true
         newTab.closesIfOnlyDownload = true
