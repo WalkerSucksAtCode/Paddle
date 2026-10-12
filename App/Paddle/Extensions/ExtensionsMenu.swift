@@ -72,6 +72,10 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         menu.addItem(own("Show Problems…", #selector(showProblems(_:)), ext))
         menu.addItem(own("Ask About Permissions Again", #selector(askAgain(_:)), ext))
+        if let denials = host.autoDenied[ext.name], !denials.sites.isEmpty {
+            let count = denials.requests
+            menu.addItem(own("\(count) site request\(count == 1 ? "" : "s") auto-denied — Review…", #selector(reviewAutoDenied(_:)), ext))
+        }
         if AppModel.shared.config.developerTools {
             if let background = host.backgroundWebView(of: ext), WebInspector.isAvailable(for: background) {
                 menu.addItem(own("Inspect Background Page", #selector(inspectBackground(_:)), ext))
@@ -135,6 +139,40 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     @objc private func askAgain(_ sender: Any?) {
         guard let ext = ext(sender) else { return }
         Task { await host.askAgain(ext) }
+    }
+
+    /// Sites the extension asked about with no tab and no click (answered "no" without an alert): tick the ones it
+    /// may access. Most asked-about first.
+    @objc private func reviewAutoDenied(_ sender: Any?) {
+        guard let ext = ext(sender), let sites = host.autoDenied[ext.name]?.sites, !sites.isEmpty else { return }
+        let ordered = sites.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+        let boxes = ordered.map { site, count in
+            NSButton(checkboxWithTitle: "\(ExtensionPermissionText.sanitize(site, max: 80)) (\(count))", target: nil, action: nil)
+        }
+        let stack = NSStackView(views: boxes)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        stack.frame.size = stack.fittingSize
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: min(stack.fittingSize.height, 240)))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.documentView = stack
+
+        let alert = NSAlert()
+        alert.messageText = "Sites “\(ext.displayName)” asked about"
+        alert.informativeText = "It asked to see tabs on these sites without a click on it, so Paddle said no. "
+            + "Checked sites are allowed from now on: it can read and change their pages. The number is how often it asked."
+        if let icon = ext.webExtension.icon(for: CGSize(width: 64, height: 64)) { alert.icon = icon }
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Allow Checked")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let chosen = zip(ordered, boxes).filter { $1.state == .on }.map(\.0.key)
+        // The extension may have been unloaded while the alert was up.
+        guard !chosen.isEmpty, let current = self.ext(sender) else { return }
+        host.allowAutoDeniedSites(Set(chosen), for: current)
     }
 
     @objc private func inspectBackground(_ sender: Any?) {

@@ -418,7 +418,7 @@ private struct NavigationBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help("Memory: this tab · all tabs. Click for details.")
+        .help("Memory: this tab · all of Paddle. Click for details.")
         .popover(isPresented: $showActivity, arrowEdge: .bottom) {
             ActivityView(app: app, browser: model)
         }

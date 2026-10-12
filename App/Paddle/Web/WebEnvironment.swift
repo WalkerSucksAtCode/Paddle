@@ -154,8 +154,11 @@ final class WebEnvironment {
 
     // MARK: - Content blocking
 
-    /// Installs compiled block lists. Lists already compiled for the same file contents load from cache
-    /// in milliseconds; changed or new lists compile in the background and apply to later page loads.
+    /// Installs compiled block lists: the downloaded file of each list in `config.filterLists`, then
+    /// `user-filters.txt`. Other files in `filters/` (lists since removed from config) are left on disk and not
+    /// used, so a removed list stops blocking at the next reload. Lists already compiled for the same file
+    /// contents load from cache in milliseconds; changed or new lists compile in the background and apply to later
+    /// page loads. Every list gets a status line, including empty and failed ones.
     func loadContentBlockers() async {
         guard config.contentBlocking else {
             contentController.removeAllContentRuleLists()
@@ -164,55 +167,109 @@ final class WebEnvironment {
             return
         }
 
-        var sources = ((try? FileManager.default.contentsOfDirectory(at: Paths.filters, includingPropertiesForKeys: nil)) ?? [])
-            .filter { $0.pathExtension == "txt" }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        var status: [String] = []
+        var sources: [URL] = []
+        for list in config.filterLists {
+            guard let file = FilterUpdatePolicy.fileName(forList: list) else {
+                status.append("\(list): ignored, not an https URL")
+                continue
+            }
+            let url = Paths.filters.appending(path: file)
+            // Lists share a file in `filters/` when their URLs end in the same name; only the first is used.
+            guard !sources.contains(url) else {
+                status.append("\(list): ignored, same file name as an earlier list")
+                continue
+            }
+            sources.append(url)
+        }
         sources.append(Paths.userFilters)
 
-        var status: [String] = []
         var wanted: [String: WKContentRuleList] = [:]
         for file in sources {
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
             let name = file.deletingPathExtension().lastPathComponent
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else {
+                let exists = FileManager.default.fileExists(atPath: file.path)
+                status.append("\(name): \(exists ? "unreadable (not UTF-8 text)" : file == Paths.userFilters ? "no file" : "not downloaded yet")")
+                continue
+            }
             let digest = SHA256.hash(data: Data(text.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
             let identifier = "\(name).\(digest)"
 
-            if let list = installedRuleLists[identifier] {
-                wanted[identifier] = list
-                status.append("\(name): active")
-                continue
-            }
-            if let cached = try? await ruleStore.contentRuleList(forIdentifier: identifier) {
+            var cached = installedRuleLists[identifier]
+            if cached == nil { cached = try? await ruleStore.contentRuleList(forIdentifier: identifier) }
+            if let cached {
                 wanted[identifier] = cached
-                status.append("\(name): active")
+                status.append(await cachedSummary(identifier: identifier, text: text).statusLine(name: name, cached: true))
                 continue
             }
 
-            let result = await Task.detached(priority: .utility) { FilterListConverter.convert(text) }.value
-            guard result.ruleCount > 0 else { continue }
+            let (result, summary) = await Task.detached(priority: .utility) {
+                let result = FilterListConverter.convert(text)
+                return (result, RuleListSummary(text: text, result: result))
+            }.value
+            // WebKit refuses a list with no rules ("Empty extension"); there is nothing to install.
+            guard summary.ruleCount > 0 else {
+                status.append(summary.statusLine(name: name, cached: false))
+                continue
+            }
             do {
                 if let list = try await ruleStore.compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: result.json) {
                     wanted[identifier] = list
-                    status.append("\(name): \(result.ruleCount.formatted()) rules\(result.truncated ? " (truncated)" : "")")
+                    saveSummary(summary, identifier: identifier)
+                    status.append(summary.statusLine(name: name, cached: false))
                     log.info("compiled \(identifier, privacy: .public): \(result.ruleCount) rules, \(result.skippedLines) lines skipped")
                 }
             } catch {
-                status.append("\(name): failed to compile (\(error.localizedDescription))")
-                log.error("compile \(identifier, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                let reason = RuleListSummary.compileFailureReason(
+                    helpAnchor: (error as NSError).userInfo[NSHelpAnchorErrorKey] as? String,
+                    fallback: error.localizedDescription
+                )
+                status.append("\(name): failed to compile (\(reason))")
+                log.error("compile \(identifier, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
         }
 
-        contentController.removeAllContentRuleLists()
-        for list in wanted.values { contentController.add(list) }
+        for (identifier, list) in installedRuleLists where wanted[identifier] == nil { contentController.remove(list) }
+        for (identifier, list) in wanted where installedRuleLists[identifier] == nil { contentController.add(list) }
         installedRuleLists = wanted
         blockerStatus = status
         await removeStaleCompiledLists(keeping: Set(wanted.keys))
     }
 
+    /// The sidecar `compiled-rules/<identifier>.json` written when the list was compiled.
+    private static func summaryURL(_ identifier: String) -> URL {
+        Paths.compiledRules.appending(path: "\(identifier).json")
+    }
+
+    private func saveSummary(_ summary: RuleListSummary, identifier: String) {
+        guard let data = try? JSONEncoder().encode(summary) else { return }
+        try? data.write(to: Self.summaryURL(identifier), options: .atomic)
+    }
+
+    /// The saved counts for a cached list. Lists compiled before sidecars existed are converted once more (not
+    /// recompiled) to recover them.
+    private func cachedSummary(identifier: String, text: String) async -> RuleListSummary {
+        if let data = try? Data(contentsOf: Self.summaryURL(identifier)),
+           let summary = try? JSONDecoder().decode(RuleListSummary.self, from: data) {
+            return summary
+        }
+        let summary = await Task.detached(priority: .utility) {
+            RuleListSummary(text: text, result: FilterListConverter.convert(text))
+        }.value
+        saveSummary(summary, identifier: identifier)
+        return summary
+    }
+
+    /// Drops compiled lists and their sidecars that no current list uses.
     private func removeStaleCompiledLists(keeping: Set<String>) async {
-        guard let identifiers = await ruleStore.availableIdentifiers() else { return }
-        for identifier in identifiers where !keeping.contains(identifier) {
-            try? await ruleStore.removeContentRuleList(forIdentifier: identifier)
+        if let identifiers = await ruleStore.availableIdentifiers() {
+            for identifier in identifiers where !keeping.contains(identifier) {
+                try? await ruleStore.removeContentRuleList(forIdentifier: identifier)
+            }
+        }
+        let files = (try? FileManager.default.contentsOfDirectory(at: Paths.compiledRules, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.pathExtension == "json" && !keeping.contains(file.deletingPathExtension().lastPathComponent) {
+            try? FileManager.default.removeItem(at: file)
         }
     }
 

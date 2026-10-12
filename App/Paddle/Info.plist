@@ -28,6 +28,11 @@
 	<string>NSApplication</string>
 	<key>LSFileQuarantineEnabled</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Websites you allow can use the camera.</string>
 	<key>NSMicrophoneUsageDescription</key>

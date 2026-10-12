@@ -98,11 +98,8 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         in tab: (any WKWebExtensionTab)?,
         for extensionContext: WKWebExtensionContext
     ) async -> (Set<URL>, Date?) {
-        let byString = Dictionary(urls.map { ($0.absoluteString, $0) }, uniquingKeysWith: { first, _ in first })
-        let granted = await host.promptAtRuntime(
-            permissions: [], hosts: Set(byString.keys), in: tab as? ExtensionTab, for: extensionContext
-        )
-        return (Set(granted.hosts.compactMap { byString[$0] }), nil)
+        // `tabs.query` and CORS failures come with no tab; the host answers those without an alert.
+        (await host.promptForURLs(urls, in: tab as? ExtensionTab, for: extensionContext), nil)
     }
 
     func webExtensionController(
@@ -129,6 +126,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     func webExtensionController(_ controller: WKWebExtensionController, presentActionPopup action: WKWebExtension.Action, for context: WKWebExtensionContext) async throws {
         do {
             try host.popups.present(action, for: context)
+            host.noteUserAction(on: context, showingPopup: true)
         } catch {
             log.error("popup for \(context.uniqueIdentifier, privacy: .public) not shown: \(error.localizedDescription, privacy: .public)")
             action.closePopup()

@@ -38,6 +38,8 @@ struct ActivityView: View {
             }
             .frame(maxHeight: 320)
 
+            breakdownRows
+
             HStack {
                 Button("Sleep Background Tabs") { app.sleepBackgroundTabs() }
                 Spacer()
@@ -62,6 +64,31 @@ struct ActivityView: View {
         }
         .padding(14)
         .frame(width: 380)
+    }
+
+    /// Where the total goes: every WebContent process lands in one row, plus the shared processes and the app.
+    /// Rows that are empty right now (no extension running, no workers, nothing cached) are left out.
+    private var breakdownRows: some View {
+        let b = app.memoryBreakdown
+        let rows: [(String, UInt64, Bool)] = [
+            ("Tabs", b.tabs, true),
+            ("Extensions", b.extensions, false),
+            ("Service workers", b.serviceWorkers, false),
+            ("Shared (GPU, Networking)", b.shared, true),
+            ("Paddle app", b.app, true),
+            ("Other (cached pages)", b.other, false),
+        ]
+        return VStack(alignment: .leading, spacing: 2) {
+            ForEach(rows.filter { $0.2 || $0.1 > 0 }, id: \.0) { row in
+                HStack {
+                    Text(row.0)
+                    Spacer()
+                    Text(ProcessMemory.format(row.1)).monospacedDigit()
+                }
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
     }
 
     /// One line for other private windows: tab count and memory, no titles and no way to bring them forward.

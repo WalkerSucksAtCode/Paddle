@@ -85,8 +85,20 @@ final class ExtensionHost {
     @ObservationIgnored private var deferredTabs: [Weak<Tab>] = []
     /// A load, reconcile or reload (prompts included) is in progress, or none has happened yet.
     @ObservationIgnored private var loadInProgress = true
-    /// Folder name to items the user refused at runtime this session; not asked again until relaunch.
+    /// Folder name to items the user refused at runtime this session; not asked again until relaunch. Permission
+    /// names and match patterns as asked; URLs as their site (`ExtensionAccessPolicy.denialKey`).
     @ObservationIgnored private var deniedThisSession: [String: Set<String>] = [:]
+    /// Folder name to site requests answered "no" without asking (no tab, no recent user action) this session.
+    @ObservationIgnored private(set) var autoDenied: [String: AutoDenials] = [:]
+    struct AutoDenials {
+        var requests = 0
+        /// `ExtensionAccessPolicy.denialKey`s, each with how many requests named it.
+        var sites: [String: Int] = [:]
+    }
+    /// Context id to when the user last acted on that extension: toolbar button, menu item, key command, popup.
+    @ObservationIgnored private var lastUserAction: [String: Date] = [:]
+    /// Context id of the extension whose popup was shown last; it counts as acting on it while it stays open.
+    @ObservationIgnored private var popupContextID: String?
     /// Serializes every alert, one at a time.
     @ObservationIgnored private var promptQueue: Task<Void, Never>?
     /// Loads, reconciles, reloads and Ask Again run one at a time, their prompts included. Overlapping runs would
@@ -376,6 +388,7 @@ final class ExtensionHost {
             decisions.forget(folder: current.name)
             writeDecisions()
             deniedThisSession[current.name] = nil
+            autoDenied[current.name] = nil
             unload(current, closingTabs: false)
             let config = AppModel.shared.config
             let pending = await loadEntries([current.entry], config: config)
@@ -717,12 +730,72 @@ final class ExtensionHost {
         activate(entry, item.webExtension, manifest: item.manifest, problems: item.problems, requested: item.requested, config: config)
     }
 
+    /// WebKit asking whether an extension may see these URLs. Without a tab (`tabs.query`, a CORS failure) and with
+    /// no recent user action on the extension, the answer is "no" at once, counted for the Extensions menu's
+    /// Review…; otherwise the user is asked, about sites not refused earlier this session.
+    func promptForURLs(_ urls: Set<URL>, in tab: ExtensionTab?, for context: WKWebExtensionContext) async -> Set<URL> {
+        guard let ext = loaded.first(where: { $0.context === context }) else { return [] }
+        let decision = ExtensionAccessPolicy.classify(kind: .urls, hasTab: tab != nil, recentGesture: userActedRecently(on: context))
+        if decision == .autoDeny {
+            var denials = autoDenied[ext.name, default: AutoDenials()]
+            denials.requests += 1
+            for url in urls { denials.sites[ExtensionAccessPolicy.denialKey(url), default: 0] += 1 }
+            autoDenied[ext.name] = denials
+            // URLs are `.private`: they can be a private window's pages.
+            let list = urls.map(\.absoluteString).sorted().joined(separator: ", ")
+            log.info("\(ext.name, privacy: .public): site request without a tab or user action auto-denied (\(denials.requests, privacy: .public) so far): \(list, privacy: .private)")
+            return []
+        }
+        let refused = deniedThisSession[ext.name] ?? []
+        let ask = urls.filter { !refused.contains(ExtensionAccessPolicy.denialKey($0)) }
+        let byString = Dictionary(ask.map { ($0.absoluteString, $0) }, uniquingKeysWith: { first, _ in first })
+        let granted = await promptAtRuntime(permissions: [], hosts: Set(byString.keys), in: tab, for: context, recordRefusals: false)
+        let allowed = Set(granted.hosts.compactMap { byString[$0] })
+        if allowed.isEmpty, !ask.isEmpty {
+            deniedThisSession[ext.name, default: []].formUnion(ask.map(ExtensionAccessPolicy.denialKey))
+        }
+        return allowed
+    }
+
+    /// Grants the sites picked in the Extensions menu's Review… through WebKit; the permission observer persists
+    /// them like any other grant.
+    func allowAutoDeniedSites(_ sites: Set<String>, for ext: LoadedExtension) {
+        for site in sites {
+            for pattern in ExtensionAccessPolicy.grantPatterns(forKey: site) {
+                guard let matchPattern = try? WKWebExtension.MatchPattern(string: pattern) else {
+                    log.error("\(ext.name, privacy: .public): no match pattern for a reviewed site")
+                    continue
+                }
+                ext.context.setPermissionStatus(.grantedExplicitly, for: matchPattern)
+            }
+            autoDenied[ext.name]?.sites[site] = nil
+            deniedThisSession[ext.name]?.remove(site)
+        }
+        log.info("\(ext.name, privacy: .public): allowed \(sites.count, privacy: .public) reviewed site(s)")
+    }
+
+    /// The user acted on this extension in the last `ExtensionAccessPolicy.gestureWindow`, or its popup is open.
+    private func userActedRecently(on context: WKWebExtensionContext) -> Bool {
+        let id = context.uniqueIdentifier
+        if popupContextID == id, popups.shownPopover?.isShown == true { return true }
+        guard let last = lastUserAction[id] else { return false }
+        return Date().timeIntervalSince(last) < ExtensionAccessPolicy.gestureWindow
+    }
+
+    /// Paddle's toolbar button, menu item or key command for `context` ran, or its popup was shown.
+    func noteUserAction(on context: WKWebExtensionContext, showingPopup: Bool = false) {
+        lastUserAction[context.uniqueIdentifier] = Date()
+        if showingPopup { popupContextID = context.uniqueIdentifier }
+    }
+
     /// A running extension asking for more. Items refused earlier this session are refused again without asking.
     /// Returns what the user allowed; the caller hands those back to WebKit, which records them, and the
     /// observer below persists the result.
     /// `allSites`: asked-for patterns WebKit says match every host.
+    /// `recordRefusals` false: the caller remembers a refusal its own way (URLs by site).
     func promptAtRuntime(
-        permissions: Set<String>, hosts: Set<String>, allSites: Set<String> = [], in tab: ExtensionTab?, for context: WKWebExtensionContext
+        permissions: Set<String>, hosts: Set<String>, allSites: Set<String> = [], in tab: ExtensionTab?,
+        for context: WKWebExtensionContext, recordRefusals: Bool = true
     ) async -> (permissions: Set<String>, hosts: Set<String>) {
         guard let ext = loaded.first(where: { $0.context === context }) else { return ([], []) }
         let refused = deniedThisSession[ext.name] ?? []
@@ -758,7 +831,7 @@ final class ExtensionHost {
             log.info("\(ext.name, privacy: .public): runtime request allowed: \(askPermissions.union(askHosts).sorted().joined(separator: ", "), privacy: .public)")
             return (askPermissions, askHosts)
         }
-        deniedThisSession[ext.name, default: []].formUnion(askPermissions.union(askHosts))
+        if recordRefusals { deniedThisSession[ext.name, default: []].formUnion(askPermissions.union(askHosts)) }
         log.info("\(ext.name, privacy: .public): runtime request refused: \(askPermissions.union(askHosts).sorted().joined(separator: ", "), privacy: .public)")
         return ([], [])
     }
@@ -910,12 +983,14 @@ final class ExtensionHost {
     /// popup, which the presenter shows because Paddle noted the user action first.
     func performAction(_ ext: LoadedExtension, in tab: Tab?) {
         popups.noteUserAction(for: ext.context)
+        noteUserAction(on: ext.context)
         ext.context.performAction(for: tab?.extensionTab)
     }
 
     /// An extension command chosen from the Extensions menu.
     func performCommand(_ command: WKWebExtension.Command, of ext: LoadedExtension) {
         popups.noteUserAction(for: ext.context)
+        noteUserAction(on: ext.context)
         ext.context.performCommand(command)
     }
 
@@ -943,6 +1018,7 @@ final class ExtensionHost {
                 return false
             }
             popups.noteUserAction(for: ext.context)
+            noteUserAction(on: ext.context)
             ext.context.performCommand(command)
             return true
         }

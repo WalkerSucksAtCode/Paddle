@@ -27,8 +27,11 @@ final class AppModel {
     @ObservationIgnored private(set) var history: HistoryStore?
     /// Bumped whenever history changes, so an open History window refreshes.
     private(set) var historyGeneration = 0
-    /// Total footprint of every WebContent process Paddle's tabs use.
+    /// Footprint of everything Paddle runs: tab, extension and worker WebContent processes, GPU and Networking,
+    /// and the app itself (`memoryBreakdown.total`).
     private(set) var totalWebMemory: UInt64 = 0
+    /// The same memory split into the Activity popover's rows.
+    private(set) var memoryBreakdown = ProcessBreakdown()
 
     /// Per-session answers to permission prompts (camera, microphone, downloads), keyed by site and kind.
     @ObservationIgnored var grantedPermissions: Set<String> = []
@@ -376,7 +379,7 @@ final class AppModel {
 
     private func startMonitoring() {
         sampleTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-            MainActor.assumeIsolated { AppModel.shared.sampleMemory() }
+            MainActor.assumeIsolated { AppModel.shared.measureMemory() }
         }
         sweepTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated {
@@ -396,28 +399,61 @@ final class AppModel {
         }
         source.resume()
         memoryPressureSource = source
-        sampleMemory()
+        measureMemory()
     }
 
+    /// Refreshes the readout when it is shown; UI actions (sleeping a tab) call this.
     func sampleMemory() {
         guard config.showTabMemory else { return }
-        var pidCounts: [pid_t: Int] = [:]
-        var footprints: [pid_t: UInt64] = [:]
-        var tabPids: [(Tab, pid_t)] = []
-        for tab in allTabs {
-            guard let webView = tab.webView, let pid = ProcessMemory.pid(of: webView) else {
-                tab.memoryBytes = nil
-                continue
+        measureMemory()
+    }
+
+    /// Measures every process regardless of `showTabMemory` (the sampler and, later, Settings need the breakdown
+    /// either way); the per-tab numbers are only written while the readout is on. Each WebContent process goes to
+    /// the tabs whose views it hosts, else to Extensions, Service workers or Other; GPU, Networking and the app
+    /// itself are added on top.
+    func measureMemory() {
+        let tabs = allTabs
+        var owners: [ObjectIdentifier: ViewOwner] = [:]
+        for tab in tabs {
+            if let webView = tab.webView { owners[ObjectIdentifier(webView)] = .tab(tab.id) }
+        }
+        for ext in extensions.loaded {
+            if let background = extensions.backgroundWebView(of: ext) { owners[ObjectIdentifier(background)] = .extensionView }
+        }
+
+        let breakdown: ProcessBreakdown
+        if let snapshot = ProcessMemory.snapshot() {
+            // Popups (and anything else the host didn't hand us) are extension views by their URL scheme.
+            for (id, view) in snapshot.webViews where owners[id] == nil && view.url?.scheme == ExtensionIdentity.scheme {
+                owners[id] = .extensionView
             }
-            tabPids.append((tab, pid))
-            pidCounts[pid, default: 0] += 1
-            if footprints[pid] == nil { footprints[pid] = ProcessMemory.footprint(of: pid) }
+            breakdown = ProcessBreakdown.aggregate(
+                processes: snapshot.webContent, owners: owners,
+                gpu: snapshot.gpu, networking: snapshot.networking, app: ProcessMemory.selfFootprint()
+            )
+        } else {
+            // Without the process list: each tab's main-frame process only, as before, plus the app itself.
+            var views: [pid_t: [ObjectIdentifier]] = [:]
+            for tab in tabs {
+                guard let webView = tab.webView, let pid = ProcessMemory.pid(of: webView) else { continue }
+                views[pid, default: []].append(ObjectIdentifier(webView))
+            }
+            let processes = views.map { pid, views in
+                WebContentProcess(pid: pid, footprint: ProcessMemory.footprint(of: pid) ?? 0, views: views)
+            }
+            breakdown = ProcessBreakdown.aggregate(processes: processes, owners: owners, app: ProcessMemory.selfFootprint())
         }
-        for (tab, pid) in tabPids {
-            tab.memoryBytes = footprints[pid] ?? nil
-            tab.sharesProcess = (pidCounts[pid] ?? 0) > 1
+
+        memoryBreakdown = breakdown
+        totalWebMemory = breakdown.total
+        // The per-tab numbers feed every tab button's tooltip; with the readout off, leave them alone so the
+        // sampler neither shows memory the user turned off nor invalidates the tab strip every tick.
+        guard config.showTabMemory else { return }
+        for tab in tabs {
+            tab.memoryBytes = breakdown.perTab[tab.id]
+            tab.sharesProcess = breakdown.sharedTabs.contains(tab.id)
         }
-        totalWebMemory = footprints.values.reduce(0, +)
     }
 
     /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),

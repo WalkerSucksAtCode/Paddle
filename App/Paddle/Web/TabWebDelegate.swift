@@ -47,7 +47,10 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let url = navigationAction.request.url else { return (.allow, preferences) }
         let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? false
         let byUser = Self.isUserInitiated(navigationAction)
-        if isMainFrame { mainFrameNavigationType = navigationAction.navigationType }
+        if isMainFrame {
+            mainFrameNavigationType = navigationAction.navigationType
+            mainFrameResponded = false
+        }
 
         // mailto:, zoommtg:, slack: ... hand off to the right app. A real click opens it; a script or redirect
         // (a "Launch meeting" page) asks first, so pages can't launch apps unprompted.
@@ -154,6 +157,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
+        if navigationResponse.isForMainFrame { mainFrameResponded = true }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let isAttachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
         guard isAttachment || !navigationResponse.canShowMIMEType else { return .allow }
@@ -259,6 +263,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var mainFrameNavigationType: WKNavigationType?
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        trackErrorPageItem(webView)
         tab?.pageCommitted()
         guard let tab, let url = webView.url else { return }
         defer {
@@ -314,6 +319,25 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         tab?.processTerminated()
     }
 
+    /// Back/forward items that showed one of Paddle's error pages. Going back or forward to one, WebKit can show
+    /// the stored error page again without loading anything (no new `pendingOwnPage`); it is still an error page.
+    private let errorPageItems = NSHashTable<WKBackForwardListItem>.weakObjects()
+    /// The pending main-frame navigation got a response from the site, so what commits is the site's page.
+    private var mainFrameResponded = false
+
+    /// Called on each main-frame commit, before `Tab.pageCommitted` reads `pendingOwnPage`.
+    private func trackErrorPageItem(_ webView: WKWebView) {
+        defer { mainFrameResponded = false }
+        guard let tab, let item = webView.backForwardList.currentItem else { return }
+        if tab.pendingOwnPage == .error {
+            errorPageItems.add(item)
+        } else if tab.pendingOwnPage == nil, !mainFrameResponded, errorPageItems.contains(item) {
+            tab.pendingOwnPage = .error
+        } else {
+            errorPageItems.remove(item)
+        }
+    }
+
     private func showErrorPage(_ webView: WKWebView, _ error: any Error) {
         let nsError = error as NSError
         // Cancelled loads, and loads that turned into downloads, are not errors.
@@ -324,10 +348,32 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let html = Self.errorPage(title: "Can't open this page", message: nsError.localizedDescription, url: failing)
         tab?.skipNextCommitInHistory = true
         tab?.pendingOwnPage = .error
-        webView.loadHTMLString(html, baseURL: failing)
+        Self.loadErrorPage(html, for: failing, in: webView)
     }
 
-    /// A plain page with a Try Again button that reloads `url`. Loaded with `url` as its base URL,
+    /// Shows `html` as the page for the failed load of `url`, which keeps a back/forward item of its own, as Safari
+    /// does: Back from the error goes to the page before it, and Forward, Reload or Try Again retry `url`.
+    /// (`loadHTMLString` with `url` as base URL added no item, so Back skipped the previous page.)
+    /// Prefers WebKit's alternate-HTML load for an unreachable URL, which reuses the failing load's item. The fallback,
+    /// a simulated request, appends a new item instead (a failed Back loses the forward list, a woken or restored error
+    /// tab gets the entry twice) and Forward re-shows its error page from the back/forward cache without retrying.
+    /// The page runs in `url`'s origin, so user scripts and content scripts for that site may run on it.
+    static func loadErrorPage(_ html: String, for url: URL?, in webView: WKWebView) {
+        guard let url else {
+            webView.loadHTMLString(html, baseURL: nil)
+            return
+        }
+        let selector = NSSelectorFromString("_loadAlternateHTMLString:baseURL:forUnreachableURL:")
+        if webView.responds(to: selector) {
+            typealias LoadAlternate = @convention(c) (AnyObject, Selector, NSString, NSURL, NSURL) -> Void
+            unsafeBitCast(webView.method(for: selector), to: LoadAlternate.self)(
+                webView, selector, html as NSString, url as NSURL, url as NSURL)
+        } else {
+            webView.loadSimulatedRequest(URLRequest(url: url), responseHTML: html)
+        }
+    }
+
+    /// A plain page with a Try Again button that reloads `url`. Loaded as the page for `url` (see `loadErrorPage`),
     /// so the address bar keeps showing the page that failed.
     static func errorPage(title: String, message: String, url: URL?) -> String {
         func escape(_ s: String) -> String {

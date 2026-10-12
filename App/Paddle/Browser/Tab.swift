@@ -67,7 +67,7 @@ final class Tab: Identifiable {
     @ObservationIgnored var typedNavigationPending = false
     /// The next commit is Paddle's own error or crash page, or a sleeping tab's page coming back; neither is a visit.
     @ObservationIgnored var skipNextCommitInHistory = false
-    /// Which of Paddle's own pages (`loadHTMLString`) the next main-frame commit is; nil means the site's page.
+    /// Which of Paddle's own pages (`loadHTMLString`, or `TabWebDelegate.loadErrorPage` for load errors) the next main-frame commit is; nil means the site's page.
     /// Set just before each such load and consumed by `pageCommitted()`.
     @ObservationIgnored var pendingOwnPage: OwnPage?
     enum OwnPage { case source, error }
@@ -309,6 +309,8 @@ final class Tab: Identifiable {
             )
             skipNextCommitInHistory = true
             pendingOwnPage = .error
+            // Not `loadErrorPage`: after a crash there is no failed load to stand in for, and both of its loads append
+            // a second item for the crashed page. Loading with `url` as base URL reuses the crashed page's item.
             webView.loadHTMLString(html, baseURL: url)
         }
     }

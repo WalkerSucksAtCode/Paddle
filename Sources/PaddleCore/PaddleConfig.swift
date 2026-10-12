@@ -54,6 +54,18 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         "https://easylist.to/easylist/easyprivacy.txt",
     ]
 
+    /// The `config.json` keys, one per property above. Explicit so `ConfigFile` can tell a known key from an unknown
+    /// one; the raw values are the property names, as the synthesized keys were.
+    public enum CodingKeys: String, CodingKey, CaseIterable {
+        case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
+        case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs
+        case contentBlocking, filterLists, filterUpdateDays
+        case userAgentSuffix, siteUserAgents
+        case showTabMemory, developerTools
+        case shortcuts
+        case extensions, extensionsInPrivate
+    }
+
     public init(
         homepage: String = "about:blank",
         newTabPage: String = "about:blank",

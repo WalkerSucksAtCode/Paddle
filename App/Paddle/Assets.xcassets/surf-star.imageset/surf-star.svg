@@ -1,4 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#63C5DA" fill="#0F1318"/>
-  <polygon points="12 5.5 13.8 9.5 18 10.1 15 13.2 15.7 17.5 12 15.5" fill="#B8EDF8" opacity="0.8"/>
+  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke="#155E75" fill="#DDF3F9"/>
+  <polygon points="12 5.5 13.8 9.5 18 10.1 15 13.2 15.7 17.5 12 15.5" fill="#0E7490" opacity="0.8"/>
 </svg>
