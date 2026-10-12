@@ -32,9 +32,8 @@ enum Paths {
         for dir in [support, userScripts, filters, compiledRules, favicons, extensions] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
-        if !fm.fileExists(atPath: config.path), let data = try? PaddleConfig().encoded() {
-            try? data.write(to: config)
-        }
+        // An empty object: every key falls back to its default, so the file only ever holds what the user changed.
+        writeIfMissing(config, "{}\n")
         writeIfMissing(userCSS, """
         /* Paddle user stylesheet: applied to every page. Paddle > Reload Config to apply changes.
            Example:
@@ -46,7 +45,7 @@ enum Paths {
         ! Your own blocking rules, Adblock Plus syntax. Paddle > Reload Config to apply.
         ! ||annoying-widget.example^         block a host
         ! example.com##.newsletter-popup     hide an element on one site
-        ! @@||mybank.example^$document       turn blocking off for a site
+        ! @@||mybank.example^$document       exception: cancels only rules in this file, not the downloaded lists
 
         """)
     }

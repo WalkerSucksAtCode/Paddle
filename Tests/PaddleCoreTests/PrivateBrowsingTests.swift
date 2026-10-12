@@ -88,11 +88,20 @@ struct TabAudioTests {
         #expect(AudioIndicator(isPlayingAudio: false, isMuted: true) == .muted)
     }
 
-    @Test func playingKeepsATabAwakeWhetherMutedOrNot() {
-        #expect(MediaActivity.isBusy(isCapturing: false, isPlayingAudio: false, playbackIsPlaying: true))
-        #expect(MediaActivity.isBusy(isCapturing: false, isPlayingAudio: true, playbackIsPlaying: false))
-        #expect(MediaActivity.isBusy(isCapturing: true, isPlayingAudio: false, playbackIsPlaying: false))
-        #expect(!MediaActivity.isBusy(isCapturing: false, isPlayingAudio: false, playbackIsPlaying: false))
+    @Test func soundOrCaptureKeepsATabAwake() {
+        #expect(MediaActivity.isBusy(isCapturing: false, isPlayingAudio: true, playbackIsPlaying: false, audioIsObservable: true))
+        #expect(MediaActivity.isBusy(isCapturing: true, isPlayingAudio: false, playbackIsPlaying: false, audioIsObservable: true))
+        #expect(!MediaActivity.isBusy(isCapturing: false, isPlayingAudio: false, playbackIsPlaying: false, audioIsObservable: true))
+    }
+
+    @Test func silentVideoDoesNotKeepATabAwake() {
+        // A muted autoplaying preview: media is playing, no sound.
+        #expect(!MediaActivity.isBusy(isCapturing: false, isPlayingAudio: false, playbackIsPlaying: true, audioIsObservable: true))
+    }
+
+    @Test func withoutTheSoundFlagAnyPlaybackCounts() {
+        #expect(MediaActivity.isBusy(isCapturing: false, isPlayingAudio: false, playbackIsPlaying: true, audioIsObservable: false))
+        #expect(!MediaActivity.isBusy(isCapturing: false, isPlayingAudio: false, playbackIsPlaying: false, audioIsObservable: false))
     }
 }
 

@@ -1,0 +1,225 @@
+import AppKit
+import Foundation
+import PaddleCore
+import SwiftUI
+
+/// The Settings window's view of `config.json`: what the panes show, the bytes their edits are based on, and the
+/// banner. Lives only while the window is open. Every save goes through `AppModel.writeConfig`, which refuses to
+/// overwrite a key that changed on disk since `base` was read.
+@Observable
+final class SettingsModel {
+    enum Banner: Equatable {
+        /// config.json doesn't parse, or a key has the wrong type (`key` then names it so it can be reset).
+        case invalid(message: String, key: String?, badValue: String?)
+        /// The file holds valid edits Paddle isn't running with yet.
+        case unapplied
+        /// A save was refused because these paths changed on disk; `pendingChanges` holds the user's edit.
+        case conflict(paths: [[String]])
+        case writeFailed(String)
+
+        var text: String {
+            switch self {
+            case .invalid(let message, _, _):
+                "config.json can't be read: \(message.hasSuffix(".") ? String(message.dropLast()) : message). "
+                    + "Paddle keeps running on the last good settings."
+            case .unapplied:
+                "config.json has edits Paddle hasn't applied. Saving any change here applies them too."
+            case .conflict(let paths):
+                "config.json changed while you were editing; your change to \(paths.map { $0.joined(separator: ".") }.joined(separator: ", ")) wasn't saved."
+            case .writeFailed(let message):
+                "config.json couldn't be saved: \(message)"
+            }
+        }
+    }
+
+    /// The decoded file as last read or written here. Panes show these values, not `AppModel.config`, so a hand
+    /// edit shows up even before it is applied.
+    private(set) var file: PaddleConfig
+    private(set) var banner: Banner? {
+        didSet {
+            guard banner != oldValue, let banner else { return }
+            AccessibilityNotification.Announcement(banner.text).post()
+        }
+    }
+
+    /// Controls that edit config.json are off while the file can't be read; Edit config.json… stays on.
+    var controlsDisabled: Bool {
+        if case .invalid = banner { return true }
+        return false
+    }
+
+    /// The bytes edits are based on (what `file` was decoded from).
+    @ObservationIgnored private var base = Data()
+    @ObservationIgnored private var baseStamp: ConfigStamp?
+    /// The edit a conflict refused, for Save Mine.
+    @ObservationIgnored private var pendingChanges: [ConfigChange] = []
+    /// The last queued write. Each write waits for it before reading `base`, so back-to-back saves build on the
+    /// bytes the previous one wrote instead of conflicting with Paddle's own write.
+    @ObservationIgnored private var writeTail: Task<Void, Never>?
+
+    init() {
+        file = AppModel.shared.config
+        refresh(force: true)
+    }
+
+    // MARK: - Reading
+
+    /// Re-reads config.json unless its stamp shows nothing changed since the last read or Paddle's own last write.
+    /// A conflict or write-failure banner stays until the user answers it, unless the file became unreadable.
+    func refresh(force: Bool = false) {
+        let url = Paths.config.resolvingSymlinksInPath()
+        let stamp = ConfigStamp(url)
+        if !force, stamp == baseStamp { return }
+        // Paddle's own write (from this window or elsewhere): already applied, so no banner and no re-read.
+        if !force, let stamp, let written = AppModel.shared.lastConfigWrite, stamp == written.stamp {
+            baseStamp = stamp
+            base = written.data
+            file = AppModel.shared.config
+            setBanner(nil)
+            return
+        }
+        let data: Data
+        do {
+            data = try AppModel.readConfigFile(url)
+        } catch {
+            setBanner(.invalid(message: error.localizedDescription, key: nil, badValue: nil))
+            return
+        }
+        baseStamp = stamp
+        base = data
+
+        let spans: JSONSpans
+        do {
+            spans = try JSONSpans.scan(data)
+        } catch {
+            setBanner(.invalid(message: Self.describe(error), key: nil, badValue: nil))
+            return
+        }
+        do {
+            file = try AppModel.decodeConfigFile(data)
+        } catch {
+            // Valid JSON with a wrong type: the first coding-path component is the top-level key to reset.
+            let key = (error as? DecodingError).flatMap(Self.codingPath)?.first?.stringValue
+            let badValue = key.flatMap(spans.member).map { member in
+                String(decoding: data[member.valueRange], as: UTF8.self).prefix(80).description
+            }
+            setBanner(.invalid(message: PaddleConfig.describe(error), key: key, badValue: badValue))
+            return
+        }
+        setBanner(file == AppModel.shared.config ? nil : .unapplied)
+    }
+
+    private func setBanner(_ state: Banner?) {
+        switch banner {
+        case .conflict, .writeFailed:
+            if case .invalid = state { banner = state }
+        default:
+            banner = state
+        }
+    }
+
+    // MARK: - Writing
+
+    /// Saves `changes` against the bytes the panes were showing. Never reports success the file didn't get.
+    func save(_ changes: [ConfigChange]) async {
+        guard !changes.isEmpty else { return }
+        await serialized { await self.write(changes) }
+    }
+
+    private func write(_ changes: [ConfigChange]) async {
+        guard !controlsDisabled else { return }
+        switch await AppModel.shared.writeConfig(changes, base: base) {
+        case .written(let config, let data, let stamp):
+            file = config
+            base = data
+            baseStamp = stamp
+            pendingChanges = []
+            // Writing applied the whole file, hand edits included.
+            banner = nil
+        case .conflict(let paths):
+            pendingChanges = changes
+            banner = .conflict(paths: paths)
+        case .failed(let message):
+            banner = .writeFailed(message)
+        }
+    }
+
+    // MARK: - Banner actions
+
+    /// Apply Now: the Reload Config path, without its alert.
+    func applyNow() async {
+        await AppModel.shared.reloadConfig(showAlert: false)
+        refresh(force: true)
+    }
+
+    /// Conflict > Use the File's Value: drops the refused edit and shows what is on disk.
+    func useFilesValue() {
+        pendingChanges = []
+        banner = nil
+        refresh(force: true)
+    }
+
+    /// Conflict > Save Mine: the refused edit again, this time based on the file as it is now.
+    func saveMine() async {
+        let changes = pendingChanges
+        pendingChanges = []
+        banner = nil
+        refresh(force: true)
+        await save(changes)
+    }
+
+    /// Invalid file > Reset key: removes only that key, so it falls back to its default.
+    func resetKey(_ key: String) async {
+        await serialized { await self.writeReset(key) }
+    }
+
+    private func writeReset(_ key: String) async {
+        refresh(force: true)
+        guard case .invalid(_, key?, _)? = banner else { return }
+        switch await AppModel.shared.writeConfig([ConfigChange(key, nil)], base: base) {
+        case .written:
+            banner = nil
+            refresh(force: true)
+        case .conflict:
+            refresh(force: true)
+        case .failed(let message):
+            banner = .writeFailed(message)
+        }
+    }
+
+    func dismissFailure() {
+        banner = nil
+        refresh(force: true)
+    }
+
+    // MARK: - Helpers
+
+    /// Runs `body` after every write queued before it.
+    private func serialized(_ body: @escaping @MainActor () async -> Void) async {
+        let previous = writeTail
+        let task = Task {
+            await previous?.value
+            await body()
+        }
+        writeTail = task
+        await task.value
+    }
+
+    private static func codingPath(_ error: DecodingError) -> [any CodingKey]? {
+        switch error {
+        case .typeMismatch(_, let context), .valueNotFound(_, let context), .keyNotFound(_, let context), .dataCorrupted(let context):
+            context.codingPath
+        @unknown default:
+            nil
+        }
+    }
+
+    private static func describe(_ error: any Error) -> String {
+        switch error {
+        case JSONSpans.ScanError.invalidJSON(let text): text
+        case JSONSpans.ScanError.notAnObject: "it must be a JSON object: { ... }"
+        case JSONSpans.ScanError.notUTF8: "it must be saved as UTF-8"
+        default: PaddleConfig.describe(error)
+        }
+    }
+}

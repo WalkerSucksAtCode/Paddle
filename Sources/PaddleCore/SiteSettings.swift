@@ -1,0 +1,95 @@
+import Foundation
+
+/// Per-site settings from the `sites` key of `config.json`, keyed by host suffix like `siteUserAgents`:
+/// `"sites": {"example.com": {"zoom": 1.25, "javaScript": false, "autoplay": "muted", "contentBlocking": false,
+/// "location": "deny"}}`. Every field is optional; a missing field means Paddle's default for that host.
+/// User agents stay in `siteUserAgents`. There is no notifications field: WebKit gives apps no API for them.
+public struct SiteSettings: Codable, Sendable, Equatable {
+    public enum Autoplay: String, Codable, Sendable, CaseIterable {
+        case allow, muted, block
+    }
+
+    public enum Location: String, Codable, Sendable, CaseIterable {
+        case ask, allow, deny
+    }
+
+    /// Page zoom as a factor; 1 is 100 %.
+    public var zoom: Double?
+    /// Whether pages on this site run JavaScript.
+    public var javaScript: Bool?
+    /// Whether media may start on its own, and with sound.
+    public var autoplay: Autoplay?
+    /// Whether the content blocker applies on this site.
+    public var contentBlocking: Bool?
+    /// What a geolocation request gets without a prompt.
+    public var location: Location?
+
+    public init(
+        zoom: Double? = nil,
+        javaScript: Bool? = nil,
+        autoplay: Autoplay? = nil,
+        contentBlocking: Bool? = nil,
+        location: Location? = nil
+    ) {
+        self.zoom = zoom
+        self.javaScript = javaScript
+        self.autoplay = autoplay
+        self.contentBlocking = contentBlocking
+        self.location = location
+    }
+
+    /// True when no field is set, so the entry says nothing and can be dropped.
+    public var isEmpty: Bool {
+        zoom == nil && javaScript == nil && autoplay == nil && contentBlocking == nil && location == nil
+    }
+
+    /// `other` laid over self: every field `other` sets replaces the one here.
+    func overlaid(with other: SiteSettings) -> SiteSettings {
+        SiteSettings(
+            zoom: other.zoom ?? zoom,
+            javaScript: other.javaScript ?? javaScript,
+            autoplay: other.autoplay ?? autoplay,
+            contentBlocking: other.contentBlocking ?? contentBlocking,
+            location: other.location ?? location
+        )
+    }
+}
+
+extension PaddleConfig {
+    /// A host or a `sites` / `siteUserAgents` key in the form `URL.host` gives: lowercase, no trailing dot, and
+    /// an international name as punycode (`"bücher.de"` → `"xn--bcher-kva.de"`), so a key the user typed matches
+    /// the host WebKit reports. Keys that can't form a URL (a port, a path, `*`) come back lowercased and match nothing
+    /// but themselves; the validator warns about them.
+    public static func normalizedHost(_ host: String) -> String {
+        var host = host.lowercased()
+        while host.hasSuffix(".") { host.removeLast() }
+        guard host.contains(where: { !$0.isASCII }), let encoded = URL(string: "https://\(host)/")?.host else {
+            return host
+        }
+        return encoded
+    }
+
+    /// True when `key` (a `sites` / `siteUserAgents` key) covers `host`: the same host, or a parent domain of it.
+    /// Both sides go through `normalizedHost`.
+    static func hostKey(_ key: String, matches host: String) -> Bool {
+        let key = normalizedHost(key)
+        return host == key || host.hasSuffix("." + key)
+    }
+
+    /// The `sites` entry keys that cover `host`: the host itself and each parent domain that has an entry,
+    /// shortest (least specific) first. Matching is the same as `userAgent(forHost:)`.
+    public func siteSettingsKeys(forHost host: String) -> [String] {
+        let host = PaddleConfig.normalizedHost(host)
+        return sites.keys
+            .filter { PaddleConfig.hostKey($0, matches: host) }
+            .sorted { $0.count < $1.count }
+    }
+
+    /// The settings that apply to `host`, merged per field: the entry for the longest matching host suffix wins a
+    /// field, and fields it leaves unset come from the next parent domain. Empty when no entry matches.
+    public func siteSettings(forHost host: String) -> SiteSettings {
+        siteSettingsKeys(forHost: host).reduce(SiteSettings()) { merged, key in
+            merged.overlaid(with: sites[key] ?? SiteSettings())
+        }
+    }
+}

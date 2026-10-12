@@ -199,6 +199,9 @@ final class BookmarksWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// File > Close Tab (⌘W) closes this window; it has no tabs.
+    @objc func paddleCloseTab(_ sender: Any?) { window?.performClose(sender) }
+
     func windowWillClose(_ notification: Notification) {
         Self.shared = nil
     }

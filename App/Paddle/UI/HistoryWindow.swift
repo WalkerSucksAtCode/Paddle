@@ -37,6 +37,9 @@ final class HistoryWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// File > Close Tab (⌘W) closes this window; it has no tabs.
+    @objc func paddleCloseTab(_ sender: Any?) { window?.performClose(sender) }
+
     /// Closing drops the window and its list; the next Show All History starts fresh.
     func windowWillClose(_ notification: Notification) {
         Self.shared = nil

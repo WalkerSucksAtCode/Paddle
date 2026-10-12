@@ -51,7 +51,7 @@ final class AppModel {
 
     func start(openingURLs urls: [URL]) async {
         Paths.ensure()
-        loadConfig()
+        if let loaded = readConfig() { config = loaded }
         openHistory()
         bookmarks.load()
         web.apply(config)
@@ -81,35 +81,186 @@ final class AppModel {
 
     // MARK: - Config
 
-    private func loadConfig() {
+    /// What `writeConfig` did. Success only when the bytes are on disk and Paddle runs with them.
+    enum ConfigWriteResult {
+        case written(PaddleConfig, data: Data, stamp: ConfigStamp?)
+        /// These paths changed on disk since the edit's base was read; nothing was written.
+        case conflict([[String]])
+        case failed(String)
+    }
+
+    /// The bytes and stamp of Paddle's last config.json write, so Settings can tell its own writes from hand edits.
+    @ObservationIgnored private(set) var lastConfigWrite: (stamp: ConfigStamp, data: Data)?
+    /// The write before this one, so writes run one at a time in order.
+    @ObservationIgnored private var configWriteTail: Task<Void, Never>?
+
+    /// config.json decoded, or nil (and `configError` set) when it doesn't load.
+    private func readConfig() -> PaddleConfig? {
         do {
-            config = try PaddleConfig.decode(Data(contentsOf: Paths.config))
+            let config = try Self.decodeConfigFile(Self.readConfigFile(Paths.config))
             configError = nil
+            return config
         } catch {
             configError = "config.json: \(PaddleConfig.describe(error))"
             log.error("\(self.configError ?? "", privacy: .public)")
+            return nil
         }
     }
 
-    /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/ and block lists.
-    func reloadConfig() async {
-        loadConfig()
-        openHistory()
-        bookmarks.load()
-        web.apply(config)
-        MainMenu.applyShortcuts(config.shortcuts)
-        await web.loadContentBlockers()
-        await extensions.reconcile(config: config)
-        for ext in extensions.loaded { ext.context.hasAccessToPrivateData = config.extensionsInPrivate }
-        // Turning extensionsInPrivate off takes extensions out of private windows already open (turning it on
-        // applies to new private windows only).
-        if !config.extensionsInPrivate {
-            for controller in windows where controller.model.isPrivate && controller.model.extensionsAllowed {
-                extensions.windowClosing(controller)
-                controller.model.withdrawExtensions()
+    /// config.json's bytes; a missing file reads as empty (every key at its default).
+    static func readConfigFile(_ url: URL) throws -> Data {
+        do {
+            return try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return Data()
+        }
+    }
+
+    /// Decodes config.json, reading an empty file (or one with only a byte-order mark) as `{}` as ConfigFile does.
+    static func decodeConfigFile(_ data: Data) throws -> PaddleConfig {
+        let blank = data.drop { [0x20, 0x09, 0x0A, 0x0D, 0xEF, 0xBB, 0xBF].contains($0) }.isEmpty
+        return try PaddleConfig.decode(blank ? Data("{}".utf8) : data)
+    }
+
+    /// Settings' write path: applies `changes` to config.json as it is on disk now, where `base` is the copy the
+    /// edit started from (a key changed on disk since then is a conflict and nothing is written), writes
+    /// atomically to the symlink's target, then runs Paddle on the result. Unapplied hand edits elsewhere in the
+    /// file are applied with it.
+    func writeConfig(_ changes: [ConfigChange], base: Data) async -> ConfigWriteResult {
+        let previous = configWriteTail
+        let write = Task { () -> ConfigWriteResult in
+            await previous?.value
+            return await self.performConfigWrite(changes, base: base)
+        }
+        configWriteTail = Task { _ = await write.value }
+        return await write.value
+    }
+
+    private func performConfigWrite(_ changes: [ConfigChange], base: Data) async -> ConfigWriteResult {
+        let url = Paths.config.resolvingSymlinksInPath()
+        let disk: Data
+        do {
+            disk = try Self.readConfigFile(url)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+        let data: Data
+        switch ConfigFile.apply(changes: changes, base: base, disk: disk) {
+        case .success(let edited):
+            data = edited
+        case .failure(.conflict(let paths)):
+            return .conflict(paths)
+        case .failure(let error):
+            return .failed(Self.describe(error))
+        }
+        let new: PaddleConfig
+        do {
+            new = try Self.decodeConfigFile(data)
+            try data.write(to: url, options: .atomic)
+        } catch {
+            log.error("config.json write failed: \(error.localizedDescription, privacy: .public)")
+            return .failed(error.localizedDescription)
+        }
+        let stamp = ConfigStamp(url)
+        if let stamp { lastConfigWrite = (stamp, data) }
+        log.info("config.json written: \(changes.map { $0.path.joined(separator: ".") }.joined(separator: ", "), privacy: .public)")
+        configError = nil
+        await apply(new)
+        return .written(new, data: data, stamp: stamp)
+    }
+
+    private static func describe(_ error: ConfigWriteError) -> String {
+        switch error {
+        case .invalidFile(let text): "it can't be edited (\(text))"
+        case .badPath(let path): "Paddle can't make an edit at \(path.joined(separator: "."))"
+        case .conflict(let paths): "changed on disk at \(paths.map { $0.joined(separator: ".") }.joined(separator: ", "))"
+        case .invalidResult(let text): "the edit would leave it invalid (\(text))"
+        }
+    }
+
+    /// Runs Paddle with `new`, doing for each key that changed what that key needs. `reloading` (Reload Config)
+    /// treats every key as changed, so user scripts, block lists, extension folders and history retention are all
+    /// re-read even when config.json itself didn't change.
+    func apply(_ new: PaddleConfig, reloading: Bool = false) async {
+        let changed = Self.changedKeys(config, new)
+        let keys = reloading ? Set(PaddleConfig.CodingKeys.allCases) : changed
+        config = new
+        guard !keys.isEmpty else { return }
+
+        // Every key: the web environment keeps its own copy (user agents, inspector, block lists). This also
+        // re-reads user.css and userscripts/.
+        web.apply(new)
+        if keys.contains(.historyDays) { openHistory() }
+        if keys.contains(.shortcuts) { MainMenu.applyShortcuts(new.shortcuts) }
+        if keys.contains(.developerTools) {
+            // Remote inspection follows at once; the context-menu item needs a new page (its configuration).
+            for tab in allTabs { tab.webView?.isInspectable = new.developerTools }
+            for ext in extensions.loaded { ext.context.isInspectable = new.developerTools }
+        }
+        if keys.contains(.showTabMemory) {
+            if new.showTabMemory {
+                sampleMemory()
+            } else {
+                for tab in allTabs {
+                    tab.memoryBytes = nil
+                    tab.sharesProcess = false
+                }
             }
         }
-        sweepSleepingTabs()
+        if !keys.isDisjoint(with: [.contentBlocking, .filterLists]) { await web.loadContentBlockers() }
+        // A newly listed (or re-enabled) list has no file yet, so it is due now rather than at the hourly check.
+        if !changed.isDisjoint(with: [.contentBlocking, .filterLists, .filterUpdateDays]) {
+            Task { await updateFilterListsIfDue() }
+        }
+        if !keys.isDisjoint(with: [.extensions, .extensionsInPrivate]) { await extensions.reconcile(config: new) }
+        if keys.contains(.extensionsInPrivate) {
+            for ext in extensions.loaded { ext.context.hasAccessToPrivateData = new.extensionsInPrivate }
+            // Turning extensionsInPrivate off takes extensions out of private windows already open (turning it on
+            // applies to new private windows only).
+            if !new.extensionsInPrivate {
+                for controller in windows where controller.model.isPrivate && controller.model.extensionsAllowed {
+                    extensions.windowClosing(controller)
+                    controller.model.withdrawExtensions()
+                }
+            }
+        }
+        if !keys.isDisjoint(with: [.tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs]) { sweepSleepingTabs() }
+    }
+
+    /// The keys whose values differ. The switch is exhaustive, so a new key must say how it compares.
+    private static func changedKeys(_ old: PaddleConfig, _ new: PaddleConfig) -> Set<PaddleConfig.CodingKeys> {
+        Set(PaddleConfig.CodingKeys.allCases.filter { key in
+            switch key {
+            case .homepage: old.homepage != new.homepage
+            case .newTabPage: old.newTabPage != new.newTabPage
+            case .searchTemplate: old.searchTemplate != new.searchTemplate
+            case .searchSuggestTemplate: old.searchSuggestTemplate != new.searchSuggestTemplate
+            case .historyDays: old.historyDays != new.historyDays
+            case .tabSleepAfterMinutes: old.tabSleepAfterMinutes != new.tabSleepAfterMinutes
+            case .maxAwakeTabs: old.maxAwakeTabs != new.maxAwakeTabs
+            case .sleepPinnedTabs: old.sleepPinnedTabs != new.sleepPinnedTabs
+            case .contentBlocking: old.contentBlocking != new.contentBlocking
+            case .filterLists: old.filterLists != new.filterLists
+            case .filterUpdateDays: old.filterUpdateDays != new.filterUpdateDays
+            case .userAgentSuffix: old.userAgentSuffix != new.userAgentSuffix
+            case .siteUserAgents: old.siteUserAgents != new.siteUserAgents
+            case .sites: old.sites != new.sites
+            case .showTabMemory: old.showTabMemory != new.showTabMemory
+            case .developerTools: old.developerTools != new.developerTools
+            case .shortcuts: old.shortcuts != new.shortcuts
+            case .extensions: old.extensions != new.extensions
+            case .extensionsInPrivate: old.extensionsInPrivate != new.extensionsInPrivate
+            }
+        })
+    }
+
+    /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/, block lists, extension folders and
+    /// bookmarks. A config.json that doesn't load keeps the previous settings; everything else is still re-read.
+    /// Settings' Apply Now runs the same path without the alert.
+    func reloadConfig(showAlert: Bool = true) async {
+        await apply(readConfig() ?? config, reloading: true)
+        bookmarks.load()
+        guard showAlert else { return }
 
         let alert = NSAlert()
         if let configError {

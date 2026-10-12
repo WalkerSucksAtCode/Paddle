@@ -11,6 +11,19 @@ struct HistoryStoreTests {
 
     func store() throws -> HistoryStore { try HistoryStore(path: ":memory:") }
 
+    @Test func countsVisitsPruneWouldDelete() throws {
+        let store = try store()
+        #expect(try store.countVisits(olderThan: now) == 0)
+        try store.recordVisit(url: url("https://example.com/a"), title: "A", typed: false, at: ago(days: 10))
+        try store.recordVisit(url: url("https://example.com/b"), title: "B", typed: false, at: ago(days: 3))
+        try store.recordVisit(url: url("https://example.com/b"), title: "B", typed: false, at: ago(days: 1))
+        #expect(try store.countVisits(olderThan: ago(days: 2)) == 2)
+        #expect(try store.countVisits(olderThan: ago(days: 10)) == 0) // strictly before, like prune
+        #expect(try store.countVisits(olderThan: now) == 3)
+        try store.prune(olderThan: ago(days: 2))
+        #expect(try store.countVisits(olderThan: now) == 1)
+    }
+
     @Test func recordUpsertsPageAndCounts() throws {
         let store = try store()
         try store.recordVisit(url: url("https://example.com/a"), title: "Alpha", typed: true, at: ago(days: 2))

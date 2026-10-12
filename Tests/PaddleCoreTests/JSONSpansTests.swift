@@ -57,7 +57,9 @@ struct JSONSpansTests {
             _ = try JSONSpans.scan(Data("{\"a\": 1 \"b\": 2}".utf8))
             Issue.record("a missing comma should not scan")
         } catch JSONSpans.ScanError.invalidJSON(let why) {
-            #expect(!why.isEmpty)
+            // The banner promises a location, which `localizedDescription` alone doesn't carry.
+            #expect(why.contains("line 1"), "\(why)")
+            #expect(why.contains("column"), "\(why)")
         } catch {
             Issue.record("unexpected \(error)")
         }

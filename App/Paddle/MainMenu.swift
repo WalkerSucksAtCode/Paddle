@@ -17,7 +17,7 @@ enum MainMenu {
         let app = submenu(main, "Paddle")
         app.addItem(withTitle: "About Paddle", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
-        add(app, "settings", "Settings (config.json)…", #selector(AppDelegate.paddleOpenConfig(_:)), ",", target: appDelegate)
+        add(app, "settings", "Settings…", #selector(AppDelegate.paddleShowSettings(_:)), ",", target: appDelegate)
         add(app, "openConfigFolder", "Open Config Folder", #selector(AppDelegate.paddleOpenConfigFolder(_:)), "", target: appDelegate)
         add(app, "reloadConfig", "Reload Config", #selector(AppDelegate.paddleReloadConfig(_:)), ",", [.command, .option], target: appDelegate)
         add(app, "updateFilterLists", "Update Filter Lists", #selector(AppDelegate.paddleUpdateFilterLists(_:)), "", target: appDelegate)

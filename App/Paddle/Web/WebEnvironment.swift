@@ -59,6 +59,9 @@ final class WebEnvironment {
         c.preferences.javaScriptCanOpenWindowsAutomatically = false
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         c.allowsAirPlayForMediaPlayback = true
+        // Safari's default ("Stop media with sound"): pages can autoplay muted video, sound waits for a click or key.
+        // WebKit's own macOS default lets pages start sound on their own.
+        c.mediaTypesRequiringUserActionForPlayback = .audio
         c.webExtensionController = extensions ? extensionController : nil
         Self.enableWebFeatures(c.preferences)
         return c
@@ -158,7 +161,8 @@ final class WebEnvironment {
     /// `user-filters.txt`. Other files in `filters/` (lists since removed from config) are left on disk and not
     /// used, so a removed list stops blocking at the next reload. Lists already compiled for the same file
     /// contents load from cache in milliseconds; changed or new lists compile in the background and apply to later
-    /// page loads. Every list gets a status line, including empty and failed ones.
+    /// page loads, their selectors first checked by a `SelectorValidator` that lives only for this call. Every
+    /// list gets a status line, including empty and failed ones.
     func loadContentBlockers() async {
         guard config.contentBlocking else {
             contentController.removeAllContentRuleLists()
@@ -169,15 +173,16 @@ final class WebEnvironment {
 
         var status: [String] = []
         var sources: [URL] = []
+        renameLegacyFilterFiles()
         for list in config.filterLists {
             guard let file = FilterUpdatePolicy.fileName(forList: list) else {
                 status.append("\(list): ignored, not an https URL")
                 continue
             }
             let url = Paths.filters.appending(path: file)
-            // Lists share a file in `filters/` when their URLs end in the same name; only the first is used.
+            // File names come from the whole URL, so only the same list entered twice shares one.
             guard !sources.contains(url) else {
-                status.append("\(list): ignored, same file name as an earlier list")
+                status.append("\(list): ignored, listed twice")
                 continue
             }
             sources.append(url)
@@ -185,6 +190,10 @@ final class WebEnvironment {
         sources.append(Paths.userFilters)
 
         var wanted: [String: WKContentRuleList] = [:]
+        // Sidecars of lists that are current but not installed (no rules, or WebKit refused them).
+        var sidecars: Set<String> = []
+        // Made by the first list that needs compiling and dropped after the loop, so cached loads start no web view.
+        var validator: SelectorValidator?
         for file in sources {
             let name = file.deletingPathExtension().lastPathComponent
             guard let text = try? String(contentsOf: file, encoding: .utf8) else {
@@ -193,7 +202,8 @@ final class WebEnvironment {
                 continue
             }
             let digest = SHA256.hash(data: Data(text.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
-            let identifier = "\(name).\(digest)"
+            // Text and converter version: a new converter recompiles lists WebKit still has cached from the old one.
+            let identifier = "\(name).v\(FilterListConverter.converterVersion).\(digest)"
 
             var cached = installedRuleLists[identifier]
             if cached == nil { cached = try? await ruleStore.contentRuleList(forIdentifier: identifier) }
@@ -202,13 +212,23 @@ final class WebEnvironment {
                 status.append(await cachedSummary(identifier: identifier, text: text).statusLine(name: name, cached: true))
                 continue
             }
+            // A list that gave no rules or failed to compile last time has only a sidecar; same text, same answer.
+            if let remembered = savedSummary(identifier: identifier), !remembered.installable {
+                sidecars.insert(identifier)
+                status.append(remembered.statusLine(name: name, cached: true))
+                continue
+            }
 
+            let checker = validator ?? SelectorValidator()
+            validator = checker
             let (result, summary) = await Task.detached(priority: .utility) {
-                let result = FilterListConverter.convert(text)
+                let result = await FilterListConverter.convert(text) { await checker.validate($0) }
                 return (result, RuleListSummary(text: text, result: result))
             }.value
             // WebKit refuses a list with no rules ("Empty extension"); there is nothing to install.
             guard summary.ruleCount > 0 else {
+                saveSummary(summary, identifier: identifier)
+                sidecars.insert(identifier)
                 status.append(summary.statusLine(name: name, cached: false))
                 continue
             }
@@ -217,23 +237,43 @@ final class WebEnvironment {
                     wanted[identifier] = list
                     saveSummary(summary, identifier: identifier)
                     status.append(summary.statusLine(name: name, cached: false))
-                    log.info("compiled \(identifier, privacy: .public): \(result.ruleCount) rules, \(result.skippedLines) lines skipped")
+                    log.info("compiled \(identifier, privacy: .public): \(result.ruleCount) rules, \(result.skippedLines) lines skipped, \(result.styleInjection) style rules, \(result.invalidSelectors) invalid selectors")
                 }
             } catch {
-                let reason = RuleListSummary.compileFailureReason(
+                var failed = summary
+                failed.compileFailure = RuleListSummary.compileFailureReason(
                     helpAnchor: (error as NSError).userInfo[NSHelpAnchorErrorKey] as? String,
                     fallback: error.localizedDescription
                 )
-                status.append("\(name): failed to compile (\(reason))")
+                saveSummary(failed, identifier: identifier)
+                sidecars.insert(identifier)
+                status.append(failed.statusLine(name: name, cached: false))
                 log.error("compile \(identifier, privacy: .public) failed: \(String(describing: error), privacy: .public)")
             }
         }
+
+        validator = nil  // the throwaway web view and its WebContent process go now
 
         for (identifier, list) in installedRuleLists where wanted[identifier] == nil { contentController.remove(list) }
         for (identifier, list) in wanted where installedRuleLists[identifier] == nil { contentController.add(list) }
         installedRuleLists = wanted
         blockerStatus = status
-        await removeStaleCompiledLists(keeping: Set(wanted.keys))
+        await removeStaleCompiledLists(keeping: Set(wanted.keys), sidecars: sidecars)
+    }
+
+    /// Moves `filters/<name>.txt` files from before file names carried the URL hash to the name their list uses
+    /// now, so the list keeps blocking instead of reading "not downloaded yet" until the next download.
+    private func renameLegacyFilterFiles() {
+        let fm = FileManager.default
+        let renames = FilterUpdatePolicy.legacyRenames(config.filterLists) { fm.fileExists(atPath: Paths.filters.appending(path: $0).path) }
+        for (from, to) in renames {
+            do {
+                try fm.moveItem(at: Paths.filters.appending(path: from), to: Paths.filters.appending(path: to))
+                log.info("renamed filter list \(from, privacy: .public) to \(to, privacy: .public)")
+            } catch {
+                log.error("rename \(from, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     /// The sidecar `compiled-rules/<identifier>.json` written when the list was compiled.
@@ -246,13 +286,15 @@ final class WebEnvironment {
         try? data.write(to: Self.summaryURL(identifier), options: .atomic)
     }
 
+    private func savedSummary(identifier: String) -> RuleListSummary? {
+        guard let data = try? Data(contentsOf: Self.summaryURL(identifier)) else { return nil }
+        return try? JSONDecoder().decode(RuleListSummary.self, from: data)
+    }
+
     /// The saved counts for a cached list. Lists compiled before sidecars existed are converted once more (not
     /// recompiled) to recover them.
     private func cachedSummary(identifier: String, text: String) async -> RuleListSummary {
-        if let data = try? Data(contentsOf: Self.summaryURL(identifier)),
-           let summary = try? JSONDecoder().decode(RuleListSummary.self, from: data) {
-            return summary
-        }
+        if let summary = savedSummary(identifier: identifier) { return summary }
         let summary = await Task.detached(priority: .utility) {
             RuleListSummary(text: text, result: FilterListConverter.convert(text))
         }.value
@@ -260,15 +302,17 @@ final class WebEnvironment {
         return summary
     }
 
-    /// Drops compiled lists and their sidecars that no current list uses.
-    private func removeStaleCompiledLists(keeping: Set<String>) async {
+    /// Drops compiled lists and sidecars that no current list uses. `sidecars` are the identifiers of current
+    /// lists that have a sidecar but nothing installed (no rules, or WebKit refused them).
+    private func removeStaleCompiledLists(keeping: Set<String>, sidecars: Set<String>) async {
         if let identifiers = await ruleStore.availableIdentifiers() {
             for identifier in identifiers where !keeping.contains(identifier) {
                 try? await ruleStore.removeContentRuleList(forIdentifier: identifier)
             }
         }
+        let keptSidecars = keeping.union(sidecars)
         let files = (try? FileManager.default.contentsOfDirectory(at: Paths.compiledRules, includingPropertiesForKeys: nil)) ?? []
-        for file in files where file.pathExtension == "json" && !keeping.contains(file.deletingPathExtension().lastPathComponent) {
+        for file in files where file.pathExtension == "json" && !keptSidecars.contains(file.deletingPathExtension().lastPathComponent) {
             try? FileManager.default.removeItem(at: file)
         }
     }
@@ -294,6 +338,7 @@ final class WebEnvironment {
         isUpdatingFilters = true
         defer { isUpdatingFilters = false }
 
+        renameLegacyFilterFiles()
         let configured = Set(config.filterLists.compactMap(FilterUpdatePolicy.fileName(forList:)))
         filterUpdateProblems = filterUpdateProblems.filter { configured.contains($0.key) }
 

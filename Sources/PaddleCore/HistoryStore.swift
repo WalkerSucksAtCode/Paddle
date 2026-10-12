@@ -264,6 +264,13 @@ public final class HistoryStore {
         _ = try rows("PRAGMA wal_checkpoint(TRUNCATE)", []) { _ in 0 }
     }
 
+    /// How many visits `prune(olderThan:)` would delete, for a "this deletes N visits" confirmation.
+    public func countVisits(olderThan date: Date) throws -> Int {
+        try rows("SELECT count(*) FROM visits WHERE date < ?", [.double(date.timeIntervalSince1970)]) { stmt in
+            Int(sqlite3_column_int64(stmt, 0))
+        }.first ?? 0
+    }
+
     /// Retention: drops visits before `date`, then pages with no visits left. Surviving pages keep their
     /// lifetime counts, so frecency does not change when old visits age out.
     public func prune(olderThan date: Date) throws {

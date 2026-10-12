@@ -34,6 +34,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var userAgentSuffix: String
     /// Full user agent for specific sites, keyed by host suffix (e.g. `"example.com"` also covers `www.example.com`).
     public var siteUserAgents: [String: String]
+    /// Per-site zoom, JavaScript, autoplay, content blocking and location, keyed by host suffix like
+    /// `siteUserAgents`. See `SiteSettings`.
+    public var sites: [String: SiteSettings]
 
     /// Show per-tab memory in the toolbar and tab tooltips.
     public var showTabMemory: Bool
@@ -60,7 +63,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
         case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs
         case contentBlocking, filterLists, filterUpdateDays
-        case userAgentSuffix, siteUserAgents
+        case userAgentSuffix, siteUserAgents, sites
         case showTabMemory, developerTools
         case shortcuts
         case extensions, extensionsInPrivate
@@ -80,6 +83,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         filterUpdateDays: Int = 7,
         userAgentSuffix: String = "",
         siteUserAgents: [String: String] = [:],
+        sites: [String: SiteSettings] = [:],
         showTabMemory: Bool = true,
         developerTools: Bool = true,
         shortcuts: [String: String] = [:],
@@ -99,6 +103,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.filterUpdateDays = filterUpdateDays
         self.userAgentSuffix = userAgentSuffix
         self.siteUserAgents = siteUserAgents
+        self.sites = sites
         self.showTabMemory = showTabMemory
         self.developerTools = developerTools
         self.shortcuts = shortcuts
@@ -122,6 +127,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         filterUpdateDays = try c.decodeIfPresent(Int.self, forKey: .filterUpdateDays) ?? d.filterUpdateDays
         userAgentSuffix = try c.decodeIfPresent(String.self, forKey: .userAgentSuffix) ?? d.userAgentSuffix
         siteUserAgents = try c.decodeIfPresent([String: String].self, forKey: .siteUserAgents) ?? d.siteUserAgents
+        sites = try c.decodeIfPresent([String: SiteSettings].self, forKey: .sites) ?? d.sites
         showTabMemory = try c.decodeIfPresent(Bool.self, forKey: .showTabMemory) ?? d.showTabMemory
         developerTools = try c.decodeIfPresent(Bool.self, forKey: .developerTools) ?? d.developerTools
         shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? d.shortcuts
@@ -136,13 +142,20 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Why config.json didn't load, in words someone can act on: which key had the wrong type, or where the JSON
     /// broke. `localizedDescription` only says the data "isn't in the correct format".
     public static func describe(_ error: any Error) -> String {
-        guard let error = error as? DecodingError else { return error.localizedDescription }
+        guard let error = error as? DecodingError else {
+            // A bare `JSONSerialization` error keeps its line and column only in the debug description.
+            return ((error as NSError).userInfo[NSDebugDescriptionErrorKey] as? String) ?? error.localizedDescription
+        }
         switch error {
         case .typeMismatch(_, let context), .valueNotFound(_, let context), .keyNotFound(_, let context):
             let path = context.codingPath.map(\.stringValue).joined(separator: ".")
             return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
         case .dataCorrupted(let context):
-            guard let underlying = context.underlyingError as NSError? else { return context.debugDescription }
+            guard let underlying = context.underlyingError as NSError? else {
+                // No underlying error: a value of the right type Paddle can't use, like an unknown `autoplay` word.
+                let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+                return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
+            }
             return (underlying.userInfo[NSDebugDescriptionErrorKey] as? String) ?? "\(context.debugDescription) \(underlying)"
         @unknown default:
             return error.localizedDescription
@@ -158,14 +171,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.
     public func isExtensionEnabled(_ folder: String) -> Bool { extensions[folder] ?? true }
 
-    /// The site-specific user agent for `host`, matching the longest configured host suffix.
+    /// The site-specific user agent for `host`, matching the longest configured host suffix (see `normalizedHost`).
     public func userAgent(forHost host: String) -> String? {
-        let host = host.lowercased()
+        let host = PaddleConfig.normalizedHost(host)
         return siteUserAgents
-            .filter { key, _ in
-                let key = key.lowercased()
-                return host == key || host.hasSuffix("." + key)
-            }
+            .filter { key, _ in PaddleConfig.hostKey(key, matches: host) }
             .max { $0.key.count < $1.key.count }?
             .value
     }

@@ -85,6 +85,91 @@ struct FilterListConverterTests {
         #expect(result.skippedLines == 6)
     }
 
+    /// `{style}` and `:style(` lines inject CSS; they are counted apart and must never become `display: none`
+    /// (one accepted as a selector would hide `body`).
+    @Test func styleRulesAreCountedAndNeverHidden() {
+        let text = """
+        hindustantimes.com##body {padding-top:0;}
+        ##[role="banner"] {top:0 !important}
+        example.com##.sticky:style(position: static !important)
+        example.com##[data-testid="box"] {remove:true;}
+        ##.ok
+        """
+        let result = FilterListConverter.convert(text)
+        #expect(result.styleInjection == 4)
+        #expect(result.skippedLines == 0)
+        #expect(result.invalidSelectors == 0)
+        #expect(result.ruleCount == 1)
+        #expect(!result.json.contains("body"))
+        #expect(!result.json.contains("banner"))
+    }
+
+    @Test func nestedHasAndUnbalancedSelectorsAreInvalid() {
+        let text = """
+        ##article:has(header:has(.ct-sponsored))
+        ##div > [style]:has([style]:has([href*="&utm"]))
+        ##div[class="a
+        ##a:has(.b
+        ##span[title="x"
+        ##li:is(.a, .b):has(> .c)
+        ##a[title="(x"]
+        ##.bg-white\\/50.p-8
+        ##div:not(:has(.x)) + p:has(.y)
+        """
+        let result = FilterListConverter.convert(text)
+        #expect(result.invalidSelectors == 5)
+        #expect(result.skippedLines == 0)
+        #expect(result.ruleCount == 1)
+        #expect(result.json.contains(#"li:is(.a, .b):has(> .c), a[title=\"(x\"], .bg-white\\/50.p-8, div:not(:has(.x)) + p:has(.y)"#))
+        #expect(FilterListConverter.classifySelector(":HAS(a:has(b))") == .invalid)
+        #expect(FilterListConverter.classifySelector("div:has-text(Ad)") == .unsupported)
+        #expect(FilterListConverter.classifySelector("") == .unsupported)
+    }
+
+    /// The validator sees every chunk first, then only the members of failing chunks; just the bad selector
+    /// goes, its chunk-mates stay.
+    @Test func validatorDropsExactlyTheBadSelector() async {
+        let text = "##.keep1\n##div:bogus(x)\n##.keep2\nsite.test##.promo\nsite.test##p:nope\nother.test##.fine"
+        let calls = Calls()
+        let result = await FilterListConverter.convert(text, cosmeticChunkSize: 32) { strings in
+            await calls.record(strings)
+            return strings.map { !$0.contains("bogus") && !$0.contains("nope") }
+        }
+        #expect(result.invalidSelectors == 2)
+        #expect(result.ruleCount == 3)
+        #expect(result.json.contains(#""selector":".keep1, .keep2""#))
+        #expect(result.json.contains(#""selector":".promo""#))
+        #expect(result.json.contains(#""selector":".fine""#))
+        let recorded = await calls.batches
+        #expect(recorded.count == 2)
+        #expect(recorded[0] == [".keep1, div:bogus(x), .keep2", ".promo, p:nope", ".fine"])
+        #expect(recorded[1] == [".keep1", "div:bogus(x)", ".keep2", ".promo", "p:nope"])
+
+        // A chunk whose every selector fails disappears rather than becoming an empty rule.
+        let gone = await FilterListConverter.convert("site.test##p:nope") { $0.map { _ in false } }
+        #expect(gone.ruleCount == 0)
+        #expect(gone.invalidSelectors == 1)
+        #expect(gone.json == "[]")
+    }
+
+    /// A validator that cannot answer (wrong length) changes nothing: the result is the unvalidated one.
+    @Test func validatorFailureAcceptsEverything() async throws {
+        let text = "##.a\n##.b\nsite.test##.c"
+        let plain = FilterListConverter.convert(text)
+        let broken = await FilterListConverter.convert(text) { _ in [] }
+        // Compared as objects: JSONEncoder does not promise key order.
+        let plainRules = try JSONSerialization.jsonObject(with: Data(plain.json.utf8)) as? NSArray
+        let brokenRules = try JSONSerialization.jsonObject(with: Data(broken.json.utf8)) as? NSArray
+        #expect(brokenRules == plainRules)
+        #expect(broken.ruleCount == 2)
+        #expect(broken.invalidSelectors == 0)
+    }
+
+    actor Calls {
+        var batches: [[String]] = []
+        func record(_ strings: [String]) { batches.append(strings) }
+    }
+
     @Test func wildcardAndSeparator() {
         let filter = FilterListConverter.urlFilter("/ads/*/banner^")!
         #expect(filterMatches(filter, "https://x.test/ads/123/banner?x"))
@@ -110,5 +195,39 @@ struct FilterListConverterTests {
         let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
         let list = try await store.compileContentRuleList(forIdentifier: "test", encodedContentRuleList: result.json)
         #expect(list != nil)
+    }
+
+    /// A chunk with one selector WebKit's parser refuses, validated by that parser (`document.querySelector` in a
+    /// windowless web view, as the app does): the bad one goes, the neighbours stay in the JSON, and WebKit
+    /// compiles the result. Unvalidated, WebKit would drop the whole chunk and the neighbours with it.
+    @MainActor
+    @Test func webKitValidatedChunkKeepsItsNeighbours() async throws {
+        let text = """
+        ||ads.example.com^
+        ##.keep-before
+        ##div:bogus-pseudo(x)
+        ##.keep-after
+        site.test##.promo
+        """
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let result = await FilterListConverter.convert(text) { await Self.querySelectorAccepts($0, in: webView) }
+        #expect(result.invalidSelectors == 1)
+        #expect(result.json.contains(#""selector":".keep-before, .keep-after""#))
+        #expect(result.json.contains(#""selector":".promo""#))
+        #expect(!result.json.contains("bogus"))
+        #expect(result.ruleCount == 3)
+
+        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let list = try await store.compileContentRuleList(forIdentifier: "validated", encodedContentRuleList: result.json)
+        #expect(list != nil)
+    }
+
+    @MainActor
+    static func querySelectorAccepts(_ selectors: [String], in webView: WKWebView) async -> [Bool] {
+        let json = String(decoding: try! JSONSerialization.data(withJSONObject: selectors), as: UTF8.self)
+        let script = "(function (a) { return a.map(s => { try { document.querySelector(s); return true } catch (e) { return false } }) })(\(json))"
+        return (try? await webView.evaluateJavaScript(script) as? [Bool]) ?? []
     }
 }

@@ -345,12 +345,15 @@ final class Tab: Identifiable {
         waiters.forEach { $0.resume(returning: selected) }
     }
 
-    /// Playing audio/video or using camera/mic: never put to sleep. Muted tabs count too (`MediaActivity`).
+    /// Making sound or using camera/mic: never put to sleep (`MediaActivity`). Where WebKit's sound flag can't be
+    /// observed, any media playing counts, which takes a round trip to the page.
     func isBusy() async -> Bool {
         guard let webView else { return false }
-        if MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: false) { return true }
+        let observable = audioObserver != nil
+        if MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: false, audioIsObservable: observable) { return true }
+        guard !observable else { return false }
         let playing = await webView.requestMediaPlaybackState() == .playing
-        return MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: playing)
+        return MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: playing, audioIsObservable: false)
     }
 
     // MARK: - Mute

@@ -13,10 +13,14 @@ public enum MediaMutedState {
 }
 
 public enum MediaActivity {
-    /// Whether a tab counts as busy for the sleep policy. Muting is deliberately not an input: a muted tab that is
-    /// playing is still playing (a muted video, a call), and sleeping it would stop it.
-    public static func isBusy(isCapturing: Bool, isPlayingAudio: Bool, playbackIsPlaying: Bool) -> Bool {
-        isCapturing || isPlayingAudio || playbackIsPlaying
+    /// Whether a tab counts as busy for the sleep policy: using the camera or mic, or making sound (WebKit's
+    /// `_isPlayingAudio`; muting the tab in Paddle is not an input). Video without sound doesn't count, as in
+    /// Chrome: pages autoplay muted previews and ads, which would otherwise keep a background tab awake for good.
+    /// `playbackIsPlaying` (any media playing, sound or not) decides only where `_isPlayingAudio` can't be observed
+    /// (`audioIsObservable` false).
+    public static func isBusy(isCapturing: Bool, isPlayingAudio: Bool, playbackIsPlaying: Bool, audioIsObservable: Bool) -> Bool {
+        if isCapturing || isPlayingAudio { return true }
+        return !audioIsObservable && playbackIsPlaying
     }
 }
 

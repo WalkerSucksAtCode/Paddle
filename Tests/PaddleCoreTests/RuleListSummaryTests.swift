@@ -56,11 +56,49 @@ struct RuleListSummaryTests {
     }
 
     @Test func sidecarRoundTrips() throws {
-        let s = RuleListSummary(ruleCount: 5, skipped: 2, commentLines: 1, truncated: true)
+        let s = RuleListSummary(ruleCount: 5, skipped: 2, commentLines: 1, truncated: true, styleInjection: 4, invalidSelectors: 3)
         let data = try JSONEncoder().encode(s)
         #expect(try JSONDecoder().decode(RuleListSummary.self, from: data) == s)
         let keys = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
-        #expect(Set(keys) == ["ruleCount", "skipped", "commentLines", "truncated"])
+        #expect(Set(keys) == ["ruleCount", "skipped", "commentLines", "truncated", "styleInjection", "invalidSelectors"])
+    }
+
+    /// A list WebKit refused is remembered with its reason, keeps its counts, and is never installable.
+    @Test func compileFailureIsRememberedAndShown() throws {
+        var s = RuleListSummary(ruleCount: 3, skipped: 1, commentLines: 0, truncated: false)
+        #expect(s.installable)
+        s.compileFailure = "invalid or unsupported regular expression"
+        #expect(!s.installable)
+        #expect(s.statusLine(name: "user-filters", cached: true, locale: Locale(identifier: "en_US"))
+            == "user-filters: failed to compile (invalid or unsupported regular expression)")
+        let data = try JSONEncoder().encode(s)
+        #expect(try JSONDecoder().decode(RuleListSummary.self, from: data) == s)
+        #expect(!RuleListSummary(ruleCount: 0, skipped: 2, commentLines: 1, truncated: false).installable)
+    }
+
+    /// A sidecar written before the selector counts existed still loads (with zeros) instead of forcing a reconvert.
+    @Test func oldSidecarDecodesWithZeroSelectorCounts() throws {
+        let old = Data(#"{"ruleCount":61234,"skipped":1830,"commentLines":120,"truncated":false}"#.utf8)
+        let s = try JSONDecoder().decode(RuleListSummary.self, from: old)
+        #expect(s == RuleListSummary(ruleCount: 61_234, skipped: 1_830, commentLines: 120, truncated: false))
+        #expect(s.styleInjection == 0 && s.invalidSelectors == 0)
+    }
+
+    @Test func styleAndInvalidCountsShowInTheStatusLine() {
+        let s = summary("""
+        hindustantimes.com##body {padding-top:0;}
+        ##.x:style(top: 0)
+        ##article:has(header:has(.sponsored))
+        ##.ad
+        /regex/
+        """)
+        #expect(s == RuleListSummary(ruleCount: 1, skipped: 1, commentLines: 0, truncated: false, styleInjection: 2, invalidSelectors: 1))
+        #expect(s.statusLine(name: "mine", cached: true, locale: us) == "mine: 1 rule (1 line unsupported; 2 style rules; 1 invalid selector; cached)")
+        let onlyStyle = summary("example.com##body {padding-top:0;}")
+        #expect(onlyStyle.statusLine(name: "mine", cached: false, locale: us) == "mine: 0 rules (1 style rule)")
+        let big = RuleListSummary(ruleCount: 61_234, skipped: 1_830, commentLines: 120, truncated: false, styleInjection: 40, invalidSelectors: 3)
+        #expect(big.statusLine(name: "easylist", cached: true, locale: us)
+            == "easylist: 61,234 rules (1,830 lines unsupported; 40 style rules; 3 invalid selectors; cached)")
     }
 
     @Test func compileFailureReasons() {

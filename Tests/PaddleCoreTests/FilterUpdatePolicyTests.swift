@@ -33,12 +33,52 @@ struct FilterUpdatePolicyTests {
         #expect(FilterUpdatePolicy.isDue(lastUpdated: now.addingTimeInterval(3 * 86_400), now: now, days: 7))
     }
 
-    @Test func fileNameFollowsTheURL() {
+    /// The default lists keep their old file names, so nothing already downloaded is fetched again.
+    @Test func defaultListsKeepTheirOldFileNames() {
         #expect(FilterUpdatePolicy.fileName(forList: easyList) == "easylist.txt")
-        #expect(FilterUpdatePolicy.fileName(forList: "https://example.com/a/list") == "list.txt")
+        #expect(FilterUpdatePolicy.fileName(forList: easyPrivacy) == "easyprivacy.txt")
+        #expect(PaddleConfig.defaultFilterLists == [easyList, easyPrivacy])
+    }
+
+    /// Any other list is named from its whole URL: the same name on two hosts or paths gives two files.
+    @Test func otherListsGetUniqueStableFileNames() throws {
+        let a = try #require(FilterUpdatePolicy.fileName(forList: "https://example.com/a/filters.txt"))
+        let b = try #require(FilterUpdatePolicy.fileName(forList: "https://example.com/b/filters.txt"))
+        let c = try #require(FilterUpdatePolicy.fileName(forList: "https://other.test/a/filters.txt"))
+        #expect(Set([a, b, c]).count == 3)
+        #expect(a.hasPrefix("filters-") && a.hasSuffix(".txt"))
+        #expect(a.count == "filters-".count + 8 + ".txt".count)
+        #expect(FilterUpdatePolicy.fileName(forList: "https://example.com/a/filters.txt") == a)
+        #expect(FilterUpdatePolicy.fileName(forList: "https://example.com/a/list")?.hasPrefix("list-") == true)
+        // A mirror of EasyList is a different list with its own file, not the default's.
+        #expect(FilterUpdatePolicy.fileName(forList: "https://mirror.test/easylist.txt") != "easylist.txt")
         #expect(FilterUpdatePolicy.fileName(forList: "http://example.com/list.txt") == nil)
         #expect(FilterUpdatePolicy.fileName(forList: "not a url") == nil)
         #expect(FilterUpdatePolicy.fileName(forList: "https://example.com/") == nil)
+    }
+
+    /// A list downloaded before names carried the hash is renamed to its new file, not fetched again; a plain
+    /// name that a default list or a second same-named list could have written is left alone.
+    @Test func legacyFilesAreRenamedOnceWhenTheNameIsUnambiguous() throws {
+        let hashed = try #require(FilterUpdatePolicy.fileName(forList: added))
+        var files: Set<String> = ["easylist.txt", "easyprivacy.txt", "annoyances.txt"]
+        let renames = FilterUpdatePolicy.legacyRenames([easyList, easyPrivacy, added]) { files.contains($0) }
+        #expect(renames.map(\.from) == ["annoyances.txt"])
+        #expect(renames.map(\.to) == [hashed])
+
+        files.remove("annoyances.txt"); files.insert(hashed)
+        #expect(FilterUpdatePolicy.legacyRenames([easyList, easyPrivacy, added]) { files.contains($0) }.isEmpty)
+        files.insert("annoyances.txt")
+        #expect(FilterUpdatePolicy.legacyRenames([easyList, easyPrivacy, added]) { files.contains($0) }.isEmpty)
+
+        // Two configured lists with the same name: neither can claim the old file.
+        let twin = "https://other.test/annoyances.txt"
+        files.remove(hashed)
+        #expect(FilterUpdatePolicy.legacyRenames([added, twin]) { files.contains($0) }.isEmpty)
+        // A mirror of EasyList never takes easylist.txt from the default.
+        let mirror = "https://mirror.test/easylist.txt"
+        #expect(FilterUpdatePolicy.legacyRenames([easyList, mirror]) { files.contains($0) }.isEmpty)
+        #expect(FilterUpdatePolicy.legacyRenames([mirror]) { files.contains($0) }.map(\.from) == ["easylist.txt"])
     }
 
     /// One fresh list must not hide a stale one (e.g. EasyPrivacy failing while EasyList succeeds).
