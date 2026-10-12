@@ -97,7 +97,7 @@ struct ExtensionPermissionsTests {
             denied: ["nativeMessaging": noExpiry],
             grantedHosts: ["http://127.0.0.1/*": noExpiry, "https://tab-only.test/*": now.addingTimeInterval(3600)],
             deniedHosts: ["https://example.com/*": noExpiry], now: now)
-        #expect(s.permissions == ["storage": .allow, "nativeMessaging": .deny])
+        #expect(s.permissions == ["storage": .allow], "nativeMessaging is Paddle's to decide, never recorded")
         #expect(s.hosts == ["http://127.0.0.1/*": .allow, "https://example.com/*": .deny])
         #expect(s.name == "N" && s.version == "1")
         #expect(s.decided == Date(timeIntervalSince1970: 1_790_000_000), "whole seconds")
@@ -139,7 +139,7 @@ struct ExtensionPermissionsTests {
         var decisions = ExtensionDecisions()
         #expect(decisions.needsPrompt(folder: "f", name: "N", permissions: [], hosts: []))
         var s = ExtensionSnapshot(name: "N", version: "1", decided: when)
-        s.apply(.allow, requested: ([], []), undecided: ([], []), alwaysDenied: [])
+        s.apply(.allow, requested: ([], []), undecided: ([], []))
         decisions.set(folder: "f", s)
         #expect(!decisions.needsPrompt(folder: "f", name: "N", permissions: [], hosts: []))
         #expect(decisions.needsPrompt(folder: "f", name: "Other", permissions: [], hosts: []))
@@ -149,13 +149,13 @@ struct ExtensionPermissionsTests {
 
     @Test func allowOnAskForNothingRunsAndDenyDoesNot() {
         var s = ExtensionSnapshot(name: "N", version: "1", decided: when)
-        s.apply(.deny, requested: ([], []), undecided: ([], []), alwaysDenied: [])
+        s.apply(.deny, requested: ([], []), undecided: ([], []))
         #expect(s.isFullyDeclined)
     }
 
     @Test func upgradeDontAllowDeniesEverythingAlreadyAllowed() {
         var s = snapshot(permissions: ["storage": .allow], hosts: ["<all_urls>": .allow])
-        s.apply(.deny, requested: (["storage", "cookies"], ["<all_urls>"]), undecided: (["cookies"], []), alwaysDenied: ["nativeMessaging"])
+        s.apply(.deny, requested: (["storage", "cookies"], ["<all_urls>"]), undecided: (["cookies"], []))
         #expect(s.permissions == ["storage": .deny, "cookies": .deny])
         #expect(s.hosts == ["<all_urls>": .deny])
         #expect(s.isFullyDeclined)
@@ -163,7 +163,7 @@ struct ExtensionPermissionsTests {
 
     @Test func upgradeOnlyWhenClickedTakesBackOldHostsToo() {
         var s = snapshot(permissions: ["storage": .allow], hosts: ["<all_urls>": .allow])
-        s.apply(.onlyWhenClicked, requested: (["storage", "cookies"], ["<all_urls>"]), undecided: (["cookies"], []), alwaysDenied: [])
+        s.apply(.onlyWhenClicked, requested: (["storage", "cookies"], ["<all_urls>"]), undecided: (["cookies"], []))
         #expect(s.permissions == ["storage": .allow, "cookies": .allow])
         #expect(s.hosts == ["<all_urls>": .click])
         #expect(!s.isFullyDeclined)
@@ -171,7 +171,7 @@ struct ExtensionPermissionsTests {
 
     @Test func onlyWhenClickedHostsAreDecidedAndRoundTrip() throws {
         var s = ExtensionSnapshot(name: "N", version: "1", decided: when)
-        s.apply(.onlyWhenClicked, requested: (["activeTab"], ["<all_urls>"]), undecided: (["activeTab"], ["<all_urls>"]), alwaysDenied: [])
+        s.apply(.onlyWhenClicked, requested: (["activeTab"], ["<all_urls>"]), undecided: (["activeTab"], ["<all_urls>"]))
         #expect(s.hosts == ["<all_urls>": .click] && s.run == .allow)
         var decisions = ExtensionDecisions()
         decisions.set(folder: "f", s)
@@ -194,18 +194,18 @@ struct ExtensionPermissionsTests {
         #expect(s.hosts == ["<all_urls>": .click, "https://b.com/*": .allow, "https://c.com/*": .deny])
     }
 
-    @Test func upgradeAllowKeepsEarlierAnswersAndNativeMessagingStaysDenied() {
-        var s = snapshot(permissions: ["storage": .allow, "tabs": .deny], hosts: [:])
+    @Test func upgradeAllowKeepsEarlierAnswersAndNeverRecordsNativeMessaging() {
+        var s = snapshot(permissions: ["storage": .allow, "tabs": .deny, "nativeMessaging": .deny], hosts: [:])
         s.apply(.allow, requested: (["storage", "tabs", "nativeMessaging"], ["https://a.com/*"]),
-                undecided: (["nativeMessaging"], ["https://a.com/*"]), alwaysDenied: ["nativeMessaging"])
-        #expect(s.permissions == ["storage": .allow, "tabs": .deny, "nativeMessaging": .deny])
+                undecided: (["nativeMessaging"], ["https://a.com/*"]))
+        #expect(s.permissions == ["storage": .allow, "tabs": .deny])
         #expect(s.hosts == ["https://a.com/*": .allow])
         #expect(s.run == .allow)
     }
 
     @Test func onlyWhenClickedWithOnlyHostsIsDeclined() {
         var s = ExtensionSnapshot(name: "N", version: "1", decided: when)
-        s.apply(.onlyWhenClicked, requested: ([], ["https://a.com/*"]), undecided: ([], ["https://a.com/*"]), alwaysDenied: [])
+        s.apply(.onlyWhenClicked, requested: ([], ["https://a.com/*"]), undecided: ([], ["https://a.com/*"]))
         #expect(s.isFullyDeclined)
     }
 
@@ -213,5 +213,10 @@ struct ExtensionPermissionsTests {
         let s = ExtensionSnapshot.from(name: "N", version: "1", run: .allow, granted: [:], denied: [:], grantedHosts: [:], deniedHosts: [:], now: when)
         #expect(s.run == .allow)
     }
-}
 
+    @Test func nativeMessagingIsNeverAskedAbout() {
+        let decisions = ExtensionDecisions(byFolder: ["f": snapshot(name: "N", permissions: ["storage": .allow], hosts: [:])])
+        #expect(!decisions.needsPrompt(folder: "f", name: "N", permissions: ["storage", "nativeMessaging"], hosts: []))
+        #expect(ExtensionDecisions().undecided(folder: "f", name: "N", permissions: ["nativeMessaging", "tabs"], hosts: []).permissions == ["tabs"])
+    }
+}

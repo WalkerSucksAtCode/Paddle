@@ -157,7 +157,13 @@ final class ExtensionPopupPresenter {
             log.notice("popup for \(context.uniqueIdentifier, privacy: .public) refused: no user action (action.openPopup() without a click)")
             throw PaddleExtensionError.noUserAction
         }
-        guard action.presentsPopup, let popover = action.popupPopover else { throw PaddleExtensionError.noPopup }
+        guard action.presentsPopup else { throw PaddleExtensionError.noPopup }
+        // E9: the persona's user agent before the popup page loads. Reading `popupWebView` makes the web view;
+        // `popupPopover` below shows that same one.
+        if let agent = AppModel.shared.extensions.userAgent(for: context), let view = action.popupWebView, view.customUserAgent != agent {
+            view.customUserAgent = agent
+        }
+        guard let popover = action.popupPopover else { throw PaddleExtensionError.noPopup }
         let controller = (action.associatedTab as? ExtensionTab)?.tab?.browser?.controller ?? AppModel.shared.frontExtensionWindow
         guard let window = controller?.window, let contentView = window.contentView else { throw PaddleExtensionError.noWindow }
 

@@ -210,4 +210,78 @@ struct ExtensionCompatTests {
         #expect(ExtensionCompat.prelude.contains("ns.runtime.onUpdateAvailable = {addListener() {}, removeListener() {}, hasListener() { return false; }, hasListeners() { return false; }}"))
         #expect(ExtensionCompat.prelude.hasPrefix("// Paddle compat prelude"))
     }
+
+    // MARK: - v2 (personas)
+
+    @Test func classicWorkerGetsAWrapperInItsOwnDirectory() throws {
+        let manifest = #"{"manifest_version": 3, "background": {"service_worker": "/js/bg worker.js"}, "content_scripts": [{"matches": ["https://*/*"], "js": ["cs.js"]}, {"matches": ["https://*/*"], "js": ["main.js"], "world": "MAIN"}]}"#
+        let patch = try ExtensionCompat.patchManifest(Data(manifest.utf8), persona: .chrome)
+        let root = try object(patch.data)
+        #expect((root["background"] as? [String: Any])?["service_worker"] as? String == "js/paddle-sw.js")
+        #expect(patch.serviceWorkerWrapper?.path == "js/paddle-sw.js")
+        #expect(patch.serviceWorkerWrapper?.contents.contains(#"importScripts("/paddle-prelude.js", "bg%20worker.js");"#) == true)
+        #expect(patch.backgroundPatched && patch.unpatchedBackground == nil && patch.persona == .chrome)
+        let scripts = (root["content_scripts"] as? [[String: Any]])?.map { $0["js"] as? [String] ?? [] }
+        #expect(scripts == [["paddle-content.js", "cs.js"], ["main.js"]])
+        // Everything outside the edits is byte-for-byte the same.
+        let text = try #require(String(data: patch.data, encoding: .utf8))
+        #expect(text == manifest.replacingOccurrences(of: #""/js/bg worker.js""#, with: #""js/paddle-sw.js""#).replacingOccurrences(of: #""js": ["cs.js"]"#, with: #""js": ["paddle-content.js","cs.js"]"#))
+    }
+
+    @Test func moduleWorkerImportsThePreludeFirst() throws {
+        let manifest = #"{"manifest_version": 3, "background": {"service_worker": "sw.js", "type": "module"}}"#
+        let patch = try ExtensionCompat.patchManifest(Data(manifest.utf8), persona: .firefox)
+        #expect(patch.serviceWorkerWrapper?.path == "paddle-sw.js")
+        let lines = patch.serviceWorkerWrapper?.contents.split(separator: "\n").filter { !$0.hasPrefix("//") }
+        #expect(lines == [#"import "/paddle-prelude.js";"#, #"import "./sw.js";"#])
+    }
+
+    @Test func v2PatchIsIdempotent() throws {
+        let manifest = #"{"manifest_version": 3, "background": {"service_worker": "sw.js", "scripts": ["bg.js"]}, "content_scripts": [{"matches": ["https://*/*"], "js": ["cs.js"]}]}"#
+        let once = try ExtensionCompat.patchManifest(Data(manifest.utf8), persona: .firefox)
+        let twice = try ExtensionCompat.patchManifest(once.data, persona: .firefox)
+        #expect(twice.data == once.data)
+        #expect(twice.serviceWorkerWrapper == nil && twice.backgroundPatched)
+        #expect(((try object(once.data))["background"] as? [String: Any])?["scripts"] as? [String] == ["paddle-prelude.js", "bg.js"])
+    }
+
+    @Test func backgroundPageIsReportedForTheTag() throws {
+        let manifest = #"{"manifest_version": 2, "background": {"page": "./bg/page.html"}}"#
+        let v2 = try ExtensionCompat.patchManifest(Data(manifest.utf8), persona: .chrome)
+        #expect(v2.backgroundPage == "bg/page.html" && v2.backgroundPatched && v2.unpatchedBackground == nil)
+        #expect(v2.data == Data(manifest.utf8))
+        let none = try ExtensionCompat.patchManifest(Data(manifest.utf8))
+        #expect(none.backgroundPage == nil && !none.backgroundPatched && none.unpatchedBackground == .page)
+    }
+
+    @Test func personaNoneKeepsThe4bPatch() throws {
+        let none = try ExtensionCompat.patchManifest(Data(Self.firefox.utf8), persona: .none)
+        #expect(none == (try ExtensionCompat.patchManifest(Data(Self.firefox.utf8))))
+        #expect(none.serviceWorkerWrapper == nil && none.persona == .none)
+        #expect(String(data: none.data, encoding: .utf8)?.contains("paddle-content.js") == false)
+        let worker = try ExtensionCompat.patchManifest(Data(#"{"background": {"service_worker": "sw.js"}}"#.utf8), persona: .none)
+        #expect(worker.unpatchedBackground == .serviceWorker && worker.serviceWorkerWrapper == nil)
+    }
+
+    @Test func climbingWorkerPathIsLeftAlone() throws {
+        let patch = try ExtensionCompat.patchManifest(Data(#"{"background": {"service_worker": "../sw.js"}}"#.utf8), persona: .chrome)
+        #expect(patch.serviceWorkerWrapper == nil && patch.unpatchedBackground == .serviceWorker)
+    }
+
+    @Test(arguments: [
+        ("<!doctype html><html><head><meta charset=utf-8><script src=a.js></script></head></html>",
+         "<!doctype html><html><head><script src=\"/paddle-prelude.js\"></script><meta charset=utf-8><script src=a.js></script></head></html>"),
+        ("<html><script src=early.js></script><head lang=en></head></html>",
+         "<html><script src=\"/paddle-prelude.js\"></script><script src=early.js></script><head lang=en></head></html>"),
+        ("<header>x</header>", "<script src=\"/paddle-prelude.js\"></script><header>x</header>"),
+        ("<!DOCTYPE html><body>x</body>", "<!DOCTYPE html><script src=\"/paddle-prelude.js\"></script><body>x</body>"),
+        ("<HTML lang=en><BODY>", "<HTML lang=en><script src=\"/paddle-prelude.js\"></script><BODY>"),
+        ("plain", "<script src=\"/paddle-prelude.js\"></script>plain"),
+    ])
+    func scriptTagGoesBeforeThePagesOwnScripts(html: String, expected: String) {
+        let once = ExtensionCompat.insertScriptTag(into: Data(html.utf8), src: "/paddle-prelude.js")
+        #expect(String(data: once, encoding: .utf8) == expected)
+        #expect(ExtensionCompat.insertScriptTag(into: once, src: "/paddle-prelude.js") == once)
+    }
 }
+

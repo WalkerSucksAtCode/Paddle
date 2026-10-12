@@ -357,27 +357,31 @@ struct ScriptletLibraryTests {
         #expect(await h.string("document.getElementById('q').textContent") == "fine")
     }
 
+    // The boosters are checked against a control timer in the same page with the same delay, so the order of
+    // firing is the check, not wall-clock times that a loaded machine stretches.
+
     @Test func nanoSetIntervalBooster() async {
         let h = Self.load([(.nanoSetIntervalBooster, ["adTick", "1000", "0.02"])], page: #"""
         <script>
-        const t0 = performance.now(); let n = 0;
-        const id = setInterval(function adTick() { if (++n === 3) { clearInterval(id); window.elapsed = performance.now() - t0; } }, 1000);
+        window.order = []; let n = 0;
+        const id = setInterval(function adTick() { if (++n === 3) { clearInterval(id); window.order.push('boosted'); } }, 1000);
+        setTimeout(function control() { window.order.push('control'); }, 1000);
         </script>
         """#)
-        #expect(await h.waitFor("window.elapsed !== undefined", seconds: 2))
-        #expect((Double(await h.string("window.elapsed") ?? "") ?? .infinity) < 1000)
+        #expect(await h.waitFor("window.order.length === 2", seconds: 10))
+        #expect(await h.string("window.order.join()") == "boosted,control", "three boosted ticks before one plain 1 s timer")
     }
 
     @Test func nanoSetTimeoutBooster() async {
         let h = Self.load([(.nanoSetTimeoutBooster, ["adT"])], page: #"""
         <script>
-        const t0 = performance.now();
-        setTimeout(function adT() { window.fired = performance.now() - t0; }, 1000);
+        window.order = [];
+        setTimeout(function plain() { window.order.push('control'); }, 1000);
+        setTimeout(function adT() { window.order.push('boosted'); }, 1000);
         </script>
         """#)
-        // The wait covers page load under a busy test run; the measured delay is the check.
-        #expect(await h.waitFor("window.fired !== undefined", seconds: 3))
-        #expect((Double(await h.string("window.fired") ?? "") ?? .infinity) < 900)
+        #expect(await h.waitFor("window.order.length === 2", seconds: 10))
+        #expect(await h.string("window.order.join()") == "boosted,control", "the matching timer fires first though it was set second")
     }
 
     @Test func noWebRTC() async {

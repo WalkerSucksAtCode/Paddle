@@ -134,19 +134,24 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         }
     }
 
-    // MARK: - Native messaging: never
+    // MARK: - Native messaging: Paddle's own bus only
 
+    /// Only `ExtensionCompat.busID`, answered by `CompatBus`; any other id gets Chrome's "not found" error.
     func webExtensionController(
         _ controller: WKWebExtensionController,
         sendMessage message: Any,
         toApplicationWithIdentifier applicationIdentifier: String?,
         for extensionContext: WKWebExtensionContext
     ) async throws -> Any? {
-        throw PaddleExtensionError.unsupported("Native messaging")
+        try await host.bus.handle(
+            message, applicationID: applicationIdentifier, context: extensionContext,
+            extension: host.loaded.first { $0.context === extensionContext }
+        )
     }
 
+    /// The same id check on the port path, from `port.applicationIdentifier` (nil is refused).
     func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort, for extensionContext: WKWebExtensionContext) async throws {
-        throw PaddleExtensionError.unsupported("Native messaging")
+        try host.bus.connect(port, context: extensionContext, extension: host.loaded.first { $0.context === extensionContext })
     }
 
     // MARK: - DEBUG selector check

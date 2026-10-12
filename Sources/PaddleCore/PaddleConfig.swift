@@ -60,6 +60,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Run extensions in private windows too. Off by default: private windows and their tabs are hidden from
     /// extensions, and their web views don't carry the extension controller.
     public var extensionsInPrivate: Bool
+    /// Per-folder compatibility settings: `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false}}`.
+    /// See `ExtensionCompatConfig`; folders not listed get the detected persona, shims on and a private id.
+    public var extensionCompat: [String: ExtensionCompatConfig]
+    /// Check store-installed extensions for updates daily (and from Check for Extension Updates).
+    public var extensionUpdates: Bool
+    /// Present Paddle to a site as Chrome or Firefox (user agent and the JavaScript browser identity), keyed by
+    /// host suffix like `siteUserAgents`: `{"example.com": "chrome"}`. Only `chrome` and `firefox` apply.
+    public var sitePersonas: [String: Persona]
 
     public static let defaultFilterLists = [
         "https://easylist.to/easylist/easylist.txt",
@@ -72,10 +80,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
         case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
-        case userAgentSuffix, siteUserAgents, sites
+        case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, developerTools
         case shortcuts
-        case extensions, extensionsInPrivate
+        case extensions, extensionsInPrivate, extensionCompat, extensionUpdates
     }
 
     public init(
@@ -100,7 +108,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools: Bool = true,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
-        extensionsInPrivate: Bool = false
+        extensionsInPrivate: Bool = false,
+        extensionCompat: [String: ExtensionCompatConfig] = [:],
+        extensionUpdates: Bool = true,
+        sitePersonas: [String: Persona] = [:]
     ) {
         self.homepage = homepage
         self.newTabPage = newTabPage
@@ -124,6 +135,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.shortcuts = shortcuts
         self.extensions = extensions
         self.extensionsInPrivate = extensionsInPrivate
+        self.extensionCompat = extensionCompat
+        self.extensionUpdates = extensionUpdates
+        self.sitePersonas = sitePersonas
     }
 
     public init(from decoder: any Decoder) throws {
@@ -151,6 +165,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? d.shortcuts
         extensions = try c.decodeIfPresent([String: Bool].self, forKey: .extensions) ?? d.extensions
         extensionsInPrivate = try c.decodeIfPresent(Bool.self, forKey: .extensionsInPrivate) ?? d.extensionsInPrivate
+        extensionCompat = try c.decodeIfPresent([String: ExtensionCompatConfig].self, forKey: .extensionCompat) ?? d.extensionCompat
+        extensionUpdates = try c.decodeIfPresent(Bool.self, forKey: .extensionUpdates) ?? d.extensionUpdates
+        sitePersonas = try c.decodeIfPresent([String: Persona].self, forKey: .sitePersonas) ?? d.sitePersonas
     }
 
     public static func decode(_ data: Data) throws -> PaddleConfig {
@@ -188,6 +205,20 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
 
     /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.
     public func isExtensionEnabled(_ folder: String) -> Bool { extensions[folder] ?? true }
+
+    /// The `extensionCompat` entry for folder `folder`, or the defaults.
+    public func compat(forFolder folder: String) -> ExtensionCompatConfig { extensionCompat[folder] ?? ExtensionCompatConfig() }
+
+    /// The persona `sitePersonas` gives `host` (longest matching host suffix, as `userAgent(forHost:)`); nil when
+    /// none, or when the entry is `native` / `none`, which don't apply to websites.
+    public func sitePersona(forHost host: String) -> Persona? {
+        let host = PaddleConfig.normalizedHost(host)
+        let persona = sitePersonas
+            .filter { key, _ in PaddleConfig.hostKey(key, matches: host) }
+            .max { $0.key.count < $1.key.count }?
+            .value
+        return persona == .chrome || persona == .firefox ? persona : nil
+    }
 
     /// The site-specific user agent for `host`, matching the longest configured host suffix (see `normalizedHost`).
     public func userAgent(forHost host: String) -> String? {

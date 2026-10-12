@@ -4,7 +4,7 @@ import WebKit
 
 /// Settings > Privacy & Blocking > Manage Website Data…: what each site has stored in Paddle's (non-private) data
 /// store, with its size where WebKit reports one, and Remove / Remove All. The list is fetched when the sheet
-/// opens and dropped when it closes. Extension storage (`webkit-extension://` origins) is listed apart and left
+/// opens and dropped when it closes. Extension storage (`webkit-extension://`, `chrome-extension://` and `moz-extension://` origins) is listed apart and left
 /// out of Remove All, so clearing sites never signs an extension out.
 struct WebsiteDataSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -146,7 +146,7 @@ struct WebsiteDataSite: Identifiable {
         }
 
         let extensionNames = Dictionary(
-            AppModel.shared.extensions.loaded.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first }
+            AppModel.shared.extensions.loaded.flatMap { [($0.id, $0.name), ($0.urlHost, $0.name)] }, uniquingKeysWith: { first, _ in first }
         )
         return records.map { record in
             let isExtension = extensionNames[record.displayName] != nil || isExtensionIdentifier(record.displayName)
@@ -170,9 +170,10 @@ struct WebsiteDataSite: Identifiable {
         return total.uint64Value
     }
 
-    /// Extension ids are 32 lowercase hex characters (`ExtensionIdentity.identifier`); no web domain looks like that.
+    /// Extension ids and page hosts: 32 lowercase hex characters, Chrome's 32 letters a–p, or Firefox's UUID
+    /// (`ExtensionIdentity.looksLikeExtensionHost`); no web domain looks like those.
     private static func isExtensionIdentifier(_ name: String) -> Bool {
-        name.count == 32 && name.allSatisfy { $0.isHexDigit && !$0.isUppercase }
+        ExtensionIdentity.looksLikeExtensionHost(name)
     }
 
     /// "Cookies, Cache, Local storage" from WebKit's type names.

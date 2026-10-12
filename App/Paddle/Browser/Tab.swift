@@ -157,6 +157,12 @@ final class Tab: Identifiable {
         if let webView { return webView }
         let host = AppModel.shared.extensions
         let configuration: WKWebViewConfiguration
+        // A saved page of an extension whose persona changed (webkit-extension:// to moz-extension://) moves to its
+        // new address; its old back/forward list points at the old one, so it starts fresh.
+        if let current = url, let moved = host.currentURL(forStale: current) {
+            url = moved
+            savedState = nil
+        }
         let pageID = ExtensionIdentity.identifier(of: url)
         if let url, pageID != nil {
             // A private window without extensions shows no extension page (it would run outside the private store).
@@ -266,6 +272,11 @@ final class Tab: Identifiable {
     /// whose page configuration the web view was made with, nil for an ordinary web view.
     func attach(_ webView: WKWebView, extensionPageID: String?) {
         self.extensionPageID = extensionPageID
+        // An extension page sends its extension's persona user agent; a web view for web pages is a fresh one
+        // (leaving the extension's origin swaps views), so the agent never follows a tab out of it.
+        if let extensionPageID, let agent = AppModel.shared.extensions.userAgent(forPageHost: extensionPageID) {
+            webView.customUserAgent = agent
+        }
         // Remote inspection (Safari's Develop menu) follows `developerTools`, extension pages included.
         webView.isInspectable = AppModel.shared.config.developerTools
         webView.allowsBackForwardNavigationGestures = true

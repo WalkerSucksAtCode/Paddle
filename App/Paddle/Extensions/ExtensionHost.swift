@@ -14,8 +14,24 @@ struct Weak<T: AnyObject> {
 final class LoadedExtension: Identifiable {
     /// Folder name under `extensions/`: the key in config.json and the permissions file.
     let name: String
-    /// Stable per-install id: `runtime.id` and the host of the extension's `webkit-extension://` URLs.
+    /// `runtime.id` and the context's `uniqueIdentifier` (its storage is keyed by it).
     let id: String
+    /// The browser it runs as.
+    let persona: Persona
+    /// `ExtensionIdentity.identifier(forFolder:salt:)`: the private id every persona starts from.
+    let saltedID: String
+    /// Scheme and host of its pages (`moz-extension://<uuid>/` for Firefox, else the id as host).
+    let baseURL: URL
+    /// The host of its pages: the UUID for Firefox, else `id`.
+    let urlHost: String
+    /// Its public Chrome id is in use (store id or manifest key).
+    let isPublicID: Bool
+    /// The user agent its own views send (`Persona.userAgent`); nil for WebKit's own.
+    let userAgent: String?
+    /// The `extensionCompat` entry it was loaded with; a change reloads it.
+    let compat: ExtensionCompatConfig
+    /// "v2", "4b", "none" or "off (fallback)", for the log and status.
+    let preludeMode: String
     let entry: ExtensionEntry
     let manifest: ExtensionManifest
     let webExtension: WKWebExtension
@@ -31,10 +47,18 @@ final class LoadedExtension: Identifiable {
     /// buttons redraw.
     var actionGeneration = 0
 
-    init(name: String, id: String, entry: ExtensionEntry, manifest: ExtensionManifest, webExtension: WKWebExtension,
+    init(name: String, setup: ExtensionHost.CompatSetup, entry: ExtensionEntry, manifest: ExtensionManifest, webExtension: WKWebExtension,
          context: WKWebExtensionContext, requested: (permissions: Set<String>, hosts: Set<String>), problems: [String]) {
         self.name = name
-        self.id = id
+        self.id = setup.identity.runtimeID
+        self.persona = setup.persona
+        self.saltedID = setup.saltedID
+        self.baseURL = setup.identity.baseURL
+        self.urlHost = setup.identity.urlHost
+        self.isPublicID = setup.identity.isPublic
+        self.userAgent = setup.userAgent
+        self.compat = setup.compat
+        self.preludeMode = setup.preludeMode
         self.entry = entry
         self.manifest = manifest
         self.webExtension = webExtension
@@ -46,6 +70,13 @@ final class LoadedExtension: Identifiable {
     }
 
     var displayName: String { ExtensionPermissionText.sanitize(webExtension.displayName ?? name) }
+
+    /// `url` is one of its pages: its current scheme and host, or (a saved tab from before a persona change) any
+    /// host its private id has had.
+    func owns(_ url: URL?) -> Bool {
+        guard let host = ExtensionIdentity.identifier(of: url)?.lowercased() else { return false }
+        return host == urlHost.lowercased() || ExtensionIdentity.privateHosts(saltedID: saltedID).contains(host)
+    }
     var version: String { ExtensionPermissionText.sanitize(webExtension.displayVersion ?? webExtension.version ?? "", max: 24) }
 }
 
@@ -62,6 +93,8 @@ final class ExtensionHost {
     private(set) var statusLines: [String] = []
     /// Load failures at startup, for a banner in the window.
     private(set) var bannerText: String?
+    /// The banner's lines by folder, so loading one extension again doesn't clear another's failure.
+    @ObservationIgnored private var bannerFailures: [String: String] = [:]
 
     @ObservationIgnored private(set) var controller: WKWebExtensionController?
     /// The controller holds its delegate weakly; the host keeps it alive.
@@ -113,6 +146,19 @@ final class ExtensionHost {
     @ObservationIgnored private var keyMonitor: Any?
     /// Extensions (context ids) whose toolbar buttons redraw on the next run-loop turn.
     @ObservationIgnored private var pendingActionRedraws: Set<String> = []
+    /// Native messaging for `ExtensionCompat.busID`.
+    @ObservationIgnored let bus = CompatBus()
+    /// `extension-installs.json`, read (or seeded from the permissions file) once the permissions file is readable.
+    @ObservationIgnored private var installs: ExtensionInstalls?
+    /// Folders whose background failed to load with the v2 prelude this session; they run from their own folder
+    /// until Reload Extensions or relaunch (E24).
+    @ObservationIgnored private var compatOff: Set<String> = []
+    /// Folder name to its `errorsDidUpdateNotification` observer, while it runs the v2 prelude.
+    @ObservationIgnored private var backgroundObservers: [String: any NSObjectProtocol] = [:]
+    /// A pending rewrite of an overlay folder (the install reason cleared), by folder; the next remake waits for it.
+    @ObservationIgnored private var overlayWrites: [String: Task<Void, Never>] = [:]
+    /// `registerCustomURLScheme` ran (once per process, before any context gets a base URL with those schemes).
+    @ObservationIgnored private static var schemesRegistered = false
 
     private var web: WebEnvironment { AppModel.shared.web }
 
@@ -124,6 +170,7 @@ final class ExtensionHost {
         #if DEBUG
         controllerDelegate.verifySelectors()
         #endif
+        registerSchemes()
         salt = loadOrCreateSalt()
         readDecisions()
         rescan()
@@ -135,6 +182,17 @@ final class ExtensionHost {
         } else {
             ensureController()
         }
+    }
+
+    /// `chrome-extension` and `moz-extension` for the personas. WebKit throws (NSInternalInconsistencyException) when a
+    /// context gets a base URL with an unregistered scheme, so this runs before any context exists.
+    private func registerSchemes() {
+        guard !Self.schemesRegistered else { return }
+        Self.schemesRegistered = true
+        for scheme in [ExtensionIdentity.chromeScheme, ExtensionIdentity.firefoxScheme] {
+            WKWebExtension.MatchPattern.registerCustomURLScheme(scheme)
+        }
+        log.info("extension schemes registered: \(ExtensionIdentity.chromeScheme, privacy: .public), \(ExtensionIdentity.firefoxScheme, privacy: .public)")
     }
 
     /// An entry whose record says the user allowed something.
@@ -180,6 +238,32 @@ final class ExtensionHost {
             try decisions.encoded().write(to: Paths.extensionPermissions, options: .atomic)
         } catch {
             log.error("extension-permissions.json could not be written: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Reads `extension-installs.json`, or makes it from the permissions file when it doesn't exist yet (every
+    /// folder with a record counts as already installed). Waits while the permissions file is unreadable.
+    private func ensureInstalls() {
+        guard installs == nil, decisionsError == nil else { return }
+        if let data = try? Data(contentsOf: Paths.extensionInstalls) {
+            do {
+                installs = try ExtensionInstalls.decode(data)
+                return
+            } catch {
+                log.error("extension-installs.json unreadable (\(error.localizedDescription, privacy: .public)); remade from the permissions file")
+            }
+        }
+        installs = ExtensionInstalls.seeded(folders: decisions.byFolder.keys, now: Date())
+        writeInstalls()
+        log.info("extension-installs.json created: \(self.installs?.firstSeen.count ?? 0, privacy: .public) folders already installed")
+    }
+
+    private func writeInstalls() {
+        guard let installs else { return }
+        do {
+            try installs.encoded().write(to: Paths.extensionInstalls, options: .atomic)
+        } catch {
+            log.error("extension-installs.json could not be written: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -252,6 +336,28 @@ final class ExtensionHost {
         controller?.extensionContext(for: url)?.webViewConfiguration
     }
 
+    /// A saved extension-page URL from before the folder's persona changed (`webkit-extension://<hex>/` for a
+    /// folder now on `moz-extension://<uuid>/`), moved to the running extension's base URL. Nil when `url` is
+    /// already current or belongs to no running extension.
+    func currentURL(forStale url: URL) -> URL? {
+        guard let host = ExtensionIdentity.identifier(of: url)?.lowercased(),
+              let ext = loaded.first(where: { $0.owns(url) }) else { return nil }
+        if host == ext.urlHost.lowercased(), url.scheme?.lowercased() == ext.baseURL.scheme { return nil }
+        let moved = ExtensionIdentity.rebased(url, onto: ext.baseURL)
+        if moved != nil { log.info("\(ext.name, privacy: .public): saved tab moved to \(ext.baseURL.absoluteString, privacy: .public)") }
+        return moved
+    }
+
+    /// The user agent an extension page's web view sends: its extension's persona agent, matched by URL host.
+    func userAgent(forPageHost host: String) -> String? {
+        loaded.first { $0.urlHost.lowercased() == host.lowercased() }?.userAgent
+    }
+
+    /// The persona user agent of the extension that owns `context`.
+    func userAgent(for context: WKWebExtensionContext) -> String? {
+        loaded.first { $0.context === context }?.userAgent
+    }
+
     /// A tab tried to show an extension page whose extension isn't running. True while a load is in progress (the
     /// tab is woken once it ends); false when nothing is coming, so the tab should show an error page instead.
     func deferWake(_ tab: Tab) -> Bool {
@@ -271,7 +377,7 @@ final class ExtensionHost {
         }
         for window in registeredWindows.compactMap(\.value) {
             for tab in window.model.tabs where tab.showsExtensionUnavailable {
-                guard let id = ExtensionIdentity.identifier(of: tab.url), loaded.contains(where: { $0.id == id }) else { continue }
+                guard loaded.contains(where: { $0.owns(tab.url) }) else { continue }
                 tab.sleep()
                 if window.model.selectedID == tab.id { tab.wake() }
             }
@@ -340,6 +446,12 @@ final class ExtensionHost {
                     unload(ext, closingTabs: false)
                     continue
                 }
+                // A changed `extensionCompat` entry (persona, shims, publicID): load again with it.
+                if ext.compat != config.compat(forFolder: ext.name) {
+                    log.info("\(ext.name, privacy: .public): extensionCompat changed; reloading it")
+                    unload(ext, closingTabs: false)
+                    continue
+                }
                 // A hand edit of its answers (allow to deny or back): load again with the file's answers.
                 let edited = editedItems(ext)
                 if !edited.isEmpty {
@@ -370,6 +482,7 @@ final class ExtensionHost {
             notes = []
             pruneOverlays()
             for ext in loaded { unload(ext, closingTabs: false) }
+            compatOff = []
             let hadController = controller != nil
             let pending = await loadEntries(entries, config: config)
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
@@ -429,12 +542,11 @@ final class ExtensionHost {
     }
 
     /// Items whose answer in the permissions file differs from what the running context holds: a hand edit since it
-    /// loaded. Grants with an expiry (`activeTab` on a click) don't count, nativeMessaging is always denied, and
+    /// loaded. Grants with an expiry (`activeTab` on a click) don't count, nativeMessaging is Paddle's to grant, and
     /// unknown permission names and patterns WebKit can't parse are skipped, as loading skips them.
     private func editedItems(_ ext: LoadedExtension) -> [String] {
         guard let file = decisions.byFolder[ext.name] else { return [] }
         let live = liveSnapshot(ext)
-        let native = WKWebExtension.Permission.nativeMessaging.rawValue
         var fileHosts: [String: PermissionDecision] = [:]
         for (string, decision) in file.hosts {
             guard let pattern = try? WKWebExtension.MatchPattern(string: string) else { continue }
@@ -443,7 +555,7 @@ final class ExtensionHost {
         var edited: [String] = []
         // Names WebKit doesn't know are dropped when loading, so they never show up live.
         let known = Set(ext.webExtension.requestedPermissions.union(ext.webExtension.optionalPermissions).map(\.rawValue))
-        for (name, decision) in file.permissions where name != native && known.contains(name) && live.permissions[name] != decision {
+        for (name, decision) in file.permissions where !ExtensionSnapshot.unrecorded.contains(name) && known.contains(name) && live.permissions[name] != decision {
             edited.append(name)
         }
         for (name, decision) in live.permissions where decision == .allow && file.permissions[name] == nil { edited.append(name) }
@@ -490,6 +602,7 @@ final class ExtensionHost {
     /// An extension waiting for the user's answer.
     private struct PendingPrompt {
         let entry: ExtensionEntry
+        let setup: CompatSetup
         let webExtension: WKWebExtension
         let manifest: ExtensionManifest
         let problems: [String]
@@ -502,8 +615,10 @@ final class ExtensionHost {
     /// Steps 1 to 6 of the load pipeline for each entry. Returns the entries that need a prompt before loading.
     private func loadEntries(_ entries: [ExtensionEntry], config: PaddleConfig) async -> [PendingPrompt] {
         var pending: [PendingPrompt] = []
-        var failures: [String] = []
+        // This load's failures replace only these folders' lines in the banner; other folders' lines stay.
+        var failures: [String: String] = [:]
         for (name, problem) in scanProblems { status[name] = problem }
+        ensureInstalls()
 
         for entry in entries {
             guard config.isExtensionEnabled(entry.name) else {
@@ -519,15 +634,17 @@ final class ExtensionHost {
                 status[entry.name] = "failed: extension path is not absolute"
                 continue
             }
-            // Step 0: extensions not built for Safari load from a patched clone that runs the compat prelude first.
-            let (loadRoot, overlayProblem) = await prepareOverlay(for: entry)
+            // Step 0: persona and identity, then (unless it is a Safari build or compat is off) a patched clone that
+            // runs the compat prelude first.
+            let setup = compatSetup(for: entry, config: config)
+            let (loadRoot, overlayProblem) = await prepareOverlay(for: entry, setup: setup)
             let webExtension: WKWebExtension
             do {
                 webExtension = try await WKWebExtension(resourceBaseURL: loadRoot)
             } catch {
                 let reason = error.localizedDescription
                 status[entry.name] = "failed: \(reason)"
-                failures.append(ExtensionPermissionText.sanitize("Extension “\(entry.name)” didn't load: \(reason)", max: 240))
+                failures[entry.name] = ExtensionPermissionText.sanitize("Extension “\(entry.name)” didn't load: \(reason)", max: 240)
                 log.error("\(entry.name, privacy: .public) failed to load: \(reason, privacy: .public)")
                 continue
             }
@@ -538,7 +655,7 @@ final class ExtensionHost {
                 manifest = try ExtensionManifest(data: JSONSerialization.data(withJSONObject: webExtension.manifest))
             } catch {
                 status[entry.name] = "failed: manifest unreadable (\(error.localizedDescription))"
-                failures.append(ExtensionPermissionText.sanitize("Extension “\(displayName)” didn't load: manifest unreadable", max: 240))
+                failures[entry.name] = ExtensionPermissionText.sanitize("Extension “\(displayName)” didn't load: manifest unreadable", max: 240)
                 continue
             }
 
@@ -547,7 +664,7 @@ final class ExtensionHost {
                 // A missing service worker hangs the background with no error, so it never gets that far.
                 status[entry.name] = "background file \(first) missing, not loaded"
                 // `first` comes from the manifest: one sanitized line, like every banner line.
-                failures.append(ExtensionPermissionText.sanitize("Extension “\(displayName)” didn't load: background file \(first) missing", max: 240))
+                failures[entry.name] = ExtensionPermissionText.sanitize("Extension “\(displayName)” didn't load: background file \(first) missing", max: 240)
                 log.error("\(entry.name, privacy: .public): background file \(first, privacy: .public) missing")
                 continue
             }
@@ -570,7 +687,7 @@ final class ExtensionHost {
                 let undecided = decisions.undecided(folder: entry.name, name: displayName, permissions: requested.permissions, hosts: requested.hosts)
                 let allSites = Set(webExtension.allRequestedMatchPatterns.filter { $0.matchesAllHosts || $0.matchesAllURLs }.map(\.string))
                 pending.append(PendingPrompt(
-                    entry: entry, webExtension: webExtension, manifest: manifest, problems: problems,
+                    entry: entry, setup: setup, webExtension: webExtension, manifest: manifest, problems: problems,
                     requested: requested, undecided: undecided, allSites: allSites
                 ))
                 continue
@@ -579,22 +696,30 @@ final class ExtensionHost {
                 status[entry.name] = "permissions declined"
                 continue
             }
-            activate(entry, webExtension, manifest: manifest, problems: problems, requested: requested, config: config)
+            activate(entry, setup, webExtension, manifest: manifest, problems: problems, requested: requested, config: config)
         }
-        bannerText = failures.isEmpty ? nil : failures.joined(separator: "\n")
+        for entry in entries { bannerFailures[entry.name] = failures[entry.name] }
+        bannerText = bannerFailures.isEmpty ? nil : bannerFailures.sorted { $0.key < $1.key }.map(\.value).joined(separator: "\n")
         return pending
     }
 
     /// Step 6: a context with the recorded permissions, loaded into the controller (made now if it doesn't exist).
     private func activate(
-        _ entry: ExtensionEntry, _ webExtension: WKWebExtension, manifest: ExtensionManifest, problems: [String],
+        _ entry: ExtensionEntry, _ setup: CompatSetup, _ webExtension: WKWebExtension, manifest: ExtensionManifest, problems: [String],
         requested: (permissions: Set<String>, hosts: Set<String>), config: PaddleConfig
     ) {
-        let id = ExtensionIdentity.identifier(forFolder: entry.name, salt: salt)
+        let identity = setup.identity
         let displayName = ExtensionPermissionText.sanitize(webExtension.displayName ?? entry.name)
+        // Two folders resolving to one id (a sideloaded key, the same store id twice) would share storage and pages.
+        if let other = loaded.first(where: { $0.name != entry.name && ($0.id == identity.runtimeID || $0.urlHost == identity.urlHost) }) {
+            status[entry.name] = "not loaded: same id as \(other.name)"
+            log.error("\(entry.name, privacy: .public): refused, resolves to the same id as \(other.name, privacy: .public) (\(identity.runtimeID, privacy: .public))")
+            return
+        }
         let context = WKWebExtensionContext(for: webExtension)
-        context.uniqueIdentifier = id
-        context.baseURL = ExtensionIdentity.baseURL(for: id)
+        // Identifier first, then the base URL (its scheme is registered in `prepare`).
+        context.uniqueIdentifier = identity.runtimeID
+        context.baseURL = identity.baseURL
         context.isInspectable = config.developerTools
         context.inspectionName = "\(displayName) — Paddle"
         // Private windows (only registered with `extensionsInPrivate`) are visible to the extension only with this.
@@ -603,7 +728,7 @@ final class ExtensionHost {
         if let snapshot = decisions.byFolder[entry.name] {
             var granted: [WKWebExtension.Permission: Date] = [:]
             var denied: [WKWebExtension.Permission: Date] = [:]
-            for (name, decision) in snapshot.permissions {
+            for (name, decision) in snapshot.permissions where !ExtensionSnapshot.unrecorded.contains(name) {
                 let permission = WKWebExtension.Permission(rawValue: name)
                 if decision == .allow { granted[permission] = .distantFuture } else { denied[permission] = .distantFuture }
             }
@@ -627,9 +752,16 @@ final class ExtensionHost {
             context.grantedPermissionMatchPatterns = grantedHosts
             context.deniedPermissionMatchPatterns = deniedHosts
         }
-        // Never, whatever the file says: Paddle launches no native app for an extension.
-        context.setPermissionStatus(.deniedExplicitly, for: .nativeMessaging)
+        // nativeMessaging reaches only Paddle's bus (`CompatBus`), so it is granted on the context, never written to the
+        // manifest or the permissions file: always under the v2 prelude (which hides it from `permissions.getAll`
+        // unless declared), otherwise only when the manifest asks for it.
+        let grantsBus = setup.runsV2Prelude || webExtension.requestedPermissions.contains(.nativeMessaging)
+            || webExtension.optionalPermissions.contains(.nativeMessaging)
+        // Otherwise denied outright: a grant from an earlier v2 run (WebKit may keep it) must not outlive the prelude
+        // that hides it, and no native app is ever launched.
+        context.setPermissionStatus(grantsBus ? .grantedExplicitly : .deniedExplicitly, for: .nativeMessaging)
 
+        moveStorage(for: entry.name, setup: setup, manifestKey: webExtension.manifest["key"] as? String)
         ensureController()
         guard let controller else { return }
         do {
@@ -640,39 +772,136 @@ final class ExtensionHost {
             return
         }
         let ext = LoadedExtension(
-            name: entry.name, id: id, entry: entry, manifest: manifest, webExtension: webExtension,
+            name: entry.name, setup: setup, entry: entry, manifest: manifest, webExtension: webExtension,
             context: context, requested: requested, problems: problems
         )
         loaded.append(ext)
         loaded.sort { $0.name < $1.name }
         status[entry.name] = loadedStatus(ext)
-        log.info("loaded \(entry.name, privacy: .public) (\(displayName, privacy: .public) \(ext.version, privacy: .public)) as \(id, privacy: .public)")
+        log.info("loaded \(entry.name, privacy: .public) (\(displayName, privacy: .public) \(ext.version, privacy: .public)): persona \(setup.persona.rawValue, privacy: .public), base \(identity.baseURL.absoluteString, privacy: .public), runtime.id \(identity.runtimeID, privacy: .public), \(identity.isPublic ? "public" : "private", privacy: .public) id, prelude \(setup.preludeMode, privacy: .public), nativeMessaging \(grantsBus ? "granted (Paddle bus only)" : "not granted", privacy: .public)")
+
+        if setup.runsV2Prelude { watchBackground(ext) }
+        if let reason = setup.plan?.installReason, let plan = setup.plan, installs?.installReason(folder: entry.name) != nil {
+            log.info("\(entry.name, privacy: .public): first run in Paddle; runtime.onInstalled gets \(reason, privacy: .public)")
+            clearInstallReason(ext, plan: plan)
+        }
+    }
+
+    /// WebKit files an extension's storage under its context `uniqueIdentifier`. When a persona or `publicID` change
+    /// gives a folder a new id, the storage from its earlier id moves to the new one before the context loads, so the
+    /// extension keeps its data (sign-ins included). Only when the new id has none yet and exactly one earlier id has
+    /// some, and never while a loaded context still uses that id.
+    private func moveStorage(for folder: String, setup: CompatSetup, manifestKey: String?) {
+        let current = setup.identity.runtimeID
+        let root = Paths.webExtensionStorage
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: root.appending(path: current).path) else { return }
+        let keyID = manifestKey.flatMap(ExtensionIdentity.chromeID(manifestKey:))
+        let candidates = ExtensionIdentity.priorStorageIDs(saltedID: setup.saltedID, publicIDs: [keyID].compactMap { $0 }, current: current)
+            .filter { id in fm.fileExists(atPath: root.appending(path: id).path) && !loaded.contains { $0.id == id } }
+        guard let old = candidates.first else { return }
+        guard candidates.count == 1 else {
+            log.error("\(folder, privacy: .public): storage under more than one earlier id (\(candidates.joined(separator: ", "), privacy: .public)); left as is, starting empty under \(current, privacy: .public)")
+            return
+        }
+        do {
+            try fm.moveItem(at: root.appending(path: old), to: root.appending(path: current))
+            log.info("\(folder, privacy: .public): storage moved from id \(old, privacy: .public) to \(current, privacy: .public)")
+        } catch {
+            log.error("\(folder, privacy: .public): storage could not move from \(old, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func loadedStatus(_ ext: LoadedExtension) -> String {
         var line = "\(ext.displayName) \(ext.version), loaded"
         if let overlay = overlays[ext.name] { line += ", \(overlay.statusText)" }
+        if ext.persona == .chrome { line += ", \(ext.isPublicID ? "public" : "private") id" }
+        if compatOff.contains(ext.name) { line += ", compat off (its background failed with the prelude)" }
         if !ext.problems.isEmpty { line += ", \(ext.problems.count) problem\(ext.problems.count == 1 ? "" : "s")" }
         return line
     }
 
-    // MARK: - Compat overlay
+    // MARK: - Persona and compat overlay
 
-    /// Step 0 of the load pipeline: an extension not built for Safari loads from a patched clone of its folder
-    /// under `extension-overlays/` (the prelude first in its background scripts and its own content scripts), kept
-    /// while the folder is unchanged. The file work runs off the main actor: a folder on another volume is copied in
-    /// full. Returns the folder to load from, plus a problem line when the overlay couldn't be made and the original
-    /// folder is used. Identity, permissions and storage are keyed by the folder name, so the overlay changes none
-    /// of them.
-    private func prepareOverlay(for entry: ExtensionEntry) async -> (root: URL, problem: String?) {
+    /// What one folder runs as: persona, identity, and the prelude plan (nil: no overlay).
+    struct CompatSetup {
+        let persona: Persona
+        let saltedID: String
+        let identity: ExtensionIdentity.Resolved
+        let compat: ExtensionCompatConfig
+        /// The overlay's plan: v2 for chrome/firefox, the 4b prelude for `none`; nil for `native` and compat off.
+        let plan: CompatPlan?
+        let compatOff: Bool
+
+        var runsV2Prelude: Bool { plan?.persona.runsPersonaPrelude == true }
+        var preludeMode: String {
+            if compatOff { return "off (fallback)" }
+            switch plan?.persona {
+            case .chrome, .firefox: return "v2"
+            case .none?: return "4b"
+            default: return "none"
+            }
+        }
+        /// The persona's user agent, compat off included (the wire identity doesn't depend on the prelude).
+        var userAgent: String? { persona.userAgent(plan?.versions ?? .current) }
+    }
+
+    /// Detects the persona (`extensionCompat` first, then the manifest), resolves the id and base URL, and builds
+    /// the prelude plan. A manifest Paddle can't parse runs as `none` (the 4b path, which then loads it unpatched).
+    private func compatSetup(for entry: ExtensionEntry, config: PaddleConfig) -> CompatSetup {
+        let salted = ExtensionIdentity.identifier(forFolder: entry.name, salt: salt)
+        let compat = config.compat(forFolder: entry.name)
+        let data = try? Data(contentsOf: entry.root.appending(path: "manifest.json"))
+        let parsed = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let manifest = parsed ?? [:]
+        let persona = parsed == nil ? (compat.persona ?? .none) : Persona.detect(manifest: manifest, source: nil, override: compat.persona)
+        let identity = ExtensionIdentity.resolve(persona: persona, saltedID: salted, manifest: manifest, publicID: compat.wantsPublicID)
+        let off = compatOff.contains(entry.name)
+        var plan: CompatPlan?
+        if !off {
+            switch persona {
+            case .chrome, .firefox:
+                if let data {
+                    do {
+                        plan = try CompatPlan.make(
+                            manifestData: data, persona: persona, runtimeID: identity.runtimeID, compat: compat,
+                            installReason: installs?.installReason(folder: entry.name)
+                        )
+                    } catch {
+                        log.error("\(entry.name, privacy: .public): no compat plan (\(error.localizedDescription, privacy: .public))")
+                    }
+                }
+            case .none:
+                plan = CompatPlan(persona: .none, runtimeID: identity.runtimeID)
+            case .native:
+                plan = nil
+            }
+        }
+        return CompatSetup(persona: persona, saltedID: salted, identity: identity, compat: compat, plan: plan, compatOff: off)
+    }
+
+    /// Step 0 of the load pipeline: the patched clone under `extension-overlays/` for the folder's plan (v2 prelude,
+    /// worker wrapper and page tags for chrome/firefox; the 4b prelude for `none`), kept while the folder is
+    /// unchanged; its generated prelude files are rewritten at every load. The file work runs off the main actor:
+    /// a folder on another volume is copied in full. Returns the folder to load from, plus a problem line when the
+    /// overlay couldn't be made and the original folder is used. Identity, permissions and storage don't depend on
+    /// where it loads from.
+    private func prepareOverlay(for entry: ExtensionEntry, setup: CompatSetup) async -> (root: URL, problem: String?) {
+        // One writer per overlay folder: a pending install-reason rewrite finishes before the folder is remade.
+        if let pending = overlayWrites.removeValue(forKey: entry.name) { await pending.value }
         overlays[entry.name] = nil
         let overlaysFolder = Paths.extensionOverlays
+        if setup.compatOff {
+            log.notice("\(entry.name, privacy: .public): compat off this session; loading its own folder")
+            return (entry.root, nil)
+        }
         // A folder that is itself an overlay (a symlink into extension-overlays/) can't be cloned over itself.
         guard !entry.root.path.hasPrefix(overlaysFolder.path + "/") else { return (entry.root, nil) }
         let source = entry.root
         let name = entry.name
+        let plan = setup.plan ?? CompatPlan(persona: .native, runtimeID: setup.identity.runtimeID)
         let made = await Task.detached(priority: .userInitiated) {
-            Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder) }
+            Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: plan) }
         }.value
         switch made {
         case .success(nil):
@@ -688,6 +917,106 @@ final class ExtensionHost {
         }
     }
 
+    /// Rewrites the overlay's prelude without the install reason once the first background run has had it, so a
+    /// restarted service worker doesn't hear "install" again. The background is woken for this one time (a new
+    /// install); the rewrite follows its completion or 10 s, whichever comes first.
+    private func clearInstallReason(_ ext: LoadedExtension, plan: CompatPlan) {
+        let cleared: CompatPlan = {
+            var copy = plan
+            copy.installReason = nil
+            return copy
+        }()
+        let name = ext.name
+        let source = ext.entry.root
+        let overlaysFolder = Paths.extensionOverlays
+        let context = ext.context
+        let write = Task { @MainActor [weak self, log] in
+            // Recorded as seen only once the background has run with the install reason (and not fallen back to
+            // compat off), so a crash or a failed first run gets "install" again next time.
+            let started = await Self.backgroundStarted(context, timeout: .seconds(10))
+            guard let self, started, !self.compatOff.contains(name) else {
+                log.notice("\(name, privacy: .public): first background run didn't finish; install reason kept for next time")
+                return
+            }
+            if self.installs?.markSeen(folder: name, now: Date()) == true { self.writeInstalls() }
+            let result = await Task.detached(priority: .utility) {
+                Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: cleared) }
+            }.value
+            if case .failure(let error) = result {
+                log.error("\(name, privacy: .public): prelude not rewritten after install: \(error.localizedDescription, privacy: .public)")
+            } else {
+                log.info("\(name, privacy: .public): install reason cleared from the prelude")
+            }
+        }
+        overlayWrites[name] = write
+    }
+
+    /// Returns when `loadBackgroundContent` completes or after `timeout`, whichever is first (E24: a failing
+    /// background never calls the completion).
+    /// True when the load completed without an error, false on an error or the timeout.
+    private static func backgroundStarted(_ context: WKWebExtensionContext, timeout: Duration) async -> Bool {
+        final class Once { var done = false }
+        let once = Once()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            context.loadBackgroundContent { error in
+                MainActor.assumeIsolated {
+                    guard !once.done else { return }
+                    once.done = true
+                    continuation.resume(returning: error == nil)
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                guard !once.done else { return }
+                once.done = true
+                continuation.resume(returning: false)
+            }
+        }
+    }
+
+    /// E24: a background that fails to load under the v2 prelude (WebKit error 6, `backgroundContentFailedToLoad`;
+    /// its load completion is never called) is unloaded and loaded once more from its own folder, compat off, for the
+    /// rest of the session. Watched for as long as it runs, so a background WebKit starts late is covered too.
+    private func watchBackground(_ ext: LoadedExtension) {
+        let name = ext.name
+        if let old = backgroundObservers.removeValue(forKey: name) { NotificationCenter.default.removeObserver(old) }
+        backgroundObservers[name] = NotificationCenter.default.addObserver(
+            forName: WKWebExtensionContext.errorsDidUpdateNotification, object: ext.context, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { AppModel.shared.extensions.checkBackgroundFailure(name) }
+        }
+        checkBackgroundFailure(name)
+        // The user agent goes on the background page's web view once WebKit has made it (polled for 10 s; the
+        // memory sampler and the menus apply it later too).
+        Task { @MainActor [weak self] in
+            for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard let self, let current = loaded.first(where: { $0.name == name }), current === ext else { return }
+                if backgroundWebView(of: current) != nil { return }
+            }
+        }
+    }
+
+    private func checkBackgroundFailure(_ name: String) {
+        guard let ext = loaded.first(where: { $0.name == name }), ext.preludeMode == "v2", !compatOff.contains(name) else { return }
+        let failed = ext.context.errors.contains { error in
+            let error = error as NSError
+            return error.domain == WKWebExtensionContext.errorDomain && error.code == WKWebExtensionContext.Error.backgroundContentFailedToLoad.rawValue
+        }
+        guard failed else { return }
+        compatOff.insert(name)
+        log.error("\(name, privacy: .public): background failed to load with the compat prelude (WebKit error 6); compat off, loading it again from its own folder")
+        let config = AppModel.shared.config
+        enqueue { [self] in
+            guard let current = loaded.first(where: { $0.name == name }) else { return }
+            loadInProgress = true
+            unload(current, closingTabs: false)
+            let pending = await loadEntries([current.entry], config: config)
+            for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
+            finishLoad()
+        }
+    }
+
     /// A read-only assignment error from an extension that runs the compat prelude: its pinned `browser` / `chrome`
     /// globals cause these on purpose. JavaScriptCore's message doesn't name the property, so extensions without the
     /// prelude keep every such error.
@@ -698,7 +1027,15 @@ final class ExtensionHost {
     /// Overlays of folders that are gone from `extensions/` are deleted; the rest are checked against their source
     /// when their extension loads again.
     private func pruneOverlays() {
+        // An unreadable or missing extensions/ folder (an unmounted volume, a permissions problem) looks empty: keep
+        // the overlays and the first-seen records rather than treat every extension as removed.
+        guard FileManager.default.isReadableFile(atPath: Paths.extensions.path) else {
+            log.error("extensions/ unreadable; overlays and first-seen records kept")
+            return
+        }
+        let folders = Set(entries.map(\.name)).union(scanProblems.keys)
         ExtensionOverlay.prune(in: Paths.extensionOverlays, keeping: Set(entries.map(\.name)))
+        if installs?.prune(keeping: folders) == true { writeInstalls() }
     }
 
     /// Unloads one extension. Its open pages close (removed or turned off) or sleep until it is back (reload).
@@ -708,7 +1045,7 @@ final class ExtensionHost {
         popups.close(for: ext.context)
         ext.context.action(for: nil)?.closePopup()
         for window in registeredWindows.compactMap(\.value) {
-            for tab in window.model.tabs where ExtensionIdentity.identifier(of: tab.url) == ext.id {
+            for tab in window.model.tabs where ext.owns(tab.url) {
                 if closingTabs {
                     window.model.close(tab, remember: false)
                 } else if tab.isAwake {
@@ -724,6 +1061,8 @@ final class ExtensionHost {
                 log.error("\(ext.name, privacy: .public): unload failed: \(error.localizedDescription, privacy: .public)")
             }
         }
+        bus.forget(ext.context)
+        if let observer = backgroundObservers.removeValue(forKey: ext.name) { NotificationCenter.default.removeObserver(observer) }
         loaded.removeAll { $0 === ext }
         log.info("unloaded \(ext.name, privacy: .public)")
     }
@@ -748,8 +1087,7 @@ final class ExtensionHost {
         var snapshot = existing ?? ExtensionSnapshot(name: displayName, version: version, decided: Date())
         snapshot.version = version
         snapshot.decided = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
-        snapshot.apply(answer, requested: item.requested, undecided: item.undecided,
-                       alwaysDenied: [WKWebExtension.Permission.nativeMessaging.rawValue])
+        snapshot.apply(answer, requested: item.requested, undecided: item.undecided)
         decisions.set(folder: entry.name, snapshot)
         writeDecisions()
         log.info("\(entry.name, privacy: .public): permission prompt answered \(String(describing: answer), privacy: .public)")
@@ -758,7 +1096,7 @@ final class ExtensionHost {
             status[entry.name] = "permissions declined"
             return
         }
-        activate(entry, item.webExtension, manifest: item.manifest, problems: item.problems, requested: item.requested, config: config)
+        activate(entry, item.setup, item.webExtension, manifest: item.manifest, problems: item.problems, requested: item.requested, config: config)
     }
 
     /// WebKit asking whether an extension may see these URLs. Without a tab (`tabs.query`, a CORS failure) and with
@@ -1102,15 +1440,22 @@ final class ExtensionHost {
 
     /// The background page's web view, through WebKit's private `_backgroundWebView` (personal build; nil when the
     /// API is gone or the background isn't running).
+    /// The persona user agent goes on it here, the first time Paddle sees it (its first requests may still carry
+    /// WebKit's own).
     func backgroundWebView(of ext: LoadedExtension) -> WKWebView? {
         let key = "_backgroundWebView"
-        guard ext.context.responds(to: NSSelectorFromString(key)) else { return nil }
-        return ext.context.value(forKey: key) as? WKWebView
+        guard ext.context.responds(to: NSSelectorFromString(key)), let view = ext.context.value(forKey: key) as? WKWebView else { return nil }
+        if let agent = ext.userAgent, view.customUserAgent != agent {
+            view.customUserAgent = agent
+            log.info("\(ext.name, privacy: .public): background page user agent set (\(ext.persona.rawValue, privacy: .public))")
+        }
+        return view
     }
 
     /// The window banner's close button. The lines stay in the Extensions menu.
     func dismissBanner() {
         bannerText = nil
+        bannerFailures = [:]
     }
 
     // MARK: - Settings

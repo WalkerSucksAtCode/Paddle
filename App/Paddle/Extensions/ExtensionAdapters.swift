@@ -25,7 +25,7 @@ enum PaddleExtensionError: LocalizedError {
     /// Refuses a URL an extension may not put in a tab: only web pages, about:blank and its own pages
     /// (`ExtensionIdentity.extensionMayOpen`). Paddle starts these loads itself, past WebKit's origin checks.
     @MainActor static func checkOpenable(_ url: URL, for context: WKWebExtensionContext) throws {
-        guard ExtensionIdentity.extensionMayOpen(url, extensionID: context.uniqueIdentifier) else {
+        guard ExtensionIdentity.extensionMayOpen(url, baseURL: context.baseURL) else {
             throw PaddleExtensionError.unsupported("Opening \(url.scheme ?? "these") URLs from an extension")
         }
     }

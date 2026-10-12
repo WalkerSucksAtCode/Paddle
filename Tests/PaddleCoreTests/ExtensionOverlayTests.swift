@@ -226,4 +226,37 @@ struct ExtensionOverlayTests {
         #expect(throws: ExtensionCompat.PatchError.notAnObject) { try ExtensionOverlay.make(from: source, name: "sample", in: overlays) }
         #expect(!fm.fileExists(atPath: overlays.appendingPathComponent("sample").path))
     }
+
+    // MARK: - v2
+
+    @Test func personaOverlayWrapsTheWorkerTagsPagesAndRewritesThePreludeEachLoad() throws {
+        let manifest = #"{"manifest_version": 3, "name": "S", "background": {"service_worker": "sub/x.js", "type": "module"}, "content_scripts": [{"matches": ["https://example.com/*"], "js": ["background.js"]}], "action": {"default_popup": "popup.html"}}"#
+        let (source, overlays, work) = try fixture(manifest: manifest)
+        defer { try? fm.removeItem(at: work) }
+        try Data("<p>no head</p>".utf8).write(to: source.appendingPathComponent("sub/page.htm"))
+        var plan = try CompatPlan.make(manifestData: Data(manifest.utf8), persona: .chrome, runtimeID: "abcd")
+        let result = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays, plan: plan))
+        #expect(result.persona == .chrome && result.serviceWorkerWrapped && result.pagesTagged == 2 && result.contentScriptsPatched)
+        #expect(result.statusText == "chrome persona (service worker; 2 pages; content scripts)")
+        #expect(try contents(result.root.appendingPathComponent("sub/paddle-sw.js")).contains(#"import "./x.js";"#))
+        #expect(try contents(result.root.appendingPathComponent("paddle-prelude.js")) == CompatPrelude.source(for: plan, kind: .full))
+        #expect(try contents(result.root.appendingPathComponent("paddle-content.js")) == CompatPrelude.source(for: plan, kind: .content))
+        #expect(try contents(result.root.appendingPathComponent("popup.html")).contains("<head><script src=\"/paddle-prelude.js\"></script><title>"))
+        #expect(try contents(result.root.appendingPathComponent("sub/page.htm")).hasPrefix("<script src=\"/paddle-prelude.js\"></script>"))
+        #expect(try contents(source.appendingPathComponent("popup.html")).contains("paddle") == false)
+
+        // Kept while the folder is unchanged, but the generated prelude follows the plan.
+        plan.installReason = "install"
+        let again = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays, plan: plan))
+        #expect(again.reused && again.pagesTagged == 2)
+        #expect(try contents(again.root.appendingPathComponent("paddle-prelude.js")).contains(#""installReason":"install""#))
+
+        // Switching persona remakes it; native removes it.
+        let none = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays, plan: CompatPlan(persona: .none, runtimeID: "abcd")))
+        #expect(!none.reused && none.persona == .none && none.pagesTagged == 0)
+        #expect(!fm.fileExists(atPath: none.root.appendingPathComponent("paddle-content.js").path))
+        #expect(try ExtensionOverlay.make(from: source, name: "sample", in: overlays, plan: CompatPlan(persona: .native, runtimeID: "abcd")) == nil)
+        #expect(!fm.fileExists(atPath: overlays.appendingPathComponent("sample").path))
+    }
 }
+

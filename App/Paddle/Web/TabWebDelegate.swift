@@ -13,7 +13,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         self.tab = tab
     }
 
-    private static let webSchemes: Set<String> = ["http", "https", "file", "about", "data", "blob", "javascript", ExtensionIdentity.scheme]
+    private static let webSchemes = Set(["http", "https", "file", "about", "data", "blob", "javascript"]).union(ExtensionIdentity.schemes)
 
     private static func isWebPage(_ url: URL?) -> Bool {
         guard let scheme = url?.scheme?.lowercased() else { return false }

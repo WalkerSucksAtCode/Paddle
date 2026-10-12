@@ -43,9 +43,9 @@ struct ExtensionPermissionTextTests {
         ])
     }
 
-    @Test func nativeMessagingSaysItIsRefused() {
+    @Test func nativeMessagingNamesPaddlesOwnChannel() {
         let lines = ExtensionPermissionText.lines(permissions: ["nativeMessaging"], hosts: [])
-        #expect(lines == ["Talk to apps on this Mac (not available in Paddle, always refused)"])
+        #expect(lines == ["Talk to Paddle's compatibility layer (never to other apps)"])
     }
 
     @Test func allSixteenWebKitNamesHavePhrases() {

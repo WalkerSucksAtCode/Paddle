@@ -87,6 +87,32 @@ public enum ConfigValidator {
             }
         }
 
+        for host in config.sitePersonas.keys.sorted() {
+            issues += hostKeyIssues(host, key: .sitePersonas)
+            if config.sitePersonas[host] == .native {
+                issues.append(ConfigIssue(
+                    key: .sitePersonas, path: ["sitePersonas", host], severity: .warning,
+                    message: "Websites can be shown \"chrome\" or \"firefox\"; \"native\" acts as \"none\" (Paddle's own identity)."
+                ))
+            }
+        }
+
+        for folder in config.extensionCompat.keys.sorted() {
+            if folder.isEmpty || folder.contains("/") || folder.hasPrefix(".") {
+                issues.append(ConfigIssue(
+                    key: .extensionCompat, path: ["extensionCompat", folder], severity: .warning,
+                    message: "\"\(folder)\" is not a folder name in extensions/, so it applies to no extension."
+                ))
+            }
+            if let entry = config.extensionCompat[folder], entry.publicID == true,
+               let persona = entry.persona, persona != .chrome {
+                issues.append(ConfigIssue(
+                    key: .extensionCompat, path: ["extensionCompat", folder, "publicID"], severity: .warning,
+                    message: "publicID applies to the \"chrome\" persona only."
+                ))
+            }
+        }
+
         issues += shortcutIssues(config.shortcuts, actionNames: actionNames, defaults: defaults)
         return issues
     }

@@ -259,7 +259,8 @@ final class AppModel {
         if !changed.isDisjoint(with: [.contentBlocking, .filterLists, .filterUpdateDays]) {
             Task { await updateFilterListsIfDue() }
         }
-        if !keys.isDisjoint(with: [.extensions, .extensionsInPrivate]) { await extensions.reconcile(config: new) }
+        // A changed `extensionCompat` entry reloads that extension (`reconcile` compares each one).
+        if !keys.isDisjoint(with: [.extensions, .extensionsInPrivate, .extensionCompat]) { await extensions.reconcile(config: new) }
         if keys.contains(.extensionsInPrivate) {
             for ext in extensions.loaded { ext.context.hasAccessToPrivateData = new.extensionsInPrivate }
             // Turning extensionsInPrivate off takes extensions out of private windows already open (turning it on
@@ -300,6 +301,9 @@ final class AppModel {
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
             case .extensionsInPrivate: old.extensionsInPrivate != new.extensionsInPrivate
+            case .extensionCompat: old.extensionCompat != new.extensionCompat
+            case .extensionUpdates: old.extensionUpdates != new.extensionUpdates
+            case .sitePersonas: old.sitePersonas != new.sitePersonas
             }
         })
     }
@@ -769,7 +773,7 @@ final class AppModel {
         let breakdown: ProcessBreakdown
         if let snapshot = ProcessMemory.snapshot() {
             // Popups (and anything else the host didn't hand us) are extension views by their URL scheme.
-            for (id, view) in snapshot.webViews where owners[id] == nil && view.url?.scheme == ExtensionIdentity.scheme {
+            for (id, view) in snapshot.webViews where owners[id] == nil && ExtensionIdentity.schemes.contains(view.url?.scheme?.lowercased() ?? "") {
                 owners[id] = .extensionView
             }
             breakdown = ProcessBreakdown.aggregate(

@@ -18,6 +18,9 @@ struct AddressResolverTests {
         ("about:blank", "about:blank"),
         ("file:///Users/x/a.html", "file:///Users/x/a.html"),
         ("webkit-extension://abc/options.html", "webkit-extension://abc/options.html"),
+        ("chrome-extension://abcdefghijklmnopabcdefghijklmnop/popup.html", "chrome-extension://abcdefghijklmnopabcdefghijklmnop/popup.html"),
+        ("moz-extension://16c4e4db-fe72-1f2a-74a4-6a0fd6ecbcb6/options.html", "moz-extension://16c4e4db-fe72-1f2a-74a4-6a0fd6ecbcb6/options.html"),
+        ("safari-web-extension://abc/page.html", "safari-web-extension://abc/page.html"),
     ])
     func resolvesAddresses(input: String, expected: String) {
         #expect(resolver.resolve(input)?.absoluteString == expected)

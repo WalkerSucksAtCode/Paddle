@@ -95,8 +95,9 @@ extension PaddleConfig {
 }
 
 /// The user agents Settings > Sites offers for `siteUserAgents`, for sites that refuse Safari or serve it less.
-/// Chrome 155 and Firefox 157 on a Mac, as of October 2026. The whole string goes into config.json, so an entry
-/// keeps the version it was set with; anything else there shows as Custom.
+/// Chrome and Firefox on a Mac at `BrowserVersions.current`, the same strings the extension personas send. The
+/// whole string goes into config.json, so an entry keeps the version it was set with; anything else there
+/// (including an older preset once the versions are bumped) shows as Custom.
 public enum UserAgentPreset: String, CaseIterable, Sendable {
     case chrome, firefox
 
@@ -108,12 +109,11 @@ public enum UserAgentPreset: String, CaseIterable, Sendable {
     }
 
     public var value: String {
-        switch self {
-        case .chrome:
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
-        case .firefox:
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:157.0) Gecko/20100101 Firefox/157.0"
+        let persona: Persona = switch self {
+        case .chrome: .chrome
+        case .firefox: .firefox
         }
+        return persona.userAgent(.current) ?? ""
     }
 
     /// The preset whose string is exactly `value`.

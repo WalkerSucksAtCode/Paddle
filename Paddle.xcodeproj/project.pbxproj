@@ -20,6 +20,7 @@
 		2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3E212F72DAF671F028B0F4 /* MainMenu.swift */; };
 		296BA5602A644EEB1E16071D /* ExtensionsMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C6A2F4AFE93544F200F0A2 /* ExtensionsMenu.swift */; };
 		2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881BDAB3248D8FEB481C88A /* BrowserView.swift */; };
+		2DC2C4B0EB7337CCBBADE0A1 /* CompatBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD82DDC1093768507B67A449 /* CompatBus.swift */; };
 		3368759BF5D44C36AF5D4C0B /* ExtensionControllerDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52C91606DA827F7C24613219 /* ExtensionControllerDelegate.swift */; };
 		37F7773435EAE5DF71802421 /* ExtensionHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003C7BF64845D3C48DC73855 /* ExtensionHost.swift */; };
 		3B65193D181EA4FA135659EA /* ShortcutsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FF189A4771C73A817501D59 /* ShortcutsPane.swift */; };
@@ -107,6 +108,7 @@
 		B638B1EE7C20C00722F34C1E /* ExtensionAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionAdapters.swift; sourceTree = "<group>"; };
 		BDB45BBE62413E30D184AA5E /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
 		C3D0FE4D946C5EE2383EBBDC /* TabsMemoryPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsMemoryPane.swift; sourceTree = "<group>"; };
+		CD82DDC1093768507B67A449 /* CompatBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatBus.swift; sourceTree = "<group>"; };
 		D10F08E60740FF045413DAC8 /* Bookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmarks.swift; sourceTree = "<group>"; };
 		D4EE5D6C79ECA0F8FAAD8A4D /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		D6AB8511862F229DB168B109 /* SitesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SitesPane.swift; sourceTree = "<group>"; };
@@ -233,6 +235,7 @@
 				38FF180A042514269EA95F84 /* ExtensionPopups.swift */,
 				FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */,
 				98C6A2F4AFE93544F200F0A2 /* ExtensionsMenu.swift */,
+				AB52F5C90420FF8983F587F4 /* Compat */,
 			);
 			path = Extensions;
 			sourceTree = "<group>";
@@ -251,6 +254,14 @@
 				62C65D5FFDCE8D96C837513C /* Paddle */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		AB52F5C90420FF8983F587F4 /* Compat */ = {
+			isa = PBXGroup;
+			children = (
+				CD82DDC1093768507B67A449 /* CompatBus.swift */,
+			);
+			path = Compat;
 			sourceTree = "<group>";
 		};
 		E866DFFDF107D654001FDD29 /* Support */ = {
@@ -365,6 +376,7 @@
 				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
 				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
 				BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */,
+				2DC2C4B0EB7337CCBBADE0A1 /* CompatBus.swift in Sources */,
 				45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */,
 				5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */,
 				5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */,

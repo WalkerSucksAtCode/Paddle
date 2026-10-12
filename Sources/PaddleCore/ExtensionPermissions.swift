@@ -56,11 +56,13 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     /// - Only When I Click grants the listed permission names and marks every requested host pattern `.click`,
     ///   earlier grants included, so pages are reachable only through `activeTab` on a click.
     /// - Don't Allow denies everything requested and stops the extension running.
-    /// Items in `alwaysDenied` (nativeMessaging) are denied whatever the answer.
+    /// Names in `unrecorded` are never written.
     public mutating func apply(
         _ answer: ExtensionInstallAnswer, requested: (permissions: Set<String>, hosts: Set<String>),
-        undecided: (permissions: Set<String>, hosts: Set<String>), alwaysDenied: Set<String>
+        undecided: (permissions: Set<String>, hosts: Set<String>)
     ) {
+        let requested = (permissions: requested.permissions.subtracting(Self.unrecorded), hosts: requested.hosts)
+        let undecided = (permissions: undecided.permissions.subtracting(Self.unrecorded), hosts: undecided.hosts)
         switch answer {
         case .allow:
             for permission in undecided.permissions { permissions[permission] = .allow }
@@ -72,7 +74,7 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
             for permission in requested.permissions.union(undecided.permissions) { permissions[permission] = .deny }
             for host in requested.hosts.union(undecided.hosts) { hosts[host] = .deny }
         }
-        for permission in alwaysDenied where permissions[permission] != nil { permissions[permission] = .deny }
+        for permission in Self.unrecorded { permissions[permission] = nil }
         let allowsSomething = permissions.values.contains(.allow) || hosts.values.contains(.allow)
         let asksForNothing = requested.permissions.isEmpty && requested.hosts.isEmpty
         run = answer != .deny && (allowsSomething || asksForNothing) ? .allow : .deny
@@ -83,6 +85,10 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     /// user gesture (`activeTab`) carry a short expiry and must not be persisted. A denial beats a grant for the same item.
     /// `clickHosts`: patterns recorded as `.click`; WebKit holds no lasting state for them, so each one that is still
     /// neither granted nor denied stays `.click`.
+    /// Permission names Paddle decides itself, so they are never asked about or written: `nativeMessaging` reaches
+    /// only Paddle's own compatibility bus (`ExtensionCompat.busID`), which Paddle grants on the context.
+    public static let unrecorded: Set<String> = ["nativeMessaging"]
+
     public static func from(name: String, version: String, run: PermissionDecision? = nil,
                             granted: [String: Date], denied: [String: Date],
                             grantedHosts: [String: Date], deniedHosts: [String: Date],
@@ -94,12 +100,13 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
             for (item, date) in refused where date > cutoff { result[item] = .deny }
             return result
         }
+        let permissions = decisions(granted, denied).filter { !unrecorded.contains($0.key) }
         // Whole seconds: the file stores ISO 8601 without fractions.
         let stamp = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
         var hosts = decisions(grantedHosts, deniedHosts)
         for host in clickHosts where hosts[host] == nil { hosts[host] = .click }
         return ExtensionSnapshot(name: name, version: version, decided: stamp,
-                                 permissions: decisions(granted, denied), hosts: hosts, run: run)
+                                 permissions: permissions, hosts: hosts, run: run)
     }
 }
 
@@ -147,6 +154,7 @@ public struct ExtensionDecisions: Codable, Sendable, Equatable {
     /// extension with a different name, has decided nothing.
     public func undecided(folder: String, name: String, permissions: Set<String>, hosts: Set<String>)
         -> (permissions: Set<String>, hosts: Set<String>) {
+        let permissions = permissions.subtracting(ExtensionSnapshot.unrecorded)
         guard let snapshot = byFolder[folder], snapshot.name == name else { return (permissions, hosts) }
         return (permissions.subtracting(snapshot.permissions.keys), hosts.subtracting(snapshot.hosts.keys))
     }
@@ -188,7 +196,7 @@ public enum ExtensionPermissionText {
         "declarativeNetRequestFeedback": "See which of its block rules matched",
         "declarativeNetRequestWithHostAccess": "Block or change requests on the sites it can access",
         "menus": "Add items to menus",
-        "nativeMessaging": "Talk to apps on this Mac (not available in Paddle, always refused)",
+        "nativeMessaging": "Talk to Paddle's compatibility layer (never to other apps)",
         "scripting": "Run code in pages",
         "storage": "Keep its own settings and data",
         "tabs": "See the addresses and titles of your tabs",
