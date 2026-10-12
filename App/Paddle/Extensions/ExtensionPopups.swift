@@ -44,6 +44,10 @@ final class ExtensionPopupPresenter {
     /// Keeps the shown popup inside `maxSize`; WebKit sizes it to the page, which can be any width.
     private var sizeObservation: NSKeyValueObservation?
     private static let maxSize = NSSize(width: 800, height: 600)
+    /// Escape closes the shown popup, as in Safari and Chrome, even when its page handles the key itself (the web
+    /// view consumes key events the page takes, so they never reach the popover's `cancelOperation`). Installed
+    /// only while a popup shows.
+    private var escapeMonitor: Any?
 
     init() {
         closeObserver = NotificationCenter.default.addObserver(forName: NSPopover.willCloseNotification, object: nil, queue: .main) { [weak self] note in
@@ -86,12 +90,53 @@ final class ExtensionPopupPresenter {
         shownPopover = nil
         shownAction = nil
         shownContextID = nil
+        stopWatchingEscape()
     }
 
     private func popoverWillClose(_ popover: NSPopover?) {
         guard let popover, popover === shownPopover, let id = shownContextID else { return }
         lastClose = (id, Date())
         sizeObservation = nil
+        stopWatchingEscape()
+    }
+
+    private func watchEscape() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Local monitors run on the main thread, inside the app's event dispatch.
+            nonisolated(unsafe) let keyEvent = event
+            let closed = MainActor.assumeIsolated { self?.closeOnEscape(keyEvent) ?? false }
+            return closed ? nil : event
+        }
+    }
+
+    private func stopWatchingEscape() {
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        escapeMonitor = nil
+    }
+
+    /// Escape with no modifiers, typed in the shown popup's own window: closes the popup. Not while a runtime
+    /// permission prompt holds it open (`.applicationDefined`); the prompt takes Escape as its Cancel. Not while an
+    /// input method is composing text in the popup either: there Escape cancels the composition.
+    private func closeOnEscape(_ event: NSEvent) -> Bool {
+        guard event.keyCode == 53, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+              let shownPopover, shownPopover.isShown, shownPopover.behavior != .applicationDefined,
+              let window = shownPopover.contentViewController?.view.window, event.window === window,
+              (window.firstResponder as? NSTextInputClient)?.hasMarkedText() != true else { return false }
+        shownPopover.performClose(nil)
+        return true
+    }
+
+    /// After a runtime permission prompt: the popup that asked takes the keyboard again, so typing and Escape reach
+    /// it without a click.
+    func refocusShownPopup() {
+        // On the next turn, once the alert's window has gone.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, let shownPopover = self.shownPopover, shownPopover.isShown else { return }
+                self.focus(shownPopover, webView: self.shownAction?.popupWebView)
+            }
+        }
     }
 
     /// Consumes Paddle's user action if it covers `context`.
@@ -148,6 +193,7 @@ final class ExtensionPopupPresenter {
         shownPopover = popover
         shownAction = action
         shownContextID = context.uniqueIdentifier
+        watchEscape()
         focus(popover, webView: action.popupWebView)
     }
 
@@ -216,6 +262,7 @@ final class ExtensionPopupPresenter {
         shownPopover = nil
         self.shownAction = nil
         shownContextID = nil
+        stopWatchingEscape()
     }
 
     /// The popover's window becomes key and the web view first responder, so typing goes to the popup at once.

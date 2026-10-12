@@ -90,6 +90,7 @@ struct ActivityView: View {
                     Spacer()
                     Text(ProcessMemory.format(row.1)).monospacedDigit()
                 }
+                .accessibilityElement(children: .combine)
             }
         }
         .font(.system(size: 11))
@@ -117,6 +118,7 @@ struct ActivityView: View {
     private func row(_ tab: Tab) -> some View {
         HStack(spacing: 8) {
             Glyph(name: tab.isAwake ? "surf-tab-awake" : "surf-tab-sleep", size: 12)
+                .accessibilityHidden(true)
             Text(tab.displayTitle)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -136,6 +138,7 @@ struct ActivityView: View {
             }
             .controlSize(.small)
             .disabled(tab.isAwake && tab.browser?.selectedID == tab.id)
+            .accessibilityLabel("\(tab.isAwake ? "Sleep" : "Show") \(tab.displayTitle)")
         }
         .help(tab.sharesProcess ? "* Shared with other tabs from the same site" : "")
     }
@@ -191,9 +194,11 @@ struct DownloadsView: View {
             if item.state == .running {
                 Button { store.cancel(item) } label: { Image(systemName: "xmark.circle") }
                     .help("Cancel")
+                    .accessibilityLabel("Cancel download of \(item.filename)")
             } else if item.state == .finished, let url = item.destination {
                 Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: { Image(systemName: "magnifyingglass") }
                     .help("Show in Finder")
+                    .accessibilityLabel("Show \(item.filename) in Finder")
             }
         }
         .buttonStyle(.borderless)

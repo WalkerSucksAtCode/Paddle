@@ -25,6 +25,8 @@ struct BookmarksBar: View {
             .padding(.horizontal, 8)
         }
         .frame(height: 26)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Bookmarks bar")
     }
 }
 
@@ -42,6 +44,7 @@ private struct BookmarkBarItem: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .accessibilityLabel("\(item.title) folder")
         } else {
             Button {
                 BookmarkActions.open(item, newTab: NSEvent.modifierFlags.contains(.command))
@@ -59,6 +62,8 @@ private struct BookmarkBarItem: View {
             }
             .buttonStyle(.borderless)
             .help(item.url ?? "")
+            .accessibilityLabel(item.title.isEmpty ? (item.url ?? "Bookmark") : item.title)
+            .accessibilityHint(item.url ?? "")
             .contextMenu {
                 Button("Open in New Tab") { BookmarkActions.open(item, newTab: true) }
                 Divider()

@@ -846,7 +846,13 @@ final class ExtensionHost {
             let popover = self.popups.shownPopover
             let behavior = popover?.behavior
             if popover?.isShown == true { popover?.behavior = .applicationDefined }
-            defer { if let behavior, popover?.isShown == true { popover?.behavior = behavior } }
+            defer {
+                if let behavior, popover?.isShown == true {
+                    popover?.behavior = behavior
+                    // The alert had the keyboard; give it back to the popup that asked.
+                    self.popups.refocusShownPopup()
+                }
+            }
             // A sheet on the tab that asked only if it is showing now, with no other sheet up; otherwise app-modal.
             // Waiting for the tab to be selected would hold every later alert (install prompts included) for as
             // long as the user stays away from it.

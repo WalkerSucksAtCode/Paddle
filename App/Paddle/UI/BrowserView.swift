@@ -70,6 +70,7 @@ struct BrowserView: View {
 
 private struct TabStrip: View {
     @Bindable var model: BrowserModel
+    @Namespace private var rotor
 
     /// Room for the traffic lights.
     private let leadingInset: CGFloat = 78
@@ -89,6 +90,7 @@ private struct TabStrip: View {
                         HStack(spacing: 2) {
                             ForEach(model.tabs) { tab in
                                 TabButton(tab: tab, model: model, width: tab.isPinned ? pinnedWidth : width)
+                                    .accessibilityRotorEntry(id: tab.id, in: rotor)
                             }
                         }
                         .padding(.vertical, 5)
@@ -97,6 +99,14 @@ private struct TabStrip: View {
                         .background(WindowDragArea())
                     }
                     .scrollBounceBehavior(.basedOnSize)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Tabs")
+                    // VoiceOver's rotor lists the tabs with their state ("selected", "asleep", "muted").
+                    .accessibilityRotor("Tabs") {
+                        ForEach(model.tabs) { tab in
+                            AccessibilityRotorEntry(Text(TabButton.spokenEntry(tab, selected: model.selectedID == tab.id)), id: tab.id, in: rotor)
+                        }
+                    }
                     // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
                     .onChange(of: model.selectedID) { _, id in
                         guard let id else { return }
@@ -112,6 +122,7 @@ private struct TabStrip: View {
                 }
                 .buttonStyle(.borderless)
                 .help("New Tab")
+                .accessibilityLabel("New Tab")
                 .padding(.trailing, 8)
             }
             .background(WindowDragArea())
@@ -192,6 +203,7 @@ private struct TabButton: View {
                     }
                     .buttonStyle(.borderless)
                     .help("Close Tab")
+                    .accessibilityLabel("Close Tab")
                 }
             }
         }
@@ -204,6 +216,23 @@ private struct TabButton: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { model.select(tab) }
+        // With keyboard navigation on (System Settings > Keyboard), Tab reaches each tab; Space or Return selects it.
+        .focusable(interactions: .activate)
+        .onKeyPress(keys: [.space, .return]) { _ in
+            model.select(tab)
+            return .handled
+        }
+        // One element for VoiceOver: the title, its state as the value, and the tab's actions.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tab.displayTitle)
+        .accessibilityValue(Self.spokenState(tab, audio: audio))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { model.select(tab) }
+        .accessibilityAction(named: "Close Tab") { model.close(tab) }
+        .accessibilityAction(named: tab.isPinned ? "Unpin Tab" : "Pin Tab") { model.togglePin(tab) }
+        .accessibilityAction(named: tab.isMuted ? "Unmute Tab" : "Mute Tab") {
+            if Tab.supportsMuting { model.toggleMute(tab) }
+        }
         .onHover { inside in
             hovering = inside
             if inside { hoverMemory = tab.memoryBytes.map { ($0, tab.sharesProcess) } }
@@ -258,6 +287,28 @@ private struct TabButton: View {
         }
     }
 
+    /// "Pinned, asleep, muted": the tab's state as VoiceOver's value. Selection is the trait, not part of it.
+    static func spokenState(_ tab: Tab, audio: AudioIndicator) -> String {
+        var parts: [String] = []
+        if tab.isPinned { parts.append("pinned") }
+        if !tab.isAwake { parts.append("asleep") }
+        if tab.isLoading { parts.append("loading") }
+        if tab.isCapturing { parts.append("using camera or microphone") }
+        switch audio {
+        case .playing: parts.append("playing audio")
+        case .muted: parts.append("muted")
+        case .none: break
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// A rotor entry: the title, then "selected" and the state.
+    static func spokenEntry(_ tab: Tab, selected: Bool) -> String {
+        let audio = AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted)
+        let state = [selected ? "selected" : "", spokenState(tab, audio: audio)].filter { !$0.isEmpty }
+        return ([tab.displayTitle] + state).joined(separator: ", ")
+    }
+
     private var tooltip: String {
         var lines = [tab.displayTitle]
         if let url = tab.url { lines.append(url.absoluteString) }
@@ -300,6 +351,9 @@ private struct MemoryButton: View {
         }
         .buttonStyle(.borderless)
         .help("Memory: this tab · all of Paddle. Click for details.")
+        .accessibilityLabel("Memory")
+        .accessibilityValue(spokenLabel)
+        .accessibilityHint("Shows memory and activity details.")
         .popover(isPresented: $showActivity, arrowEdge: .bottom) {
             ActivityView(app: app, browser: model)
         }
@@ -308,6 +362,12 @@ private struct MemoryButton: View {
     private var label: String {
         let current = model.selectedTab?.memoryBytes.map(ProcessMemory.format) ?? "–"
         return "\(current) · \(ProcessMemory.format(app.totalWebMemory))"
+    }
+
+    private var spokenLabel: String {
+        let total = "all of Paddle \(ProcessMemory.format(app.totalWebMemory))"
+        guard let current = model.selectedTab?.memoryBytes.map(ProcessMemory.format) else { return total }
+        return "this tab \(current), \(total)"
     }
 }
 
@@ -361,6 +421,10 @@ private struct NavigationBar: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .frame(width: 14)
+                .accessibilityLabel("Connection")
+                .accessibilityValue(securityDescription ?? "")
+                .accessibilityHidden(securityDescription == nil)
+                .help(securityDescription ?? "")
             TextField("Search or enter address", text: $model.addressText, selection: $addressSelection)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -435,6 +499,16 @@ private struct NavigationBar: View {
         return .handled
     }
 
+    /// What the address icon means, for VoiceOver and the tooltip; nil while it is only the search glass.
+    private var securityDescription: String? {
+        guard let url = tab?.url, !addressFocused else { return nil }
+        switch url.scheme {
+        case "https": return tab?.isSecure == true ? "Secure" : "Not fully secure: some of this page isn't encrypted"
+        case "http": return "Not secure: this page isn't encrypted"
+        default: return nil
+        }
+    }
+
     private var addressIcon: String {
         guard let url = tab?.url, !addressFocused else { return "magnifyingglass" }
         switch url.scheme {
@@ -483,6 +557,7 @@ private struct NavigationBar: View {
         .buttonStyle(.borderless)
         .disabled(!enabled)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -495,6 +570,7 @@ private struct FindBar: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Find on page", text: $model.findText)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 260)
@@ -506,8 +582,10 @@ private struct FindBar: View {
             }
             Button { model.find(backwards: true) } label: { Image(systemName: "chevron.up") }
                 .help("Previous (⇧⌘G)")
+                .accessibilityLabel("Previous Match")
             Button { model.find() } label: { Image(systemName: "chevron.down") }
                 .help("Next (⌘G)")
+                .accessibilityLabel("Next Match")
             Spacer()
             Button("Done") { model.hideFind() }
         }
@@ -517,6 +595,10 @@ private struct FindBar: View {
         .onAppear { focused = true }
         .onChange(of: model.findFocusRequest) { focused = true }
         .onChange(of: model.findText) { model.find() }
+        // Each search that finds nothing is announced, not only the first.
+        .onChange(of: model.findNoMatch) { _, noMatch in
+            if noMatch { AccessibilityNotification.Announcement("Not found").post() }
+        }
     }
 }
 

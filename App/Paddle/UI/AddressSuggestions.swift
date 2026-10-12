@@ -82,9 +82,14 @@ final class AddressSuggestions {
         rebuild()
     }
 
+    /// Moves the arrow-key highlight and announces the row, since VoiceOver stays in the address field.
     func moveHighlight(by delta: Int) {
         guard !rows.isEmpty else { return }
+        let previous = highlighted
         highlighted = min(max(highlighted + delta, 0), rows.count - 1)
+        if highlighted != previous, let row = highlightedRow {
+            AccessibilityNotification.Announcement("\(row.spokenDescription), \(highlighted + 1) of \(rows.count)").post()
+        }
     }
 
     func dismiss() {
@@ -189,8 +194,14 @@ struct SuggestionList: View {
                         }
                     }
                     .onTapGesture { choose(row) }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(row.spokenDescription)
+                    .accessibilityAddTraits(index == suggestions.highlighted ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityAction { choose(row) }
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Suggestions")
         .padding(4)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.12)))
@@ -246,5 +257,19 @@ private struct SuggestionRow: View {
         case .search: "magnifyingglass"
         case .url: "globe"
         }
+    }
+}
+
+extension Suggestion {
+    /// What VoiceOver says for the row: its kind, then its text.
+    var spokenDescription: String {
+        let parts: [String] = switch kind {
+        case .openTab: ["Switch to tab", title, detail]
+        case .bookmark: ["Bookmark", title, detail]
+        case .history: ["History", title, detail]
+        case .search: [title, detail]
+        case .url: ["Go to", title]
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
