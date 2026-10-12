@@ -137,10 +137,12 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
         WebInspector.show(background)
     }
 
-    /// Manifest problems found at load, plus WebKit's parse-time and runtime errors so far.
+    /// Manifest problems found at load, plus WebKit's parse-time and runtime errors so far (minus the read-only
+    /// assignment errors the compat prelude's pinned globals cause on purpose).
     @objc private func showProblems(_ sender: Any?) {
         guard let ext = ext(sender) else { return }
-        let lines = (ext.problems + ext.context.errors.map(\.localizedDescription)).map { ExtensionPermissionText.sanitize($0, max: 240) }
+        let runtime = ext.context.errors.map(\.localizedDescription).filter { !host.isPreludeNoise($0, extension: ext.name) }
+        let lines = (ext.problems + runtime).map { ExtensionPermissionText.sanitize($0, max: 240) }
         let alert = NSAlert()
         alert.messageText = "\(ext.displayName) \(ext.version)"
         alert.informativeText = lines.isEmpty ? "No problems." : lines.joined(separator: "\n")

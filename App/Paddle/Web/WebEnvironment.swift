@@ -47,7 +47,23 @@ final class WebEnvironment {
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         c.allowsAirPlayForMediaPlayback = true
         c.webExtensionController = extensionController
+        Self.enableWebFeatures(c.preferences)
         return c
+    }
+
+    /// WebKit features Chrome and Firefox ship on that WebKit ships off: `requestIdleCallback`, which extensions
+    /// (Proton Pass's form detector) and some sites call without a fallback. Private `_setEnabled:forFeature:`,
+    /// guarded; without it nothing changes (the extension prelude has a stand-in).
+    private static func enableWebFeatures(_ preferences: WKPreferences) {
+        let listSelector = NSSelectorFromString("_features"), setSelector = NSSelectorFromString("_setEnabled:forFeature:")
+        guard (WKPreferences.self as AnyObject).responds(to: listSelector), preferences.responds(to: setSelector),
+              let features = (WKPreferences.self as AnyObject).perform(listSelector)?.takeUnretainedValue() as? [NSObject]
+        else { return }
+        typealias SetFeature = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
+        let setFeature = unsafeBitCast(preferences.method(for: setSelector), to: SetFeature.self)
+        for feature in features where (feature.value(forKey: "key") as? String) == "RequestIdleCallbackEnabled" {
+            setFeature(preferences, setSelector, true, feature)
+        }
     }
 
     /// The configuration extension pages (popups, options pages, backgrounds) derive from: the browsing data store,
@@ -58,6 +74,7 @@ final class WebEnvironment {
         c.websiteDataStore = dataStore
         c.applicationNameForUserAgent = applicationName
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
+        Self.enableWebFeatures(c.preferences)
         return c
     }
 

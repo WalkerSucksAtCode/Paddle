@@ -33,6 +33,9 @@ final class ExtensionPopupPresenter {
     private var lastClose: (contextID: String, at: Date)?
     /// Installed on a popup web view only when WebKit left that delegate unset.
     private let fallbackDelegate = ExtensionPopupWebDelegate()
+    /// Stands in front of WebKit's own UI delegate on the shown popup when that delegate doesn't answer
+    /// `window.close()`; the web view holds its delegate weakly, so the presenter keeps the proxy alive.
+    private var closeProxy: ExtensionPopupCloseProxy?
 
     private var closeObserver: (any NSObjectProtocol)?
     /// The toolbar button that was just clicked, so its popup anchors there and not on another copy of the button.
@@ -191,6 +194,28 @@ final class ExtensionPopupPresenter {
             webView.navigationDelegate = fallbackDelegate
             log.notice("popup web view had no navigation delegate; Paddle's fallback opens its web links as tabs")
         }
+        // The popup's `window.close()` must close the popover (Proton Pass closes itself after "Sign in"). WebKit's
+        // delegate normally handles `webViewDidClose:` itself; when the one installed doesn't, a proxy answers it
+        // and forwards everything else to that delegate untouched.
+        let closeSelector = #selector(WKUIDelegate.webViewDidClose(_:))
+        if let upstream = webView.uiDelegate, !(upstream is ExtensionPopupCloseProxy), !(upstream is ExtensionPopupWebDelegate),
+           !upstream.responds(to: closeSelector) {
+            let proxy = ExtensionPopupCloseProxy(upstream: upstream)
+            closeProxy = proxy
+            webView.uiDelegate = proxy
+            log.notice("popup web view's UI delegate doesn't handle window.close(); Paddle's proxy closes the popover")
+        }
+    }
+
+    /// The popup page called `window.close()`: the popup closes through its action, then the popover itself in
+    /// case WebKit no longer tracks it.
+    func popupRequestedClose(_ webView: WKWebView) {
+        guard let shownAction, shownAction.popupWebView === webView else { return }
+        shownAction.closePopup()
+        if let shownPopover, shownPopover.isShown { shownPopover.close() }
+        shownPopover = nil
+        self.shownAction = nil
+        shownContextID = nil
     }
 
     /// The popover's window becomes key and the web view first responder, so typing goes to the popup at once.
@@ -232,6 +257,34 @@ final class ExtensionPopupWebDelegate: NSObject, WKUIDelegate, WKNavigationDeleg
     ) -> WKWebView? {
         if let url = navigationAction.request.url, Self.isWebPage(url) { openAsTab(url) }
         return nil
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        AppModel.shared.extensions.popups.popupRequestedClose(webView)
+    }
+}
+
+/// A UI delegate that answers `webViewDidClose:` for a popup and hands every other delegate call to WebKit's own
+/// delegate, which it stands in front of (the proxy answers `respondsToSelector:` for whatever the upstream does).
+final class ExtensionPopupCloseProxy: NSObject, WKUIDelegate {
+    /// WebKit's delegate: owned by the action, so a weak reference; read from ObjC forwarding, off the main actor.
+    nonisolated(unsafe) private weak var upstream: (any WKUIDelegate)?
+
+    init(upstream: any WKUIDelegate) {
+        self.upstream = upstream
+    }
+
+    func webViewDidClose(_ webView: WKWebView) {
+        AppModel.shared.extensions.popups.popupRequestedClose(webView)
+    }
+
+    nonisolated override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || (upstream?.responds(to: aSelector) ?? false)
+    }
+
+    nonisolated override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        guard let upstream, upstream.responds(to: aSelector) else { return super.forwardingTarget(for: aSelector) }
+        return upstream
     }
 }
 

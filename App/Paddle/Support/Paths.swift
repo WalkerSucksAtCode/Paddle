@@ -23,6 +23,8 @@ enum Paths {
     static let extensionPermissions = support.appending(path: "extension-permissions.json")
     /// Per-install salt for extension ids; created once.
     static let extensionSalt = support.appending(path: "extension-id-salt")
+    /// Patched clones of extensions that need the compat prelude, one folder per extension, remade when the source changes.
+    static let extensionOverlays = support.appending(path: "extension-overlays", directoryHint: .isDirectory)
 
     /// Creates the folder layout and starter files on first launch. Never overwrites existing files.
     static func ensure() {

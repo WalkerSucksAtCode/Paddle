@@ -76,6 +76,8 @@ final class ExtensionHost {
     @ObservationIgnored private var scanProblems: [String: String] = [:]
     /// Folder name to status text, from the last load, reconcile or reload.
     @ObservationIgnored private var status: [String: String] = [:]
+    /// Folder name to the compat overlay it was loaded from (none: loaded from its own folder).
+    @ObservationIgnored private var overlays: [String: ExtensionOverlayResult] = [:]
     /// Windows the host knows about, oldest first. Tracked even while there is no controller, so a controller made
     /// later can be told about them.
     @ObservationIgnored private var registeredWindows: [Weak<BrowserWindowController>] = []
@@ -287,6 +289,7 @@ final class ExtensionHost {
                 log.info("loadAll start: \(self.entries.count) entries")
                 status = [:]
                 notes = []
+                pruneOverlays()
                 let hadController = controller != nil
                 let pending = await loadEntries(entries, config: config)
                 loadsDone.resume()
@@ -306,6 +309,7 @@ final class ExtensionHost {
             rescan()
             status = [:]
             notes = []
+            pruneOverlays()
             let hadController = controller != nil
 
             for ext in loaded {
@@ -352,6 +356,7 @@ final class ExtensionHost {
             rescan()
             status = [:]
             notes = []
+            pruneOverlays()
             for ext in loaded { unload(ext, closingTabs: false) }
             let hadController = controller != nil
             let pending = await loadEntries(entries, config: config)
@@ -470,9 +475,11 @@ final class ExtensionHost {
                 status[entry.name] = "failed: extension path is not absolute"
                 continue
             }
+            // Step 0: extensions not built for Safari load from a patched clone that runs the compat prelude first.
+            let (loadRoot, overlayProblem) = await prepareOverlay(for: entry)
             let webExtension: WKWebExtension
             do {
-                webExtension = try await WKWebExtension(resourceBaseURL: entry.root)
+                webExtension = try await WKWebExtension(resourceBaseURL: loadRoot)
             } catch {
                 let reason = error.localizedDescription
                 status[entry.name] = "failed: \(reason)"
@@ -491,7 +498,7 @@ final class ExtensionHost {
                 continue
             }
 
-            let missing = manifest.missingFiles(in: entry.root)
+            let missing = manifest.missingFiles(in: loadRoot)
             if let first = missing.background.first {
                 // A missing service worker hangs the background with no error, so it never gets that far.
                 status[entry.name] = "background file \(first) missing, not loaded"
@@ -501,7 +508,8 @@ final class ExtensionHost {
                 continue
             }
 
-            var problems = webExtension.errors.map(\.localizedDescription)
+            var problems = webExtension.errors.map(\.localizedDescription).filter { !isPreludeNoise($0, extension: entry.name) }
+            if let overlayProblem { problems.append(overlayProblem) }
             problems += missing.other.map { "file \($0) missing" }
             let supported = Set((webExtension.requestedPermissions.union(webExtension.optionalPermissions)).map(\.rawValue))
             let dropped = manifest.unsupportedPermissions(supported: supported)
@@ -597,8 +605,54 @@ final class ExtensionHost {
 
     private func loadedStatus(_ ext: LoadedExtension) -> String {
         var line = "\(ext.displayName) \(ext.version), loaded"
+        if let overlay = overlays[ext.name] { line += ", \(overlay.statusText)" }
         if !ext.problems.isEmpty { line += ", \(ext.problems.count) problem\(ext.problems.count == 1 ? "" : "s")" }
         return line
+    }
+
+    // MARK: - Compat overlay
+
+    /// Step 0 of the load pipeline: an extension not built for Safari loads from a patched clone of its folder
+    /// under `extension-overlays/` (the prelude first in its background scripts and its own content scripts), kept
+    /// while the folder is unchanged. The file work runs off the main actor: a folder on another volume is copied in
+    /// full. Returns the folder to load from, plus a problem line when the overlay couldn't be made and the original
+    /// folder is used. Identity, permissions and storage are keyed by the folder name, so the overlay changes none
+    /// of them.
+    private func prepareOverlay(for entry: ExtensionEntry) async -> (root: URL, problem: String?) {
+        overlays[entry.name] = nil
+        let overlaysFolder = Paths.extensionOverlays
+        // A folder that is itself an overlay (a symlink into extension-overlays/) can't be cloned over itself.
+        guard !entry.root.path.hasPrefix(overlaysFolder.path + "/") else { return (entry.root, nil) }
+        let source = entry.root
+        let name = entry.name
+        let made = await Task.detached(priority: .userInitiated) {
+            Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder) }
+        }.value
+        switch made {
+        case .success(nil):
+            return (entry.root, nil)
+        case .success(let overlay?):
+            overlays[entry.name] = overlay
+            let how = overlay.reused ? "kept" : (overlay.copiedBytes == nil ? "cloned" : "copied")
+            log.info("\(entry.name, privacy: .public): overlay \(how, privacy: .public), \(overlay.statusText, privacy: .public)")
+            return (overlay.root, nil)
+        case .failure(let error):
+            log.error("\(entry.name, privacy: .public): compat overlay not made: \(error.localizedDescription, privacy: .public)")
+            return (entry.root, "compat overlay not made (\(error.localizedDescription)); loaded unpatched")
+        }
+    }
+
+    /// A read-only assignment error from an extension that runs the compat prelude: its pinned `browser` / `chrome`
+    /// globals cause these on purpose. JavaScriptCore's message doesn't name the property, so extensions without the
+    /// prelude keep every such error.
+    func isPreludeNoise(_ error: String, extension name: String) -> Bool {
+        overlays[name]?.runsPrelude == true && ExtensionCompat.isHarmlessError(error)
+    }
+
+    /// Overlays of folders that are gone from `extensions/` are deleted; the rest are checked against their source
+    /// when their extension loads again.
+    private func pruneOverlays() {
+        ExtensionOverlay.prune(in: Paths.extensionOverlays, keeping: Set(entries.map(\.name)))
     }
 
     /// Unloads one extension. Its open pages close (removed or turned off) or sleep until it is back (reload).
