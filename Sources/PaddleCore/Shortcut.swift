@@ -56,6 +56,9 @@ public struct Shortcut: Sendable, Hashable {
         "_": "-", "+": "=", "{": "[", "}": "]", "|": "\\", ":": ";", "\"": "'", "<": ",", ">": ".", "?": "/",
     ]
 
+    /// True when `key` is itself a shifted character (`"+"`, `"{"`), which needs Shift to type.
+    public static func isShiftedPunctuation(_ key: String) -> Bool { shiftedPunctuation[key] != nil }
+
     /// Self with shifted punctuation turned into its base key when Shift is set (`"{"` → `"["`), the form the
     /// validator's duplicate check, `configText` and the menu all use. Without Shift, `"+"` stays `"+"` (`"cmd++"`).
     var canonical: Shortcut {

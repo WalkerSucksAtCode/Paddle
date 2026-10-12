@@ -397,6 +397,37 @@ final class ExtensionHost {
         }.value
     }
 
+    /// Settings > Extensions' Ask About Permissions Again: the same as `askAgain(_:)` for a running extension, and
+    /// for one that isn't running (declined, or waiting) it forgets the answers and asks before loading. Does
+    /// nothing for a folder turned off in config.json or while the permissions file is unreadable, and the answers
+    /// are only erased from the file once the folder has loaded far enough to show the prompt that replaces them.
+    func askAgain(folder: String) async {
+        await enqueue { [self] in
+            let config = AppModel.shared.config
+            guard decisionsError == nil, config.isExtensionEnabled(folder) else { return }
+            let current = loaded.first { $0.name == folder }
+            guard let entry = current?.entry ?? entries.first(where: { $0.name == folder }) else { return }
+            loadInProgress = true
+            // Forgotten in memory only so the load pipeline asks; written once a prompt is actually pending, and
+            // put back if the folder fails to load first.
+            let saved = decisions.byFolder[folder]
+            decisions.forget(folder: folder)
+            deniedThisSession[folder] = nil
+            autoDenied[folder] = nil
+            if let current { unload(current, closingTabs: false) }
+            let hadController = controller != nil
+            let pending = await loadEntries([entry], config: config)
+            if pending.contains(where: { $0.entry.name == folder }) {
+                writeDecisions()
+            } else if let saved {
+                decisions.set(folder: folder, saved)
+            }
+            for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
+            if !hadController, controller != nil { await reloadTabsForController() }
+            finishLoad()
+        }.value
+    }
+
     /// Items whose answer in the permissions file differs from what the running context holds: a hand edit since it
     /// loaded. Grants with an expiry (`activeTab` on a click) don't count, nativeMessaging is always denied, and
     /// unknown permission names and patterns WebKit can't parse are skipped, as loading skips them.
@@ -1075,4 +1106,72 @@ final class ExtensionHost {
     func dismissBanner() {
         bannerText = nil
     }
+
+    // MARK: - Settings
+
+    /// Every folder in `extensions/` as Settings > Extensions shows it, running or not, sorted by folder name. Built
+    /// from the host's state each time it is read (answers can change while an extension runs); the folder list and
+    /// status change with each load, reconcile or reload, which also changes `statusLines`.
+    var folderSummaries: [ExtensionFolderSummary] {
+        Set(entries.map(\.name)).union(scanProblems.keys).sorted().map { name in
+            let ext = loaded.first { $0.name == name }
+            let record = decisionsError == nil ? decisions.byFolder[name] : nil
+            var notes: [String] = []
+            if let overlay = overlays[name] { notes.append(overlay.statusText) }
+            if let ext { notes += ext.problems.map { ExtensionPermissionText.sanitize($0, max: 240) } }
+            let access: ExtensionFolderSummary.Access =
+                if decisionsError != nil { .unreadable } else if let record { record.isFullyDeclined ? .declined : .allowed(Self.accessLines(record)) } else { .notAsked }
+            return ExtensionFolderSummary(
+                folder: name,
+                displayName: ext?.displayName ?? record.map { ExtensionPermissionText.sanitize($0.name) } ?? ExtensionPermissionText.sanitize(name),
+                version: ext?.version ?? record.map { ExtensionPermissionText.sanitize($0.version, max: 24) } ?? "",
+                root: entries.first { $0.name == name }?.root,
+                isLoaded: ext != nil,
+                status: ext != nil ? "Running" : ExtensionPermissionText.sanitize(status[name] ?? "Not loaded", max: 240),
+                access: access,
+                compatNotes: notes,
+                hasOptionsPage: ext?.context.optionsPageURL != nil
+            )
+        }
+    }
+
+    /// What an allowed extension's record lets it reach, in the install prompt's words.
+    private static func accessLines(_ record: ExtensionSnapshot) -> [String] {
+        let permissions = Set(record.permissions.filter { $0.value == .allow }.keys)
+        let hosts = Set(record.hosts.filter { $0.value == .allow }.keys)
+        let onClick = record.hosts.contains { $0.value == .click }
+        var lines = onClick && permissions.isEmpty && hosts.isEmpty ? [] : ExtensionPermissionText.lines(permissions: permissions, hosts: hosts)
+        if onClick { lines.insert("Sites only when you click its button", at: 0) }
+        return lines
+    }
+}
+
+/// One folder of `extensions/` for Settings: who it is, whether it runs, and what it was allowed.
+struct ExtensionFolderSummary: Identifiable, Equatable {
+    enum Access: Equatable {
+        /// No answer recorded yet (never prompted, or Ask Again pending).
+        case notAsked
+        /// The permissions file can't be read, so no folder's answers are known.
+        case unreadable
+        /// Don't Allow: it doesn't load.
+        case declined
+        /// The allowed items, one line each.
+        case allowed([String])
+    }
+
+    /// Folder name: the key in config.json's `extensions` and in the permissions file.
+    let folder: String
+    let displayName: String
+    let version: String
+    /// The folder holding `manifest.json`; nil when the scan found no loadable extension there.
+    let root: URL?
+    let isLoaded: Bool
+    /// "Running", or why it isn't ("off in config.json", "permissions declined", a load failure).
+    let status: String
+    let access: Access
+    /// The compat overlay's status and the running extension's problems (permissions WebKit drops included).
+    let compatNotes: [String]
+    let hasOptionsPage: Bool
+
+    var id: String { folder }
 }

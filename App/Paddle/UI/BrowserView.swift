@@ -149,6 +149,9 @@ private struct TabButton: View {
     let model: BrowserModel
     let width: CGFloat
     @State private var hovering = false
+    /// The tab's memory when the pointer arrived, for the tooltip. Read in the hover handler rather than in
+    /// `body`, so a new sample doesn't redraw every tab button.
+    @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
 
     private var isSelected: Bool { model.selectedID == tab.id }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
@@ -201,7 +204,10 @@ private struct TabButton: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { model.select(tab) }
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            if inside { hoverMemory = tab.memoryBytes.map { ($0, tab.sharesProcess) } }
+        }
         .help(tooltip)
         .draggable(tab.id.uuidString)
         .dropDestination(for: String.self) { items, _ in
@@ -262,10 +268,46 @@ private struct TabButton: View {
         }
         if !tab.isAwake {
             lines.append("Asleep: no memory used. Click to wake.")
-        } else if let bytes = tab.memoryBytes {
-            lines.append("Memory: \(ProcessMemory.format(bytes))\(tab.sharesProcess ? " (shared with other tabs from this site)" : "")")
+        } else if let hoverMemory {
+            lines.append("Memory: \(ProcessMemory.format(hoverMemory.bytes))\(hoverMemory.shared ? " (shared with other tabs from this site)" : "")")
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+// MARK: - Memory readout
+
+/// The toolbar's memory readout: this tab · all of Paddle, and the Activity popover. Its own view so a new
+/// sample redraws only this label, not the address field and the rest of the toolbar.
+private struct MemoryButton: View {
+    let app: AppModel
+    let model: BrowserModel
+    @State private var showActivity = false
+
+    var body: some View {
+        Button {
+            showActivity.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Glyph(name: "surf-memory")
+                Text(label)
+            }
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .frame(height: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help("Memory: this tab · all of Paddle. Click for details.")
+        .popover(isPresented: $showActivity, arrowEdge: .bottom) {
+            ActivityView(app: app, browser: model)
+        }
+    }
+
+    private var label: String {
+        let current = model.selectedTab?.memoryBytes.map(ProcessMemory.format) ?? "–"
+        return "\(current) · \(ProcessMemory.format(app.totalWebMemory))"
     }
 }
 
@@ -278,7 +320,6 @@ private struct NavigationBar: View {
     @State private var addressSelection: TextSelection?
     /// Set while Paddle itself writes an inline completion, so that edit isn't treated as typing.
     @State private var applyingCompletion = false
-    @State private var showActivity = false
     @State private var showDownloads = false
 
     private var tab: Tab? { model.selectedTab }
@@ -303,7 +344,7 @@ private struct NavigationBar: View {
                 ExtensionToolbar(host: app.extensions, tab: tab)
             }
             if app.config.showTabMemory {
-                memoryButton
+                MemoryButton(app: app, model: model)
             }
             if !app.downloads.items.isEmpty {
                 downloadsButton
@@ -401,32 +442,6 @@ private struct NavigationBar: View {
         case "http": return "exclamationmark.triangle"
         default: return "magnifyingglass"
         }
-    }
-
-    private var memoryButton: some View {
-        Button {
-            showActivity.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Glyph(name: "surf-memory")
-                Text(memoryLabel)
-            }
-            .font(.system(size: 11).monospacedDigit())
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .frame(height: 24)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .help("Memory: this tab · all of Paddle. Click for details.")
-        .popover(isPresented: $showActivity, arrowEdge: .bottom) {
-            ActivityView(app: app, browser: model)
-        }
-    }
-
-    private var memoryLabel: String {
-        let current = tab?.memoryBytes.map(ProcessMemory.format) ?? "–"
-        return "\(current) · \(ProcessMemory.format(app.totalWebMemory))"
     }
 
     private var downloadsButton: some View {

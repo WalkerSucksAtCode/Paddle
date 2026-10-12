@@ -40,12 +40,15 @@ public struct ProcessBreakdown: Equatable, Sendable {
     public var app: UInt64 = 0
     /// WebContent processes with no attributable view and no workers: back-forward cache, prewarmed, exiting.
     public var other: UInt64 = 0
+    /// Processes macOS holds Paddle responsible for that WebKit didn't report: AutoFill, audio and other helpers
+    /// (and, when WebKit's process list is unavailable, every WebContent process no tab claimed).
+    public var helpers: UInt64 = 0
     /// Sum over the WebContent processes hosting each tab's view.
     public var perTab: [UUID: UInt64] = [:]
     /// Tabs whose process also hosts another tab, so `perTab` is a shared total.
     public var sharedTabs: Set<UUID> = []
 
-    public var total: UInt64 { tabs + extensions + serviceWorkers + shared + app + other }
+    public var total: UInt64 { tabs + extensions + serviceWorkers + shared + app + other + helpers }
 
     public init() {}
 
@@ -55,12 +58,17 @@ public struct ProcessBreakdown: Equatable, Sendable {
     ///   - gpu: the GPU process footprint, if WebKit reported one.
     ///   - networking: footprints of the networking processes.
     ///   - app: the UI process footprint.
+    ///   - helpers: footprints of every process Paddle is responsible for, by pid (the app itself left out).
+    ///     Pids already counted, as WebContent processes or in `reported` (GPU, Networking), are skipped.
+    ///   - reported: pids of the shared processes `gpu` and `networking` came from.
     public static func aggregate<View>(
         processes: [WebContentProcess<View>],
         owners: [View: ViewOwner],
         gpu: UInt64? = nil,
         networking: [UInt64] = [],
-        app: UInt64? = nil
+        app: UInt64? = nil,
+        helpers: [Int32: UInt64] = [:],
+        reported: Set<Int32> = []
     ) -> ProcessBreakdown {
         var result = ProcessBreakdown()
         var seen: Set<Int32> = []
@@ -88,6 +96,25 @@ public struct ProcessBreakdown: Equatable, Sendable {
         }
         result.shared = (gpu ?? 0) + networking.reduce(0, +)
         result.app = app ?? 0
+        for (pid, footprint) in helpers where !seen.contains(pid) && !reported.contains(pid) {
+            result.helpers += footprint
+        }
+        return result
+    }
+
+    /// Every figure rounded to the nearest `unit` (whole MB by default), so a sampler can skip assigning a
+    /// breakdown that only moved by a few pages and leave the views showing it alone.
+    public func rounded(toMultipleOf unit: UInt64 = 1_048_576) -> ProcessBreakdown {
+        func round(_ bytes: UInt64) -> UInt64 { (bytes + unit / 2) / unit * unit }
+        var result = self
+        result.tabs = round(tabs)
+        result.extensions = round(extensions)
+        result.serviceWorkers = round(serviceWorkers)
+        result.shared = round(shared)
+        result.app = round(app)
+        result.other = round(other)
+        result.helpers = round(helpers)
+        result.perTab = perTab.mapValues(round)
         return result
     }
 }

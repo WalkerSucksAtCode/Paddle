@@ -35,6 +35,9 @@ final class SettingsModel {
     /// The decoded file as last read or written here. Panes show these values, not `AppModel.config`, so a hand
     /// edit shows up even before it is applied.
     private(set) var file: PaddleConfig
+    /// The tallest a pane's form may be before it scrolls, from the screen the Settings window is on
+    /// (`SettingsWindowController`).
+    var maxPaneHeight: CGFloat = 640
     private(set) var banner: Banner? {
         didSet {
             guard banner != oldValue, let banner else { return }
@@ -48,8 +51,9 @@ final class SettingsModel {
         return false
     }
 
-    /// The bytes edits are based on (what `file` was decoded from).
-    @ObservationIgnored private var base = Data()
+    /// The bytes edits are based on (what `file` was decoded from). Observed so Advanced's unknown-key and Tidy
+    /// lists follow edits that don't change the decoded config.
+    private(set) var base = Data()
     @ObservationIgnored private var baseStamp: ConfigStamp?
     /// The edit a conflict refused, for Save Mine.
     @ObservationIgnored private var pendingChanges: [ConfigChange] = []
@@ -121,14 +125,16 @@ final class SettingsModel {
     // MARK: - Writing
 
     /// Saves `changes` against the bytes the panes were showing. Never reports success the file didn't get.
-    func save(_ changes: [ConfigChange]) async {
+    /// `snapshot` is the `base` a draft started from (a text field being typed in): a hand edit to the same key
+    /// since then is a conflict even though the watcher has re-read the file meanwhile.
+    func save(_ changes: [ConfigChange], basedOn snapshot: Data? = nil) async {
         guard !changes.isEmpty else { return }
-        await serialized { await self.write(changes) }
+        await serialized { await self.write(changes, basedOn: snapshot) }
     }
 
-    private func write(_ changes: [ConfigChange]) async {
+    private func write(_ changes: [ConfigChange], basedOn snapshot: Data? = nil) async {
         guard !controlsDisabled else { return }
-        switch await AppModel.shared.writeConfig(changes, base: base) {
+        switch await AppModel.shared.writeConfig(changes, base: snapshot ?? base) {
         case .written(let config, let data, let stamp):
             file = config
             base = data

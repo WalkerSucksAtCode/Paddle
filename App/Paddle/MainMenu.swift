@@ -7,6 +7,10 @@ import PaddleCore
 enum MainMenu {
     private static var itemsByName: [String: NSMenuItem] = [:]
     private static var defaultShortcuts: [String: (String, NSEvent.ModifierFlags)] = [:]
+    /// Action names in menu order, for Settings > Shortcuts.
+    private static var order: [String] = []
+    /// Hidden second shortcuts by the action they belong to (⇧⌘] for `nextTab`); `shortcuts` never changes them.
+    private static var aliases: [String: [(String, NSEvent.ModifierFlags)]] = [:]
     private static let log = Logger(subsystem: "com.walker.Paddle", category: "menu")
 
     static var actionNames: [String] { itemsByName.keys.sorted() }
@@ -175,15 +179,22 @@ enum MainMenu {
     /// command is bound to the same key. Items of the Extensions menu's extension submenus exist only while it is
     /// open, so they never match.
     static func usesKeyEquivalent(_ key: String?, modifiers: NSEvent.ModifierFlags) -> Bool {
-        guard let key, !key.isEmpty, let menu = NSApp.mainMenu else { return false }
-        let target = normalized(key, modifiers)
-        func search(_ menu: NSMenu) -> Bool {
-            menu.items.contains { item in
-                if !item.keyEquivalent.isEmpty, normalized(item.keyEquivalent, item.keyEquivalentModifierMask) == target { return true }
-                return item.submenu.map(search) ?? false
+        guard let key, !key.isEmpty else { return false }
+        return !items(matching: normalized(key, modifiers)).isEmpty
+    }
+
+    /// Every menu item, hidden ones included, whose key equivalent is `target`.
+    private static func items(matching target: KeyEquivalent) -> [NSMenuItem] {
+        guard let menu = NSApp.mainMenu else { return [] }
+        var found: [NSMenuItem] = []
+        func search(_ menu: NSMenu) {
+            for item in menu.items {
+                if !item.keyEquivalent.isEmpty, normalized(item.keyEquivalent, item.keyEquivalentModifierMask) == target { found.append(item) }
+                if let submenu = item.submenu { search(submenu) }
             }
         }
-        return search(menu)
+        search(menu)
+        return found
     }
 
     private struct KeyEquivalent: Equatable {
@@ -193,8 +204,71 @@ enum MainMenu {
 
     private static func normalized(_ key: String, _ modifiers: NSEvent.ModifierFlags) -> KeyEquivalent {
         var flags = modifiers.intersection([.command, .shift, .option, .control])
+        if key != key.lowercased() || Shortcut.isShiftedPunctuation(key) { flags.insert(.shift) }
+        // In `Shortcut`'s canonical form, so shifted punctuation is its base key ("{" and "[" with ⇧⌘ are one key)
+        // and a control character is its name ("\t" is "tab"). Keys `Shortcut` can't name compare as written.
+        let base = Shortcut(key: key, modifiers: shortcutModifiers(flags))?.key ?? key.lowercased()
+        return KeyEquivalent(key: base, modifiers: flags.rawValue)
+    }
+
+    private static func shortcutModifiers(_ flags: NSEvent.ModifierFlags) -> Shortcut.Modifiers {
+        var modifiers: Shortcut.Modifiers = []
+        if flags.contains(.command) { modifiers.insert(.command) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.control) { modifiers.insert(.control) }
+        return modifiers
+    }
+
+    // MARK: - Settings
+
+    /// Every action name in menu order (`actionNames` is alphabetical).
+    static var actionNamesInMenuOrder: [String] { order }
+
+    /// The command's menu title as it reads now, and the menu it is in.
+    static func title(for name: String) -> String? { itemsByName[name]?.title }
+    static func menuTitle(for name: String) -> String? { itemsByName[name]?.menu?.title }
+
+    /// The shortcut an action has without config.json (an empty key: none). Nil for an unknown name.
+    static func defaultShortcut(for name: String) -> Shortcut? {
+        guard let (key, modifiers) = defaultShortcuts[name] else { return nil }
+        return shortcut(key, modifiers)
+    }
+
+    /// The hidden second shortcuts an action keeps whatever `shortcuts` says (⇧⌘] for `nextTab`).
+    static func aliasShortcuts(for name: String) -> [Shortcut] {
+        (aliases[name] ?? []).compactMap { shortcut($0.0, $0.1) }
+    }
+
+    /// Each action's default and hidden shortcuts, for `ConfigValidator.issues(_:actionNames:defaults:)`.
+    static var validatorDefaults: [String: [Shortcut]] {
+        Dictionary(uniqueKeysWithValues: order.map { name in
+            (name, [defaultShortcut(for: name)].compactMap { $0 } + aliasShortcuts(for: name))
+        })
+    }
+
+    /// Menu items other than action `name`'s own (and its hidden second shortcuts) that respond to `shortcut`
+    /// now, hidden ones included: the action name (nil for a hidden second shortcut) and the title.
+    static func conflicts(with shortcut: Shortcut, excluding name: String) -> [(name: String?, title: String)] {
+        guard !shortcut.key.isEmpty else { return [] }
+        var modifiers: NSEvent.ModifierFlags = []
+        if shortcut.command { modifiers.insert(.command) }
+        if shortcut.shift { modifiers.insert(.shift) }
+        if shortcut.option { modifiers.insert(.option) }
+        if shortcut.control { modifiers.insert(.control) }
+        let own = itemsByName[name]
+        return items(matching: normalized(keyEquivalent(for: shortcut.key), modifiers)).compactMap { item in
+            if item === own || (item.isHidden && own != nil && item.action == own?.action && item.menu === own?.menu) { return nil }
+            return (item.isHidden ? nil : item.identifier?.rawValue, item.title)
+        }
+    }
+
+    /// A key equivalent as a `Shortcut`; an uppercase letter implies Shift.
+    private static func shortcut(_ key: String, _ modifiers: NSEvent.ModifierFlags) -> Shortcut? {
+        guard !key.isEmpty else { return Shortcut(key: "") }
+        var flags = modifiers
         if key != key.lowercased() { flags.insert(.shift) }
-        return KeyEquivalent(key: key.lowercased(), modifiers: flags.rawValue)
+        return Shortcut(key: key, modifiers: shortcutModifiers(flags))
     }
 
     // MARK: - Helpers
@@ -222,6 +296,7 @@ enum MainMenu {
         item.target = target
         item.identifier = NSUserInterfaceItemIdentifier(name)
         menu.addItem(item)
+        if itemsByName[name] == nil { order.append(name) }
         itemsByName[name] = item
         defaultShortcuts[name] = (key, item.keyEquivalentModifierMask)
         return item
@@ -234,5 +309,8 @@ enum MainMenu {
         item.isHidden = true
         item.allowsKeyEquivalentWhenHidden = true
         menu.addItem(item)
+        if let name = itemsByName.first(where: { $0.value.action == action && $0.value.menu === menu })?.key {
+            aliases[name, default: []].append((key, modifiers))
+        }
     }
 }

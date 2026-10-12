@@ -60,9 +60,12 @@ struct SettingsBanner: View {
             }
         case .unapplied:
             Button("Apply Now") { Task { await model.applyNow() } }
-        case .conflict:
+        case .conflict(let paths):
+            let keys = paths.map { $0.joined(separator: ".") }.joined(separator: ", ")
             Button("Use the File's Value") { model.useFilesValue() }
+                .help("Keeps config.json as it is and shows its value for \(keys) here")
             Button("Save Mine") { Task { await model.saveMine() } }
+                .help("Writes your value for \(keys) over the one in config.json")
         case .writeFailed:
             Button("Edit config.json…") { SettingsBanner.editConfig() }
             Button("Dismiss") { model.dismissFailure() }

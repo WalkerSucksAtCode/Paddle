@@ -73,20 +73,34 @@ final class WebEnvironment {
         privateDataStore = nil
     }
 
-    /// WebKit features Chrome and Firefox ship on that WebKit ships off: `requestIdleCallback`, which extensions
-    /// (Proton Pass's form detector) and some sites call without a fallback. Private `_setEnabled:forFeature:`,
-    /// guarded; without it nothing changes (the extension prelude has a stand-in).
+    /// WebKit features Paddle turns on that WebKit ships off:
+    /// - `requestIdleCallback`, which Chrome and Firefox ship and extensions (Proton Pass's form detector) and some
+    ///   sites call without a fallback (the extension prelude has a stand-in);
+    /// - `HiddenPageDOMTimerThrottlingAutoIncreases`, so timers in hidden pages are throttled harder the longer
+    ///   they stay hidden (WebKit already throttles them; this lets the interval grow).
+    /// Private `_setEnabled:forFeature:`, guarded; without it nothing changes.
     private static func enableWebFeatures(_ preferences: WKPreferences) {
-        let listSelector = NSSelectorFromString("_features"), setSelector = NSSelectorFromString("_setEnabled:forFeature:")
-        guard (WKPreferences.self as AnyObject).responds(to: listSelector), preferences.responds(to: setSelector),
-              let features = (WKPreferences.self as AnyObject).perform(listSelector)?.takeUnretainedValue() as? [NSObject]
-        else { return }
+        let setSelector = NSSelectorFromString("_setEnabled:forFeature:")
+        guard !enabledFeatures.isEmpty, preferences.responds(to: setSelector) else { return }
         typealias SetFeature = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
         let setFeature = unsafeBitCast(preferences.method(for: setSelector), to: SetFeature.self)
-        for feature in features where (feature.value(forKey: "key") as? String) == "RequestIdleCallbackEnabled" {
+        for feature in enabledFeatures {
             setFeature(preferences, setSelector, true, feature)
         }
     }
+
+    /// The `_WKFeature` objects for `enableWebFeatures`, looked up once: `+_features` builds an object for every
+    /// WebKit feature (hundreds), which is wasted work on each new web view.
+    private static let enabledFeatures: [NSObject] = {
+        let listSelector = NSSelectorFromString("_features")
+        guard (WKPreferences.self as AnyObject).responds(to: listSelector),
+              let features = (WKPreferences.self as AnyObject).perform(listSelector)?.takeUnretainedValue() as? [NSObject]
+        else { return [] }
+        let wanted: Set<String> = ["RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases"]
+        return features.filter { feature in
+            feature.responds(to: NSSelectorFromString("key")) && wanted.contains(feature.value(forKey: "key") as? String ?? "")
+        }
+    }()
 
     /// The configuration extension pages (popups, options pages, backgrounds) derive from: the browsing data store,
     /// the user agent and developer extras, and nothing else. No shared content controller, so user.css, userscripts

@@ -92,4 +92,34 @@ struct ProcessBreakdownTests {
         let result = ProcessBreakdown.aggregate(processes: [WebContentProcess(pid: 1, footprint: 5, views: [1])], owners: owners)
         #expect(result.perTab[b] == nil)
     }
+
+    @Test func helpersCountOnlyProcessesWebKitDidNotReport() {
+        let owners: [Int: ViewOwner] = [1: .tab(a)]
+        let processes = [WebContentProcess(pid: 10, footprint: 100, views: [1])]
+        // 10 is the tab's WebContent process, 20 and 21 GPU and Networking; 30 and 31 are AutoFill and audio.
+        let result = ProcessBreakdown.aggregate(
+            processes: processes, owners: owners, gpu: 16, networking: [8], app: 50,
+            helpers: [10: 100, 20: 16, 21: 8, 30: 12, 31: 5], reported: [20, 21]
+        )
+        #expect(result.helpers == 17)
+        #expect(result.total == 100 + 16 + 8 + 50 + 17)
+    }
+
+    @Test func roundingToWholeMegabytes() {
+        let mb: UInt64 = 1_048_576
+        var breakdown = ProcessBreakdown()
+        breakdown.tabs = 3 * mb + mb / 2 - 1
+        breakdown.helpers = 2 * mb + mb / 2
+        breakdown.app = 7
+        breakdown.perTab = [a: mb - 1]
+        let rounded = breakdown.rounded()
+        #expect(rounded.tabs == 3 * mb)
+        #expect(rounded.helpers == 3 * mb)
+        #expect(rounded.app == 0)
+        #expect(rounded.perTab == [a: mb])
+        // A sample that moved by a few pages rounds to the same value, so the sampler skips assigning it.
+        var next = breakdown
+        next.tabs -= 4096
+        #expect(next.rounded() == rounded)
+    }
 }

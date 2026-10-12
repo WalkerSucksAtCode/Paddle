@@ -39,6 +39,10 @@ final class AppModel {
     @ObservationIgnored private(set) var windows: [BrowserWindowController] = []
     @ObservationIgnored private var sampleTimer: Timer?
     @ObservationIgnored private var sweepTimer: Timer?
+    /// Open readouts that want the 5 s sampler even with `showTabMemory` off (Activity, Settings' memory pane).
+    @ObservationIgnored private var memoryReaders = 0
+    /// Activation and window-occlusion observers that start and stop the sampler.
+    @ObservationIgnored private var samplerObservers: [any NSObjectProtocol] = []
     @ObservationIgnored private var memoryPressureSource: (any DispatchSourceMemoryPressure)?
     @ObservationIgnored private var saveWork: DispatchWorkItem?
     @ObservationIgnored private var isRestoring = false
@@ -206,6 +210,7 @@ final class AppModel {
                     tab.sharesProcess = false
                 }
             }
+            updateSampler()
         }
         if !keys.isDisjoint(with: [.contentBlocking, .filterLists]) { await web.loadContentBlockers() }
         // A newly listed (or re-enabled) list has no file yet, so it is due now rather than at the hourly check.
@@ -433,6 +438,7 @@ final class AppModel {
 
     func windowClosed(_ controller: BrowserWindowController) {
         windows.removeAll { $0 === controller }
+        updateSampler()
         if controller.model.isPrivate, !windows.contains(where: { $0.model.isPrivate }) {
             // The private session ends: a new private window starts with an empty data store.
             web.endPrivateSession()
@@ -529,10 +535,15 @@ final class AppModel {
     // MARK: - Memory: sampling, sleeping, pressure
 
     private func startMonitoring() {
-        sampleTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-            MainActor.assumeIsolated { AppModel.shared.measureMemory() }
+        // The sampler runs only while its numbers can be seen; these notifications start and stop it.
+        let center = NotificationCenter.default
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification, NSWindow.didChangeOcclusionStateNotification] {
+            samplerObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { AppModel.shared.updateSampler() }
+            })
         }
-        sweepTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+        updateSampler()
+        let sweep = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
             MainActor.assumeIsolated {
                 let app = AppModel.shared
                 app.sweepSleepingTabs()
@@ -540,6 +551,9 @@ final class AppModel {
                 if Date().timeIntervalSince(app.lastFilterCheck) > 3_600 { Task { await app.updateFilterListsIfDue() } }
             }
         }
+        // Nothing in the sweep needs to-the-second timing; tolerance lets macOS batch its wakeup with others.
+        sweep.tolerance = 10
+        sweepTimer = sweep
 
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler {
@@ -555,14 +569,46 @@ final class AppModel {
 
     /// Refreshes the readout when it is shown; UI actions (sleeping a tab) call this.
     func sampleMemory() {
-        guard config.showTabMemory else { return }
+        guard config.showTabMemory || memoryReaders > 0 else { return }
         measureMemory()
+    }
+
+    /// A readout that shows memory appeared (Activity popover, Settings' memory pane): samples now and keeps the
+    /// sampler running, with `showTabMemory` off too, until the matching `endMemoryReadout()`.
+    func beginMemoryReadout() {
+        memoryReaders += 1
+        measureMemory()
+        updateSampler()
+    }
+
+    func endMemoryReadout() {
+        memoryReaders = max(0, memoryReaders - 1)
+        updateSampler()
+    }
+
+    /// Runs the 5 s sampler only while Paddle is the active app and a number it feeds can be seen: the toolbar
+    /// readout in a browser window that isn't fully covered or minimized, or an open readout. A sampler that
+    /// (re)starts samples at once, so returning to Paddle never shows a stale figure.
+    private func updateSampler() {
+        let windowVisible = windows.contains { $0.window?.occlusionState.contains(.visible) == true }
+        let wanted = NSApp.isActive && (memoryReaders > 0 || (config.showTabMemory && windowVisible))
+        if wanted, sampleTimer == nil {
+            let timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
+                MainActor.assumeIsolated { AppModel.shared.measureMemory() }
+            }
+            timer.tolerance = 1
+            sampleTimer = timer
+            measureMemory()
+        } else if !wanted, let timer = sampleTimer {
+            timer.invalidate()
+            sampleTimer = nil
+        }
     }
 
     /// Measures every process regardless of `showTabMemory` (the sampler and, later, Settings need the breakdown
     /// either way); the per-tab numbers are only written while the readout is on. Each WebContent process goes to
-    /// the tabs whose views it hosts, else to Extensions, Service workers or Other; GPU, Networking and the app
-    /// itself are added on top.
+    /// the tabs whose views it hosts, else to Extensions, Service workers or Other; GPU, Networking, the app
+    /// itself and helpers WebKit doesn't list are added on top.
     func measureMemory() {
         let tabs = allTabs
         var owners: [ObjectIdentifier: ViewOwner] = [:]
@@ -573,6 +619,8 @@ final class AppModel {
             if let background = extensions.backgroundWebView(of: ext) { owners[ObjectIdentifier(background)] = .extensionView }
         }
 
+        // Helpers outside WebKit's list (AutoFill, audio): a fresh process scan whenever a readout is open.
+        let helpers = ProcessMemory.responsibleFootprints(rescan: memoryReaders > 0)
         let breakdown: ProcessBreakdown
         if let snapshot = ProcessMemory.snapshot() {
             // Popups (and anything else the host didn't hand us) are extension views by their URL scheme.
@@ -581,7 +629,8 @@ final class AppModel {
             }
             breakdown = ProcessBreakdown.aggregate(
                 processes: snapshot.webContent, owners: owners,
-                gpu: snapshot.gpu, networking: snapshot.networking, app: ProcessMemory.selfFootprint()
+                gpu: snapshot.gpu, networking: snapshot.networking, app: ProcessMemory.selfFootprint(),
+                helpers: helpers, reported: snapshot.reported
             )
         } else {
             // Without the process list: each tab's main-frame process only, as before, plus the app itself.
@@ -593,17 +642,24 @@ final class AppModel {
             let processes = views.map { pid, views in
                 WebContentProcess(pid: pid, footprint: ProcessMemory.footprint(of: pid) ?? 0, views: views)
             }
-            breakdown = ProcessBreakdown.aggregate(processes: processes, owners: owners, app: ProcessMemory.selfFootprint())
+            // GPU, Networking and unclaimed WebContent processes then show up under Helpers.
+            breakdown = ProcessBreakdown.aggregate(
+                processes: processes, owners: owners, app: ProcessMemory.selfFootprint(), helpers: helpers
+            )
         }
 
-        memoryBreakdown = breakdown
-        totalWebMemory = breakdown.total
-        // The per-tab numbers feed every tab button's tooltip; with the readout off, leave them alone so the
-        // sampler neither shows memory the user turned off nor invalidates the tab strip every tick.
+        // Whole MB, assigned only when they change: footprints move by a few pages every sample, and each
+        // assignment would redraw every view that shows one.
+        let rounded = breakdown.rounded()
+        if memoryBreakdown != rounded { memoryBreakdown = rounded }
+        if totalWebMemory != rounded.total { totalWebMemory = rounded.total }
+        // With the readout off, leave the per-tab numbers alone so the sampler doesn't show memory the user
+        // turned off.
         guard config.showTabMemory else { return }
         for tab in tabs {
-            tab.memoryBytes = breakdown.perTab[tab.id]
-            tab.sharesProcess = breakdown.sharedTabs.contains(tab.id)
+            let bytes = rounded.perTab[tab.id], shares = rounded.sharedTabs.contains(tab.id)
+            if tab.memoryBytes != bytes { tab.memoryBytes = bytes }
+            if tab.sharesProcess != shares { tab.sharesProcess = shares }
         }
     }
 

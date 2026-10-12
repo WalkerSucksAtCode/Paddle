@@ -64,9 +64,13 @@ struct ActivityView: View {
         }
         .padding(14)
         .frame(width: 380)
+        // Fresh numbers every 5 s while open, with a full helper scan each time.
+        .onAppear { app.beginMemoryReadout() }
+        .onDisappear { app.endMemoryReadout() }
     }
 
-    /// Where the total goes: every WebContent process lands in one row, plus the shared processes and the app.
+    /// Where the total goes: every WebContent process lands in one row, plus the shared processes, the app and
+    /// the helpers macOS holds Paddle responsible for.
     /// Rows that are empty right now (no extension running, no workers, nothing cached) are left out.
     private var breakdownRows: some View {
         let b = app.memoryBreakdown
@@ -77,6 +81,7 @@ struct ActivityView: View {
             ("Shared (GPU, Networking)", b.shared, true),
             ("Paddle app", b.app, true),
             ("Other (cached pages)", b.other, false),
+            ("Helpers", b.helpers, false),
         ]
         return VStack(alignment: .leading, spacing: 2) {
             ForEach(rows.filter { $0.2 || $0.1 > 0 }, id: \.0) { row in

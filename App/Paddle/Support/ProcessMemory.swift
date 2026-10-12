@@ -12,6 +12,8 @@ enum ProcessMemory {
         var webViews: [ObjectIdentifier: WKWebView]
         var gpu: UInt64?
         var networking: [UInt64]
+        /// Pids of the GPU and Networking processes, so the helper scan doesn't count them again.
+        var reported: Set<Int32>
     }
 
     /// `_webProcessIdentifier` is private WebKit API; this degrades to nil if it ever disappears.
@@ -52,9 +54,52 @@ enum ProcessMemory {
                 runsSharedWorkers: bool(info, "runningSharedWorkers")
             ))
         }
-        let gpu = (call("_gpuProcessInfo") as? NSObject).flatMap(footprint)
-        let networking = ((call("_networkingProcessInfo") as? [NSObject]) ?? []).compactMap(footprint)
-        return Snapshot(webContent: processes, webViews: webViews, gpu: gpu, networking: networking)
+        let gpuInfo = call("_gpuProcessInfo") as? NSObject
+        let networkingInfos = (call("_networkingProcessInfo") as? [NSObject]) ?? []
+        let reported = Set(([gpuInfo].compactMap { $0 } + networkingInfos).compactMap { int32($0, "pid") }.filter { $0 > 0 })
+        return Snapshot(
+            webContent: processes, webViews: webViews,
+            gpu: gpuInfo.flatMap(footprint), networking: networkingInfos.compactMap(footprint), reported: reported
+        )
+    }
+
+    // MARK: - Helpers outside WebKit's list
+
+    /// `responsibility_get_pid_responsible_for_pid` (private libsystem call, probed 2026-10: it returns Paddle's
+    /// pid for every WebKit process and helper Paddle launched, AutoFill and audio included). Looked up by name
+    /// so a system without it just has no Helpers row.
+    private typealias ResponsibleFor = @convention(c) (pid_t) -> pid_t
+    private static let responsibleFor: ResponsibleFor? = {
+        // RTLD_DEFAULT: search every loaded image.
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else { return nil }
+        return unsafeBitCast(symbol, to: ResponsibleFor.self)
+    }()
+
+    /// The pids found by the last full scan and when it ran; listing every process costs about one call per pid
+    /// on the system, so it runs at most every 30 s unless a readout is open.
+    private static var helperPids: [pid_t] = []
+    private static var lastHelperScan: Date?
+
+    /// Footprints of every process Paddle is responsible for except Paddle itself, by pid; empty when the
+    /// responsibility call is missing. `rescan` forces a fresh process list (an open readout wants new helpers
+    /// at once); otherwise the cached pid list is re-measured and refreshed every 30 s.
+    static func responsibleFootprints(rescan: Bool) -> [Int32: UInt64] {
+        guard let responsibleFor else { return [:] }
+        let me = getpid()
+        if rescan || lastHelperScan.map({ Date().timeIntervalSince($0) > 30 }) ?? true {
+            lastHelperScan = Date()
+            let count = proc_listallpids(nil, 0)
+            guard count > 0 else { return [:] }
+            // Room for processes started between the two calls.
+            var pids = [pid_t](repeating: 0, count: Int(count) + 32)
+            let filled = pids.withUnsafeMutableBytes { proc_listallpids($0.baseAddress, Int32($0.count)) }
+            helperPids = pids.prefix(Int(max(filled, 0))).filter { $0 > 0 && $0 != me && responsibleFor($0) == me }
+        }
+        var result: [Int32: UInt64] = [:]
+        for pid in helperPids {
+            if let bytes = footprint(of: pid) { result[pid] = bytes }
+        }
+        return result
     }
 
     /// `physicalFootprint` of a `_WKProcessInfo`; nil when the field is missing or the process has not reported yet.

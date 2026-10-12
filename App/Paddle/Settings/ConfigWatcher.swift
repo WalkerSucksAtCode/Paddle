@@ -24,29 +24,28 @@ struct ConfigStamp: Equatable {
     }
 }
 
-/// Watches the support folder while the Settings window is open: one directory descriptor, events debounced by
-/// 300 ms. The folder rather than the file because an atomic replace (Paddle's own `.atomic` write included)
-/// swaps the file out from under a file watch. In-place saves into a file that is a symlink, or that an editor
-/// rewrites without renaming, don't change the folder; Settings also re-reads when its window becomes key.
-/// `cancel()` (or deinit) closes the descriptor and drops any pending callback.
+/// Watches config.json while the Settings window is open, with events from both watches debounced by 300 ms:
+/// - the support folder's descriptor, for atomic replaces (Paddle's own `.atomic` write, most editors), which swap
+///   the file out from under a file watch;
+/// - config.json's own descriptor (the symlink's target when it is one) for write, extend and attribute changes,
+///   because editors such as VS Code and Cursor save in place, which doesn't touch the folder. After a delete or
+///   rename the descriptor follows the old file, so it is re-opened on whatever the path holds now.
+/// Settings also re-reads when its window becomes key. `cancel()` (or deinit) closes both descriptors and drops
+/// any pending callback.
 final class ConfigWatcher {
-    private var source: (any DispatchSourceFileSystemObject)?
+    private var folder: (any DispatchSourceFileSystemObject)?
+    private var file: (any DispatchSourceFileSystemObject)?
+    /// The inode `file` watches, to notice the path now naming a different file.
+    private var fileInode: UInt64?
     private var pending: DispatchWorkItem?
     private let onChange: () -> Void
 
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
-        let fd = open(Paths.support.path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd, eventMask: [.write, .rename, .delete, .link, .attrib], queue: .main
-        )
-        source.setEventHandler { [weak self] in
-            MainActor.assumeIsolated { self?.schedule() }
+        folder = Self.watch(Paths.support.path, events: [.write, .rename, .delete, .link, .attrib]) { [weak self] _ in
+            self?.folderChanged()
         }
-        source.setCancelHandler { close(fd) }
-        source.resume()
-        self.source = source
+        watchFile()
     }
 
     isolated deinit {
@@ -56,11 +55,38 @@ final class ConfigWatcher {
     func cancel() {
         pending?.cancel()
         pending = nil
-        source?.cancel()
-        source = nil
+        folder?.cancel()
+        folder = nil
+        file?.cancel()
+        file = nil
+        fileInode = nil
+    }
+
+    /// (Re)opens the file watch on what config.json names now; a missing file leaves it off until the folder
+    /// watch sees one appear.
+    private func watchFile() {
+        file?.cancel()
+        file = nil
+        let url = Paths.config.resolvingSymlinksInPath()
+        fileInode = ConfigStamp(url)?.inode
+        guard fileInode != nil else { return }
+        file = Self.watch(url.path, events: [.write, .extend, .attrib, .delete, .rename, .revoke]) { [weak self] events in
+            self?.fileChanged(events)
+        }
+        if file == nil { fileInode = nil }
+    }
+
+    private func fileChanged(_ events: DispatchSource.FileSystemEvent) {
+        if !events.isDisjoint(with: [.delete, .rename, .revoke]) { watchFile() }
+        schedule()
     }
 
     /// Session saves and favicon writes land in the same folder; the stamp check in `onChange` skips those cheaply.
+    private func folderChanged() {
+        if ConfigStamp(Paths.config.resolvingSymlinksInPath())?.inode != fileInode { watchFile() }
+        schedule()
+    }
+
     private func schedule() {
         pending?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -68,5 +94,22 @@ final class ConfigWatcher {
         }
         pending = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
+
+    /// An event-only descriptor on `path` delivering `events` on the main queue; the descriptor closes on cancel.
+    private static func watch(
+        _ path: String, events: DispatchSource.FileSystemEvent,
+        handler: @escaping @MainActor (DispatchSource.FileSystemEvent) -> Void
+    ) -> (any DispatchSourceFileSystemObject)? {
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { return nil }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: events, queue: .main)
+        source.setEventHandler { [weak source] in
+            guard let events = source?.data else { return }
+            MainActor.assumeIsolated { handler(events) }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        return source
     }
 }

@@ -41,7 +41,7 @@ enum SettingsPane: String, CaseIterable {
 }
 
 /// Paddle > Settings… (⌘,): a preferences-style toolbar of panes over `config.json`. Exists only while open:
-/// closing drops the window, every pane, the model and the folder watcher (its descriptor and debounce).
+/// closing drops the window, every pane, the model and the config watcher (its descriptors and debounce).
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private static var shared: SettingsWindowController?
     private static let paneKey = "settingsPane"
@@ -83,6 +83,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         window.setFrameAutosaveName("PaddleSettings")
         if !window.setFrameUsingName("PaddleSettings") { window.center() }
+        updatePaneHeightLimit()
         tabs.fitWindow(animated: false)
 
         watcher = ConfigWatcher { [weak self] in self?.model.refresh() }
@@ -94,9 +95,21 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// File > Close Tab (⌘W) closes this window, as it does History and Bookmarks.
     @objc func paddleCloseTab(_ sender: Any?) { window?.performClose(sender) }
 
-    /// Covers edits the folder watch can't see (an in-place save, a symlinked config.json).
+    /// A backstop for any edit the watcher missed; the stamp check makes it free when nothing changed.
     func windowDidBecomeKey(_ notification: Notification) {
         model.refresh()
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        updatePaneHeightLimit()
+    }
+
+    /// A pane may be as tall as the window's screen allows, less the title bar and toolbar, room for the banner
+    /// and a margin; taller panes scroll.
+    private func updatePaneHeightLimit() {
+        guard let window, let screen = window.screen ?? NSScreen.main else { return }
+        let chrome = window.frame.height - window.contentRect(forFrameRect: window.frame).height
+        model.maxPaneHeight = max(320, screen.visibleFrame.height - chrome - 120)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -132,6 +145,10 @@ private final class SettingsTabViewController: NSTabViewController {
         guard content.size != size else { return }
         var frame = window.frameRect(forContentRect: NSRect(origin: content.origin, size: size))
         frame.origin.y = window.frame.maxY - frame.height
+        // Keeping the top edge can push the bottom off the screen; move the window up instead.
+        if let visible = window.screen?.visibleFrame, frame.minY < visible.minY {
+            frame.origin.y = min(visible.minY, visible.maxY - frame.height)
+        }
         window.setFrame(frame, display: true, animate: animated && window.isVisible)
     }
 }
@@ -144,17 +161,28 @@ private extension Array {
 private struct SettingsPaneView: View {
     let pane: SettingsPane
     let model: SettingsModel
+    /// The form's own height, measured, so a pane taller than the screen scrolls instead of running off it.
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
             if let banner = model.banner {
                 SettingsBanner(banner: banner, model: model)
             }
-            content
+            if pane.fixedHeight == nil {
+                ScrollView(.vertical) {
+                    content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: contentHeight > 0 ? min(contentHeight, model.maxPaneHeight) : nil)
+            } else {
+                content
+            }
         }
         .frame(width: SettingsPane.width, height: pane.fixedHeight, alignment: .top)
         .fixedSize(horizontal: false, vertical: pane.fixedHeight == nil)
     }
+
 
     @ViewBuilder private var content: some View {
         switch pane {
