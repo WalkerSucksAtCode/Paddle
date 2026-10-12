@@ -1,16 +1,24 @@
 import AppKit
 import Foundation
+import os
+import PaddleCore
 import WebKit
 
 /// WebKit callbacks for one tab: link routing, popups, downloads, dialogs, uploads, permissions, errors.
 final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private weak var tab: Tab?
+    private static let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
 
     init(tab: Tab) {
         self.tab = tab
     }
 
-    private static let webSchemes: Set<String> = ["http", "https", "file", "about", "data", "blob", "javascript"]
+    private static let webSchemes: Set<String> = ["http", "https", "file", "about", "data", "blob", "javascript", ExtensionIdentity.scheme]
+
+    private static func isWebPage(_ url: URL?) -> Bool {
+        guard let scheme = url?.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
 
     // MARK: - Navigation policy
 
@@ -50,6 +58,16 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return (.cancel, preferences)
         }
 
+        // Extension pages and web pages need different web views (section "Sleeping tabs and extension pages").
+        // A page never navigates a tab into an extension's configuration: that would skip WebKit's
+        // web-accessible-resources check, so pages can't reach an extension's private pages. Only Paddle's own
+        // `Tab.load` (address bar, extension `tabs.update`) goes that way. Subframes are left to WebKit's rules.
+        let targetExtension = ExtensionIdentity.identifier(of: url)
+        if isMainFrame, let tab, targetExtension != nil, targetExtension != tab.extensionPageID {
+            Self.log.notice("blocked navigation to \(url.absoluteString, privacy: .public) from \(webView.url?.absoluteString ?? "-", privacy: .public)")
+            return (.cancel, preferences)
+        }
+
         // Cmd-click or middle-click: background tab (Cmd-Shift-click: foreground). Only for real clicks; a page
         // faking one just navigates, so it can't open tabs past the popup blocker.
         if navigationAction.navigationType == .linkActivated, byUser, let tab, let browser = tab.browser {
@@ -58,6 +76,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
                 browser.newTab(url: url, select: flags.contains(.shift), after: tab)
                 return (.cancel, preferences)
             }
+        }
+
+        // An extension page leaving for a web page: WebKit would cancel it silently in this web view, so swap in an
+        // ordinary one. On the next runloop turn, since the swap drops this web view and its delegate. Other schemes
+        // (about:blank, blob:, file:) stay in this web view under WebKit's rules for the extension's origin.
+        if isMainFrame, let tab, tab.extensionPageID != nil, Self.isWebPage(url) {
+            DispatchQueue.main.async { tab.replaceWebView(loading: url) }
+            return (.cancel, preferences)
         }
 
         if isMainFrame, let host = url.host() {
@@ -336,6 +362,26 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             Task { await openExternally(url, ask: ask, requester: requester) }
             return nil
         }
+        // The same split as in navigation policy. An extension page opening a web page gets an ordinary tab. Its own
+        // pages, window.open() with no URL, about:blank, blob: and data: open as a popup in its configuration, so
+        // the opener gets a window handle and the popup's own load isn't refused. Anything else (file:, another
+        // extension) is blocked. A web page can't open an extension page at all.
+        let requestURL = navigationAction.request.url
+        let targetExtension = ExtensionIdentity.identifier(of: requestURL)
+        if let pageID = tab.extensionPageID {
+            if Self.isWebPage(requestURL) {
+                browser.newTab(url: requestURL, after: tab)
+                return nil
+            }
+            let scheme = requestURL?.scheme?.lowercased() ?? ""
+            guard requestURL == nil || ["about", "blob", "data"].contains(scheme) || targetExtension == pageID else {
+                Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .public) from \(webView.url?.absoluteString ?? "-", privacy: .public)")
+                return nil
+            }
+        } else if targetExtension != nil {
+            Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .public) from \(webView.url?.absoluteString ?? "-", privacy: .public)")
+            return nil
+        }
         let popup = WKWebView(frame: .zero, configuration: configuration)
         // window.open() with no URL has no request URL; about:blank keeps the tab showing its web view
         // (which the opener may write into) instead of the start page.
@@ -350,7 +396,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         } else {
             newTab.hasLiveOpener = navigationAction.navigationType == .other
         }
-        newTab.attach(popup)
+        // A popup from an extension page shares its configuration (WebKit's `configuration` is that page's).
+        newTab.attach(popup, extensionPageID: tab.extensionPageID)
         browser.insert(newTab, after: tab, select: true)
         return popup
     }

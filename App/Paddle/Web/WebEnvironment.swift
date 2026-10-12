@@ -16,6 +16,10 @@ final class WebEnvironment {
     @ObservationIgnored private var installedRuleLists: [String: WKContentRuleList] = [:]
     @ObservationIgnored private lazy var ruleStore: WKContentRuleListStore =
         WKContentRuleListStore(url: Paths.compiledRules) ?? .default()
+    /// Set by `ExtensionHost` once at least one extension is allowed to run; every web view made after that carries
+    /// it (popups copy the configuration, so they inherit it too). nil costs nothing: WebKit's extension machinery
+    /// is never started.
+    @ObservationIgnored var extensionController: WKWebExtensionController?
 
     /// One line per block list for the Content Blocking status item, e.g. "easylist: 61,204 rules".
     private(set) var blockerStatus: [String] = []
@@ -42,6 +46,18 @@ final class WebEnvironment {
         c.preferences.javaScriptCanOpenWindowsAutomatically = false
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         c.allowsAirPlayForMediaPlayback = true
+        c.webExtensionController = extensionController
+        return c
+    }
+
+    /// The configuration extension pages (popups, options pages, backgrounds) derive from: the browsing data store,
+    /// the user agent and developer extras, and nothing else. No shared content controller, so user.css, userscripts
+    /// and block lists never reach extension pages.
+    func makeExtensionPageBaseConfiguration() -> WKWebViewConfiguration {
+        let c = WKWebViewConfiguration()
+        c.websiteDataStore = dataStore
+        c.applicationNameForUserAgent = applicationName
+        c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         return c
     }
 

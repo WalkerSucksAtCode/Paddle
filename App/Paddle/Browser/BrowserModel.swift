@@ -65,6 +65,7 @@ final class BrowserModel {
         } else {
             tabs.append(tab)
         }
+        AppModel.shared.extensions.tabOpened(tab)
         if select {
             self.select(tab)
         } else if tab.url != nil {
@@ -77,7 +78,8 @@ final class BrowserModel {
 
     func select(_ tab: Tab) {
         let now = Date()
-        if let previous = selectedTab, previous !== tab {
+        let previous = selectedTab
+        if let previous, previous !== tab {
             previous.lastActive = now
             // Once the user has moved on, closing a popup no longer jumps back to its opener (as in Chrome).
             previous.returnsToOpener = false
@@ -85,6 +87,7 @@ final class BrowserModel {
         selectedID = tab.id
         tab.lastActive = now
         tab.wake()
+        if previous !== tab { AppModel.shared.extensions.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
         suggestions.dismiss()
         syncAddress()
@@ -121,6 +124,7 @@ final class BrowserModel {
         let wasSelected = tab.id == selectedID
         tab.sleep()
         tabs.remove(at: index)
+        AppModel.shared.extensions.tabClosed(tab, windowIsClosing: tabs.isEmpty)
 
         if tabs.isEmpty {
             selectedID = nil
@@ -148,16 +152,39 @@ final class BrowserModel {
         insert(Tab(record: record), after: selectedTab, select: true)
     }
 
-    func duplicate(_ tab: Tab) {
-        insert(Tab(record: tab.record), after: tab, select: true)
+    @discardableResult
+    func duplicate(_ tab: Tab) -> Tab {
+        let copy = Tab(record: tab.record)
+        insert(copy, after: tab, select: true)
+        return copy
     }
 
     // MARK: - Tab state
 
     func togglePin(_ tab: Tab) {
+        guard let from = tabs.firstIndex(where: { $0 === tab }) else { return }
         tab.isPinned.toggle()
-        tabs.removeAll { $0 === tab }
-        tabs.insert(tab, at: TabOrder.pinBoundary(tabs.map(\.isPinned)))
+        tabs.remove(at: from)
+        let to = TabOrder.pinBoundary(tabs.map(\.isPinned))
+        tabs.insert(tab, at: to)
+        let extensions = AppModel.shared.extensions
+        extensions.tabChanged(tab, .pinned)
+        if to != from { extensions.tabMoved(tab, from: from) }
+        AppModel.shared.sessionChanged()
+    }
+
+    /// An extension asked for a tab at `index` (`tabs.create`, `tabs.move`). Clamped to the tab's side of the
+    /// pinned boundary.
+    func place(_ tab: Tab, at index: Int) {
+        guard let from = tabs.firstIndex(where: { $0 === tab }) else { return }
+        var others = tabs
+        others.remove(at: from)
+        let boundary = TabOrder.pinBoundary(others.map(\.isPinned))
+        let to = tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), others.count)
+        guard to != from else { return }
+        others.insert(tab, at: to)
+        tabs = others
+        AppModel.shared.extensions.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
     }
 
@@ -174,6 +201,7 @@ final class BrowserModel {
               let from = tabs.firstIndex(where: { $0 === tab }),
               let to = tabs.firstIndex(where: { $0 === target }) else { return false }
         TabOrder.move(&tabs, from: from, onto: to)
+        AppModel.shared.extensions.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
         return true
     }
@@ -251,6 +279,7 @@ final class BrowserModel {
 
     func tabURLChanged(_ tab: Tab) {
         if tab.id == selectedID { syncAddress() }
+        AppModel.shared.extensions.tabChanged(tab, .URL)
         AppModel.shared.sessionChanged()
     }
 

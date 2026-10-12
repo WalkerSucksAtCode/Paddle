@@ -190,7 +190,7 @@ private struct TabButton: View {
             } else if tab.isCapturing {
                 Image(systemName: "video.fill")
             } else if !tab.isAwake {
-                Image(systemName: "moon.zzz")
+                Glyph(name: "surf-tab-sleep")
             } else {
                 FaviconView(url: tab.url, fallback: tab.isPinned ? "pin.fill" : "globe")
             }
@@ -286,14 +286,13 @@ private struct NavigationBar: View {
                 Button {
                     app.bookmarks.toggle(url: url, title: tab?.title ?? "")
                 } label: {
-                    Image(systemName: bookmarked ? "star.fill" : "star")
-                        .font(.system(size: 12))
-                        .foregroundStyle(bookmarked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                    Glyph(name: "surf-star", active: bookmarked)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .help(bookmarked ? "Remove Bookmark" : "Bookmark This Page (⌘D)")
+                .accessibilityLabel(bookmarked ? "Remove Bookmark" : "Bookmark This Page")
             }
         }
         .padding(.leading, 10)
@@ -341,7 +340,7 @@ private struct NavigationBar: View {
             showActivity.toggle()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "memorychip")
+                Glyph(name: "surf-memory")
                 Text(memoryLabel)
             }
             .font(.system(size: 11).monospacedDigit())
@@ -366,12 +365,13 @@ private struct NavigationBar: View {
         Button {
             showDownloads.toggle()
         } label: {
-            Image(systemName: app.downloads.activeCount > 0 ? "arrow.down.circle.fill" : "arrow.down.circle")
+            Glyph(name: "surf-download", size: 16, active: app.downloads.activeCount > 0)
                 .frame(width: 26, height: 26)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
         .help("Downloads")
+        .accessibilityLabel("Downloads")
         .popover(isPresented: $showDownloads, arrowEdge: .bottom) {
             DownloadsView(store: app.downloads)
         }

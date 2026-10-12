@@ -18,6 +18,7 @@ final class AppModel {
     let downloads = DownloadStore()
     let bookmarks = BookmarkStore()
     let favicons = FaviconStore()
+    let extensions = ExtensionHost()
     /// Bookmarks > Show/Hide Bookmarks Bar. Window state, so it lives in user defaults rather than config.json.
     var showBookmarksBar = UserDefaults.standard.object(forKey: "showBookmarksBar") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showBookmarksBar, forKey: "showBookmarksBar") }
@@ -52,6 +53,7 @@ final class AppModel {
         bookmarks.load()
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
+        extensions.prepare(config: config)
         await web.loadContentBlockers()
 
         restoreSession()
@@ -59,6 +61,10 @@ final class AppModel {
         open(urls)
 
         startMonitoring()
+
+        // Windows are on screen; extensions find them through the registered windows. Session-restored extension
+        // pages wait for this (deferred wake).
+        await extensions.loadAll(config: config)
 
         if config.contentBlocking, !config.filterLists.isEmpty, !web.hasDownloadedFilters {
             let report = await web.updateFilterLists()
@@ -92,6 +98,7 @@ final class AppModel {
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         await web.loadContentBlockers()
+        await extensions.reconcile(config: config)
         sweepSleepingTabs()
 
         let alert = NSAlert()
@@ -102,8 +109,18 @@ final class AppModel {
         } else {
             alert.messageText = "Config reloaded"
             alert.informativeText = (["Content blocking:"] + web.blockerStatus).joined(separator: "\n")
+                + "\n\n" + (["Extensions:"] + extensions.statusLines).joined(separator: "\n")
                 + "\n\nUser CSS, scripts and site user agents apply when a page next loads. userAgentSuffix applies to new tabs."
         }
+        alert.runModal()
+    }
+
+    /// Extensions > Reload Extensions: unloads every extension and loads the folder again, edited files included.
+    func reloadExtensions() async {
+        await extensions.reloadAll(config: config)
+        let alert = NSAlert()
+        alert.messageText = "Extensions reloaded"
+        alert.informativeText = extensions.statusLines.joined(separator: "\n")
         alert.runModal()
     }
 
@@ -212,6 +229,7 @@ final class AppModel {
     func openWindow(record: WindowRecord? = nil, url: URL? = nil) -> BrowserWindowController {
         let controller = BrowserWindowController(record: record)
         windows.append(controller)
+        extensions.windowOpened(controller)
         if record == nil {
             if let url {
                 controller.model.newTab(url: url)
@@ -250,6 +268,11 @@ final class AppModel {
     }
 
     var allTabs: [Tab] { windows.flatMap { $0.model.tabs } }
+
+    /// `newTabPage` from config.json; nil for about:blank (an empty tab).
+    var newTabPageURL: URL? {
+        URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+    }
 
     // MARK: - Session
 
@@ -344,14 +367,8 @@ final class AppModel {
             for tab in allTabs where tab.isAwake {
                 if await tab.isBusy() { busy.insert(tab.id) }
             }
-            // A sign-in popup and the page that opened it talk through window.opener, which sleeping either side
-            // breaks. Under memory pressure freeing memory wins.
-            if !memoryPressure {
-                for popup in allTabs where popup.hasLiveOpener && popup.isAwake {
-                    guard let opener = popup.opener, opener.isAwake, opener.browser != nil else { continue }
-                    busy.formUnion([popup.id, opener.id])
-                }
-            }
+            // Under memory pressure freeing memory wins over keeping sign-in popups working.
+            if !memoryPressure { busy.formUnion(liveOpenerPairs()) }
             let now = Date()
             let selected = Set(windows.compactMap { $0.model.selectedID })
             let tabs = allTabs
@@ -369,6 +386,17 @@ final class AppModel {
             log.info("slept \(ids.count) tab(s)\(memoryPressure ? " under memory pressure" : "", privacy: .public)")
             sampleMemory()
         }
+    }
+
+    /// Awake sign-in popups and the awake pages that opened them. They talk through window.opener, which sleeping
+    /// either side breaks.
+    func liveOpenerPairs() -> Set<UUID> {
+        var ids: Set<UUID> = []
+        for popup in allTabs where popup.hasLiveOpener && popup.isAwake {
+            guard let opener = popup.opener, opener.isAwake, opener.browser != nil else { continue }
+            ids.formUnion([popup.id, opener.id])
+        }
+        return ids
     }
 
     func sleepBackgroundTabs() {

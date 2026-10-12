@@ -17,6 +17,7 @@ struct AddressResolverTests {
         ("sub.domain.co.uk", "https://sub.domain.co.uk"),
         ("about:blank", "about:blank"),
         ("file:///Users/x/a.html", "file:///Users/x/a.html"),
+        ("webkit-extension://abc/options.html", "webkit-extension://abc/options.html"),
     ])
     func resolvesAddresses(input: String, expected: String) {
         #expect(resolver.resolve(input)?.absoluteString == expected)

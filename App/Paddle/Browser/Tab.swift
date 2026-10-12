@@ -60,6 +60,15 @@ final class Tab: Identifiable {
     /// Recent web process crashes, with the host that was showing.
     @ObservationIgnored private var crashes: [(date: Date, host: String?)] = []
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []
+    /// This tab as WebKit's extension API sees it. One object for the tab's whole life, so an extension's tab id
+    /// survives sleep and wake.
+    @ObservationIgnored lazy var extensionTab = ExtensionTab(tab: self)
+    /// The extension whose page configuration the current web view was made with; nil for ordinary web views
+    /// and while asleep. Extension pages and web pages need different web views, so a change swaps the view.
+    @ObservationIgnored private(set) var extensionPageID: String?
+    /// Showing the "Extension not loaded" page. The tab keeps its extension URL and saved history meanwhile, so it
+    /// comes back (and is saved in the session) as that page, not as the error page's about:blank.
+    @ObservationIgnored private(set) var showsExtensionUnavailable = false
 
     init(url: URL?, title: String = "", isPinned: Bool = false, savedState: Any? = nil) {
         self.url = url
@@ -79,18 +88,32 @@ final class Tab: Identifiable {
     }
 
     var record: TabRecord {
-        let state = (webView?.interactionState ?? savedState) as? Data
+        let state = (showsExtensionUnavailable ? savedState : webView?.interactionState ?? savedState) as? Data
         return TabRecord(url: url?.absoluteString ?? "", title: title, isPinned: isPinned, interactionState: state)
     }
 
     // MARK: - Wake / sleep
 
-    /// Creates the web view if the tab is asleep, restoring its page and history.
+    /// Creates the web view if the tab is asleep, restoring its page and history. An extension page needs that
+    /// extension's own configuration; until its extension has loaded (startup, Reload Extensions) the wake is
+    /// deferred and nil comes back. If the extension isn't loaded at all, an ordinary web view shows an error page.
     @discardableResult
-    func wake() -> WKWebView {
+    func wake() -> WKWebView? {
         if let webView { return webView }
-        let webView = WKWebView(frame: .zero, configuration: AppModel.shared.web.makeConfiguration())
-        attach(webView)
+        let host = AppModel.shared.extensions
+        let configuration: WKWebViewConfiguration
+        let pageID = ExtensionIdentity.identifier(of: url)
+        if let url, pageID != nil {
+            guard let pageConfiguration = host.pageConfiguration(for: url) else {
+                if host.deferWake(self) { return nil }
+                return showExtensionUnavailable()
+            }
+            configuration = pageConfiguration
+        } else {
+            configuration = AppModel.shared.web.makeConfiguration()
+        }
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        attach(webView, extensionPageID: pageID)
         if let savedState {
             skipNextCommitInHistory = true
             webView.interactionState = savedState
@@ -101,8 +124,36 @@ final class Tab: Identifiable {
         return webView
     }
 
-    /// Adopts a web view, either one this tab made or one WebKit made for a popup.
-    func attach(_ webView: WKWebView) {
+    /// Drops the current web view and loads `url` in a fresh one, chosen for `url` (extension page or web page).
+    /// Back/forward history across the swap is lost.
+    func replaceWebView(loading url: URL) {
+        sleep()
+        savedState = nil
+        self.url = url
+        wake()
+    }
+
+    /// An extension page whose extension isn't loaded (declined, off, failed, removed): a plain error page in an
+    /// ordinary web view. Its "Try Again" button can't reach the extension page, by design; the tab keeps the
+    /// page's URL and history, and the host swaps the page back in once the extension runs again.
+    private func showExtensionUnavailable() -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: AppModel.shared.web.makeConfiguration())
+        attach(webView, extensionPageID: nil)
+        showsExtensionUnavailable = true
+        let html = TabWebDelegate.errorPage(
+            title: "Extension not loaded",
+            message: "This page belongs to an extension that isn't running (turned off, declined, removed, or it failed to load).",
+            url: url
+        )
+        skipNextCommitInHistory = true
+        webView.loadHTMLString(html, baseURL: nil)
+        return webView
+    }
+
+    /// Adopts a web view, either one this tab made or one WebKit made for a popup. `extensionPageID`: the extension
+    /// whose page configuration the web view was made with, nil for an ordinary web view.
+    func attach(_ webView: WKWebView, extensionPageID: String?) {
+        self.extensionPageID = extensionPageID
         webView.isInspectable = true
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
@@ -117,13 +168,20 @@ final class Tab: Identifiable {
         observe(webView)
         isAwake = true
         generation += 1
+        // No tab-change notice here or in `sleep()`: WebKit asks `webView(for:)` when it needs the view, and a
+        // `.loading` notice would report the status "complete" for a page that hasn't loaded. The load that follows
+        // reports itself through the `isLoading` observer.
     }
 
     /// Drops the web view. WebKit exits the WebContent process once no web view uses it.
     func sleep() {
         guard let webView else { return }
-        // Before the first page commits there is no history worth keeping; waking then loads the URL again.
-        savedState = webView.backForwardList.currentItem == nil ? nil : webView.interactionState
+        // Before the first page commits there is no history worth keeping; waking then loads the URL again. The
+        // "Extension not loaded" page keeps the history it was standing in for.
+        if !showsExtensionUnavailable {
+            savedState = webView.backForwardList.currentItem == nil ? nil : webView.interactionState
+        }
+        showsExtensionUnavailable = false
         resumeSelectionWaiters(false)
         observations.forEach { $0.invalidate() }
         observations = []
@@ -139,13 +197,21 @@ final class Tab: Identifiable {
         isCapturing = false
         memoryBytes = nil
         sharesProcess = false
+        extensionPageID = nil
         generation += 1
     }
 
+    /// Address bar, session restore and extension `tabs.update`. Crossing between an extension page and a web
+    /// page (either way) swaps the web view, since each needs its own configuration.
     func load(_ url: URL) {
         self.url = url
+        showsExtensionUnavailable = false
         if let webView {
-            webView.load(URLRequest(url: url))
+            if ExtensionIdentity.identifier(of: url) != extensionPageID {
+                replaceWebView(loading: url)
+            } else {
+                webView.load(URLRequest(url: url))
+            }
         } else {
             savedState = nil
         }
@@ -232,17 +298,22 @@ final class Tab: Identifiable {
         observations = [
             watch(\.title) { tab, webView in
                 tab.title = webView.title ?? ""
+                AppModel.shared.extensions.tabChanged(tab, .title)
                 // One write per real title change of the recorded page.
                 guard let url = tab.historyURL, webView.url == url, !tab.title.isEmpty, tab.title != tab.historyTitle else { return }
                 tab.historyTitle = tab.title
                 AppModel.shared.updateHistoryTitle(url, tab.title)
             },
             watch(\.url) { tab, webView in
-                guard let url = webView.url else { return }
+                // The error page's about:blank must not replace the extension URL it stands in for.
+                guard let url = webView.url, !tab.showsExtensionUnavailable else { return }
                 tab.url = url
                 tab.browser?.tabURLChanged(tab)
             },
-            watch(\.isLoading) { tab, webView in tab.isLoading = webView.isLoading },
+            watch(\.isLoading) { tab, webView in
+                tab.isLoading = webView.isLoading
+                AppModel.shared.extensions.tabChanged(tab, .loading)
+            },
             watch(\.estimatedProgress) { tab, webView in tab.progress = webView.estimatedProgress },
             watch(\.canGoBack) { tab, webView in tab.canGoBack = webView.canGoBack },
             watch(\.canGoForward) { tab, webView in tab.canGoForward = webView.canGoForward },

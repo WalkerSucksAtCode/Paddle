@@ -25,7 +25,7 @@ public struct AddressResolver: Sendable {
         return URL(string: searchTemplate.replacingOccurrences(of: "%s", with: encoded))
     }
 
-    private static let passthroughSchemes: Set<String> = ["http", "https", "file", "about", "data", "view-source"]
+    private static let passthroughSchemes: Set<String> = ["http", "https", "file", "about", "data", "view-source", "webkit-extension"]
 
     private func explicitURL(_ input: String) -> URL? {
         guard let colon = input.firstIndex(of: ":") else { return nil }

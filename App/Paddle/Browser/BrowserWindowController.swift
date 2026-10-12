@@ -84,13 +84,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        AppModel.shared.extensions.windowClosing(self)
         for tab in model.tabs { tab.sleep() }
         AppModel.shared.windowClosed(self)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
         model.selectedTab?.lastActive = Date()
+        AppModel.shared.extensions.windowFocused(self)
     }
+
+    /// This window as WebKit's extension API sees it.
+    lazy var extensionWindow = ExtensionWindow(controller: self)
 
     func windowDidResignKey(_ notification: Notification) {
         model.suggestions.dismiss()

@@ -35,6 +35,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Extensions see the front browser window as focused while Paddle is active, and no window otherwise.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        AppModel.shared.extensions.windowFocused(AppModel.shared.frontWindow)
+    }
+
+    func applicationDidResignActive(_ notification: Notification) {
+        AppModel.shared.extensions.windowFocused(nil)
+    }
+
     /// Quitting stops running downloads (Paddle doesn't resume them), so ask first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let running = AppModel.shared.downloads.activeCount

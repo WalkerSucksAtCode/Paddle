@@ -40,6 +40,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
 
+    /// Turn an extension off by its folder name in `extensions/`, e.g. `{"bitwarden": false}`. Folders not listed are on.
+    public var extensions: [String: Bool]
+
     public static let defaultFilterLists = [
         "https://easylist.to/easylist/easylist.txt",
         "https://easylist.to/easylist/easyprivacy.txt",
@@ -60,7 +63,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         siteUserAgents: [String: String] = [:],
         showTabMemory: Bool = true,
         developerTools: Bool = true,
-        shortcuts: [String: String] = [:]
+        shortcuts: [String: String] = [:],
+        extensions: [String: Bool] = [:]
     ) {
         self.homepage = homepage
         self.newTabPage = newTabPage
@@ -77,6 +81,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.showTabMemory = showTabMemory
         self.developerTools = developerTools
         self.shortcuts = shortcuts
+        self.extensions = extensions
     }
 
     public init(from decoder: any Decoder) throws {
@@ -97,6 +102,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         showTabMemory = try c.decodeIfPresent(Bool.self, forKey: .showTabMemory) ?? d.showTabMemory
         developerTools = try c.decodeIfPresent(Bool.self, forKey: .developerTools) ?? d.developerTools
         shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? d.shortcuts
+        extensions = try c.decodeIfPresent([String: Bool].self, forKey: .extensions) ?? d.extensions
     }
 
     public static func decode(_ data: Data) throws -> PaddleConfig {
@@ -124,6 +130,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(self)
     }
+
+    /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.
+    public func isExtensionEnabled(_ folder: String) -> Bool { extensions[folder] ?? true }
 
     /// The site-specific user agent for `host`, matching the longest configured host suffix.
     public func userAgent(forHost host: String) -> String? {

@@ -52,10 +52,7 @@ struct ActivityView: View {
 
     private func row(_ tab: Tab) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: tab.isAwake ? "circle.fill" : "moon.zzz")
-                .font(.system(size: tab.isAwake ? 6 : 10))
-                .foregroundStyle(.secondary)
-                .frame(width: 12)
+            Glyph(name: tab.isAwake ? "surf-tab-awake" : "surf-tab-sleep", size: 12)
             Text(tab.displayTitle)
                 .lineLimit(1)
                 .truncationMode(.tail)

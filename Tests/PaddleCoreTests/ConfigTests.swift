@@ -46,4 +46,19 @@ struct ConfigTests {
         #expect(config.userAgent(forHost: "x.app.example.com") == "B")
         #expect(config.userAgent(forHost: "notexample.com") == nil)
     }
+
+    @Test func extensionsDecodeAndDefaultToOn() throws {
+        let config = try PaddleConfig.decode(Data(#"{"extensions": {"bitwarden": false, "ubolite": true}}"#.utf8))
+        #expect(config.extensions == ["bitwarden": false, "ubolite": true])
+        #expect(!config.isExtensionEnabled("bitwarden"))
+        #expect(config.isExtensionEnabled("ubolite"))
+        #expect(config.isExtensionEnabled("not-listed"))
+    }
+
+    @Test func missingExtensionsKeyIsEmpty() throws {
+        let config = try PaddleConfig.decode(Data("{}".utf8))
+        #expect(config.extensions == [:])
+        #expect(config.isExtensionEnabled("anything"))
+        #expect(try PaddleConfig.decode(PaddleConfig(extensions: ["x": false]).encoded()).extensions == ["x": false])
+    }
 }

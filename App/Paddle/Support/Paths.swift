@@ -17,11 +17,17 @@ enum Paths {
     static let bookmarks = support.appending(path: "bookmarks.json")
     static let favicons = support.appending(path: "favicons", directoryHint: .isDirectory)
     static let compiledRules = support.appending(path: "compiled-rules", directoryHint: .isDirectory)
+    /// Unpacked WebExtensions, one folder each.
+    static let extensions = support.appending(path: "extensions", directoryHint: .isDirectory)
+    /// Per-extension permission answers, keyed by folder name.
+    static let extensionPermissions = support.appending(path: "extension-permissions.json")
+    /// Per-install salt for extension ids; created once.
+    static let extensionSalt = support.appending(path: "extension-id-salt")
 
     /// Creates the folder layout and starter files on first launch. Never overwrites existing files.
     static func ensure() {
         let fm = FileManager.default
-        for dir in [support, userScripts, filters, compiledRules, favicons] {
+        for dir in [support, userScripts, filters, compiledRules, favicons, extensions] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         if !fm.fileExists(atPath: config.path), let data = try? PaddleConfig().encoded() {
