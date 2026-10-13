@@ -145,6 +145,46 @@ final class SessionStoreTests {
         #expect(Set(stateFiles()) == ["\(a).state", "\(b).state"])
     }
 
+    /// `save` promises that a failed write deletes nothing: state files go before session.json, and orphans are
+    /// only deleted after both.
+    @Test func failedStateWriteThrowsAndDeletesNothing() throws {
+        var s = store()
+        try s.save(session())
+        let sessionBefore = try Data(contentsOf: file)
+        let stray = "\(UUID().uuidString).state"
+        try Data([9]).write(to: states.appending(path: stray))
+        // Tab A's state file can't be replaced (its name is taken by a folder), and tab B closed.
+        try FileManager.default.removeItem(at: states.appending(path: "\(a).state"))
+        try FileManager.default.createDirectory(at: states.appending(path: "\(a).state/keep"), withIntermediateDirectories: true)
+        let failing = SessionRecord(windows: [WindowRecord(tabs: [
+            TabRecord(url: "https://a.test", title: "A", interactionState: Data([5]), id: a),
+        ], selectedIndex: 0)])
+        #expect(throws: (any Error).self) { try s.save(failing) }
+        #expect(Set(stateFiles()) == ["\(a).state", "\(b).state", stray])
+        #expect(try Data(contentsOf: file) == sessionBefore)
+
+        // The whole state folder is a regular file: nothing can be written there, and session.json isn't either.
+        let blocked = folder.appending(path: "blocked")
+        try Data([1]).write(to: blocked)
+        var other = SessionStore(file: file, stateDirectory: blocked)
+        #expect(throws: (any Error).self) { try other.save(session(stateA: Data([3]))) }
+        #expect(try Data(contentsOf: file) == sessionBefore)
+        #expect(Set(stateFiles()) == ["\(a).state", "\(b).state", stray])
+    }
+
+    @Test func failedSessionWriteThrowsAndDeletesNoStateFile() throws {
+        var s = store()
+        try s.save(session())
+        let stray = "\(UUID().uuidString).state"
+        try Data([9]).write(to: states.appending(path: stray))
+        // session.json's path is taken by a folder, so the atomic write can't rename over it.
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.createDirectory(at: file.appending(path: "keep"), withIntermediateDirectories: true)
+        // Tab A closed: its state file would be an orphan once session.json no longer names it.
+        #expect(throws: (any Error).self) { try s.save(session(stateA: nil, titleB: "B2")) }
+        #expect(Set(stateFiles()) == ["\(a).state", "\(b).state", stray])
+    }
+
     @Test func loadIgnoresBadNamesAndRepeatedIDs() throws {
         let json = """
             {"windows":[{"selectedIndex":0,"tabs":[

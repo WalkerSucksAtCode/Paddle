@@ -84,6 +84,30 @@ struct ConfigValidatorTests {
         #expect(ConfigValidator.blocks(.sites, in: issues(config)))
     }
 
+    @Test func twoSpellingsOfOneHostWarn() {
+        var config = PaddleConfig()
+        config.sites = ["Example.com": SiteSettings(javaScript: false), "example.com.": SiteSettings(zoom: 1.5), "other.example": SiteSettings()]
+        config.siteUserAgents = ["bücher.de": "UA", "xn--bcher-kva.de": "UA2"]
+        config.sitePersonas = ["a.example": .chrome, "A.example": .firefox]
+        #expect(paths(config, .warning) == [
+            "siteUserAgents.bücher.de", "siteUserAgents.xn--bcher-kva.de",
+            "sites.Example.com", "sites.example.com.",
+            "sitePersonas.A.example", "sitePersonas.a.example",
+        ])
+        let message = issues(config).first { $0.path == ["siteUserAgents", "bücher.de"] }?.message
+        #expect(message == "\"bücher.de\" and \"xn--bcher-kva.de\" are the same site; only one applies.")
+        #expect(paths(config, .error).isEmpty)
+    }
+
+    @Test func shortcutWithoutCommandOrControlWarns() {
+        var config = PaddleConfig()
+        config.shortcuts = ["closeTab": "x", "newTab": "f6", "nextTab": "shift+option+k"]
+        #expect(paths(config, .warning) == ["shortcuts.closeTab", "shortcuts.nextTab"])
+        #expect(paths(config, .error).isEmpty)
+        let message = issues(config).first { $0.path == ["shortcuts", "closeTab"] }?.message
+        #expect(message == "X has no ⌘ or ⌃, so it would take a typed character. Add cmd or ctrl (F keys may stand alone).")
+    }
+
     @Test func shortcutsNeedKnownActionsAndParsableKeys() {
         var config = PaddleConfig()
         config.shortcuts = ["nextTab": "cmd+option+right", "typo": "cmd+k", "closeTab": "hyper+w", "newTab": "none"]

@@ -53,6 +53,14 @@ struct SitePolicyTests {
         #expect(config.siteKey(forHost: "maps.example.com") == "Maps.Example.com")
     }
 
+    @Test func zoomKeyPicksTheUnicodeChildOverItsPunycodeParent() {
+        var config = PaddleConfig()
+        config.sites = ["xn--bcher-kva.de": SiteSettings(zoom: 1.2), "shop.bücher.de": SiteSettings(zoom: 1.5)]
+        #expect(config.zoomKey(forHost: "shop.xn--bcher-kva.de") == "shop.bücher.de")
+        #expect(config.sitePolicy(forHost: "shop.xn--bcher-kva.de").zoom == 1.5)
+        #expect(config.zoomKey(forHost: "www.xn--bcher-kva.de") == "xn--bcher-kva.de")
+    }
+
     @Test func entryEditKeepsOtherMembersAndDropsDefaults() {
         let existing: JSONValue = ["javaScript": false, "note": "mine"]
         #expect(SiteSettings.entry(existing, setting: .zoom, to: 1.25) == ["javaScript": false, "note": "mine", "zoom": 1.25])

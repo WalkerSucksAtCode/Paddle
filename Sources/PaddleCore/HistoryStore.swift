@@ -272,12 +272,14 @@ public final class HistoryStore {
     }
 
     /// Retention: drops visits before `date`, then pages with no visits left. Surviving pages keep their
-    /// lifetime counts, so frecency does not change when old visits age out.
+    /// lifetime counts, so frecency does not change when old visits age out. Aged-out visits are scrubbed from disk
+    /// like cleared ones.
     public func prune(olderThan date: Date) throws {
         try transaction {
             try execute("DELETE FROM visits WHERE date < ?", [.double(date.timeIntervalSince1970)])
             try deleteOrphanPages()
         }
+        try scrubDeleted()
     }
 
     // MARK: - Schema

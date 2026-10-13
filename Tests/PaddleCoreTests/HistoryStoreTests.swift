@@ -273,6 +273,28 @@ struct HistoryStoreTests {
         #expect(try reopened.recentPages(limit: 1).first?.visitCount == 2)
     }
 
+    /// Retention must not leave aged-out pages readable in the write-ahead log, the same as clearing history.
+    @Test func pruneScrubsTheWriteAheadLog() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PaddleHistoryTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("history.sqlite").path
+        let marker = "agedoutmarker7319"
+
+        let store = try HistoryStore(path: path)
+        try store.recordVisit(url: url("https://\(marker).example/"), title: marker, typed: false, at: ago(days: 400))
+        try store.recordVisit(url: url("https://fresh.example/"), title: "Fresh", typed: false, at: ago(days: 1))
+        try store.prune(olderThan: ago(days: 200))
+        #expect(store.pageCount == 1)
+
+        let wal = (try? Data(contentsOf: URL(fileURLWithPath: path + "-wal"))) ?? Data()
+        #expect(wal.isEmpty)
+        for file in [path, path + "-wal"] {
+            let bytes = (try? Data(contentsOf: URL(fileURLWithPath: file))) ?? Data()
+            #expect(bytes.range(of: Data(marker.utf8)) == nil, "\(file) still holds the pruned page")
+        }
+    }
+
     @Test func unopenablePathThrows() {
         #expect(throws: HistoryStore.Error.self) {
             _ = try HistoryStore(path: "/nonexistent-directory-for-paddle-tests/history.sqlite")

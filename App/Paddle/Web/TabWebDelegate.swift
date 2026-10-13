@@ -86,8 +86,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // An extension page leaving for a web page: WebKit would cancel it silently in this web view, so swap in an
         // ordinary one. On the next runloop turn, since the swap drops this web view and its delegate. Other schemes
         // (about:blank, blob:, file:) stay in this web view under WebKit's rules for the extension's origin.
+        // By then the tab or its window may have closed; waking it would load the page in a tab nobody owns.
         if isMainFrame, let tab, tab.extensionPageID != nil, Self.isWebPage(url) {
-            DispatchQueue.main.async { tab.replaceWebView(loading: url) }
+            DispatchQueue.main.async {
+                guard let browser = tab.browser, browser.tabs.contains(where: { $0 === tab }),
+                      let controller = browser.controller, AppModel.shared.windows.contains(where: { $0 === controller })
+                else { return }
+                tab.replaceWebView(loading: url)
+            }
             return (.cancel, preferences)
         }
 

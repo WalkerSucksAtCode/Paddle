@@ -21,6 +21,10 @@ final class CompatBus {
     /// is lost (4c probe).
     static let readyDelay: Duration = .milliseconds(50)
     static let protocolVersion = 1
+    /// Open ports one context may hold. Today's prelude opens none (it doesn't call the bus yet); the planned
+    /// handshake is one port per extension page (background, popup, options, an extension tab or two), so 16 leaves
+    /// room while keeping an extension that connects in a loop from piling up ports until it unloads.
+    static let maxPortsPerContext = 16
 
     private let log = Logger(subsystem: "com.walker.Paddle", category: "compat")
 
@@ -138,6 +142,12 @@ final class CompatBus {
         guard applicationID == ExtensionCompat.busID, let ext else {
             reject(applicationID, path: "connectNative", name: ext?.name)
             throw Self.error(Self.notFoundMessage)
+        }
+        // Ports WebKit disconnected without a handler call don't count against the cap.
+        ports[key]?.removeAll { $0.isDisconnected }
+        guard (ports[key]?.count ?? 0) < Self.maxPortsPerContext else {
+            log.notice("bus: \(ext.name, privacy: .public) port refused (\(Self.maxPortsPerContext, privacy: .public) already open)")
+            throw Self.error("Paddle: too many open ports", code: 3)
         }
         ports[key, default: []].append(port)
         let name = ext.name

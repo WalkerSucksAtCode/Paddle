@@ -76,13 +76,21 @@ extension PaddleConfig {
         return host == key || host.hasSuffix("." + key)
     }
 
+    /// Orders host keys that cover one host least specific first: by the length of the normalized host (so a
+    /// punycode parent sorts before its Unicode-spelled child), then by the key as written, so two spellings of one
+    /// host (`Example.com`, `example.COM`) always resolve the same way rather than in dictionary order.
+    static func hostKeyPrecedes(_ a: String, _ b: String) -> Bool {
+        let (lengthA, lengthB) = (normalizedHost(a).count, normalizedHost(b).count)
+        return lengthA != lengthB ? lengthA < lengthB : a < b
+    }
+
     /// The `sites` entry keys that cover `host`: the host itself and each parent domain that has an entry,
     /// shortest (least specific) first. Matching is the same as `userAgent(forHost:)`.
     public func siteSettingsKeys(forHost host: String) -> [String] {
         let host = PaddleConfig.normalizedHost(host)
         return sites.keys
             .filter { PaddleConfig.hostKey($0, matches: host) }
-            .sorted { $0.count < $1.count }
+            .sorted(by: PaddleConfig.hostKeyPrecedes)
     }
 
     /// The settings that apply to `host`, merged per field: the entry for the longest matching host suffix wins a

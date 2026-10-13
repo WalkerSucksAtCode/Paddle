@@ -68,6 +68,42 @@ struct SiteSettingsTests {
         #expect(config.userAgent(forHost: "bücher.de") == "UA")
     }
 
+    /// Specificity is the normalized host's length: a punycode parent is longer as written than its Unicode child
+    /// (`xn--bcher-kva.de` 16, `shop.bücher.de` 14) but still the parent.
+    @Test func punycodeParentDoesNotOverrideUnicodeChild() {
+        var config = PaddleConfig()
+        config.sites = ["xn--bcher-kva.de": SiteSettings(javaScript: false), "shop.bücher.de": SiteSettings(javaScript: true)]
+        config.siteUserAgents = ["xn--bcher-kva.de": "parent", "shop.bücher.de": "child"]
+        config.sitePersonas = ["xn--bcher-kva.de": .firefox, "shop.bücher.de": .chrome]
+        let host = "shop.xn--bcher-kva.de"
+        #expect(config.siteSettingsKeys(forHost: host) == ["xn--bcher-kva.de", "shop.bücher.de"])
+        #expect(config.siteSettings(forHost: host).javaScript == true)
+        #expect(config.userAgent(forHost: host) == "child")
+        #expect(config.sitePersona(forHost: host) == .chrome)
+        #expect(config.userAgent(forHost: "xn--bcher-kva.de") == "parent")
+    }
+
+    /// Two spellings of one host tie on length; the key as written breaks the tie, so the same entry wins whatever
+    /// order the dictionary iterates in (it varies with capacity and between launches).
+    @Test func sameHostSpelledTwiceResolvesTheSameWayEveryTime() {
+        for capacity in 0..<64 {
+            var config = PaddleConfig()
+            config.sites.reserveCapacity(capacity)
+            config.siteUserAgents.reserveCapacity(capacity)
+            config.sitePersonas.reserveCapacity(capacity)
+            config.sites["Example.com"] = SiteSettings(javaScript: false)
+            config.sites["example.COM"] = SiteSettings(javaScript: true)
+            config.siteUserAgents["Example.com"] = "upper"
+            config.siteUserAgents["example.COM"] = "lower"
+            config.sitePersonas["Example.com"] = .firefox
+            config.sitePersonas["example.COM"] = .chrome
+            #expect(config.siteSettingsKeys(forHost: "example.com") == ["Example.com", "example.COM"])
+            #expect(config.siteSettings(forHost: "www.example.com").javaScript == true)
+            #expect(config.userAgent(forHost: "example.com") == "lower")
+            #expect(config.sitePersona(forHost: "example.com") == .chrome)
+        }
+    }
+
     /// README's config table and `PaddleConfig.CodingKeys` must list the same keys.
     @Test func readmeTableMatchesCodingKeys() throws {
         let readme = URL(filePath: #filePath)

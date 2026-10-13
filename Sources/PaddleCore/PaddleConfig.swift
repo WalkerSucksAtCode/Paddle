@@ -215,7 +215,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         let host = PaddleConfig.normalizedHost(host)
         let persona = sitePersonas
             .filter { key, _ in PaddleConfig.hostKey(key, matches: host) }
-            .max { $0.key.count < $1.key.count }?
+            .max { PaddleConfig.hostKeyPrecedes($0.key, $1.key) }?
             .value
         return persona == .chrome || persona == .firefox ? persona : nil
     }
@@ -225,7 +225,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         let host = PaddleConfig.normalizedHost(host)
         return siteUserAgents
             .filter { key, _ in PaddleConfig.hostKey(key, matches: host) }
-            .max { $0.key.count < $1.key.count }?
+            .max { PaddleConfig.hostKeyPrecedes($0.key, $1.key) }?
             .value
     }
 }

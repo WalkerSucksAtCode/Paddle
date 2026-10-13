@@ -122,10 +122,8 @@ struct ShortcutRecorder: NSViewRepresentable {
                 announce("That key can't be a shortcut. Try another, or press Escape.")
                 return true
             }
-            // A menu shortcut needs ⌘ or ⌃ (with only Shift or ⌥ it would take a typed character); F keys may
-            // stand alone.
-            let isFunctionKey = recorded.key.count > 1 && recorded.key.hasPrefix("f")
-            guard recorded.command || recorded.control || isFunctionKey else {
+            // A menu shortcut needs ⌘ or ⌃; F keys may stand alone (`Shortcut.isUsableMenuShortcut`).
+            guard recorded.isUsableMenuShortcut else {
                 title = "Add ⌘ or ⌃…"
                 announce("Add Command or Control to the key. Press Escape to cancel.")
                 return true

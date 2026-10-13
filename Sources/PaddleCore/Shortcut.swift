@@ -48,6 +48,13 @@ public struct Shortcut: Sendable, Hashable {
         return shortcut.canonical
     }
 
+    /// Whether a menu can take this key without taking typing too: it needs ⌘ or ⌃ (with only Shift or ⌥, or no
+    /// modifier, it would take a typed character); F keys may stand alone. True for an empty key (`"none"`).
+    public var isUsableMenuShortcut: Bool {
+        let isFunctionKey = key.count > 1 && key.hasPrefix("f")
+        return key.isEmpty || command || control || isFunctionKey
+    }
+
     /// Shifted US punctuation to the key it sits on, so `"{"` with Shift and `"["` with Shift are one shortcut:
     /// `MainMenu` writes its own aliases as the base key plus Shift (`"["` with ⇧⌘), and the recorder gets the
     /// shifted character from `charactersIgnoringModifiers`.

@@ -182,20 +182,35 @@ final class AppModel {
 
     private func performConfigWrite(_ changes: [ConfigChange], base: Data) async -> ConfigWriteResult {
         let url = Paths.config.resolvingSymlinksInPath()
-        let disk: Data
+        var disk: Data
         do {
             disk = try Self.readConfigFile(url)
         } catch {
             return .failed(error.localizedDescription)
         }
-        let data: Data
-        switch ConfigFile.apply(changes: changes, base: base, disk: disk) {
-        case .success(let edited):
-            data = edited
-        case .failure(.conflict(let paths)):
-            return .conflict(paths)
-        case .failure(let error):
-            return .failed(Self.describe(error))
+        var data: Data
+        var recomputed = false
+        while true {
+            switch ConfigFile.apply(changes: changes, base: base, disk: disk) {
+            case .success(let edited):
+                data = edited
+            case .failure(.conflict(let paths)):
+                return .conflict(paths)
+            case .failure(let error):
+                return .failed(Self.describe(error))
+            }
+            // A hand edit that landed since the read above: apply the change again on top of it (once) rather than
+            // overwrite it. This narrows the window to the atomic write itself; it doesn't close it.
+            let current: Data
+            do {
+                current = try Self.readConfigFile(url)
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+            if current == disk { break }
+            if recomputed { return .failed("config.json changed while saving; try again") }
+            recomputed = true
+            disk = current
         }
         let new: PaddleConfig
         do {
@@ -725,7 +740,7 @@ final class AppModel {
         }
         source.resume()
         memoryPressureSource = source
-        measureMemory()
+        sampleMemory()
     }
 
     /// Refreshes the readout when it is shown; UI actions (sleeping a tab) call this.

@@ -10,6 +10,15 @@ struct ShortcutTests {
         #expect(Shortcut.parse("none") == Shortcut(key: ""))
     }
 
+    @Test func menuShortcutNeedsCommandOrControlUnlessFKey() {
+        for text in ["cmd+x", "ctrl+x", "ctrl+shift+tab", "f5", "shift+f12", "none"] {
+            #expect(Shortcut.parse(text)?.isUsableMenuShortcut == true, "\(text)")
+        }
+        for text in ["x", "shift+x", "option+x", "shift+option+left", "escape", "space"] {
+            #expect(Shortcut.parse(text)?.isUsableMenuShortcut == false, "\(text)")
+        }
+    }
+
     @Test func rejectsNonsense() {
         #expect(Shortcut.parse("hyper+k") == nil)
         #expect(Shortcut.parse("cmd+banana") == nil)

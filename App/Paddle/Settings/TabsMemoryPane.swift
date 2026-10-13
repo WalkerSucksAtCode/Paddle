@@ -159,7 +159,8 @@ private struct SleepAfterRows: View {
 }
 
 /// The live readout: Paddle's total and where it goes (the Activity popover's rows), and how many tabs are awake.
-/// Measures on appear and every 5 s after through `AppModel.measureMemory()`, which ignores `showTabMemory`.
+/// Open, it is a memory readout (`AppModel.beginMemoryReadout()`): measured on appear and every 5 s after while
+/// Paddle is active, `showTabMemory` off too.
 private struct MemoryReadout: View {
     private let app = AppModel.shared
 
@@ -187,12 +188,10 @@ private struct MemoryReadout: View {
                 .help("Sleeps every background tab that may sleep, as under memory pressure (Tabs > Sleep Background Tabs).")
             Spacer()
         }
-        .task {
-            while !Task.isCancelled {
-                app.measureMemory()
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
+        // The app's sampler refreshes these every 5 s while the pane is shown and Paddle is active, with a full
+        // helper scan each time, as the Activity popover.
+        .onAppear { app.beginMemoryReadout() }
+        .onDisappear { app.endMemoryReadout() }
     }
 
     /// The same rows as the Activity popover; rows that are empty right now are left out, except the ones always

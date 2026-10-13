@@ -77,6 +77,8 @@ public enum ConfigValidator {
             }
         }
 
+        issues += sameSiteIssues(Array(config.siteUserAgents.keys), key: .siteUserAgents, effect: "only one applies")
+
         for host in config.sites.keys.sorted() {
             issues += hostKeyIssues(host, key: .sites)
             if let zoom = config.sites[host]?.zoom, !(zoom > 0) {
@@ -87,6 +89,8 @@ public enum ConfigValidator {
             }
         }
 
+        issues += sameSiteIssues(Array(config.sites.keys), key: .sites, effect: "where both set a value, only one applies")
+
         for host in config.sitePersonas.keys.sorted() {
             issues += hostKeyIssues(host, key: .sitePersonas)
             if config.sitePersonas[host] == .native {
@@ -96,6 +100,8 @@ public enum ConfigValidator {
                 ))
             }
         }
+
+        issues += sameSiteIssues(Array(config.sitePersonas.keys), key: .sitePersonas, effect: "only one applies")
 
         for folder in config.extensionCompat.keys.sorted() {
             if folder.isEmpty || folder.contains("/") || folder.hasPrefix(".") {
@@ -142,6 +148,24 @@ public enum ConfigValidator {
         )]
     }
 
+    /// Keys that differ only in case, a trailing dot or Unicode vs punycode name one host (`PaddleConfig.normalizedHost`),
+    /// so the entries compete instead of adding up. A warning on each of them.
+    private static func sameSiteIssues(_ hosts: [String], key: PaddleConfig.CodingKeys, effect: String) -> [ConfigIssue] {
+        let groups = Dictionary(grouping: hosts, by: PaddleConfig.normalizedHost)
+        var issues: [ConfigIssue] = []
+        for (_, group) in groups where group.count > 1 {
+            let names = group.sorted().map { "\"\($0)\"" }
+            let list = names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
+            for host in group.sorted() {
+                issues.append(ConfigIssue(
+                    key: key, path: [key.rawValue, host], severity: .warning,
+                    message: "\(list) are the same site; \(effect)."
+                ))
+            }
+        }
+        return issues.sorted { $0.path.lexicographicallyPrecedes($1.path) }
+    }
+
     private static let pageSchemes: Set<String> = ["http", "https", "file", "about"]
 
     /// `homepage` / `newTabPage`: the app loads them with `URL(string:)`, so anything else silently becomes blank.
@@ -169,7 +193,8 @@ public enum ConfigValidator {
     }
 
     /// `shortcuts`: a name that is no menu action is a warning (`MainMenu.applyShortcuts` skips it, so Paddle runs;
-    /// it is how an entry looks after an action is renamed), a value that doesn't parse is an error, and two
+    /// it is how an entry looks after an action is renamed), a value that doesn't parse is an error, a key with no
+    /// ⌘ or ⌃ (`Shortcut.isUsableMenuShortcut`) is a warning (the menu still installs it, as written), and two
     /// actions on one key is a warning on each configured entry because only one of them can win. Defaults take
     /// part in the duplicate check unless `shortcuts` replaces them (`"none"` clears one).
     private static func shortcutIssues(
@@ -195,6 +220,12 @@ public enum ConfigValidator {
                     message: "\"\(text)\" is not a shortcut. Use modifiers and a key like \"cmd+shift+k\", or \"none\"."
                 ))
                 continue
+            }
+            if !shortcut.isUsableMenuShortcut {
+                issues.append(ConfigIssue(
+                    key: .shortcuts, path: path, severity: .warning,
+                    message: "\(shortcut.displayText) has no ⌘ or ⌃, so it would take a typed character. Add cmd or ctrl (F keys may stand alone)."
+                ))
             }
             if !shortcut.key.isEmpty { bound[shortcut, default: []].append(name) }
         }
