@@ -106,6 +106,11 @@ final class AppModel {
         // Windows are on screen; extensions find them through the registered windows. Session-restored extension
         // pages wait for this (deferred wake).
         await extensions.loadAll(config: config)
+        // Store extensions are checked for updates shortly after launch, then hourly (`ExtensionUpdater.checkIfDue`).
+        Task {
+            try? await Task.sleep(for: .seconds(30))
+            await ExtensionUpdater.shared.checkIfDue(config: AppModel.shared.config)
+        }
     }
 
     /// Pages that loaded while startup block lists were still compiling (after the gate's timeout) reload once,
@@ -405,33 +410,32 @@ final class AppModel {
 
     /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/, block lists, extension folders and
     /// bookmarks. A config.json that doesn't load keeps the previous settings; everything else is still re-read.
-    /// Settings' Apply Now runs the same path without the alert.
+    /// Only that error stops you with an alert; a reload that worked is announced and logged, and its status stays in
+    /// the Activity popover and the Extensions menu, so it never waits for a click. Settings' Apply Now runs the same
+    /// path without the announcement.
     func reloadConfig(showAlert: Bool = true) async {
         await apply(readConfig() ?? config, reloading: true)
         bookmarks.load()
         guard showAlert else { return }
 
-        let alert = NSAlert()
-        if let configError {
-            alert.alertStyle = .warning
-            alert.messageText = "config.json has an error"
-            alert.informativeText = "\(configError)\n\nPaddle kept the previous settings. User CSS, scripts and filters were reloaded."
-        } else {
-            alert.messageText = "Config reloaded"
-            alert.informativeText = (["Content blocking:"] + web.blockerStatus).joined(separator: "\n")
-                + "\n\n" + (["Extensions:"] + extensions.statusLines).joined(separator: "\n")
-                + "\n\nUser CSS, scripts and site user agents apply when a page next loads. userAgentSuffix applies to new tabs."
+        guard let configError else {
+            log.info("config reloaded")
+            AccessibilityNotification.Announcement("Config reloaded").post()
+            return
         }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "config.json has an error"
+        alert.informativeText = "\(configError)\n\nPaddle kept the previous settings. User CSS, scripts and filters were reloaded."
         alert.runModal()
     }
 
     /// Extensions > Reload Extensions: unloads every extension and loads the folder again, edited files included.
+    /// No alert: an extension that fails shows in the window's banner and the Extensions menu's status lines.
     func reloadExtensions() async {
         await extensions.reloadAll(config: config)
-        let alert = NSAlert()
-        alert.messageText = "Extensions reloaded"
-        alert.informativeText = extensions.statusLines.joined(separator: "\n")
-        alert.runModal()
+        log.info("extensions reloaded: \(self.extensions.statusLines.joined(separator: " | "), privacy: .public)")
+        AccessibilityNotification.Announcement("Extensions reloaded").post()
     }
 
     // MARK: - Filter lists
@@ -741,6 +745,7 @@ final class AppModel {
                 app.sweepSleepingTabs()
                 if Date().timeIntervalSince(app.lastHistoryPrune) > 86_400 { app.pruneHistory() }
                 if Date().timeIntervalSince(app.lastFilterCheck) > 3_600 { Task { await app.updateFilterListsIfDue() } }
+                Task { await ExtensionUpdater.shared.checkIfDue(config: app.config) }
             }
         }
         // Nothing in the sweep needs to-the-second timing; tolerance lets macOS batch its wakeup with others.

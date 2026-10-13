@@ -49,13 +49,13 @@ private struct InstallFromLinkView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Paste a Chrome Web Store link or a 32-letter extension id.")
+            Text("Paste a Chrome Web Store or addons.mozilla.org link, or a 32-letter Chrome extension id.")
             TextField("https://chromewebstore.google.com/detail/…", text: $text)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .disabled(busy)
                 .onSubmit(install)
-                .accessibilityLabel("Chrome Web Store link or extension id")
+                .accessibilityLabel("Store link or extension id")
             HStack(alignment: .top, spacing: 8) {
                 if busy {
                     ProgressView().controlSize(.small).accessibilityLabel("Installing")
@@ -84,11 +84,7 @@ private struct InstallFromLinkView: View {
     private func install() {
         guard !busy else { return }
         guard let link = StoreLink.parse(text) else {
-            show("That isn't a Chrome Web Store link or a 32-letter extension id.", failed: true)
-            return
-        }
-        if case .mozillaAddons = link {
-            show("Firefox add-on installs aren't available yet.", failed: true)
+            show("That isn't a Chrome Web Store or addons.mozilla.org link, or a 32-letter extension id.", failed: true)
             return
         }
         busy = true
@@ -108,37 +104,43 @@ private struct InstallFromLinkView: View {
     }
 }
 
-/// The slim bar under the toolbar while the selected tab shows a Chrome Web Store detail page: "Install <name> in
-/// Paddle", or "installed" with no button. Paddle's own view; nothing runs in the page.
+/// The slim bar under the toolbar while the selected tab shows a store detail page (Chrome Web Store or
+/// addons.mozilla.org): "Install <name> in Paddle", or "installed" with no button. Paddle's own view; nothing runs in
+/// the page.
 struct StoreInstallBar: View {
-    let id: String
+    let link: StoreLink
     let pageTitle: String
     let model: BrowserModel
 
     private var installer: StoreInstaller { .shared }
 
     private var name: String {
-        StoreInstall.storePageName(title: pageTitle).map { ExtensionPermissionText.sanitize($0) } ?? id
+        let page = link.source == .mozillaAddons ? AMO.pageName(title: pageTitle) : StoreInstall.storePageName(title: pageTitle)
+        return page.map { ExtensionPermissionText.sanitize($0) } ?? link.storeID
+    }
+
+    private var store: String {
+        link.source == .mozillaAddons ? "addons.mozilla.org" : "the Chrome Web Store"
     }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "puzzlepiece.extension").accessibilityHidden(true)
-            if installer.installing == id {
+            if installer.installing == link {
                 ProgressView().controlSize(.small).accessibilityLabel("Installing")
                 Text("Installing \(name)…")
                 Spacer()
-            } else if installer.isInstalled(chromeID: id) {
-                Text(installer.lastMessage[id] ?? "\(name) is installed in Paddle.")
+            } else if installer.isInstalled(link) {
+                Text(installer.lastMessage[link] ?? "\(name) is installed in Paddle.")
                     .lineLimit(2)
                 Spacer()
             } else {
-                Text(installer.lastMessage[id] ?? "Install \(name) in Paddle")
+                Text(installer.lastMessage[link] ?? "Install \(name) in Paddle")
                     .lineLimit(2)
                 Spacer()
                 Button("Install") { install() }
                     .disabled(installer.installing != nil)
-                    .help("Download it from the Chrome Web Store, check its signatures and install it in Paddle")
+                    .help("Download it from \(store), check its signatures and install it in Paddle")
                     .accessibilityLabel("Install \(name) in Paddle")
             }
         }
@@ -152,7 +154,7 @@ struct StoreInstallBar: View {
         let window = model.controller?.window
         AccessibilityNotification.Announcement("Installing \(name)").post()
         Task {
-            let outcome = await StoreInstaller.shared.install(.chromeWebStore(id: id), window: window)
+            let outcome = await StoreInstaller.shared.install(link, window: window)
             AccessibilityNotification.Announcement(outcome.message).post()
         }
     }

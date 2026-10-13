@@ -34,6 +34,34 @@ enum ExtensionPrompts {
         }
     }
 
+    /// A store update that asks for access the user hasn't granted, or whose certificate chain isn't confirmed
+    /// (`ExtensionUpdater`). Allow swaps the new version in and grants what it asks for; Don't Allow keeps the current
+    /// version running and skips this update. `lines` is empty when the update asks for nothing new. App-modal.
+    static func update(
+        name: String, icon: NSImage?, lines: [String], notice: String?, folder: String, from current: String, to version: String
+    ) -> Bool {
+        let old = ExtensionPermissionText.sanitize(current, max: 30)
+        let alert = NSAlert()
+        alert.messageText = "Update “\(name)” to \(ExtensionPermissionText.sanitize(version, max: 30))?"
+        var text: [String] = []
+        if !lines.isEmpty {
+            text.append("It asks for access you haven't allowed yet:")
+            text += lines.map { "• \($0)" }
+        }
+        if let notice {
+            if !text.isEmpty { text.append("") }
+            text.append(notice)
+        }
+        if !text.isEmpty { text.append("") }
+        text.append("Don't Allow keeps version \(old) running and skips this update.")
+        text.append("Folder: extensions/\(ExtensionPermissionText.sanitize(folder, max: 80))")
+        alert.informativeText = text.joined(separator: "\n")
+        if let icon { alert.icon = icon }
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Don't Allow")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     /// A running extension asking for more (`permissions.request`, optional hosts). The caller presents it: as a
     /// sheet on the tab that asked, or app-modal.
     static func runtime(name: String, icon: NSImage?, lines: [String], host: String?) -> NSAlert {

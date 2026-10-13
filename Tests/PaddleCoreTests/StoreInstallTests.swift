@@ -38,7 +38,10 @@ struct StoreInstallTests {
         let extensions = root.appending(path: "extensions", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: extensions, withIntermediateDirectories: true)
         let staging = extensions.appending(path: ".installing-\(developerID)", directoryHint: .isDirectory)
-        let package = try StoreInstall.unpack(zip: verified.zip, entries: entries, id: developerID, into: staging, scratch: root.appending(path: "scratch"))
+        let package = try StoreInstall.unpack(
+            zip: verified.zip, entries: entries, store: .chromeWebStore, id: developerID, into: staging,
+            scratch: root.appending(path: "scratch")
+        )
 
         #expect(package.id == developerID)
         #expect(package.displayName == "Sponsor Block!")
@@ -63,13 +66,13 @@ struct StoreInstallTests {
         #expect(scan.entries.map(\.name) == ["sponsor-block"])
     }
 
-    private func unpackError(_ items: [TestZip.Item], id: String? = nil) throws -> StoreInstall.Failure? {
+    private func unpackError(_ items: [TestZip.Item], store: Persona.Source = .chromeWebStore, id: String? = nil) throws -> StoreInstall.Failure? {
         let zip = TestZip.make(items)
         let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }
         do {
             _ = try StoreInstall.unpack(
-                zip: zip, entries: try ZipSafety.entries(in: zip), id: id ?? developerID,
+                zip: zip, entries: try ZipSafety.entries(in: zip), store: store, id: id ?? developerID,
                 into: root.appending(path: "staging"), scratch: root.appending(path: "scratch")
             )
             return nil
@@ -94,6 +97,15 @@ struct StoreInstallTests {
         #expect(try unpackError([TestZip.file("manifest.json", #"{"key":"\#(own)","name":"A"}"#)]) == nil)
     }
 
+    /// Cross-browser add-ons carry a Chrome `key`; the add-on's signature is what checks it (`AMO.verifySignature`), so
+    /// the Chrome key rule applies to Chrome Web Store packages only.
+    @Test func aChromeKeyIsCheckedOnlyForChromeWebStorePackages() throws {
+        let stranger = TestRSAKey.stranger.spki.base64EncodedString()
+        let item = TestZip.file("manifest.json", #"{"key":"\#(stranger)","name":"A","browser_specific_settings":{"gecko":{"id":"a@example.com"}}}"#)
+        #expect(try unpackError([item], store: .mozillaAddons, id: "a@example.com") == nil)
+        #expect(try unpackError([item], store: .chromeWebStore) == .keyMismatch)
+    }
+
     @Test func refusesAnExistingStagingFolder() throws {
         let zip = TestZip.make([TestZip.file("manifest.json", "{}")])
         let root = try temporaryFolder()
@@ -101,7 +113,10 @@ struct StoreInstallTests {
         let staging = root.appending(path: "staging")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         #expect(throws: StoreInstall.Failure.stagingExists) {
-            try StoreInstall.unpack(zip: zip, entries: try ZipSafety.entries(in: zip), id: developerID, into: staging, scratch: root.appending(path: "scratch"))
+            try StoreInstall.unpack(
+                zip: zip, entries: try ZipSafety.entries(in: zip), store: .chromeWebStore, id: developerID, into: staging,
+                scratch: root.appending(path: "scratch")
+            )
         }
     }
 
@@ -110,7 +125,7 @@ struct StoreInstallTests {
         let root = try temporaryFolder()
         defer { try? FileManager.default.removeItem(at: root) }
         let package = try StoreInstall.unpack(
-            zip: zip, entries: try ZipSafety.entries(in: zip), id: developerID.uppercased(),
+            zip: zip, entries: try ZipSafety.entries(in: zip), store: .chromeWebStore, id: developerID.uppercased(),
             into: root.appending(path: "staging"), scratch: root.appending(path: "scratch")
         )
         #expect(package.displayName == developerID)

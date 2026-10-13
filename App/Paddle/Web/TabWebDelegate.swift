@@ -132,11 +132,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private static let setCustomUserAgent = NSSelectorFromString("_setCustomUserAgent:")
 
-    /// Per-site user agent from config.json. Returns false when the load was cancelled to restart it.
+    /// The host's user agent from config.json: `siteUserAgents`, else its `sitePersonas` persona. Returns false when the
+    /// load was cancelled to restart it.
     private func applySiteUserAgent(
         for host: String, _ navigationAction: WKNavigationAction, _ preferences: WKWebpagePreferences, in webView: WKWebView
     ) -> Bool {
-        let wanted = AppModel.shared.config.userAgent(forHost: host)
+        let wanted = AppModel.shared.config.pageUserAgent(forHost: host)
         // Private WebKit API: a user agent for this navigation only, so history, form posts and restored
         // state are untouched.
         if preferences.responds(to: Self.setCustomUserAgent) {

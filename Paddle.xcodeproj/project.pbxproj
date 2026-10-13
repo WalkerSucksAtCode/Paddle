@@ -28,12 +28,14 @@
 		42D28E30C000EE2D21CEB1E2 /* Glyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA6FEB74A284AD57FB757A0 /* Glyph.swift */; };
 		445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */; };
 		45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEA8DA57CE8927AE3C65953 /* ConfigWatcher.swift */; };
+		4BBC5398DF7F6A4E9CACAA4A /* ExtensionUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */; };
 		4EC203CCBE4EA078557D477C /* SettingsModel+Keys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D00D63F94925290CC4D169 /* SettingsModel+Keys.swift */; };
 		5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */; };
 		51F4933CF1904CF98671BEBC /* ExtensionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */; };
 		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
 		60312E19BA4F1F8CDA9A8449 /* WebsiteDataSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */; };
 		6219413CB10CDA63036C1A16 /* SettingsModel+Sites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B449E7E2031D289F74768AF /* SettingsModel+Sites.swift */; };
+		63D6A746C25A8289A6EF1D34 /* AMO in Resources */ = {isa = PBXBuildFile; fileRef = 6742A205E6C2867AE660D717 /* AMO */; };
 		6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE304A3A835594677036488 /* ProcessMemory.swift */; };
 		746D8AE754715FD5F613325D /* Scriptlets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */; };
 		7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622C488303FD517D47056F39 /* StoreInstaller.swift */; };
@@ -75,6 +77,7 @@
 		0FA6FEB74A284AD57FB757A0 /* Glyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glyph.swift; sourceTree = "<group>"; };
 		0FF189A4771C73A817501D59 /* ShortcutsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsPane.swift; sourceTree = "<group>"; };
 		11E5FE7EECAC5C0800D39F69 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
+		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
 		25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEnvironment.swift; sourceTree = "<group>"; };
@@ -91,6 +94,7 @@
 		4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectorValidator.swift; sourceTree = "<group>"; };
 		52C91606DA827F7C24613219 /* ExtensionControllerDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionControllerDelegate.swift; sourceTree = "<group>"; };
 		622C488303FD517D47056F39 /* StoreInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreInstaller.swift; sourceTree = "<group>"; };
+		6742A205E6C2867AE660D717 /* AMO */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AMO; path = Resources/AMO; sourceTree = SOURCE_ROOT; };
 		67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowController.swift; sourceTree = "<group>"; };
 		69D00D63F94925290CC4D169 /* SettingsModel+Keys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Keys.swift"; sourceTree = "<group>"; };
 		74ED21DEB238D504EB6834C7 /* WebInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebInspector.swift; sourceTree = "<group>"; };
@@ -243,6 +247,7 @@
 				38FF180A042514269EA95F84 /* ExtensionPopups.swift */,
 				FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */,
 				98C6A2F4AFE93544F200F0A2 /* ExtensionsMenu.swift */,
+				15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */,
 				622C488303FD517D47056F39 /* StoreInstaller.swift */,
 				AB52F5C90420FF8983F587F4 /* Compat */,
 			);
@@ -286,6 +291,7 @@
 		E8F3AD0DC6DE354F4B602AB2 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				6742A205E6C2867AE660D717 /* AMO */,
 				08A0AF5CF0C8F628DF3A3616 /* FilterSnapshots */,
 			);
 			path = Resources;
@@ -364,6 +370,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				63D6A746C25A8289A6EF1D34 /* AMO in Resources */,
 				8682F6C461619D04A7436F15 /* Assets.xcassets in Resources */,
 				9889453BFC7814356B7E0C3F /* FilterSnapshots in Resources */,
 			);
@@ -396,6 +403,7 @@
 				1AB913A91D0FBFC786D5FE27 /* ExtensionPopups.swift in Sources */,
 				2179624B092B340F7AE1DC68 /* ExtensionPrompts.swift in Sources */,
 				51F4933CF1904CF98671BEBC /* ExtensionToolbar.swift in Sources */,
+				4BBC5398DF7F6A4E9CACAA4A /* ExtensionUpdater.swift in Sources */,
 				296BA5602A644EEB1E16071D /* ExtensionsMenu.swift in Sources */,
 				9F636B7ED71DAC59EB13066C /* ExtensionsPane.swift in Sources */,
 				882FE6995813F4FA7F6583A5 /* FaviconStore.swift in Sources */,

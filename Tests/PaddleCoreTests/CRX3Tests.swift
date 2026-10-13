@@ -101,12 +101,16 @@ struct CRX3Tests {
         }
     }
 
-    @Test func publisherKeyOnlyCountsAsRSA() {
+    /// The Web Store's publisher key is a P-256 key today (a real store package, 2026-10-12): an ECDSA publisher
+    /// proof counts like an RSA one, as in Chromium's `crx_verifier.cc`.
+    @Test func publisherKeyCountsAsECDSA() throws {
         let ecdsa = P256.Signing.PrivateKey()
         let ecdsaHash = Data(SHA256.hash(data: ecdsa.publicKey.derRepresentation))
         let crx = TestCRX.build(zip: zip, signers: [.rsa(developer), .ecdsa(ecdsa)])
+        #expect(try CRX3.verify(crx, expectedID: developerID, publisherKeyHashes: [ecdsaHash]).id == developerID)
+        // Without that ECDSA proof the same requirement fails.
         #expect(throws: CRX3.VerifyError.missingStoreSignature) {
-            try CRX3.verify(crx, expectedID: developerID, publisherKeyHashes: [ecdsaHash])
+            try CRX3.verify(TestCRX.build(zip: zip, signers: [.rsa(developer)]), expectedID: developerID, publisherKeyHashes: [ecdsaHash])
         }
     }
 

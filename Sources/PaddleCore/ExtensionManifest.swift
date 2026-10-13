@@ -69,7 +69,7 @@ public struct ExtensionManifest: Sendable, Equatable {
         permissions.filter { !supported.contains($0) }.sorted()
     }
 
-    private static func isPattern(_ s: String) -> Bool {
+    static func isPattern(_ s: String) -> Bool {
         s.contains("/") || s.contains("*") || s.hasPrefix("<")
     }
 

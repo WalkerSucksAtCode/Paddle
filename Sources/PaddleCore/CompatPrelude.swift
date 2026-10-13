@@ -224,10 +224,22 @@ public enum CompatPrelude {
       };
 
       // MARK: persona
-      // Content worlds keep WebKit's own `browser` and `chrome` for both personas. Any pin there (a read-only or a
-      // writable undefined `browser` beside a pinned `chrome`) loses tabs.sendMessage replies, and WebKit puts a
-      // writable `browser` back within a second (E11 and its re-run); a read-only one would also stop the common
-      // `browser = chrome` polyfill. Proton Pass's autofill depends on those replies.
+      // Content worlds keep WebKit's own `browser` and `chrome` for both personas: a pin to another value there (a
+      // writable undefined `browser` beside a pinned `chrome`) loses tabs.sendMessage replies (E11 and its re-run).
+      // They are locked to WebKit's own objects, though: WebKit delivers runtime.onMessage to a content world through
+      // that world's `browser` global, so a content script that swaps it out (Proton Pass replaces both with a
+      // Proxy that answers nothing, to keep pages away from the API) stops receiving tabs.sendMessage at all, and its
+      // autofill click fills nothing (seen live, 2026-10-13). The setter ignores the write, so the swap and a
+      // `browser = chrome` polyfill both find `browser` unchanged and working.
+      section('content.globals', () => {
+        if (full || !isWindow) return;
+        for (const k of ['browser', 'chrome']) {
+          let v; try { v = G[k]; } catch (e) {}
+          if (!v) continue;
+          try { Object.defineProperty(G, k, {get: () => v, set: () => {}, enumerable: true, configurable: false}); }
+          catch (e) { state.errors.push('content.' + k + ': ' + e.message); }
+        }
+      });
       section('persona.globals', () => {
         if (!full) return;
         if (P.persona === 'chrome') {

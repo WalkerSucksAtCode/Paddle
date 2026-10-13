@@ -134,6 +134,14 @@ final class WebEnvironment {
     func reloadUserScripts() {
         contentController.removeAllUserScripts()
 
+        // First, so user scripts see the persona too. Private windows share this controller, so they get it as well.
+        let persona = SitePersonaScript.source(for: config.sitePersonas)
+        if !persona.isEmpty {
+            contentController.addUserScript(WKUserScript(
+                source: persona, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page
+            ))
+        }
+
         if let css = try? String(contentsOf: Paths.userCSS, encoding: .utf8), Self.hasRealCSS(css) {
             contentController.addUserScript(WKUserScript(
                 source: Self.styleInjection(css),

@@ -103,6 +103,20 @@ public enum ConfigValidator {
 
         issues += sameSiteIssues(Array(config.sitePersonas.keys), key: .sitePersonas, effect: "only one applies")
 
+        // A non-empty user agent wins on the wire, but the page's JavaScript still takes the persona's identity: say so.
+        for host in config.siteUserAgents.keys.sorted() where config.siteUserAgents[host]?.isEmpty == false {
+            let normalized = PaddleConfig.normalizedHost(host)
+            let hasPersona = config.sitePersonas.contains { key, persona in
+                PaddleConfig.normalizedHost(key) == normalized && (persona == .chrome || persona == .firefox)
+            }
+            if hasPersona {
+                issues.append(ConfigIssue(
+                    key: .siteUserAgents, path: ["siteUserAgents", host], severity: .warning,
+                    message: "\"\(host)\" has both a user agent (siteUserAgents) and a persona (sitePersonas): the site gets the user agent string but the persona's JavaScript identity. Remove one."
+                ))
+            }
+        }
+
         for folder in config.extensionCompat.keys.sorted() {
             if folder.isEmpty || folder.contains("/") || folder.hasPrefix(".") {
                 issues.append(ConfigIssue(

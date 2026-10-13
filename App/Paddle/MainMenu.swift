@@ -115,6 +115,7 @@ enum MainMenu {
 
         let extensions = submenu(main, "Extensions")
         add(extensions, "installExtensionFromLink", "Install from Link…", #selector(AppDelegate.paddleInstallExtensionFromLink(_:)), "", target: appDelegate)
+        add(extensions, "checkExtensionUpdates", "Check for Extension Updates", #selector(AppDelegate.paddleCheckExtensionUpdates(_:)), "", target: appDelegate)
         add(extensions, "openExtensionsFolder", "Open Extensions Folder", #selector(AppDelegate.paddleOpenExtensionsFolder(_:)), "", target: appDelegate)
         add(extensions, "reloadExtensions", "Reload Extensions", #selector(AppDelegate.paddleReloadExtensions(_:)), "", target: appDelegate)
         // Each running extension and the load status lines follow, filled in by ExtensionsMenuDelegate when the menu opens.

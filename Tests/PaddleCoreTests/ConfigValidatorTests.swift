@@ -76,6 +76,17 @@ struct ConfigValidatorTests {
         #expect(paths(config, .warning) == ["siteUserAgents.example.com"])
     }
 
+    @Test func aUserAgentAndAPersonaForOneHostWarn() {
+        var config = PaddleConfig()
+        config.siteUserAgents = ["Example.com": "UA", "empty.example": "", "fine.example": "UA"]
+        config.sitePersonas = ["example.com.": .chrome, "empty.example": .firefox]
+        // An empty user agent is no override, so only the non-empty one overlaps the persona.
+        #expect(paths(config, .warning) == ["siteUserAgents.empty.example", "siteUserAgents.Example.com"])
+        let message = issues(config).first { $0.path == ["siteUserAgents", "Example.com"] }?.message
+        #expect(message == "\"Example.com\" has both a user agent (siteUserAgents) and a persona (sitePersonas): the site gets the user agent string but the persona's JavaScript identity. Remove one.")
+        #expect(paths(config, .error).isEmpty)
+    }
+
     @Test func siteZoomMustBePositive() {
         var config = PaddleConfig()
         config.sites = ["example.com": SiteSettings(zoom: 0), "fine.example": SiteSettings(zoom: 1.5), "": SiteSettings(javaScript: false)]

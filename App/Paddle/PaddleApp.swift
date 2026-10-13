@@ -100,6 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func paddleInstallExtensionFromLink(_ sender: Any?) { InstallFromLinkPanel.show(over: NSApp.mainWindow) }
 
+    @objc func paddleCheckExtensionUpdates(_ sender: Any?) { Task { await ExtensionUpdater.shared.checkAll() } }
+
     @objc func paddleReloadExtensions(_ sender: Any?) { Task { await AppModel.shared.reloadExtensions() } }
 
     @objc func paddleShowHistory(_ sender: Any?) { HistoryWindowController.show() }

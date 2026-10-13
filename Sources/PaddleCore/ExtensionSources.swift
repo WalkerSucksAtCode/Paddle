@@ -4,7 +4,7 @@ import Foundation
 /// `{"sponsorblock": {"store": "chromeWebStore", "id": "<crx id>", "version": "5.9.1",
 /// "installedAt": "2026-10-12T09:00:00Z", "lastCheck": "2026-10-13T09:00:00Z", "fileHashes": {"manifest.json": "<sha256 hex>"}}}`.
 /// Folders dropped into `extensions/` by hand have no entry. `id` is the Chrome id for the Chrome Web Store and the
-/// slug or guid for addons.mozilla.org.
+/// guid for addons.mozilla.org; an add-on's `slug` (its store page's name) is recorded too, when it was known.
 public struct ExtensionSources: Codable, Sendable, Equatable {
     public struct Record: Codable, Sendable, Equatable {
         public var store: Persona.Source
@@ -16,10 +16,20 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
         /// SHA-256 (lowercase hex) of each file as installed, by path inside the folder, so a later update can tell
         /// files the user changed.
         public var fileHashes: [String: String]
+        /// Whether the package's signature chain was checked: true for a Chrome Web Store package (Google's and the
+        /// developer's signatures), and for an addons.mozilla.org add-on only when Mozilla's root was bundled. False when
+        /// the add-on's file hash and signature were checked but its certificate wasn't. Absent before this was recorded.
+        public var verified: Bool?
+        /// The store version the user refused in an update alert. That version is not downloaded or asked about again;
+        /// installing a newer one clears it. Absent until a refusal.
+        public var declinedVersion: String?
+        /// The addons.mozilla.org slug the install link named, so the store page's link matches this record. Absent for
+        /// Chrome Web Store installs and for records written before it was recorded.
+        public var slug: String?
 
         public init(
             store: Persona.Source, id: String, version: String? = nil, installedAt: Date? = nil, lastCheck: Date? = nil,
-            fileHashes: [String: String] = [:]
+            fileHashes: [String: String] = [:], verified: Bool? = nil, declinedVersion: String? = nil, slug: String? = nil
         ) {
             self.store = store
             self.id = id
@@ -27,6 +37,9 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
             self.installedAt = installedAt
             self.lastCheck = lastCheck
             self.fileHashes = fileHashes
+            self.verified = verified
+            self.declinedVersion = declinedVersion
+            self.slug = slug
         }
 
         public init(from decoder: any Decoder) throws {
@@ -37,6 +50,9 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
             installedAt = try c.decodeIfPresent(Date.self, forKey: .installedAt)
             lastCheck = try c.decodeIfPresent(Date.self, forKey: .lastCheck)
             fileHashes = try c.decodeIfPresent([String: String].self, forKey: .fileHashes) ?? [:]
+            verified = try c.decodeIfPresent(Bool.self, forKey: .verified)
+            declinedVersion = try c.decodeIfPresent(String.self, forKey: .declinedVersion)
+            slug = try c.decodeIfPresent(String.self, forKey: .slug)
         }
     }
 
@@ -58,10 +74,14 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
     /// Records an install or update into `folder`, replacing what was there. `installedAt` and `lastCheck` are
     /// `now`, to the second.
     public mutating func recordInstall(
-        folder: String, store: Persona.Source, id: String, version: String?, fileHashes: [String: String], now: Date
+        folder: String, store: Persona.Source, id: String, version: String?, fileHashes: [String: String],
+        verified: Bool? = nil, slug: String? = nil, now: Date
     ) {
         let now = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
-        records[folder] = Record(store: store, id: id, version: version, installedAt: now, lastCheck: now, fileHashes: fileHashes)
+        records[folder] = Record(
+            store: store, id: id, version: version, installedAt: now, lastCheck: now, fileHashes: fileHashes, verified: verified,
+            slug: slug
+        )
     }
 
     /// Drops records of folders that are gone, so a folder dropped in later under the same name doesn't inherit
@@ -73,11 +93,17 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
     }
 
     /// The folder already holding `id` from `store`, so reinstalling the same extension replaces it instead of adding
-    /// a second copy. Chrome ids compare lowercase. When several folders claim it, the first by name.
+    /// a second copy. `id` is a Chrome id (compared lowercase), or an add-on's guid or slug (a slug compares lowercase
+    /// too). When several folders claim it, the first by name.
     public func folder(forStoreID id: String, store: Persona.Source) -> String? {
-        let wanted = store == .chromeWebStore ? id.lowercased() : id
-        return records
-            .filter { $0.value.store == store && (store == .chromeWebStore ? $0.value.id.lowercased() : $0.value.id) == wanted }
+        records
+            .filter { _, record in
+                guard record.store == store else { return false }
+                guard store == .chromeWebStore else {
+                    return record.id == id || record.slug?.lowercased() == id.lowercased()
+                }
+                return record.id.lowercased() == id.lowercased()
+            }
             .keys.sorted().first
     }
 

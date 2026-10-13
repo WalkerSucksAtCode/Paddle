@@ -63,11 +63,12 @@ struct BrowserHistoryImportTests {
         let fixture = try ImportFixture()
         let file = try fixture.chromeHistory()
         let before = try Data(contentsOf: file)
-        let tempBefore = Set(try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path))
-        _ = try BrowserHistoryReader.read(database: file, browser: .chrome, now: fixtureNow)
+        // The copy goes in a folder of this test's own, so copies from parallel tests in the system's temporary folder don't count.
+        let scratch = fixture.root.appending(path: "scratch", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        _ = try BrowserHistoryReader.read(database: file, browser: .chrome, now: fixtureNow, temporaryRoot: scratch)
         #expect(try Data(contentsOf: file) == before)
-        let tempAfter = Set(try FileManager.default.contentsOfDirectory(atPath: FileManager.default.temporaryDirectory.path))
-        #expect(tempAfter.filter { $0.hasPrefix("PaddleImport-") }.subtracting(tempBefore.filter { $0.hasPrefix("PaddleImport-") }).isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty)
     }
 
     @Test func readsRowsThatOnlyLiveInTheWAL() throws {

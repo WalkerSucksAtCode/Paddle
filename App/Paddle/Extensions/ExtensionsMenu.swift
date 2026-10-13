@@ -23,6 +23,12 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
             // No action: AppKit shows it disabled.
             add(NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: ""), to: menu)
         }
+        // Store updates, one line per folder checked (`ExtensionUpdater`).
+        let updates = ExtensionUpdater.shared.statuses
+        for folder in updates.keys.sorted() {
+            let line = "\(folder): \(updates[folder] ?? "")"
+            add(NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: ""), to: menu)
+        }
     }
 
     func menuDidClose(_ menu: NSMenu) {

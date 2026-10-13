@@ -60,9 +60,11 @@ public enum StoreInstall {
     /// Unpacks `zip` (whose `entries` passed `ZipSafety.entries`) into `staging`, which must not exist yet, through a
     /// file in `scratch`. Then: the folder must hold exactly `entries` (`ZipSafety.verifyUnpacked`); permissions
     /// are reset to 0644 files and 0755 folders; `manifest.json` must be a regular file at the top holding a JSON
-    /// object; a manifest `key`, if any, must be `id`'s. The caller deletes `staging` and `scratch` whatever happens.
+    /// object; for a Chrome Web Store package, a manifest `key`, if any, must be `id`'s (add-ons carry Chrome keys in
+    /// cross-browser builds, and their signature is checked elsewhere). The caller deletes `staging` and `scratch` whatever
+    /// happens.
     public static func unpack(
-        zip: Data, entries: [ZipSafety.Entry], id: String, into staging: URL, scratch: URL,
+        zip: Data, entries: [ZipSafety.Entry], store: Persona.Source, id: String, into staging: URL, scratch: URL,
         fileManager: FileManager = .default, timeout: TimeInterval = 120
     ) throws -> Package {
         try fileManager.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -84,7 +86,7 @@ public enum StoreInstall {
         }
         guard let data = try? Data(contentsOf: manifestURL),
               let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { throw Failure.manifestUnreadable }
-        if let key = manifest["key"] {
+        if store == .chromeWebStore, let key = manifest["key"] {
             guard let key = key as? String, ExtensionIdentity.chromeID(manifestKey: key) == id.lowercased() else { throw Failure.keyMismatch }
         }
         let name = displayName(manifest: manifest, root: staging)?.trimmingCharacters(in: .whitespacesAndNewlines)

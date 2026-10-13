@@ -67,12 +67,14 @@ public enum BrowserHistoryReader {
         try read(database: source.historyFile, browser: source.browser, limit: limit, since: since, now: now)
     }
 
+    /// `temporaryRoot` is where the copy's folder is made (the app uses the system's temporary folder).
     public static func read(
-        database: URL, browser: ImportSource.Browser, limit: Int = defaultRowCap, since: Date? = nil, now: Date = Date()
+        database: URL, browser: ImportSource.Browser, limit: Int = defaultRowCap, since: Date? = nil, now: Date = Date(),
+        temporaryRoot: URL = FileManager.default.temporaryDirectory
     ) throws -> HistoryReadResult {
         guard limit > 0 else { return HistoryReadResult() }
         let fm = FileManager.default
-        let folder = fm.temporaryDirectory.appending(path: "PaddleImport-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let folder = temporaryRoot.appending(path: "PaddleImport-\(UUID().uuidString)", directoryHint: .isDirectory)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? fm.removeItem(at: folder) }
 

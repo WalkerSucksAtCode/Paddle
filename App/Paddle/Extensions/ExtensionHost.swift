@@ -279,7 +279,7 @@ final class ExtensionHost {
     // MARK: - Controller
 
     /// Makes the shared controller. Made late (after a first prompt, or by Reload Config), it is told about the
-    /// windows and tabs that already exist; their web views were made without it, so `reloadTabsForController`
+    /// windows and tabs that already exist; their web views were made without it, so `renewTabsForLoadedContexts`
     /// must follow.
     @discardableResult
     private func ensureController() -> Bool {
@@ -306,11 +306,14 @@ final class ExtensionHost {
         return true
     }
 
-    /// Web views made before the controller existed don't carry it. Background tabs that aren't busy go to
-    /// sleep (they wake with it); selected tabs are slept and woken at once, keeping their history. Tabs playing
-    /// media or capturing, and sign-in popups with their openers (sleeping either side breaks window.opener),
-    /// pick it up on their next wake.
-    private func reloadTabsForController() async {
+    /// Web views made before an extension context loaded can't be reached by it: its background's `tabs.sendMessage`
+    /// to them resolves to nothing, even after the page reloads, though their content scripts run (WebKit; seen live
+    /// with Proton Pass, whose autofill click then filled nothing). Web views made before the controller existed
+    /// don't carry it at all. So after any context loads, background tabs that aren't busy go to sleep (they wake
+    /// with a fresh web view); selected tabs are slept and woken at once, keeping their history. Tabs playing media
+    /// or capturing, and sign-in popups with their openers (sleeping either side breaks window.opener), pick it up
+    /// on their next wake.
+    private func renewTabsForLoadedContexts() async {
         var reloaded = 0
         let paired = AppModel.shared.liveOpenerPairs()
         for window in registeredWindows.compactMap(\.value) {
@@ -409,11 +412,11 @@ final class ExtensionHost {
                 status = [:]
                 notes = []
                 pruneOverlays()
-                let hadController = controller != nil
+                let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
                 let pending = await loadEntries(entries, config: config)
                 loadsDone.resume()
                 for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
-                if !hadController, controller != nil { await reloadTabsForController() }
+                if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
                 finishLoad()
             }
         }
@@ -430,7 +433,7 @@ final class ExtensionHost {
             status = [:]
             notes = []
             pruneOverlays()
-            let hadController = controller != nil
+            let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
 
             for ext in loaded {
                 let entry = entries.first { $0.name == ext.name }
@@ -473,7 +476,7 @@ final class ExtensionHost {
             let pending = await loadEntries(entries.filter { !running.contains($0.name) }, config: config)
             for ext in loaded where running.contains(ext.name) { status[ext.name] = loadedStatus(ext) }
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
-            if !hadController, controller != nil { await reloadTabsForController() }
+            if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
             finishLoad()
         }.value
     }
@@ -490,10 +493,10 @@ final class ExtensionHost {
             pruneOverlays()
             for ext in loaded { unload(ext, closingTabs: false) }
             compatOff = []
-            let hadController = controller != nil
+            let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
             let pending = await loadEntries(entries, config: config)
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
-            if !hadController, controller != nil { await reloadTabsForController() }
+            if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
             finishLoad()
         }.value
     }
@@ -535,7 +538,7 @@ final class ExtensionHost {
             deniedThisSession[folder] = nil
             autoDenied[folder] = nil
             if let current { unload(current, closingTabs: false) }
-            let hadController = controller != nil
+            let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
             let pending = await loadEntries([entry], config: config)
             if pending.contains(where: { $0.entry.name == folder }) {
                 writeDecisions()
@@ -543,7 +546,7 @@ final class ExtensionHost {
                 decisions.set(folder: folder, saved)
             }
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
-            if !hadController, controller != nil { await reloadTabsForController() }
+            if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
             finishLoad()
         }.value
     }
@@ -1113,6 +1116,44 @@ final class ExtensionHost {
             return
         }
         activate(entry, item.setup, item.webExtension, manifest: item.manifest, problems: item.problems, requested: item.requested, config: config)
+    }
+
+    // MARK: - Store updates (`ExtensionUpdater`)
+
+    /// What a newer version of `folder` asks about before it may replace the copy that runs (`ExtensionPermissionDiff.asks`).
+    /// Nil while the permissions file is unreadable, when nothing can be decided.
+    func updateAsks(
+        folder: String, name: String, requested: ExtensionPermissionDiff.Requests, added: ExtensionPermissionDiff.Requests
+    ) -> ExtensionPermissionDiff.Requests? {
+        guard decisionsError == nil else { return nil }
+        return ExtensionPermissionDiff.asks(requested: requested, added: added, decisions: decisions, folder: folder, name: name)
+    }
+
+    /// The update alert, in the queue the install alerts use so that two never overlap. True when the user allowed it.
+    func confirmUpdate(
+        folder: String, name: String, icon: NSImage?, lines: [String], notice: String?, from current: String, to version: String
+    ) async -> Bool {
+        await serialized {
+            ExtensionPrompts.update(
+                name: name, icon: icon, lines: lines, notice: notice, folder: folder, from: current, to: version
+            )
+        }
+    }
+
+    /// Records what an allowed update grants: `asks` become allowed, so the new version loads without asking. Called once the
+    /// new copy is in place. If the answers can't be written, the next load asks, as it does for any new request.
+    func recordUpdateAllowed(
+        folder: String, name: String, version: String, requested: ExtensionPermissionDiff.Requests, asks: ExtensionPermissionDiff.Requests
+    ) {
+        guard decisionsError == nil else { return }
+        var snapshot = decisions.byFolder[folder].flatMap { $0.name == name ? $0 : nil }
+            ?? ExtensionSnapshot(name: name, version: version, decided: Date())
+        snapshot.version = version
+        snapshot.decided = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
+        snapshot.apply(.allow, requested: requested, undecided: asks)
+        decisions.set(folder: folder, snapshot)
+        writeDecisions()
+        log.info("\(folder, privacy: .public): update to \(version, privacy: .public) allowed; its new requests are granted")
     }
 
     /// WebKit asking whether an extension may see these URLs. Without a tab (`tabs.query`, a CORS failure) and with

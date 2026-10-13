@@ -42,8 +42,9 @@ struct ScriptletLibraryTests {
             try? await webView.evaluateJavaScript("String(\(js))") as? String
         }
 
-        /// Polls `js` until it is truthy, for up to `seconds`.
-        func waitFor(_ js: String, seconds: Double = 3) async -> Bool {
+        /// Polls `js` until it is truthy, for up to `seconds`. Returns at once when it is; the limit only matters when
+        /// many WebKit tests run in parallel and a page is slow to start.
+        func waitFor(_ js: String, seconds: Double = 15) async -> Bool {
             let deadline = ContinuousClock.now + .milliseconds(Int(seconds * 1000))
             while ContinuousClock.now < deadline {
                 if (try? await webView.evaluateJavaScript("!!(\(js))") as? Bool) == true { return true }
@@ -368,7 +369,7 @@ struct ScriptletLibraryTests {
         setTimeout(function control() { window.order.push('control'); }, 1000);
         </script>
         """#)
-        #expect(await h.waitFor("window.order.length === 2", seconds: 10))
+        #expect(await h.waitFor("window.order.length === 2"))
         #expect(await h.string("window.order.join()") == "boosted,control", "three boosted ticks before one plain 1 s timer")
     }
 
@@ -380,7 +381,7 @@ struct ScriptletLibraryTests {
         setTimeout(function adT() { window.order.push('boosted'); }, 1000);
         </script>
         """#)
-        #expect(await h.waitFor("window.order.length === 2", seconds: 10))
+        #expect(await h.waitFor("window.order.length === 2"))
         #expect(await h.string("window.order.join()") == "boosted,control", "the matching timer fires first though it was set second")
     }
 

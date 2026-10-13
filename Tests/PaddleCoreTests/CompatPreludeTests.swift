@@ -141,17 +141,20 @@ struct CompatPreludeTests {
         #expect(Self.eval(c, "chrome.runtime.OnInstalledReason.BROWSER_UPDATE") == #""browser_update""#)
     }
 
-    /// E11 and its re-run: in a content world both personas leave `browser` and `chrome` as WebKit made them; any pin
-    /// there loses tabs.sendMessage replies.
-    @Test func contentWorldGlobalsFollowE11() throws {
+    /// In a page's content world both personas keep WebKit's own `browser` and `chrome` (E11: a pin to another value
+    /// loses tabs.sendMessage replies), locked so a content script can't swap them out: WebKit delivers
+    /// runtime.onMessage through that world's `browser`, and Proton Pass's Proxy swap had cut its autofill off.
+    @Test func contentWorldGlobalsAreWebKitsAndCantBeSwapped() throws {
         for persona in [Persona.firefox, .chrome] {
-            let context = try Self.run(try Self.plan(persona), kind: .content)
+            let context = try Self.run(try Self.plan(persona), kind: .content, window: true)
+            context.evaluateScript("globalThis.__b = browser; globalThis.__c = chrome;")
             for name in ["browser", "chrome"] {
-                #expect(Self.eval(context, "(() => { const d = Object.getOwnPropertyDescriptor(globalThis, '\(name)'); return [d.configurable, d.writable, 'get' in d]; })()") == "[true,true,false]", "\(persona) \(name)")
+                #expect(Self.eval(context, "(() => { const d = Object.getOwnPropertyDescriptor(globalThis, '\(name)'); return [d.configurable, 'get' in d, 'set' in d]; })()") == "[false,true,true]", "\(persona) \(name)")
             }
-            #expect(Self.eval(context, "(() => { browser = 1; chrome = 2; return [browser, chrome]; })()") == "[1,2]")
+            // Proton Pass's swap, in strict mode: ignored, no exception, and the objects are still WebKit's.
+            #expect(Self.eval(context, "(() => { 'use strict'; globalThis.browser = new Proxy({}, {}); globalThis.chrome = 2; browser = chrome; return [browser === __b, chrome === __c, typeof browser.runtime.id]; })()") == #"[true,true,"string"]"#, "\(persona)")
         }
-        let firefox = try Self.run(try Self.plan(.firefox), kind: .content)
+        let firefox = try Self.run(try Self.plan(.firefox), kind: .content, window: true)
         #expect(Self.eval(firefox, "navigator.userAgent.includes('Firefox/157.0')") == "true", "the rest of the persona still applies")
     }
 

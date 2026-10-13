@@ -14,7 +14,8 @@ public enum CRX3 {
     public static let maxHeaderSize = 64 * 1024
 
     /// SHA-256 of the Chrome Web Store's publisher key (`kPublisherKeyHash` in `crx_verifier.cc`). Every package
-    /// the store serves carries an RSA proof by this key.
+    /// the store serves carries a proof by this key; today it is a P-256 (ECDSA) key, so either kind of proof counts,
+    /// as in Chromium (a real store package checked 2026-10-12 had it as its only ECDSA proof).
     public static let webStorePublisherKeyHash = Data([
         0x61, 0xf7, 0xf2, 0xa6, 0xbf, 0xcf, 0x74, 0xcd, 0x0b, 0xc1, 0xfe, 0x24, 0x97, 0xcc, 0x9b, 0x04,
         0x25, 0x4c, 0x65, 0x8f, 0x79, 0xf2, 0x14, 0x53, 0x92, 0x86, 0x7e, 0xa8, 0x36, 0x63, 0x67, 0xcf,
@@ -42,7 +43,7 @@ public enum CRX3 {
         case noDeveloperSignature
         /// `crx_id` isn't the id that was asked for.
         case wrongExtension
-        /// A publisher key is required and no RSA proof uses one.
+        /// A publisher key is required and no proof uses one.
         case missingStoreSignature
 
         public var errorDescription: String? {
@@ -90,7 +91,7 @@ public enum CRX3 {
 
     /// Checks `data` as a CRX3 package for `expectedID` and returns its ZIP. Requires all of: format version 3;
     /// every proof's signature valid (one bad proof fails the package); a proof by the key whose id is `crx_id`;
-    /// `crx_id` equal to `expectedID`; and, when `publisherKeyHashes` isn't empty, an RSA proof by a key whose
+    /// `crx_id` equal to `expectedID`; and, when `publisherKeyHashes` isn't empty, a proof (RSA or ECDSA) by a key whose
     /// SHA-256 (of its DER `SubjectPublicKeyInfo`) is in the set. Pass `[webStorePublisherKeyHash]` for store
     /// downloads.
     public static func verify(_ data: Data, expectedID: String, publisherKeyHashes: Set<Data>) throws -> Verified {
@@ -115,7 +116,9 @@ public enum CRX3 {
         }
         for proof in header.ecdsa {
             try verifyECDSA(proof, message: message)
-            if Data(SHA256.hash(data: proof.publicKey)).prefix(16) == crxID, developerKey == nil { developerKey = proof.publicKey }
+            let hash = Data(SHA256.hash(data: proof.publicKey))
+            if hash.prefix(16) == crxID, developerKey == nil { developerKey = proof.publicKey }
+            if publisherKeyHashes.contains(hash) { hasPublisher = true }
         }
         guard let developerKey else { throw VerifyError.noDeveloperSignature }
         let id = ExtensionIdentity.chromeID(publicKeyDER: developerKey)

@@ -33,6 +33,19 @@ struct ExtensionSourcesTests {
         #expect(try ExtensionSources.decode(Data("{}".utf8)).records.isEmpty)
     }
 
+    @Test func recordsWhetherTheCertificateChainWasVerified() throws {
+        var sources = ExtensionSources()
+        sources.recordInstall(
+            folder: "ublock", store: .mozillaAddons, id: "uBlock0@raymondhill.net", version: "1", fileHashes: [:],
+            verified: false, now: .now
+        )
+        let text = String(decoding: try sources.encoded(), as: UTF8.self)
+        #expect(text.contains(#""verified" : false"#))
+        #expect(try ExtensionSources.decode(try sources.encoded()).records["ublock"]?.verified == false)
+        let legacy = try ExtensionSources.decode(Data(#"{"sponsorblock": {"store": "chromeWebStore", "id": "\#(id)"}}"#.utf8))
+        #expect(legacy.records["sponsorblock"]?.verified == nil)
+    }
+
     @Test func findsTheFolderForAStoreID() {
         var sources = ExtensionSources()
         sources.recordInstall(folder: "sponsorblock", store: .chromeWebStore, id: id, version: "1", fileHashes: [:], now: .now)
@@ -42,6 +55,36 @@ struct ExtensionSourcesTests {
         #expect(sources.folder(forStoreID: id, store: .mozillaAddons) == nil)
         #expect(sources.folder(forStoreID: "uBlock0@raymondhill.net", store: .mozillaAddons) == "ublock")
         #expect(sources.folder(forStoreID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", store: .chromeWebStore) == nil)
+    }
+
+    @Test func findsAnAddonBySlugOrGuid() {
+        var sources = ExtensionSources()
+        sources.recordInstall(
+            folder: "ublock", store: .mozillaAddons, id: "uBlock0@raymondhill.net", version: "1", fileHashes: [:],
+            slug: "ublock-origin", now: .now
+        )
+        sources.recordInstall(folder: "old", store: .mozillaAddons, id: "old@example.com", version: "1", fileHashes: [:], now: .now)
+        #expect(sources.folder(forStoreID: "ublock-origin", store: .mozillaAddons) == "ublock")
+        #expect(sources.folder(forStoreID: "UBLOCK-origin", store: .mozillaAddons) == "ublock")
+        #expect(sources.folder(forStoreID: "uBlock0@raymondhill.net", store: .mozillaAddons) == "ublock")
+        #expect(sources.folder(forStoreID: "ublock-origin", store: .chromeWebStore) == nil)
+        #expect(sources.folder(forStoreID: "other-slug", store: .mozillaAddons) == nil)
+        // A record from before slugs were recorded still matches by guid, not by slug.
+        #expect(sources.folder(forStoreID: "old@example.com", store: .mozillaAddons) == "old")
+        #expect(sources.folder(forStoreID: "old", store: .mozillaAddons) == nil)
+    }
+
+    @Test func recordsTheSlugOfAnAddon() throws {
+        var sources = ExtensionSources()
+        sources.recordInstall(
+            folder: "ublock", store: .mozillaAddons, id: "uBlock0@raymondhill.net", version: "1", fileHashes: [:],
+            slug: "ublock-origin", now: .now
+        )
+        let text = String(decoding: try sources.encoded(), as: UTF8.self)
+        #expect(text.contains(#""slug" : "ublock-origin""#))
+        #expect(try ExtensionSources.decode(try sources.encoded()) == sources)
+        let legacy = try ExtensionSources.decode(Data(#"{"ublock": {"store": "mozillaAddons", "id": "uBlock0@raymondhill.net"}}"#.utf8))
+        #expect(legacy.records["ublock"]?.slug == nil)
     }
 
     @Test(arguments: [
@@ -73,5 +116,18 @@ struct ExtensionSourcesTests {
         // Cut to fit the suffix, a trailing hyphen doesn't stay.
         let hyphen = String(repeating: "x", count: 37) + "-yy"
         #expect(ExtensionSources.folderName(forDisplayName: hyphen, existing: [hyphen]) == String(repeating: "x", count: 37) + "-2")
+    }
+}
+
+struct ExtensionSourcesDeclinedVersionTests {
+    @Test func aDeclinedVersionRoundTripsAndOlderFilesReadAsNone() throws {
+        var sources = ExtensionSources()
+        sources.records["sample"] = ExtensionSources.Record(
+            store: .chromeWebStore, id: "mnjggcdmjocbbbhaepdhchncahnbgone", version: "1.0", declinedVersion: "2.0"
+        )
+        let back = try ExtensionSources.decode(try sources.encoded())
+        #expect(back.records["sample"]?.declinedVersion == "2.0")
+        let older = Data(#"{"sample":{"store":"chromeWebStore","id":"mnjggcdmjocbbbhaepdhchncahnbgone","version":"1.0","fileHashes":{}}}"#.utf8)
+        #expect(try ExtensionSources.decode(older).records["sample"]?.declinedVersion == nil)
     }
 }

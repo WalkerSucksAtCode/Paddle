@@ -92,6 +92,19 @@ struct ExtensionPersonaTests {
         #expect(config.sitePersona(forHost: "notgoogle.com") == nil)
     }
 
+    @Test func pageUserAgentFollowsThePersonaUnlessSiteUserAgentWins() {
+        let config = PaddleConfig(
+            siteUserAgents: ["ua.example": "Custom", "empty.example": ""],
+            sitePersonas: ["example.com": .chrome, "ua.example": .firefox, "quiet.example.com": .none, "empty.example": .chrome, "mozilla.org": .firefox]
+        )
+        #expect(config.pageUserAgent(forHost: "docs.example.com") == Persona.chrome.userAgent())
+        #expect(config.pageUserAgent(forHost: "ua.example") == "Custom")
+        #expect(config.pageUserAgent(forHost: "empty.example") == Persona.chrome.userAgent())
+        #expect(config.pageUserAgent(forHost: "www.mozilla.org") == Persona.firefox.userAgent())
+        #expect(config.pageUserAgent(forHost: "quiet.example.com") == nil)
+        #expect(config.pageUserAgent(forHost: "other.org") == nil)
+    }
+
     @Test func validatorFlagsBadPersonaEntries() {
         let config = PaddleConfig(
             extensionCompat: ["a/b": ExtensionCompatConfig(), "ff": ExtensionCompatConfig(persona: .firefox, publicID: true), "ok": ExtensionCompatConfig(persona: .chrome, publicID: true)],
