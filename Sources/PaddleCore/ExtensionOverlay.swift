@@ -13,8 +13,6 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
     public let contentScriptsPatched: Bool
     /// The background kind left as it is (`service_worker` or `page`), if any.
     public let unpatchedBackground: ExtensionCompat.UnpatchedBackground?
-    /// The popup page got its size stylesheet.
-    public let popupPatched: Bool
     /// v2: the service worker runs through `paddle-sw.js`.
     public let serviceWorkerWrapped: Bool
     /// v2: extension pages (`.html`) that load the prelude first.
@@ -27,7 +25,7 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
 
     init(
         root: URL, persona: Persona = .none, backgroundPatched: Bool, contentScriptsPatched: Bool,
-        unpatchedBackground: ExtensionCompat.UnpatchedBackground?, popupPatched: Bool, serviceWorkerWrapped: Bool = false,
+        unpatchedBackground: ExtensionCompat.UnpatchedBackground?, serviceWorkerWrapped: Bool = false,
         pagesTagged: Int = 0, copiedBytes: Int64?, reused: Bool
     ) {
         self.root = root
@@ -35,7 +33,6 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
         self.backgroundPatched = backgroundPatched
         self.contentScriptsPatched = contentScriptsPatched
         self.unpatchedBackground = unpatchedBackground
-        self.popupPatched = popupPatched
         self.serviceWorkerWrapped = serviceWorkerWrapped
         self.pagesTagged = pagesTagged
         self.copiedBytes = copiedBytes
@@ -56,7 +53,7 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
             let base = "\(persona.rawValue) persona"
             return notes.isEmpty ? base : "\(base) (\(notes.joined(separator: "; ")))"
         }
-        let base = runsPrelude ? "compat prelude applied" : "compat popup style applied"
+        let base = "compat prelude applied"
         switch (backgroundPatched, contentScriptsPatched) {
         case (true, false): notes.append("background only")
         case (false, true): notes.append("content scripts only")
@@ -98,14 +95,13 @@ public enum ExtensionOverlay {
     }
 
     /// Bump when what `make` writes changes, so every kept overlay is remade once.
-    static let recipeVersion = 3
+    static let recipeVersion = 4
     /// Written last into a finished overlay: the source fingerprint it was made from and what it holds.
     static let stampFileName = ".paddle-overlay.json"
 
     struct Stamp: Codable, Equatable {
         let fingerprint: String
         let copiedBytes: Int64?
-        let popupPatched: Bool
         var pagesTagged: Int?
     }
 
@@ -119,7 +115,7 @@ public enum ExtensionOverlay {
     /// folder.
     ///
     /// - `plan` nil or persona `none`: the wave 4b overlay (none for a Safari build, or one with nowhere to put the
-    ///   prelude and no popup to fix).
+    ///   prelude).
     /// - `native`: no overlay.
     /// - `chrome` / `firefox`: `ExtensionCompat.patchManifest(_:persona:)`, the worker wrapper, the prelude tag in
     ///   every `.html` page, and `paddle-prelude.js` / `paddle-content.js` from `CompatPrelude`. Those two depend on
@@ -142,9 +138,7 @@ public enum ExtensionOverlay {
 
         // The rewrite is checked before anything is cloned, so a manifest the patch can't handle leaves no overlay.
         let patch = try ExtensionCompat.patchManifest(manifestData, persona: persona)
-        let css = ExtensionCompat.popupCSS(forGeckoID: ExtensionCompat.geckoID(manifest: manifest))
-        let popup = css == nil ? nil : ExtensionCompat.popupPath(manifest: manifest)
-        guard v2 || patch.preludeApplied || popup != nil else {
+        guard v2 || patch.preludeApplied else {
             remove(name: name, in: overlays, fileManager: fileManager)
             return nil
         }
@@ -156,11 +150,11 @@ public enum ExtensionOverlay {
                 (ExtensionCompat.contentFileName, CompatPrelude.source(for: plan, kind: .content)),
             ]
         }
-        func result(popupPatched: Bool, pagesTagged: Int, copiedBytes: Int64?, reused: Bool) -> ExtensionOverlayResult {
+        func result(pagesTagged: Int, copiedBytes: Int64?, reused: Bool) -> ExtensionOverlayResult {
             ExtensionOverlayResult(
                 root: target.standardizedFileURL, persona: v2 ? persona : .none, backgroundPatched: patch.backgroundPatched,
                 contentScriptsPatched: patch.contentScriptsPatched, unpatchedBackground: patch.unpatchedBackground,
-                popupPatched: popupPatched, serviceWorkerWrapped: patch.serviceWorkerWrapper != nil || (v2 && isWrapped(manifest)),
+                serviceWorkerWrapped: patch.serviceWorkerWrapper != nil || (v2 && isWrapped(manifest)),
                 pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: reused
             )
         }
@@ -172,7 +166,7 @@ public enum ExtensionOverlay {
            fileManager.fileExists(atPath: target.appendingPathComponent("manifest.json").path),
            fileManager.fileExists(atPath: target.appendingPathComponent(ExtensionCompat.preludeFileName).path) {
             for (file, text) in generated { try writeIfChanged(target.appendingPathComponent(file), text: text, fileManager: fileManager) }
-            return result(popupPatched: stamp.popupPatched, pagesTagged: stamp.pagesTagged ?? 0, copiedBytes: stamp.copiedBytes, reused: true)
+            return result(pagesTagged: stamp.pagesTagged ?? 0, copiedBytes: stamp.copiedBytes, reused: true)
         }
 
         try fileManager.createDirectory(at: overlays, withIntermediateDirectories: true)
@@ -193,21 +187,11 @@ public enum ExtensionOverlay {
         }
         let pagesTagged = v2 ? try tagPages(in: target, fileManager: fileManager) : 0
 
-        var popupPatched = false
-        if let css, let popup, let popupURL = containedRegularFile(popup, under: target),
-           let html = try? Data(contentsOf: popupURL) {
-            let patched = ExtensionCompat.insertStyle(css, into: html)
-            if patched != html {
-                try replaceFile(popupURL, with: patched, fileManager: fileManager)
-                popupPatched = true
-            }
-        }
-
         // Last, so a half-made overlay is never taken for a finished one.
         let copiedBytes = cloned ? nil : sourceBytes
-        let stamp = Stamp(fingerprint: fingerprint, copiedBytes: copiedBytes, popupPatched: popupPatched, pagesTagged: pagesTagged)
+        let stamp = Stamp(fingerprint: fingerprint, copiedBytes: copiedBytes, pagesTagged: pagesTagged)
         try JSONEncoder().encode(stamp).write(to: stampURL, options: .atomic)
-        return result(popupPatched: popupPatched, pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: false)
+        return result(pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: false)
     }
 
     /// The source manifest's worker is already the wrapper (a folder copied from an overlay).
@@ -287,7 +271,7 @@ public enum ExtensionOverlay {
         }
         let lines = [
             "recipe \(recipeVersion)", "persona \(persona.rawValue)", "source \(source.standardizedFileURL.path)",
-            "prelude \(ExtensionCompat.prelude)", "css \(ExtensionCompat.protonPassPopupCSS)"
+            "prelude \(ExtensionCompat.prelude)"
         ] + entries.sorted()
         let digest = SHA256.hash(data: Data(lines.joined(separator: "\n").utf8))
         return (digest.map { String(format: "%02x", $0) }.joined(), bytes)

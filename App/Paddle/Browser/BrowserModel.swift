@@ -279,6 +279,31 @@ final class BrowserModel {
         return true
     }
 
+    // MARK: - Moving between windows (`AppModel.move`)
+
+    /// Takes `tab` out for another window. It keeps its web view, history and state. A selected tab hands the
+    /// selection to its neighbour; a window left empty stays open for the caller to close once the tab has arrived.
+    /// Returns the tab's old index.
+    func detach(_ tab: Tab) -> Int? {
+        guard let index = tabs.firstIndex(where: { $0 === tab }) else { return nil }
+        let wasSelected = tab.id == selectedID
+        tabs.remove(at: index)
+        if wasSelected {
+            if tabs.isEmpty { selectedID = nil } else { select(tabs[min(index, tabs.count - 1)]) }
+        }
+        return index
+    }
+
+    /// Puts a tab from another window at `index`, clamped to its side of the pinned boundary. Not selected.
+    func adopt(_ tab: Tab, at index: Int) {
+        tab.browser = self
+        tab.returnsToOpener = false
+        if let opener = tab.opener, !tabs.contains(where: { $0 === opener }) { tab.opener = nil }
+        let boundary = TabOrder.pinBoundary(tabs.map(\.isPinned))
+        let to = tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), tabs.count)
+        tabs.insert(tab, at: to)
+    }
+
     // MARK: - Navigation
 
     /// Return in the address field: the highlighted suggestion, or what was typed.

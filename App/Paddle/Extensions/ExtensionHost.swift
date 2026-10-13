@@ -1398,9 +1398,10 @@ final class ExtensionHost {
         controller.didActivateTab(tab.extensionTab, previousActiveTab: previous?.extensionTab)
     }
 
-    func tabMoved(_ tab: Tab, from index: Int) {
+    /// `oldWindow`: the window the tab left, when it changed windows.
+    func tabMoved(_ tab: Tab, from index: Int, in oldWindow: BrowserWindowController? = nil) {
         guard let controller, isRegistered(tab) else { return }
-        controller.didMoveTab(tab.extensionTab, from: index, in: tab.browser?.controller?.extensionWindow)
+        controller.didMoveTab(tab.extensionTab, from: index, in: (oldWindow ?? tab.browser?.controller)?.extensionWindow)
     }
 
     func tabChanged(_ tab: Tab, _ properties: WKWebExtension.TabChangedProperties) {

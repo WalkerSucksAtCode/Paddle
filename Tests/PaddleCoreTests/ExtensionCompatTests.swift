@@ -173,30 +173,13 @@ struct ExtensionCompatTests {
         #expect(ExtensionCompat.geckoID(manifest: [:]) == nil)
     }
 
-    @Test func popupCSSOnlyForProtonPass() {
-        #expect(ExtensionCompat.popupCSS(forGeckoID: ExtensionCompat.protonPassGeckoID) == ":root{--popup-width:600px!important;--popup-height:430px!important}html,body{width:600px!important;height:430px!important}")
-        #expect(ExtensionCompat.popupCSS(forGeckoID: "other@example.com") == nil)
-        #expect(ExtensionCompat.popupCSS(forGeckoID: nil) == nil)
+    @Test func popupPathIsCleaned() {
         #expect(ExtensionCompat.popupPath(manifest: ["action": ["default_popup": "/popup.html?x"]]) == "popup.html")
         #expect(ExtensionCompat.popupPath(manifest: ["browser_action": ["default_popup": "p.html"]]) == "p.html")
         #expect(ExtensionCompat.popupPath(manifest: [:]) == nil)
         #expect(ExtensionCompat.popupPath(manifest: ["action": ["default_popup": "./ui//popup.html"]]) == "ui/popup.html")
         #expect(ExtensionCompat.popupPath(manifest: ["action": ["default_popup": "../../config.json"]]) == nil)
         #expect(ExtensionCompat.popupPath(manifest: ["action": ["default_popup": "ui/../../x.html"]]) == nil)
-    }
-
-    @Test func styleGoesBeforeHeadEndOnce() throws {
-        let html = Data("<!doctype html>\n<html><HEAD><title>x</title></HEAD><body></body></html>".utf8)
-        let once = ExtensionCompat.insertStyle("html{min-width:600px}", into: html)
-        let text = try #require(String(data: once, encoding: .utf8))
-        #expect(text == "<!doctype html>\n<html><HEAD><title>x</title><style data-paddle-compat>html{min-width:600px}</style></HEAD><body></body></html>")
-        #expect(ExtensionCompat.insertStyle("html{min-width:600px}", into: once) == once)
-
-        let headless = ExtensionCompat.insertStyle("a{}", into: Data("<html><body>hi</body></html>".utf8))
-        #expect(String(data: headless, encoding: .utf8) == "<html><style data-paddle-compat>a{}</style><body>hi</body></html>")
-
-        let binary = Data([0xFF, 0xFE, 0x00, 0xC0])
-        #expect(ExtensionCompat.insertStyle("a{}", into: binary) == binary)
     }
 
     @Test func readonlyAssignmentErrorsAreHarmless() {

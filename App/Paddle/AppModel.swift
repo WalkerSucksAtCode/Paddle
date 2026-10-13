@@ -578,17 +578,38 @@ final class AppModel {
 
     // MARK: - Windows
 
+    /// Moves `tab` to `index` in `target` (`tabs.move`, `windows.create` with tab ids), keeping its web view and
+    /// history. Within one window it is `place`. Extensions see it detach and attach; the window it left closes
+    /// once empty, as in Chrome.
+    func move(_ tab: Tab, to target: BrowserWindowController, at index: Int, select: Bool = false) {
+        guard let source = tab.browser else { return }
+        if source === target.model {
+            source.place(tab, at: index)
+            if select { source.select(tab) }
+            return
+        }
+        guard let from = source.detach(tab) else { return }
+        target.model.adopt(tab, at: index)
+        extensions.tabMoved(tab, from: from, in: source.controller)
+        if select || target.model.selectedID == nil { target.model.select(tab) }
+        if source.tabs.isEmpty { source.controller?.close() }
+        sessionChanged()
+    }
+
     /// `isPrivate`: File > New Private Window. Private windows are never restored, so they never have a `record`.
     /// Extensions are told about a window only when they may see it (private ones need `extensionsInPrivate`).
+    /// `moving`: tabs taken from other windows to fill it (`windows.create` with tab ids), instead of a new tab.
     @discardableResult
-    func openWindow(record: WindowRecord? = nil, url: URL? = nil, isPrivate: Bool = false) -> BrowserWindowController {
+    func openWindow(record: WindowRecord? = nil, url: URL? = nil, isPrivate: Bool = false, moving: [Tab] = []) -> BrowserWindowController {
         let controller = BrowserWindowController(
             record: isPrivate ? nil : record, isPrivate: isPrivate, extensionsAllowed: !isPrivate || config.extensionsInPrivate
         )
         windows.append(controller)
         if controller.model.extensionsAllowed { extensions.windowOpened(controller) }
         if record == nil {
-            if let url {
+            if !moving.isEmpty {
+                for (index, tab) in moving.enumerated() { move(tab, to: controller, at: index) }
+            } else if let url {
                 controller.model.newTab(url: url)
             } else {
                 let home = URL(string: config.homepage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }

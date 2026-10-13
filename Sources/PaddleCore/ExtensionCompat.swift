@@ -1,7 +1,7 @@
 import Foundation
 
-/// The compatibility prelude for extensions built for Chrome or Firefox rather than Safari, and the manifest and
-/// popup edits that put it in place. Pure text transforms; `ExtensionOverlay` applies them to a cloned folder.
+/// The compatibility prelude for extensions built for Chrome or Firefox rather than Safari, and the manifest edits
+/// that put it in place. Pure text transforms; `ExtensionOverlay` applies them to a cloned folder.
 ///
 /// Why: WebKit delivers extension events to a JavaScript context only while `browser` or `chrome` is still the
 /// original namespace object. Proton Pass replaces both with Proxies one tick after loading, after which its
@@ -46,13 +46,6 @@ public enum ExtensionCompat {
     })();
 
     """
-
-    /// Proton Pass's Firefox build. Its popup reads `tabs.getCurrent()` to tell a popup from a tab; WebKit returns a
-    /// tab (or null) instead of undefined, so the popup lays itself out at tab size (356×338) instead of 600×430.
-    public static let protonPassGeckoID = "78272b6fa58f4a1abaac99321d503a20@proton.me"
-    static let protonPassPopupCSS = ":root{--popup-width:600px!important;--popup-height:430px!important}html,body{width:600px!important;height:430px!important}"
-    /// Marks the `<style>` the overlay adds, so a second pass leaves the page alone.
-    static let styleMarker = "data-paddle-compat"
 
     public enum PatchError: Error, Equatable, LocalizedError {
         case notAnObject
@@ -118,11 +111,6 @@ public enum ExtensionCompat {
             }
         }
         return nil
-    }
-
-    /// CSS the overlay adds to this extension's popup page, if it needs any.
-    public static func popupCSS(forGeckoID id: String?) -> String? {
-        id == protonPassGeckoID ? protonPassPopupCSS : nil
     }
 
     /// Runtime errors the prelude causes on purpose: strict-mode code assigning to the pinned `browser` / `chrome`
@@ -366,22 +354,6 @@ public enum ExtensionCompat {
         if at == nil, let doctype = text.range(of: #"^\s*<!doctype[^>]*>"#, options: [.regularExpression, .caseInsensitive]) { at = doctype.upperBound }
         let index = at ?? text.startIndex
         return Data(text.replacingCharacters(in: index..<index, with: tag).utf8)
-    }
-
-    // MARK: - Popup page
-
-    /// Adds `<style data-paddle-compat>css</style>` to the page, before `</head>` (else before `<body`, else at the
-    /// end). Idempotent: a page that already carries the marker is returned as it is. Not UTF-8: returned unchanged.
-    public static func insertStyle(_ css: String, into html: Data) -> Data {
-        guard let text = String(data: html, encoding: .utf8) else { return html }
-        guard !text.contains(styleMarker) else { return html }
-        let style = "<style \(styleMarker)>\(css)</style>"
-        for needle in ["</head>", "<body"] {
-            if let range = text.range(of: needle, options: .caseInsensitive) {
-                return Data(text.replacingCharacters(in: range.lowerBound..<range.lowerBound, with: style).utf8)
-            }
-        }
-        return Data((text + style).utf8)
     }
 }
 

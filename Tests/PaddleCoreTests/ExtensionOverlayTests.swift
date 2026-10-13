@@ -27,7 +27,7 @@ struct ExtensionOverlayTests {
         defer { try? fm.removeItem(at: work) }
         let result = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays))
         #expect(result.root == overlays.appendingPathComponent("sample", isDirectory: true).standardizedFileURL)
-        #expect(result.backgroundPatched && result.contentScriptsPatched && result.unpatchedBackground == nil && result.popupPatched)
+        #expect(result.backgroundPatched && result.contentScriptsPatched && result.unpatchedBackground == nil)
         #expect(result.copiedBytes == nil, "same APFS volume: a clone")
         #expect(!result.reused)
         #expect(result.statusText == "compat prelude applied")
@@ -37,13 +37,10 @@ struct ExtensionOverlayTests {
         #expect(try contents(result.root.appendingPathComponent("background.js")) == "console.log('bg')")
         let manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: result.root.appendingPathComponent("manifest.json"))) as? [String: Any])
         #expect((manifest["background"] as? [String: Any])?["scripts"] as? [String] == ["paddle-prelude.js", "background.js"])
-        let popup = try contents(result.root.appendingPathComponent("popup.html"))
-        #expect(popup.contains("<style data-paddle-compat>:root{--popup-width:600px!important;--popup-height:430px!important}html,body{width:600px!important;height:430px!important}</style></head>"))
 
         // The user's folder is untouched.
         #expect(try contents(source.appendingPathComponent("manifest.json")) == ExtensionCompatTests.firefox)
         #expect(!fm.fileExists(atPath: source.appendingPathComponent("paddle-prelude.js").path))
-        #expect(try contents(source.appendingPathComponent("popup.html")).contains("data-paddle-compat") == false)
     }
 
     @Test func otherExtensionsKeepTheirPopup() throws {
@@ -51,7 +48,6 @@ struct ExtensionOverlayTests {
         let (source, overlays, work) = try fixture(manifest: manifest)
         defer { try? fm.removeItem(at: work) }
         let result = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays))
-        #expect(!result.popupPatched)
         #expect(!result.backgroundPatched && result.unpatchedBackground == .serviceWorker)
         #expect(result.statusText == "compat prelude applied (content scripts only; background.service_worker left unpatched)")
         #expect(try contents(result.root.appendingPathComponent("popup.html")) == contents(source.appendingPathComponent("popup.html")))
@@ -74,13 +70,13 @@ struct ExtensionOverlayTests {
         func result(_ bg: Bool, _ cs: Bool, _ kind: ExtensionCompat.UnpatchedBackground?, copied: Int64? = nil) -> ExtensionOverlayResult {
             ExtensionOverlayResult(
                 root: URL(fileURLWithPath: "/x"), backgroundPatched: bg, contentScriptsPatched: cs, unpatchedBackground: kind,
-                popupPatched: false, copiedBytes: copied, reused: false
+                copiedBytes: copied, reused: false
             )
         }
         #expect(result(false, true, .page).statusText == "compat prelude applied (content scripts only; background.page left unpatched)")
         #expect(result(true, false, nil).statusText == "compat prelude applied (background only)")
         #expect(result(true, true, nil, copied: 21_536_000).statusText == "compat prelude applied (copied, 22 MB)")
-        #expect(result(false, false, .serviceWorker, copied: 400).statusText == "compat popup style applied (background.service_worker left unpatched; copied, 1 KB)")
+        #expect(result(false, false, .serviceWorker, copied: 400).statusText == "compat prelude applied (background.service_worker left unpatched; copied, 1 KB)")
         #expect(!result(false, false, nil).runsPrelude && result(false, true, nil).runsPrelude)
     }
 
@@ -116,7 +112,7 @@ struct ExtensionOverlayTests {
         let first = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays))
         try Data("marker".utf8).write(to: first.root.appendingPathComponent("kept.txt"))
         let second = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays))
-        #expect(second.reused && second.popupPatched && second.backgroundPatched)
+        #expect(second.reused && second.backgroundPatched)
         #expect(fm.fileExists(atPath: second.root.appendingPathComponent("kept.txt").path))
         // A new file in the source counts as a change.
         try Data("x".utf8).write(to: source.appendingPathComponent("sub/new.js"))
@@ -124,47 +120,6 @@ struct ExtensionOverlayTests {
         #expect(!third.reused)
         #expect(!fm.fileExists(atPath: third.root.appendingPathComponent("kept.txt").path))
         #expect(fm.fileExists(atPath: third.root.appendingPathComponent("sub/new.js").path))
-    }
-
-    /// A Proton-id manifest whose popup is `default_popup`, plus a file outside the extension that must not change.
-    private func escapeFixture(popup: String) throws -> (source: URL, overlays: URL, work: URL, victim: URL) {
-        let manifest = """
-        {"manifest_version": 3, "background": {"scripts": ["background.js"]}, "action": {"default_popup": "\(popup)"},
-         "browser_specific_settings": {"gecko": {"id": "\(ExtensionCompat.protonPassGeckoID)"}}}
-        """
-        let (source, overlays, work) = try fixture(manifest: manifest)
-        let outside = work.appendingPathComponent("outside", isDirectory: true)
-        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
-        let victim = outside.appendingPathComponent("popup.html")
-        try Data("<html><head></head>victim</html>".utf8).write(to: victim)
-        return (source, overlays, work, victim)
-    }
-
-    @Test func popupPathCannotClimbOut() throws {
-        let (source, overlays, work, victim) = try escapeFixture(popup: "../../../outside/popup.html")
-        defer { try? fm.removeItem(at: work) }
-        let result = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays))
-        #expect(!result.popupPatched)
-        #expect(try contents(victim) == "<html><head></head>victim</html>")
-    }
-
-    @Test func popupThroughASymlinkedFolderIsLeftAlone() throws {
-        let (source, overlays, work, victim) = try escapeFixture(popup: "ui/popup.html")
-        defer { try? fm.removeItem(at: work) }
-        try fm.createSymbolicLink(at: source.appendingPathComponent("ui"), withDestinationURL: victim.deletingLastPathComponent())
-        let result = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays))
-        #expect(!result.popupPatched)
-        #expect(try contents(victim) == "<html><head></head>victim</html>")
-        // A popup file that is itself a symlink is left alone too.
-        let link = work.appendingPathComponent("extensions/linked", isDirectory: true)
-        try fm.createDirectory(at: link, withIntermediateDirectories: true)
-        try fm.copyItem(at: source.appendingPathComponent("manifest.json"), to: link.appendingPathComponent("manifest.json"))
-        try fm.copyItem(at: source.appendingPathComponent("background.js"), to: link.appendingPathComponent("background.js"))
-        try fm.createDirectory(at: link.appendingPathComponent("ui"), withIntermediateDirectories: true)
-        try fm.createSymbolicLink(at: link.appendingPathComponent("ui/popup.html"), withDestinationURL: victim)
-        let linked = try #require(try ExtensionOverlay.make(from: link, name: "linked", in: overlays))
-        #expect(!linked.popupPatched)
-        #expect(try contents(victim) == "<html><head></head>victim</html>")
     }
 
     @Test func symlinkedManifestIsReplacedNotWrittenThrough() throws {
@@ -257,6 +212,24 @@ struct ExtensionOverlayTests {
         #expect(!fm.fileExists(atPath: none.root.appendingPathComponent("paddle-content.js").path))
         #expect(try ExtensionOverlay.make(from: source, name: "sample", in: overlays, plan: CompatPlan(persona: .native, runtimeID: "abcd")) == nil)
         #expect(!fm.fileExists(atPath: overlays.appendingPathComponent("sample").path))
+    }
+
+    /// A page reached through a symlinked folder, or a page that is itself a symlink, is never tagged: the write
+    /// would land outside the clone.
+    @Test func pagesBehindSymlinksAreLeftAlone() throws {
+        let manifest = #"{"manifest_version": 3, "name": "S", "background": {"scripts": ["background.js"]}}"#
+        let (source, overlays, work) = try fixture(manifest: manifest)
+        defer { try? fm.removeItem(at: work) }
+        let outside = work.appendingPathComponent("outside", isDirectory: true)
+        try fm.createDirectory(at: outside, withIntermediateDirectories: true)
+        let victim = outside.appendingPathComponent("page.html")
+        try Data("<html><head></head>victim</html>".utf8).write(to: victim)
+        try fm.createSymbolicLink(at: source.appendingPathComponent("ui"), withDestinationURL: outside)
+        try fm.createSymbolicLink(at: source.appendingPathComponent("linked.html"), withDestinationURL: victim)
+        let plan = try CompatPlan.make(manifestData: Data(manifest.utf8), persona: .chrome, runtimeID: "abcd")
+        let result = try #require(try ExtensionOverlay.make(from: source, name: "sample", in: overlays, plan: plan))
+        #expect(result.pagesTagged == 1)
+        #expect(try contents(victim) == "<html><head></head>victim</html>")
     }
 }
 

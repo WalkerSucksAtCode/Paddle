@@ -60,13 +60,13 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         for extensionContext: WKWebExtensionContext
     ) async throws -> (any WKWebExtensionWindow)? {
         guard !configuration.shouldBePrivate else { throw PaddleExtensionError.unsupported("Private windows") }
-        if !configuration.tabs.isEmpty {
-            log.notice("windows.create with existing tabs: moving tabs between windows is not supported; opening a new window instead")
-        }
+        // `tabId`: those tabs move into the new window (WebKit has checked they are in normal windows).
+        let moving = configuration.tabs.compactMap { ($0 as? ExtensionTab)?.tab }
+        guard moving.count == configuration.tabs.count else { throw PaddleExtensionError.tabNotFound }
         let urls = configuration.tabURLs
         for url in urls { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
-        let window = app.openWindow(url: urls.first ?? app.newTabPageURL)
-        for url in urls.dropFirst() { window.model.newTab(url: url, select: false) }
+        let window = moving.isEmpty ? app.openWindow(url: urls.first ?? app.newTabPageURL) : app.openWindow(moving: moving)
+        for url in moving.isEmpty ? Array(urls.dropFirst()) : urls { window.model.newTab(url: url, select: false) }
         let frame = configuration.frame
         if !frame.isNull, frame.origin.x.isFinite, frame.origin.y.isFinite, frame.width.isFinite, frame.height.isFinite {
             window.window?.setFrame(frame, display: true)
@@ -76,6 +76,28 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
 
     func webExtensionController(_ controller: WKWebExtensionController, openOptionsPageFor extensionContext: WKWebExtensionContext) async throws {
         try host.openOptionsPage(for: extensionContext)
+    }
+
+    /// `tabs.move`, within a window or into another. Private WebKit API (in macOS 27's WebKit); without it WebKit
+    /// answers every `tabs.move` with "it is not implemented". WebKit has already checked that the tabs and the
+    /// destination are normal windows of the same privacy, and turned index -1 into the end.
+    @objc(_webExtensionController:moveTabs:toIndex:inWindow:forExtensionContext:completionHandler:)
+    func webExtensionController(
+        _ controller: WKWebExtensionController, moveTabs tabs: [any WKWebExtensionTab], toIndex index: Int,
+        inWindow window: any WKWebExtensionWindow, forExtensionContext extensionContext: WKWebExtensionContext,
+        completionHandler: @escaping (NSError?) -> Void
+    ) {
+        let moving = tabs.compactMap { ($0 as? ExtensionTab)?.tab }
+        guard let target = (window as? ExtensionWindow)?.controller else {
+            completionHandler(PaddleExtensionError.noWindow as NSError)
+            return
+        }
+        guard moving.count == tabs.count else {
+            completionHandler(PaddleExtensionError.tabNotFound as NSError)
+            return
+        }
+        for (offset, tab) in moving.enumerated() { app.move(tab, to: target, at: index + offset) }
+        completionHandler(nil)
     }
 
     // MARK: - Permissions
@@ -166,6 +188,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
             "webExtensionController:openNewTabUsingConfiguration:forExtensionContext:completionHandler:",
             "webExtensionController:openNewWindowUsingConfiguration:forExtensionContext:completionHandler:",
             "webExtensionController:openOptionsPageForExtensionContext:completionHandler:",
+            "_webExtensionController:moveTabs:toIndex:inWindow:forExtensionContext:completionHandler:",
             "webExtensionController:promptForPermissions:inTab:forExtensionContext:completionHandler:",
             "webExtensionController:promptForPermissionToAccessURLs:inTab:forExtensionContext:completionHandler:",
             "webExtensionController:promptForPermissionMatchPatterns:inTab:forExtensionContext:completionHandler:",

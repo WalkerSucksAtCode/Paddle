@@ -5,6 +5,7 @@ import WebKit
 /// Errors handed back to extensions through WebKit's completion handlers.
 enum PaddleExtensionError: LocalizedError {
     case tabAsleep
+    case tabNotFound
     case noWindow
     case noPopup
     case noUserAction
@@ -14,6 +15,7 @@ enum PaddleExtensionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .tabAsleep: "The tab is asleep"
+        case .tabNotFound: "The tab was not found"
         case .noWindow: "No browser window"
         case .noPopup: "The action has no popup"
         case .noUserAction: "A popup opens only when the user clicks the extension's button"
