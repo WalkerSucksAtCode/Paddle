@@ -45,6 +45,10 @@ struct BrowserView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
             }
+            // A Chrome Web Store detail page: offer to install it. Paddle's own bar; nothing runs in the page.
+            if let tab = model.selectedTab, let url = tab.url, case .chromeWebStore(let id)? = StoreLink.isStoreDetailPage(url) {
+                StoreInstallBar(id: id, pageTitle: tab.title, model: model)
+            }
             if model.findVisible {
                 FindBar(model: model)
             }

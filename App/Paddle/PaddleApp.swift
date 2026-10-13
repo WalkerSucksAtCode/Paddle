@@ -98,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func paddleOpenExtensionsFolder(_ sender: Any?) { NSWorkspace.shared.open(Paths.extensions) }
 
+    @objc func paddleInstallExtensionFromLink(_ sender: Any?) { InstallFromLinkPanel.show(over: NSApp.mainWindow) }
+
     @objc func paddleReloadExtensions(_ sender: Any?) { Task { await AppModel.shared.reloadExtensions() } }
 
     @objc func paddleShowHistory(_ sender: Any?) { HistoryWindowController.show() }
@@ -109,6 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func paddleToggleBookmarksBar(_ sender: Any?) { AppModel.shared.showBookmarksBar.toggle() }
 
     @objc func paddleImportBookmarks(_ sender: Any?) { BookmarkFiles.importFile() }
+
+    @objc func paddleImportFromBrowser(_ sender: Any?) { BrowserImportController.show() }
 
     @objc func paddleExportBookmarks(_ sender: Any?) { BookmarkFiles.exportFile() }
 

@@ -501,6 +501,22 @@ final class AppModel {
         }
     }
 
+    /// File > Import from Browser…: adds another browser's visits with their original dates, skipping those already
+    /// here and those older than `historyDays`. Nil when history is off. Runs in batches with a yield between, so
+    /// a large history doesn't freeze the windows; the first batch that fails stops it (the earlier ones stay, and a
+    /// second import skips them).
+    func importHistory(_ visits: [ImportedVisit]) async throws -> HistoryImportSummary? {
+        guard let history else { return nil }
+        defer { historyGeneration += 1 }
+        let cutoff = Date().addingTimeInterval(-Double(config.historyDays) * 86_400)
+        var total = HistoryImportSummary()
+        for start in stride(from: 0, to: visits.count, by: 20_000) {
+            total.add(try history.importVisits(Array(visits[start..<min(start + 20_000, visits.count)]), notBefore: cutoff))
+            await Task.yield()
+        }
+        return total
+    }
+
     func updateHistoryTitle(_ url: URL, _ title: String) {
         guard let history, !title.isEmpty, HistoryStore.isRecordable(url) else { return }
         try? history.updateTitle(url: url, title: title)

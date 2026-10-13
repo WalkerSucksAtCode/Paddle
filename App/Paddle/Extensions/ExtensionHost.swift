@@ -272,6 +272,7 @@ final class ExtensionHost {
         let result = ExtensionScan.scan(Paths.extensions, forbiddenRoots: [home, Paths.support])
         entries = result.entries
         scanProblems = result.problems
+        StoreInstaller.shared.reloadSources()
         for (name, problem) in scanProblems { log.notice("\(name, privacy: .public): \(problem, privacy: .public)") }
     }
 
@@ -419,8 +420,9 @@ final class ExtensionHost {
     }
 
     /// Paddle > Reload Config: picks up added, removed, enabled and disabled folders and a changed permissions
-    /// file. Edited extension files need Reload Extensions.
-    func reconcile(config: PaddleConfig) async {
+    /// file. Edited extension files need Reload Extensions. Folders in `reloading` (a store update just replaced
+    /// them) are unloaded and loaded again.
+    func reconcile(config: PaddleConfig, reloading: Set<String> = []) async {
         await enqueue { [self] in
             loadInProgress = true
             readDecisions()
@@ -438,6 +440,11 @@ final class ExtensionHost {
                 }
                 if decisionsError != nil {
                     unload(ext, closingTabs: false)  // unreadable permissions file: its pages sleep until it is fixed
+                    continue
+                }
+                if reloading.contains(ext.name) {
+                    log.info("\(ext.name, privacy: .public): replaced by a store update; reloading it")
+                    unload(ext, closingTabs: false)
                     continue
                 }
                 // The user deleted or edited its record (or a new version asks for more): unload, ask, load again.
@@ -669,6 +676,10 @@ final class ExtensionHost {
                 continue
             }
 
+            // Once per load: webRequestBlocking answers are ignored in WebKit, so this extension can't block requests.
+            if let notice = ExtensionBlocking(manifest: manifest).notice {
+                log.info("\(entry.name, privacy: .public): \(notice, privacy: .public)")
+            }
             var problems = webExtension.errors.map(\.localizedDescription).filter { !isPreludeNoise($0, extension: entry.name) }
             if let overlayProblem { problems.append(overlayProblem) }
             problems += missing.other.map { "file \($0) missing" }
@@ -854,8 +865,11 @@ final class ExtensionHost {
         let data = try? Data(contentsOf: entry.root.appending(path: "manifest.json"))
         let parsed = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         let manifest = parsed ?? [:]
-        let persona = parsed == nil ? (compat.persona ?? .none) : Persona.detect(manifest: manifest, source: nil, override: compat.persona)
-        let identity = ExtensionIdentity.resolve(persona: persona, saltedID: salted, manifest: manifest, publicID: compat.wantsPublicID)
+        // A store install (extension-sources.json) runs as that store's browser and may use its public id.
+        let source = StoreInstaller.shared.record(forFolder: entry.name)
+        let persona = parsed == nil ? (compat.persona ?? .none) : Persona.detect(manifest: manifest, source: source?.store, override: compat.persona)
+        let storeID = source?.store == .chromeWebStore ? source?.id : nil
+        let identity = ExtensionIdentity.resolve(persona: persona, saltedID: salted, manifest: manifest, storeID: storeID, publicID: compat.wantsPublicID)
         let off = compatOff.contains(entry.name)
         var plan: CompatPlan?
         if !off {
@@ -1036,6 +1050,7 @@ final class ExtensionHost {
         let folders = Set(entries.map(\.name)).union(scanProblems.keys)
         ExtensionOverlay.prune(in: Paths.extensionOverlays, keeping: Set(entries.map(\.name)))
         if installs?.prune(keeping: folders) == true { writeInstalls() }
+        StoreInstaller.shared.pruneSources(keeping: folders)
     }
 
     /// Unloads one extension. Its open pages close (removed or turned off) or sleep until it is back (reload).
@@ -1081,6 +1096,7 @@ final class ExtensionHost {
         )
         let answer = ExtensionPrompts.install(
             name: displayName, icon: item.webExtension.icon(for: CGSize(width: 64, height: 64)), lines: lines,
+            notice: ExtensionBlocking(manifest: item.manifest).notice,
             folder: entry.name, isUpgrade: existing.map { !$0.isFullyDeclined } ?? false
         )
 

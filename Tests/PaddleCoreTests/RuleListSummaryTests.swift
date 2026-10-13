@@ -62,6 +62,7 @@ struct RuleListSummaryTests {
         let keys = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any]).keys
         #expect(Set(keys) == [
             "ruleCount", "skipped", "commentLines", "truncated", "styleInjection", "invalidSelectors", "regexTranslated", "regexRefused",
+            "skips",
         ])
     }
 
@@ -86,6 +87,73 @@ struct RuleListSummaryTests {
         #expect(s.styleInjection == 0 && s.invalidSelectors == 0)
     }
 
+    /// The breakdown is saved with the sidecar. A sidecar from before it existed decodes with zeros and no breakdown,
+    /// which `hasSkipBreakdown` tells apart from a list with nothing skipped.
+    @Test func skipBreakdownRoundTripsAndOldSidecarsAreFlagged() throws {
+        let s = summary("""
+        example.com##+js(nowebrtc)
+        example.com#?#div:has-text(Sponsored)
+        ||x.test^$redirect=noop.js
+        ||ok.test^
+        """)
+        #expect(s.skipped == 3)
+        #expect(s.skips.options == ["redirect": 1])
+        #expect(s.hasSkipBreakdown)
+        let data = try JSONEncoder().encode(s)
+        #expect(try JSONDecoder().decode(RuleListSummary.self, from: data) == s)
+
+        let old = Data(#"{"ruleCount":1,"skipped":3,"commentLines":0,"truncated":false}"#.utf8)
+        let decoded = try JSONDecoder().decode(RuleListSummary.self, from: old)
+        #expect(!decoded.hasSkipBreakdown)
+        #expect(RuleListSummary(ruleCount: 1, skipped: 0, commentLines: 0, truncated: false).hasSkipBreakdown)
+    }
+
+    /// What the app does with an old sidecar: its saved counts stay, and the breakdown re-derived from the list text
+    /// (no WebKit compile) makes it complete, matching a fresh conversion's breakdown.
+    @Test func oldSidecarGetsItsBreakdownFromTheText() throws {
+        let text = "example.com##+js(nowebrtc)\n||x.test^$redirect=noop.js\n||ok.test^\n"
+        var old = try JSONDecoder().decode(RuleListSummary.self, from: Data(#"{"ruleCount":1,"skipped":2,"commentLines":0,"truncated":false}"#.utf8))
+        #expect(!old.hasSkipBreakdown)
+        old.skips = FilterListConverter.skipBreakdown(text)
+        #expect(old.hasSkipBreakdown)
+        #expect(old.skips == summary(text).skips)
+        #expect(old.skipped == 2 && old.ruleCount == 1)
+    }
+
+    /// The Activity popover's "Not covered" text names each reason, ranks options by count, and leaves scriptlet
+    /// lines out while they run (they are no gap then).
+    @Test func notCoveredTextNamesEachReason() {
+        let skips = FilterListConverter.SkipBreakdown(
+            scriptlets: 600, extendedSelectors: 140,
+            options: ["redirect": 300, "removeparam": 120, "csp": 40, "replace": 5], other: 9, malformed: 2
+        )
+        let s = RuleListSummary(
+            ruleCount: 60_000, skipped: skips.total, commentLines: 0, truncated: false,
+            styleInjection: 40, invalidSelectors: 3, regexRefused: 13, skips: skips
+        )
+        #expect(s.notCoveredText(scriptletsOn: true, locale: us) == """
+            Not covered: 465 options WebKit can't express (redirect 300, removeparam 120, csp 40, …), \
+            140 extended selectors, 3 invalid selectors (WebKit refuses them), 40 style rules, \
+            13 regex rules (no exact WebKit form), 9 lines of other syntax (entity domains like amazon.*, HTML filtering, injection markers), \
+            2 malformed lines
+            """)
+        #expect(s.notCoveredText(scriptletsOn: false, locale: us)?.hasSuffix(
+            ", 600 scriptlet lines (Run the lists' scriptlets is off)") == true)
+        #expect(s.scriptletText(scriptletsOn: true, locale: us) == """
+            600 scriptlet lines: Paddle's scriptlet engine runs the names it has, so they aren't a gap. \
+            Names it lacks are counted in the scriptlets status line.
+            """)
+        #expect(s.scriptletText(scriptletsOn: false, locale: us) == nil)
+
+        let one = RuleListSummary(
+            ruleCount: 1, skipped: 2, commentLines: 0, truncated: false,
+            skips: FilterListConverter.SkipBreakdown(extendedSelectors: 1, options: ["csp": 1])
+        )
+        #expect(one.notCoveredText(scriptletsOn: true, locale: us)
+            == "Not covered: 1 option WebKit can't express (csp 1), 1 extended selector")
+        #expect(RuleListSummary(ruleCount: 5, skipped: 0, commentLines: 0, truncated: false).notCoveredText(scriptletsOn: true) == nil)
+    }
+
     @Test func styleAndInvalidCountsShowInTheStatusLine() {
         let s = summary("""
         hindustantimes.com##body {padding-top:0;}
@@ -94,7 +162,10 @@ struct RuleListSummaryTests {
         ##.ad
         example.com##+js(nowebrtc)
         """)
-        #expect(s == RuleListSummary(ruleCount: 1, skipped: 1, commentLines: 0, truncated: false, styleInjection: 2, invalidSelectors: 1))
+        #expect(s == RuleListSummary(
+            ruleCount: 1, skipped: 1, commentLines: 0, truncated: false, styleInjection: 2, invalidSelectors: 1,
+            skips: FilterListConverter.SkipBreakdown(scriptlets: 1)
+        ))
         #expect(s.statusLine(name: "mine", cached: true, locale: us) == "mine: 1 rule (1 line unsupported; 2 style rules; 1 invalid selector; cached)")
         let onlyStyle = summary("example.com##body {padding-top:0;}")
         #expect(onlyStyle.statusLine(name: "mine", cached: false, locale: us) == "mine: 0 rules (1 style rule)")

@@ -1,4 +1,5 @@
 import AppKit
+import PaddleCore
 import SwiftUI
 
 /// Popover from the memory button: every tab's memory and sleep state, plus content-blocking status.
@@ -64,8 +65,13 @@ struct ActivityView: View {
                 if app.web.isUpdatingFilters {
                     Text("Updating filter lists…").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                ForEach(app.web.blockerStatus, id: \.self) { line in
-                    Text(line).font(.system(size: 11)).foregroundStyle(.secondary)
+                // Keyed by position: a line keeps its identity while the lists compile, so an open disclosure stays open.
+                ForEach(app.web.blockerLines.indices, id: \.self) { index in
+                    let line = app.web.blockerLines[index]
+                    Text(line.text).font(.system(size: 11)).foregroundStyle(.secondary)
+                    if let summary = line.summary {
+                        CoverageDisclosure(summary: summary, scriptletsOn: app.config.scriptlets)
+                    }
                 }
                 ForEach(app.web.filterUpdateProblems.values.sorted(), id: \.self) { line in
                     Label(line, systemImage: "exclamationmark.triangle")
@@ -152,6 +158,34 @@ struct ActivityView: View {
             .accessibilityLabel("\(tab.isAwake ? "Sleep" : "Show") \(tab.displayTitle)")
         }
         .help(tab.sharesProcess ? "* Shared with other tabs from the same site" : "")
+    }
+}
+
+/// "Not covered" for one installed block list: what the converter left out of it, by reason, with the scriptlet note
+/// in the disclosure. Plain text, so VoiceOver reads each line.
+private struct CoverageDisclosure: View {
+    let summary: RuleListSummary
+    let scriptletsOn: Bool
+
+    var body: some View {
+        if let notCovered = summary.notCoveredText(scriptletsOn: scriptletsOn) {
+            DisclosureGroup {
+                Text(summary.scriptletText(scriptletsOn: scriptletsOn) ?? "The rest of this list is in effect.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } label: {
+                Text(notCovered)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if let scriptlets = summary.scriptletText(scriptletsOn: scriptletsOn) {
+            Text(scriptlets)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

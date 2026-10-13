@@ -11,6 +11,8 @@ public struct ExtensionManifest: Sendable, Equatable {
     public let backgroundFiles: [String]
     /// Content-script js/css, action popups, options pages and declarativeNetRequest rule files. Unique, in manifest order, relative to the extension root.
     public let referencedFiles: [String]
+    /// `declarative_net_request.rule_resources` paths (the static rule files), relative to the extension root, in order.
+    public let ruleResources: [String]
 
     public init(data: Data) throws {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ParseError.notAnObject }
@@ -39,9 +41,12 @@ public struct ExtensionManifest: Sendable, Equatable {
         if let page = root["options_page"] as? String { files.append(page) }
         if let page = (root["options_ui"] as? [String: Any])?["page"] as? String { files.append(page) }
         let resources = (root["declarative_net_request"] as? [String: Any])?["rule_resources"] as? [Any] ?? []
+        var rulePaths: [String] = []
         for case let resource as [String: Any] in resources {
-            if let path = resource["path"] as? String { files.append(path) }
+            if let path = resource["path"] as? String { rulePaths.append(path) }
         }
+        files += rulePaths
+        ruleResources = Self.unique(rulePaths.map(Self.cleaned))
         referencedFiles = Self.unique(files.map(Self.cleaned))
     }
 

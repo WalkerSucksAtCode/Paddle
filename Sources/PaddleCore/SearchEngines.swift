@@ -65,4 +65,50 @@ public struct SearchEngine: Sendable, Equatable, Identifiable {
         return presets.first { $0.searchTemplate == search && (suggest.isEmpty || $0.suggestTemplate == suggest) }?
             .preset ?? .custom
     }
+
+    // MARK: - Recognizing another browser's engine
+
+    /// Words an engine's name or identifier may carry besides the name itself: "com.google.www", "Brave Search".
+    private static let nameNoise: Set<String> = ["com", "www", "org", "net", "search", "engine", "safari", "apple", "mozilla"]
+
+    private static let nameAliases: [String: Preset] = [
+        "duckduckgo": .duckDuckGo, "ddg": .duckDuckGo, "google": .google, "bing": .bing,
+        "brave": .brave, "kagi": .kagi, "ecosia": .ecosia,
+    ]
+
+    /// The preset an engine name or identifier ("DuckDuckGo", "com.google.www", "google@search.mozilla.org") names.
+    /// Everything besides the name must be noise: "Google Scholar" is not Google.
+    public static func preset(named name: String) -> Preset? {
+        let tokens = name.lowercased()
+            .split { !$0.isLetter && !$0.isNumber }
+            .map(String.init)
+            .filter { !nameNoise.contains($0) }
+        guard tokens.count == 1 else { return nil }
+        return nameAliases[tokens[0]]
+    }
+
+    /// The preset a search URL (`{searchTerms}`, `%s` or `%S` for the query) belongs to, judged by host and path:
+    /// `https://www.google.com/search?q=…` is Google, `https://scholar.google.com/scholar?q=…` is not.
+    public static func preset(forSearchURL template: String) -> Preset? {
+        let probe = template
+            .replacingOccurrences(of: "{searchTerms}", with: "x")
+            .replacingOccurrences(of: "%s", with: "x")
+            .replacingOccurrences(of: "%S", with: "x")
+        guard let parts = URLComponents(string: probe), parts.scheme == "https" || parts.scheme == "http",
+              var host = parts.host?.lowercased() else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        let path = parts.path.isEmpty ? "/" : parts.path
+        // google.com, google.de, google.co.uk, google.com.au; not google.evil.com.
+        let labels = host.split(separator: ".")
+        if labels.first == "google", path == "/search",
+           labels.count == 2 || (labels.count == 3 && ["co", "com"].contains(labels[1])) { return .google }
+        switch (host, path) {
+        case ("duckduckgo.com", "/"): return .duckDuckGo
+        case ("bing.com", "/search"): return .bing
+        case ("search.brave.com", "/search"): return .brave
+        case ("kagi.com", "/search"): return .kagi
+        case ("ecosia.org", "/search"): return .ecosia
+        default: return nil
+        }
+    }
 }

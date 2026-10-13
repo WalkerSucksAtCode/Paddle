@@ -24,7 +24,9 @@ final class WebEnvironment {
 
     /// One line per block list for the Content Blocking status item, e.g. "easylist: 61,204 rules", then one for
     /// the lists' scriptlets.
-    private(set) var blockerStatus: [String] = []
+    private(set) var blockerLines: [BlockerLine] = []
+    /// `blockerLines` as text (Settings, the Reload Config alert).
+    var blockerStatus: [String] { blockerLines.map(\.text) }
     /// The lists' scriptlets as user scripts (`Scriptlets`), rebuilt with the block lists and added after user.css
     /// and userscripts by `reloadUserScripts`.
     @ObservationIgnored private var scriptletScripts: [WKUserScript] = []
@@ -97,29 +99,17 @@ final class WebEnvironment {
     ///   sites call without a fallback (the extension prelude has a stand-in);
     /// - `HiddenPageDOMTimerThrottlingAutoIncreases`, so timers in hidden pages are throttled harder the longer
     ///   they stay hidden (WebKit already throttles them; this lets the interval grow).
-    /// Private `_setEnabled:forFeature:`, guarded; without it nothing changes.
+    /// Private `_setEnabled:forFeature:`, guarded (`WebFeatureToggles`); without it nothing changes.
     private static func enableWebFeatures(_ preferences: WKPreferences) {
-        let setSelector = NSSelectorFromString("_setEnabled:forFeature:")
-        guard !enabledFeatures.isEmpty, preferences.responds(to: setSelector) else { return }
-        typealias SetFeature = @convention(c) (AnyObject, Selector, Bool, AnyObject) -> Void
-        let setFeature = unsafeBitCast(preferences.method(for: setSelector), to: SetFeature.self)
-        for feature in enabledFeatures {
-            setFeature(preferences, setSelector, true, feature)
-        }
+        WebFeatureToggles.enable(enabledFeatures, in: preferences)
     }
 
     /// The `_WKFeature` objects for `enableWebFeatures`, looked up once: `+_features` builds an object for every
     /// WebKit feature (hundreds), which is wasted work on each new web view.
-    private static let enabledFeatures: [NSObject] = {
-        let listSelector = NSSelectorFromString("_features")
-        guard (WKPreferences.self as AnyObject).responds(to: listSelector),
-              let features = (WKPreferences.self as AnyObject).perform(listSelector)?.takeUnretainedValue() as? [NSObject]
-        else { return [] }
-        let wanted: Set<String> = ["RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases"]
-        return features.filter { feature in
-            feature.responds(to: NSSelectorFromString("key")) && wanted.contains(feature.value(forKey: "key") as? String ?? "")
-        }
-    }()
+    private static let enabledFeatures: [NSObject] = WebFeatureToggles.features(
+        named: ["RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases"],
+        in: WKPreferences.self as AnyObject
+    )
 
     /// The configuration extension pages (popups, options pages, backgrounds) derive from: the browsing data store,
     /// the user agent and developer extras, and nothing else. No shared content controller, so user.css, userscripts
@@ -237,12 +227,25 @@ final class WebEnvironment {
         let shared: SharedExceptions
     }
 
+    /// One line of the Content blocking status. `summary` is set for an installed block list: its counts feed the
+    /// Activity popover's "Not covered" disclosure. Scriptlet, failure and note lines have none.
+    struct BlockerLine: Sendable {
+        let text: String
+        let summary: RuleListSummary?
+
+        init(_ text: String, summary: RuleListSummary? = nil) {
+            self.text = text
+            self.summary = summary
+        }
+    }
+
     /// What compiling one list gave: its status line, and whether it was installed or left only a sidecar.
     private struct CompileOutcome: Sendable {
         let job: CompileJob
         let line: String
         let installed: Bool
         let sidecar: Bool
+        var summary: RuleListSummary? = nil
     }
 
     private func performBlockerLoad() async {
@@ -253,23 +256,23 @@ final class WebEnvironment {
                 scriptletScripts = []
                 reloadUserScripts()
             }
-            blockerStatus = ["Off (contentBlocking is false in config.json)"]
+            blockerLines = [BlockerLine("Off (contentBlocking is false in config.json)")]
             return
         }
 
-        var status: [String] = []
+        var status: [BlockerLine] = []
         var sources: [URL] = []
         renameLegacyFilterFiles()
         seedBundledSnapshots()
         for list in config.filterLists {
             guard let file = FilterUpdatePolicy.fileName(forList: list) else {
-                status.append("\(list): ignored, not an https URL")
+                status.append(BlockerLine("\(list): ignored, not an https URL"))
                 continue
             }
             let url = Paths.filters.appending(path: file)
             // File names come from the whole URL, so only the same list entered twice shares one.
             guard !sources.contains(url) else {
-                status.append("\(list): ignored, listed twice")
+                status.append(BlockerLine("\(list): ignored, listed twice"))
                 continue
             }
             sources.append(url)
@@ -293,7 +296,7 @@ final class WebEnvironment {
             let name = file.deletingPathExtension().lastPathComponent
             guard let text = try? String(contentsOf: file, encoding: .utf8) else {
                 let exists = FileManager.default.fileExists(atPath: file.path)
-                status.append("\(name): \(exists ? "unreadable (not UTF-8 text)" : file == Paths.userFilters ? "no file" : "not downloaded yet")")
+                status.append(BlockerLine("\(name): \(exists ? "unreadable (not UTF-8 text)" : file == Paths.userFilters ? "no file" : "not downloaded yet")"))
                 continue
             }
             // user-filters.txt is the user's own, so it counts as trusted.
@@ -312,21 +315,22 @@ final class WebEnvironment {
             if let cached {
                 wanted[identifier] = cached
                 install(cached, identifier: identifier)
-                status.append(await cachedSummary(identifier: identifier, text: text, shared: listShared).statusLine(name: name, cached: true))
+                let summary = await cachedSummary(identifier: identifier, text: text, shared: listShared)
+                status.append(BlockerLine(summary.statusLine(name: name, cached: true), summary: summary))
                 continue
             }
             // A list that gave no rules or failed to compile last time has only a sidecar; same text, same answer.
             if let remembered = savedSummary(identifier: identifier), !remembered.installable {
                 sidecars.insert(identifier)
-                status.append(remembered.statusLine(name: name, cached: true))
+                status.append(BlockerLine(remembered.statusLine(name: name, cached: true)))
                 continue
             }
             jobs.append(CompileJob(index: status.count, name: name, identifier: identifier, text: text, shared: listShared))
-            status.append("\(name): compiling")
+            status.append(BlockerLine("\(name): compiling"))
         }
         // Scriptlets are in place before the startup gate opens, like the cached lists.
-        if let line = await loadScriptlets(scriptletInputs) { status.append(line) }
-        blockerStatus = status
+        if let line = await loadScriptlets(scriptletInputs) { status.append(BlockerLine(line)) }
+        blockerLines = status
 
         if !jobs.isEmpty {
             // Shared by the parallel conversions and dropped with this scope, so cached loads start no web view and
@@ -337,8 +341,8 @@ final class WebEnvironment {
                     group.addTask { await self.compile(job, validator: validator) }
                 }
                 for await outcome in group {
-                    status[outcome.job.index] = outcome.line
-                    blockerStatus = status
+                    status[outcome.job.index] = BlockerLine(outcome.line, summary: outcome.summary)
+                    blockerLines = status
                     if outcome.installed, let list = installedRuleLists[outcome.job.identifier] { wanted[outcome.job.identifier] = list }
                     if outcome.sidecar { sidecars.insert(outcome.job.identifier) }
                 }
@@ -348,7 +352,7 @@ final class WebEnvironment {
         for (identifier, list) in installedRuleLists where wanted[identifier] == nil { contentController.remove(list) }
         for (identifier, list) in wanted where installedRuleLists[identifier] == nil { contentController.add(list) }
         installedRuleLists = wanted
-        blockerStatus = status
+        blockerLines = status
         await removeStaleCompiledLists(keeping: Set(wanted.keys), sidecars: sidecars)
     }
 
@@ -411,7 +415,7 @@ final class WebEnvironment {
             install(list, identifier: job.identifier)
             saveSummary(summary, identifier: job.identifier)
             log.info("compiled \(job.identifier, privacy: .public): \(result.ruleCount) rules, \(result.skippedLines) lines skipped, \(result.styleInjection) style rules, \(result.invalidSelectors) invalid selectors, regex \(result.regexTranslated) translated \(result.regexRefused) refused")
-            return CompileOutcome(job: job, line: summary.statusLine(name: job.name, cached: false), installed: true, sidecar: false)
+            return CompileOutcome(job: job, line: summary.statusLine(name: job.name, cached: false), installed: true, sidecar: false, summary: summary)
         } catch {
             let reason = RuleListSummary.compileFailureReason(
                 helpAnchor: (error as NSError).userInfo[NSHelpAnchorErrorKey] as? String,
@@ -433,7 +437,7 @@ final class WebEnvironment {
                         dropped.regexDropped = reason
                         saveSummary(dropped, identifier: job.identifier)
                         log.info("compiled \(job.identifier, privacy: .public) without its regex rules: \(retry.ruleCount) rules")
-                        return CompileOutcome(job: job, line: dropped.statusLine(name: job.name, cached: false), installed: true, sidecar: false)
+                        return CompileOutcome(job: job, line: dropped.statusLine(name: job.name, cached: false), installed: true, sidecar: false, summary: dropped)
                     }
                     log.error("compile \(job.identifier, privacy: .public) without its regex rules gave no rule list (\(retry.ruleCount) rules)")
                 } catch {
@@ -501,9 +505,16 @@ final class WebEnvironment {
     }
 
     /// The saved counts for a cached list. Lists compiled before sidecars existed are converted once more (not
-    /// recompiled) to recover them.
+    /// recompiled) to recover them. A sidecar from before the skip breakdown keeps its saved counts and gets the
+    /// breakdown re-derived from the list text (a parse, no WebKit compile), then is saved again. Its selector counts
+    /// stay as saved: only WebKit's own selector check could recount them.
     private func cachedSummary(identifier: String, text: String, shared: SharedExceptions) async -> RuleListSummary {
-        if let summary = savedSummary(identifier: identifier) { return summary }
+        if var summary = savedSummary(identifier: identifier) {
+            guard !summary.hasSkipBreakdown else { return summary }
+            summary.skips = await Task.detached(priority: .utility) { FilterListConverter.skipBreakdown(text) }.value
+            saveSummary(summary, identifier: identifier)
+            return summary
+        }
         let summary = await Task.detached(priority: .utility) {
             RuleListSummary(text: text, result: FilterListConverter.convert(text, shared: shared))
         }.value

@@ -5,11 +5,18 @@ import PaddleCore
 /// and the list is capped; the extension's icon tells the alerts apart from Paddle's own.
 enum ExtensionPrompts {
     /// Before an extension first runs, or when a new version asks for more (`isUpgrade`: `lines` lists only the new
-    /// items, while the answer covers the whole extension). App-modal, one at a time.
-    static func install(name: String, icon: NSImage?, lines: [String], folder: String, isUpgrade: Bool) -> ExtensionInstallAnswer {
+    /// items, while the answer covers the whole extension). `notice` is a plain sentence about what the extension can't
+    /// do in Paddle (`ExtensionBlocking.notice`), set apart from the list. App-modal, one at a time.
+    static func install(
+        name: String, icon: NSImage?, lines: [String], notice: String?, folder: String, isUpgrade: Bool
+    ) -> ExtensionInstallAnswer {
         let alert = NSAlert()
         alert.messageText = isUpgrade ? "“\(name)” wants more access" : "Allow “\(name)” to run in Paddle?"
         var text = lines.map { "• \($0)" }
+        if let notice {
+            text.append("")
+            text.append(notice)
+        }
         text.append("")
         if isUpgrade {
             text.append("Don't Allow turns it off. Only When I Click also takes away the sites it can already access.")

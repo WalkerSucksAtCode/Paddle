@@ -45,6 +45,8 @@ enum MainMenu {
         file.addItem(.separator())
         add(file, "savePage", "Save Page As…", #selector(BrowserWindowController.paddleSavePage(_:)), "s")
         add(file, "print", "Print…", #selector(BrowserWindowController.paddlePrint(_:)), "p")
+        file.addItem(.separator())
+        add(file, "importFromBrowser", "Import from Browser…", #selector(AppDelegate.paddleImportFromBrowser(_:)), "", target: appDelegate)
 
         let edit = submenu(main, "Edit")
         add(edit, "undo", "Undo", Selector(("undo:")), "z")
@@ -112,6 +114,7 @@ enum MainMenu {
         }
 
         let extensions = submenu(main, "Extensions")
+        add(extensions, "installExtensionFromLink", "Install from Link…", #selector(AppDelegate.paddleInstallExtensionFromLink(_:)), "", target: appDelegate)
         add(extensions, "openExtensionsFolder", "Open Extensions Folder", #selector(AppDelegate.paddleOpenExtensionsFolder(_:)), "", target: appDelegate)
         add(extensions, "reloadExtensions", "Reload Extensions", #selector(AppDelegate.paddleReloadExtensions(_:)), "", target: appDelegate)
         // Each running extension and the load status lines follow, filled in by ExtensionsMenuDelegate when the menu opens.

@@ -208,6 +208,12 @@ final class Tab: Identifiable {
         let gate = AppModel.shared.web.blockersReady
         let started = ContinuousClock.now
         Task { [weak self] in
+            // Startup cost of this wait, to measure later. Cold (WebKit compiles every changed list): about 3.7 s for
+            // EasyList + EasyPrivacy (measured 2026-10-12), so the 3 s gate cap ends this wait and the page loads
+            // unblocked, then reloads once when the lists land (`AppModel.start`). Warm (cached lists): 58 ms before
+            // scriptlets, about 310 ms measured 2026-10-12 with scriptlets on. To measure: this log's "first page load
+            // waited" line, "startup block lists installed in" (WebEnvironment) and the "compiled" lines (none on a warm
+            // start), all in subsystem com.walker.Paddle.
             await gate.wait()
             let waited = (ContinuousClock.now - started).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
             Self.log.info("first page load waited \(waited, privacy: .public) for the block lists (\(gate.isReady ? "installed" : "timed out", privacy: .public))")

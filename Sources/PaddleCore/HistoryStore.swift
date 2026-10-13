@@ -34,6 +34,48 @@ public struct HistoryVisit: Sendable, Equatable, Identifiable {
     }
 }
 
+/// One visit read from another browser's history, to be added with `HistoryStore.importVisits`.
+public struct ImportedVisit: Sendable, Equatable {
+    public var url: String
+    public var title: String
+    public var date: Date
+    /// The address was typed into the old browser's address bar (counts three times in frecency, as here).
+    public var typed: Bool
+
+    public init(url: String, title: String, date: Date, typed: Bool = false) {
+        self.url = url
+        self.title = title
+        self.date = date
+        self.typed = typed
+    }
+}
+
+/// What `HistoryStore.importVisits` did with a batch.
+public struct HistoryImportSummary: Sendable, Equatable {
+    /// Visits added.
+    public var added = 0
+    /// Visits already in the history at the same address and instant (a second import of the same file).
+    public var duplicates = 0
+    /// Visits whose address is not an http(s) page.
+    public var notRecordable = 0
+    /// Visits older than the retention cutoff, which the next prune would delete again.
+    public var beforeRetention = 0
+
+    public init(added: Int = 0, duplicates: Int = 0, notRecordable: Int = 0, beforeRetention: Int = 0) {
+        self.added = added
+        self.duplicates = duplicates
+        self.notRecordable = notRecordable
+        self.beforeRetention = beforeRetention
+    }
+
+    public mutating func add(_ other: HistoryImportSummary) {
+        added += other.added
+        duplicates += other.duplicates
+        notRecordable += other.notRecordable
+        beforeRetention += other.beforeRetention
+    }
+}
+
 /// Ranks history pages for address-bar suggestions, in the spirit of Firefox's "frecency".
 ///
 /// `score = (visitCount + 2 * typedCount) * bucket(age of lastVisit)`, where the bucket weight is
@@ -139,6 +181,56 @@ public final class HistoryStore {
                 SELECT id, ?, title, ? FROM pages WHERE url = ?
                 """, [.double(stamp), .int(typedValue), .text(address)])
         }
+    }
+
+    /// Adds visits from another browser with their original dates, in one transaction.
+    /// - Addresses go through the same rules as `recordVisit`: only http(s), stored without credentials.
+    /// - A visit already present at the same address and instant is skipped, so importing a file twice adds nothing.
+    /// - Visits before `cutoff` (the retention limit) are skipped: the next prune would delete them anyway.
+    /// - A page keeps the title of its newest visit: an imported visit never replaces a newer title, but fills an empty one.
+    public func importVisits(_ visits: [ImportedVisit], notBefore cutoff: Date? = nil) throws -> HistoryImportSummary {
+        var summary = HistoryImportSummary()
+        let upsert = """
+            INSERT INTO pages (url, title, visit_count, typed_count, last_visit)
+            VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT (url) DO UPDATE SET
+                visit_count = visit_count + 1,
+                typed_count = typed_count + excluded.typed_count,
+                title = CASE WHEN excluded.title <> '' AND (pages.title = '' OR excluded.last_visit >= pages.last_visit)
+                             THEN excluded.title ELSE pages.title END,
+                last_visit = max(last_visit, excluded.last_visit)
+            """
+        let exists = "SELECT 1 FROM visits v JOIN pages p ON p.id = v.page_id WHERE p.url = ? AND v.date = ? LIMIT 1"
+        let insert = "INSERT INTO visits (page_id, date, title, typed) SELECT id, ?, ?, ? FROM pages WHERE url = ?"
+        try transaction {
+            try withStatement(upsert, []) { upsertStatement in
+                try withStatement(exists, []) { existsStatement in
+                    try withStatement(insert, []) { insertStatement in
+                        for visit in visits {
+                            guard let url = URL(string: visit.url), Self.isRecordable(url) else {
+                                summary.notRecordable += 1
+                                continue
+                            }
+                            if let cutoff, visit.date < cutoff {
+                                summary.beforeRetention += 1
+                                continue
+                            }
+                            let address = Self.storedURL(url)
+                            let stamp = visit.date.timeIntervalSince1970
+                            let typed: Int64 = visit.typed ? 1 : 0
+                            if try step(existsStatement, [.text(address), .double(stamp)], expectsRow: true) {
+                                summary.duplicates += 1
+                                continue
+                            }
+                            try step(upsertStatement, [.text(address), .text(visit.title), .int(typed), .double(stamp)])
+                            try step(insertStatement, [.double(stamp), .text(visit.title), .int(typed), .text(address)])
+                            summary.added += 1
+                        }
+                    }
+                }
+            }
+        }
+        return summary
     }
 
     /// Sets the title of the page and of its latest visit. Empty titles are ignored (a page that has not
@@ -382,6 +474,11 @@ public final class HistoryStore {
             throw error
         }
         defer { sqlite3_finalize(stmt) }
+        try bind(stmt, params)
+        return try body(stmt)
+    }
+
+    private func bind(_ stmt: OpaquePointer, _ params: [Param]) throws {
         for (offset, param) in params.enumerated() {
             let index = Int32(offset + 1)
             let rc: Int32
@@ -392,7 +489,22 @@ public final class HistoryStore {
             }
             guard rc == SQLITE_OK else { throw lastError() }
         }
-        return try body(stmt)
+    }
+
+    /// Runs a prepared statement again with new bindings. With `expectsRow` it returns whether a row came back;
+    /// otherwise the statement must run to completion.
+    @discardableResult
+    private func step(_ stmt: OpaquePointer, _ params: [Param], expectsRow: Bool = false) throws -> Bool {
+        sqlite3_reset(stmt)
+        sqlite3_clear_bindings(stmt)
+        try bind(stmt, params)
+        let rc = sqlite3_step(stmt)
+        if expectsRow {
+            guard rc == SQLITE_ROW || rc == SQLITE_DONE else { throw lastError() }
+            return rc == SQLITE_ROW
+        }
+        guard rc == SQLITE_DONE else { throw lastError() }
+        return false
     }
 
     /// Runs a statement that returns no rows we care about.

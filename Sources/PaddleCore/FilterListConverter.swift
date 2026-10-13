@@ -37,8 +37,10 @@ public enum FilterListConverter {
     public struct Result: Sendable {
         public var json: String
         public var ruleCount: Int
-        /// Lines the converter cannot express, not counting the two kinds below.
-        public var skippedLines: Int
+        /// Lines the converter cannot express, by reason. Not counting the two kinds below.
+        public var skips: SkipBreakdown
+        /// Every skipped line (`skips.total`).
+        public var skippedLines: Int { skips.total }
         /// `##selector {style}` and `:style(` lines: CSS injection, which a block list cannot do.
         public var styleInjection: Int
         /// `##` selectors dropped because WebKit would reject them (and their chunk-mates with them).
@@ -49,6 +51,57 @@ public enum FilterListConverter {
         public var truncated: Bool
         /// Some rule in `json` came from a `/regex/` line (the list's or a shared exception).
         public var containsRegexRules: Bool
+    }
+
+    /// The lines `convert` left out, by the reason it could not express them. Every skipped line counts under exactly
+    /// one reason, so `total` is the number of skipped lines.
+    public struct SkipBreakdown: Codable, Equatable, Sendable {
+        /// `##+js(` and `#@#+js(` lines. Paddle's scriptlet engine runs the names it has while `scriptlets` is on.
+        public var scriptlets: Int
+        /// Procedural (extended) selectors: `#?#`, `#@?#`, `:has-text(`, `:-abp-`, `:xpath(` and the like.
+        public var extendedSelectors: Int
+        /// Options WebKit can't express (`redirect`, `csp`, `removeparam`, `replace`, `header`, `generichide`, ...), tallied
+        /// by name. `document` on a block rule is tallied as `document`; `$document` on an exception whose pattern is not a
+        /// site (a path, a bare word) as `document (not a site)`.
+        public var options: [String: Int]
+        /// HTML filtering (`$$`, `##^`), CSS and script injection markers (`#$#`, `#%#`), text WebKit can't take (non-ASCII),
+        /// and domain lists WebKit can't take (entity wildcards such as `amazon.*`).
+        public var other: Int
+        /// Lines with no usable form: an empty selector, an exception with only negated domains, a bare `*`, a negated
+        /// `domain=` option, or an option list that leaves no resource type.
+        public var malformed: Int
+
+        public init(
+            scriptlets: Int = 0, extendedSelectors: Int = 0, options: [String: Int] = [:], other: Int = 0, malformed: Int = 0
+        ) {
+            self.scriptlets = scriptlets
+            self.extendedSelectors = extendedSelectors
+            self.options = options
+            self.other = other
+            self.malformed = malformed
+        }
+
+        /// A missing key reads as zero, so a sidecar written before a reason existed still decodes.
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            scriptlets = try c.decodeIfPresent(Int.self, forKey: .scriptlets) ?? 0
+            extendedSelectors = try c.decodeIfPresent(Int.self, forKey: .extendedSelectors) ?? 0
+            options = try c.decodeIfPresent([String: Int].self, forKey: .options) ?? [:]
+            other = try c.decodeIfPresent(Int.self, forKey: .other) ?? 0
+            malformed = try c.decodeIfPresent(Int.self, forKey: .malformed) ?? 0
+        }
+
+        /// Every skipped line: the sum of the reasons.
+        public var total: Int { scriptlets + extendedSelectors + options.values.reduce(0, +) + other + malformed }
+    }
+
+    /// Why one line is skipped: one bucket of `SkipBreakdown`.
+    enum SkipReason: Equatable, Sendable {
+        case scriptlet
+        case extended
+        case option(String)
+        case other
+        case malformed
     }
 
     /// `dropRegex` leaves out every rule made from a `/regex/` line, the list's and the shared exceptions': the
@@ -92,6 +145,12 @@ public enum FilterListConverter {
         return assemble(parsed, chunks: chunks, shared: shared, invalidSelectors: invalid, dropRegex: dropRegex)
     }
 
+    /// The skipped lines of `text` by reason: the parse `convert` does, without building WebKit rules or JSON. Gives
+    /// a summary saved before the breakdown existed its breakdown; the counts are the same as `convert`'s.
+    public static func skipBreakdown(_ text: String) -> SkipBreakdown {
+        parse(text).skips
+    }
+
     // MARK: - Parsing and assembly
 
     struct Parsed {
@@ -105,7 +164,7 @@ public enum FilterListConverter {
         /// `#@#` exceptions: selector to the domains (`*domain`) it must not hide on, and selectors excepted everywhere.
         var cosmeticExceptions: [String: [String]] = [:]
         var globalExceptions: Set<String> = []
-        var skipped = 0
+        var skips = SkipBreakdown()
         var styleInjection = 0
         var invalidSelectors = 0
         var regexTranslated = 0
@@ -116,6 +175,16 @@ public enum FilterListConverter {
             var list = cosmeticExceptions[selector, default: []]
             for domain in domains where !list.contains(domain) { list.append(domain) }
             cosmeticExceptions[selector] = list
+        }
+
+        mutating func skip(_ reason: SkipReason) {
+            switch reason {
+            case .scriptlet: skips.scriptlets += 1
+            case .extended: skips.extendedSelectors += 1
+            case .option(let name): skips.options[name, default: 0] += 1
+            case .other: skips.other += 1
+            case .malformed: skips.malformed += 1
+            }
         }
     }
 
@@ -133,8 +202,8 @@ public enum FilterListConverter {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("!") || line.hasPrefix("[") { continue }
 
-            if unsupportedMarkers.contains(where: line.contains) {
-                parsed.skipped += 1
+            if let marker = unsupportedMarkers.first(where: { line.contains($0.marker) }) {
+                parsed.skip(marker.reason)
                 continue
             }
 
@@ -142,7 +211,7 @@ public enum FilterListConverter {
             if let except = line.range(of: "#@#") {
                 let domains = String(line[..<except.lowerBound])
                 let selector = String(line[except.upperBound...]).trimmingCharacters(in: .whitespaces)
-                guard !selector.isEmpty else { parsed.skipped += 1; continue }
+                guard !selector.isEmpty else { parsed.skip(.malformed); continue }
                 // Split like the `##` side, so `#@#.b` meets the `.b` of `##.a, .b`; anything else is kept whole.
                 let selectors = classifySelector(selector) == .selector ? selectorList(selector) : [selector]
                 if domains.isEmpty {
@@ -150,7 +219,10 @@ public enum FilterListConverter {
                 } else {
                     // Only positive domains say where not to hide; a `~` entry in an exception means nothing here.
                     // `~a.com#@#x` has no positive domain: an empty `unless-domain` would make WebKit reject the list.
-                    guard let (ifDomains, _) = parseDomains(domains, separator: ","), !ifDomains.isEmpty else { parsed.skipped += 1; continue }
+                    // Entity wildcards (`amazon.*`) and other domains WebKit can't take are `other`; only an exception
+                    // with nothing but negated domains is malformed.
+                    guard let (ifDomains, _) = parseDomains(domains, separator: ",") else { parsed.skip(.other); continue }
+                    guard !ifDomains.isEmpty else { parsed.skip(.malformed); continue }
                     for selector in selectors { parsed.addCosmeticException(selector, domains: ifDomains) }
                 }
                 continue
@@ -161,7 +233,7 @@ public enum FilterListConverter {
                 let selector = String(line[hide.upperBound...]).trimmingCharacters(in: .whitespaces)
                 switch classifySelector(selector) {
                 case .styleInjection: parsed.styleInjection += 1; continue
-                case .unsupported: parsed.skipped += 1; continue
+                case .skipped(let reason): parsed.skip(reason); continue
                 case .invalid: parsed.invalidSelectors += 1; continue
                 case .selector: break
                 }
@@ -169,7 +241,7 @@ public enum FilterListConverter {
                 if domains.isEmpty {
                     parsed.genericSelectors += selectors
                 } else {
-                    guard parseDomains(domains, separator: ",") != nil else { parsed.skipped += 1; continue }
+                    guard parseDomains(domains, separator: ",") != nil else { parsed.skip(.other); continue }
                     if parsed.domainSelectors[domains] == nil { parsed.domainOrder.append(domains) }
                     parsed.domainSelectors[domains, default: []] += selectors
                 }
@@ -178,7 +250,7 @@ public enum FilterListConverter {
 
             let rules: [Rule]
             switch networkRules(line) {
-            case .unsupported: parsed.skipped += 1; continue
+            case .unsupported(let reason): parsed.skip(reason); continue
             case .refusedRegex: parsed.regexRefused += 1; continue
             case .rules(let made): rules = made
             case .regex(let made): rules = made; parsed.regexTranslated += 1
@@ -282,7 +354,7 @@ public enum FilterListConverter {
         return Result(
             json: String(decoding: data, as: UTF8.self),
             ruleCount: rules.count,
-            skippedLines: parsed.skipped,
+            skips: parsed.skips,
             styleInjection: parsed.styleInjection,
             invalidSelectors: parsed.invalidSelectors + invalidSelectors,
             regexTranslated: parsed.regexTranslated,
@@ -300,7 +372,7 @@ public enum FilterListConverter {
         /// A `/regex/` line, one rule per url-filter `RegexTranslator` gave.
         case regex([Rule])
         case refusedRegex(RegexTranslator.Refusal)
-        case unsupported
+        case unsupported(SkipReason)
     }
 
     static func networkRules(_ line: String) -> NetworkRules {
@@ -314,13 +386,13 @@ public enum FilterListConverter {
             // Options rarely contain "/", URL paths almost always do. Unknown options reject the rule below.
             pattern = body[..<dollar]
             options = tail.split(separator: ",")
-        } else if hasOptionsWithSlash(body) {
+        } else if let option = optionWithSlash(body) {
             // `$replace=/a/b/`, `$header=…/…`, `$csp=… https://…`: options WebKit can't express, not a URL path.
-            return .unsupported
+            return .unsupported(.option(option))
         }
 
         let isRegex = pattern.count > 2 && pattern.hasPrefix("/") && pattern.hasSuffix("/")
-        guard pattern.allSatisfy(\.isASCII) else { return isRegex ? .refusedRegex(.nonASCII) : .unsupported }
+        guard pattern.allSatisfy(\.isASCII) else { return isRegex ? .refusedRegex(.nonASCII) : .unsupported(.other) }
 
         var trigger = Trigger(urlFilter: "")
         var caseSensitive = false
@@ -342,17 +414,18 @@ public enum FilterListConverter {
             case "first-party", "1p":
                 trigger.loadType = [negated ? "third-party" : "first-party"]
             case "domain", "from":
-                guard !negated, let value, let (ifs, unlesses) = parseDomains(value, separator: "|") else { return .unsupported }
+                guard !negated, let value else { return .unsupported(.malformed) }
+                guard let (ifs, unlesses) = parseDomains(value, separator: "|") else { return .unsupported(.other) }
                 if !ifs.isEmpty { trigger.ifDomain = ifs } else { trigger.unlessDomain = unlesses }
             case "match-case":
                 caseSensitive = true
             case "important":
                 isImportant = !isException
             case "document", "doc":
-                guard isException, !negated else { return .unsupported }
+                guard isException, !negated else { return .unsupported(.option("document")) }
                 isDocumentAllowlist = true
             default:
-                guard let types = resourceTypeMap[name] else { return .unsupported }  // option WebKit can't express
+                guard let types = resourceTypeMap[name] else { return .unsupported(.option(optionKey(name))) }  // option WebKit can't express
                 if negated { excludedTypes.formUnion(types) } else { resourceTypes.formUnion(types) }
                 if !negated, name == "subdocument" || name == "frame" { framesOnly = true }
             }
@@ -360,7 +433,7 @@ public enum FilterListConverter {
 
         if isDocumentAllowlist {
             // `@@||example.com^$document`: turn blocking off for the whole site.
-            guard let host = plainHost(pattern) else { return .unsupported }
+            guard let host = plainHost(pattern) else { return .unsupported(.option("document (not a site)")) }
             return .rules([siteAllowRule(host)])
         }
 
@@ -368,7 +441,7 @@ public enum FilterListConverter {
             // `$~script` means every other type a page loads, frames included but not the page itself.
             if resourceTypes.isEmpty { framesOnly = true }
             resourceTypes = (resourceTypes.isEmpty ? allResourceTypes : resourceTypes).subtracting(excludedTypes)
-            if resourceTypes.isEmpty { return .unsupported }
+            if resourceTypes.isEmpty { return .unsupported(.malformed) }
         }
         if !resourceTypes.isEmpty { trigger.resourceType = resourceTypes.sorted() }
         if caseSensitive { trigger.urlFilterIsCaseSensitive = true }
@@ -406,8 +479,8 @@ public enum FilterListConverter {
         }
 
         let source = caseSensitive ? String(pattern) : pattern.lowercased()
-        guard let filter = urlFilter(source, caseSensitive: caseSensitive) else { return .unsupported }
-        if filter == ".*", !narrowed { return .unsupported }
+        guard let filter = urlFilter(source, caseSensitive: caseSensitive) else { return .unsupported(.other) }
+        if filter == ".*", !narrowed { return .unsupported(.malformed) }
         return .rules(triggers.map { trigger in
             var trigger = trigger
             trigger.urlFilter = filter
@@ -422,19 +495,24 @@ public enum FilterListConverter {
         return Rule(trigger: allow, action: Action(type: "ignore-previous-rules"))
     }
 
-    /// True when some `$` in `body` starts an option list (a known option name first) that contains "/".
-    static func hasOptionsWithSlash(_ body: Substring) -> Bool {
+    /// The first known option name in `body` whose option text (after a `$`) contains "/", nil if none.
+    static func optionWithSlash(_ body: Substring) -> String? {
         var index = body.startIndex
         while let dollar = body[index...].firstIndex(of: "$") {
             let tail = body[body.index(after: dollar)...]
             if tail.contains("/") {
                 let first = tail.prefix { $0 != "," && $0 != "=" }
-                let name = first.hasPrefix("~") ? first.dropFirst() : first
-                if optionNames.contains(String(name)) { return true }
+                let name = String(first.hasPrefix("~") ? first.dropFirst() : first)
+                if optionNames.contains(name) { return name }
             }
             index = body.index(after: dollar)
         }
-        return false
+        return nil
+    }
+
+    /// The name an unsupported option is tallied under: bounded in length, and "(empty)" for a bare `=` or `~`.
+    static func optionKey(_ name: String) -> String {
+        name.isEmpty ? "(empty)" : String(name.prefix(40))
     }
 
     /// ABP pattern to a WebKit url-filter (a restricted regex: no `|`, no `{n}`). `caseSensitive` (`match-case`)
@@ -499,13 +577,13 @@ public enum FilterListConverter {
 
     // MARK: - Selectors
 
-    enum SelectorKind {
+    enum SelectorKind: Equatable {
         /// A plain CSS selector WebKit can be given.
         case selector
         /// `##selector {style}` or `:style(`: the list wants CSS applied, not the element hidden.
         case styleInjection
-        /// Extended (procedural) syntax or non-ASCII text.
-        case unsupported
+        /// Left out, for the reason given: extended (procedural) syntax, non-ASCII text, or an empty selector.
+        case skipped(SkipReason)
         /// Nested `:has`, unbalanced brackets, parentheses or quotes, or an empty member of a selector list:
         /// WebKit's parser would reject it.
         case invalid
@@ -514,9 +592,9 @@ public enum FilterListConverter {
     static func classifySelector(_ selector: String) -> SelectorKind {
         let scan = scanSelector(selector)
         if scan.hasBrace || scan.hasStyle { return .styleInjection }
-        if selector.isEmpty || !selector.allSatisfy(\.isASCII) || extendedSelectorMarkers.contains(where: scan.unquoted.contains) {
-            return .unsupported
-        }
+        if selector.isEmpty { return .skipped(.malformed) }
+        if extendedSelectorMarkers.contains(where: scan.unquoted.contains) { return .skipped(.extended) }
+        if !selector.allSatisfy(\.isASCII) { return .skipped(.other) }
         if !scan.balanced || scan.nestedHas { return .invalid }
         if split(selector, at: scan.topLevelCommas).contains(where: \.isEmpty) { return .invalid }
         return .selector
@@ -598,7 +676,12 @@ public enum FilterListConverter {
         return scan
     }
 
-    static let unsupportedMarkers = ["#?#", "#$#", "#%#", "#@$#", "#@?#", "$$", "##+js(", "#@#+js(", "##^"]
+    /// Lines left out because of a marker the converter doesn't read, and why. The first marker found decides.
+    static let unsupportedMarkers: [(marker: String, reason: SkipReason)] = [
+        ("##+js(", .scriptlet), ("#@#+js(", .scriptlet),
+        ("#?#", .extended), ("#@?#", .extended),
+        ("#$#", .other), ("#@$#", .other), ("#%#", .other), ("$$", .other), ("##^", .other),
+    ]
     static let extendedSelectorMarkers = [
         ":-abp-", ":has-text(", ":contains(", ":xpath(", ":matches-css", ":upward(", ":remove(",
         ":min-text-length(", ":watch-attr(", ":matches-path(", ":matches-attr(", ":matches-prop(",

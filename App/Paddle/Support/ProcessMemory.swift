@@ -18,11 +18,7 @@ enum ProcessMemory {
 
     /// `_webProcessIdentifier` is private WebKit API; this degrades to nil if it ever disappears.
     static func pid(of webView: WKWebView) -> pid_t? {
-        guard webView.responds(to: NSSelectorFromString("_webProcessIdentifier")),
-              let number = webView.value(forKey: "_webProcessIdentifier") as? NSNumber
-        else { return nil }
-        let pid = number.int32Value
-        return pid > 0 ? pid : nil
+        PrivateAPI.webProcessIdentifier(of: webView)
     }
 
     /// Reads `+[WKProcessPool _webContentProcessInfo]`, `_gpuProcessInfo` and `_networkingProcessInfo` (private
@@ -34,29 +30,28 @@ enum ProcessMemory {
         guard let pool = NSClassFromString("WKProcessPool") as? NSObject.Type else { return nil }
         let poolObject: AnyObject = pool
         func call(_ name: String) -> AnyObject? {
-            let selector = NSSelectorFromString(name)
-            guard poolObject.responds(to: selector) else { return nil }
-            return poolObject.perform(selector)?.takeUnretainedValue()
+            PrivateAPI.call(name, on: poolObject)
         }
         guard let infos = call("_webContentProcessInfo") as? [NSObject] else { return nil }
 
         var processes: [WebContentProcess<ObjectIdentifier>] = []
         var webViews: [ObjectIdentifier: WKWebView] = [:]
         for info in infos {
-            guard let pid = int32(info, "pid"), pid > 0 else { continue }
-            let views = (info.responds(to: NSSelectorFromString("webViews")) ? info.value(forKey: "webViews") as? [WKWebView] : nil) ?? []
+            guard let pid = PrivateAPI.int32(of: info, forKey: "pid"), pid > 0 else { continue }
+            let views = (PrivateAPI.value(of: info, forKey: "webViews") as? [WKWebView]) ?? []
             for view in views { webViews[ObjectIdentifier(view)] = view }
             processes.append(WebContentProcess(
                 pid: pid,
                 footprint: footprint(info) ?? footprint(of: pid) ?? 0,
                 views: views.map(ObjectIdentifier.init),
-                runsServiceWorkers: bool(info, "runningServiceWorkers"),
-                runsSharedWorkers: bool(info, "runningSharedWorkers")
+                runsServiceWorkers: PrivateAPI.bool(of: info, forKey: "runningServiceWorkers"),
+                runsSharedWorkers: PrivateAPI.bool(of: info, forKey: "runningSharedWorkers")
             ))
         }
         let gpuInfo = call("_gpuProcessInfo") as? NSObject
         let networkingInfos = (call("_networkingProcessInfo") as? [NSObject]) ?? []
-        let reported = Set(([gpuInfo].compactMap { $0 } + networkingInfos).compactMap { int32($0, "pid") }.filter { $0 > 0 })
+        let reported = Set(([gpuInfo].compactMap { $0 } + networkingInfos)
+            .compactMap { PrivateAPI.int32(of: $0, forKey: "pid") }.filter { $0 > 0 })
         return Snapshot(
             webContent: processes, webViews: webViews,
             gpu: gpuInfo.flatMap(footprint), networking: networkingInfos.compactMap(footprint), reported: reported
@@ -69,11 +64,9 @@ enum ProcessMemory {
     /// pid for every WebKit process and helper Paddle launched, AutoFill and audio included). Looked up by name
     /// so a system without it just has no Helpers row.
     private typealias ResponsibleFor = @convention(c) (pid_t) -> pid_t
-    private static let responsibleFor: ResponsibleFor? = {
-        // RTLD_DEFAULT: search every loaded image.
-        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") else { return nil }
-        return unsafeBitCast(symbol, to: ResponsibleFor.self)
-    }()
+    private static let responsibleFor: ResponsibleFor? = PrivateAPI.function(
+        named: "responsibility_get_pid_responsible_for_pid", as: ResponsibleFor.self
+    )
 
     /// The pids found by the last full scan and when it ran; listing every process costs about one call per pid
     /// on the system, so it runs at most every 30 s unless a readout is open.
@@ -104,20 +97,8 @@ enum ProcessMemory {
 
     /// `physicalFootprint` of a `_WKProcessInfo`; nil when the field is missing or the process has not reported yet.
     private static func footprint(_ info: NSObject) -> UInt64? {
-        guard info.responds(to: NSSelectorFromString("physicalFootprint")),
-              let bytes = (info.value(forKey: "physicalFootprint") as? NSNumber)?.uint64Value, bytes > 0
-        else { return nil }
+        guard let bytes = PrivateAPI.uint64(of: info, forKey: "physicalFootprint"), bytes > 0 else { return nil }
         return bytes
-    }
-
-    private static func int32(_ info: NSObject, _ key: String) -> Int32? {
-        guard info.responds(to: NSSelectorFromString(key)) else { return nil }
-        return (info.value(forKey: key) as? NSNumber)?.int32Value
-    }
-
-    private static func bool(_ info: NSObject, _ key: String) -> Bool {
-        guard info.responds(to: NSSelectorFromString(key)) else { return false }
-        return (info.value(forKey: key) as? NSNumber)?.boolValue ?? false
     }
 
     static func footprint(of pid: pid_t) -> UInt64? {

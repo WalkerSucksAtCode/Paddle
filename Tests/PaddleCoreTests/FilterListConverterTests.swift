@@ -87,11 +87,74 @@ struct FilterListConverterTests {
         // ok.test, the translated regex; `#@#` is an exception, not a rule.
         #expect(result.ruleCount == 2)
         #expect(result.skippedLines == 6)
+        #expect(result.skips.scriptlets == 1)
+        #expect(result.skips.extendedSelectors == 1)
+        #expect(result.skips.options == ["redirect": 1, "csp": 2, "replace": 1])
         #expect(result.regexTranslated == 1)
         #expect(result.regexRefused == 1)
         // Options holding "/" are options, not part of a URL pattern.
         #expect(!result.json.contains("replace"))
         #expect(!result.json.contains("default-src"))
+    }
+
+    /// One line of each reason lands in its own bucket, and the buckets add up to `skippedLines`.
+    @Test func skippedLinesSplitByReason() {
+        let text = """
+        ! comment
+        example.com##+js(nowebrtc)
+        example.com#?#div:has-text(Sponsored)
+        ||x.test^$redirect=noop.js
+        ||y.test^$csp=script-src 'none'
+        example.com##^script:has-text(y)
+        #@#
+        ||ok.test^
+        """
+        let result = FilterListConverter.convert(text)
+        #expect(result.ruleCount == 1)
+        #expect(result.skips.scriptlets == 1)
+        #expect(result.skips.extendedSelectors == 1)
+        #expect(result.skips.options == ["redirect": 1, "csp": 1])
+        #expect(result.skips.other == 1)
+        #expect(result.skips.malformed == 1)
+        #expect(result.skippedLines == 6)
+        #expect(result.skips.total == result.skippedLines)
+        #expect(FilterListConverter.skipBreakdown(text) == result.skips)
+    }
+
+    /// Injection markers, non-ASCII text and entity wildcards are `other`; lines with no usable form are `malformed`.
+    @Test func otherAndMalformedSkipReasons() {
+        let text = """
+        example.com#$#.x { color: red; }
+        example.com#%#//scriptlet("abort-on-property-read", "x")
+        example.com$$script[tag-content="z"]
+        ||täst.test^
+        example.*##.ad
+        ||q.test^$domain=amazon.*
+        ||r.test^$~domain=a.test
+        ~a.test#@#.x
+        ##
+        *$important
+        """
+        let result = FilterListConverter.convert(text)
+        #expect(result.skips == FilterListConverter.SkipBreakdown(other: 6, malformed: 4))
+        #expect(result.skippedLines == 10)
+    }
+
+    /// Options WebKit can't express are tallied by name, whether they hold "/" or not.
+    @Test func unsupportedOptionsAreTalliedByName() {
+        let text = """
+        ||a.test^$removeparam=utm_source
+        ||b.test^$removeparam=fbclid
+        ||c.test^$header=x-frame-options:deny
+        ||d.test^$replace=/ads/news/
+        ||e.test^$document
+        @@banner$document
+        ||f.test^$~
+        """
+        let result = FilterListConverter.convert(text)
+        #expect(result.ruleCount == 0)
+        #expect(result.skips.options == ["removeparam": 2, "header": 1, "replace": 1, "document": 1, "document (not a site)": 1, "(empty)": 1])
+        #expect(result.skips.total == 7)
     }
 
     @Test func regexRulesKeepTheirOptions() throws {
@@ -218,8 +281,8 @@ struct FilterListConverterTests {
         #expect(result.ruleCount == 1)
         #expect(result.json.contains(#"li:is(.a, .b):has(> .c), a[title=\"(x\"], .bg-white\\/50.p-8, div:not(:has(.x)) + p:has(.y)"#))
         #expect(FilterListConverter.classifySelector(":HAS(a:has(b))") == .invalid)
-        #expect(FilterListConverter.classifySelector("div:has-text(Ad)") == .unsupported)
-        #expect(FilterListConverter.classifySelector("") == .unsupported)
+        #expect(FilterListConverter.classifySelector("div:has-text(Ad)") == .skipped(.extended))
+        #expect(FilterListConverter.classifySelector("") == .skipped(.malformed))
     }
 
     /// The validator sees every chunk first, then only the members of failing chunks; just the bad selector
@@ -509,7 +572,7 @@ struct FilterListConverterTests {
         #expect(FilterListConverter.classifySelector(".x:STYLE(top: 0)") == .styleInjection)
         // Extended-syntax markers count only outside quoted strings too.
         #expect(FilterListConverter.classifySelector(#"[title=":contains("]"#) == .selector)
-        #expect(FilterListConverter.classifySelector(".x:contains(ad)") == .unsupported)
+        #expect(FilterListConverter.classifySelector(".x:contains(ad)") == .skipped(.extended))
         let result = FilterListConverter.convert(#"##a[data-x=":style(y)"]"#)
         #expect(result.styleInjection == 0 && result.ruleCount == 1)
     }
