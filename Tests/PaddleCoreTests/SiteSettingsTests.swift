@@ -27,13 +27,11 @@ struct SiteSettingsTests {
         #expect(!text.contains("zoom") && !text.contains("null"))
     }
 
-    @Test func badEnumValueNamesItsPath() {
-        do {
-            _ = try PaddleConfig.decode(Data(#"{"sites": {"example.com": {"autoplay": "loud"}}}"#.utf8))
-            Issue.record("should not decode")
-        } catch {
-            #expect(PaddleConfig.describe(error).hasPrefix("sites.example.com.autoplay:"))
-        }
+    @Test func badEnumValueSkipsItsEntryAndNamesTheField() throws {
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"sites": {"example.com": {"autoplay": "loud"}}}"#.utf8))
+        #expect(config.sites.isEmpty)
+        #expect(issues.map(\.path) == [["sites", "example.com"]])
+        #expect(issues.first?.message.contains("autoplay") == true, "\(issues)")
     }
 
     @Test func lookupMatchesExactHostAndParentDomains() {

@@ -23,7 +23,8 @@ public enum ConfigWriteError: Error, Equatable, Sendable {
     case badPath([String])
     /// These paths changed on disk after `base` was read; nothing was written.
     case conflict([[String]])
-    /// The edited bytes don't decode to the intended config; nothing should be written.
+    /// The edit would leave a value Paddle can't use at a changed path (the text is that issue's path and message), or
+    /// the edited bytes don't hold the intended values; nothing is written.
     case invalidResult(String)
 }
 
@@ -55,7 +56,9 @@ public enum ConfigFile {
     /// - A value equal to its default removes the key; an entry equal to its default is removed from its object,
     ///   and an object left empty is removed too.
     /// - Keys not in `changes` are never rewritten, defaults and unknown keys included.
-    /// - The result must decode to the intended config, else `.invalidResult`.
+    /// - A changed path can't land on a value Paddle would skip or can't use (a decode issue at, inside or above it),
+    ///   else `.invalidResult`. Issues elsewhere in the file don't block the write.
+    /// - The result must hold the intended values and decode to the same config, else `.invalidResult`.
     public static func apply(changes: [ConfigChange], base: Data, disk: Data) -> Result<Data, ConfigWriteError> {
         let diskSpans: JSONSpans
         let baseSpans: JSONSpans
@@ -88,12 +91,16 @@ public enum ConfigFile {
         let touched = Array(Set(changes.map { $0.path[0] })).sorted()
         for key in touched { normalize(key, in: &intended) }
 
-        let intendedConfig: PaddleConfig
+        let decodedIntent: (config: PaddleConfig, issues: [ConfigIssue])
         do {
-            intendedConfig = try PaddleConfig.decode(Data(JSONValue.object(intended).render().utf8))
+            decodedIntent = try PaddleConfig.decodeReportingIssues(Data(JSONValue.object(intended).render().utf8))
         } catch {
             return .failure(.invalidResult(PaddleConfig.describe(error)))
         }
+        for change in changes {
+            if let issue = blocker(for: change.path, in: decodedIntent.issues) { return .failure(.invalidResult(issue.id)) }
+        }
+        let intendedConfig = decodedIntent.config
 
         var spans = diskSpans
         for key in touched {
@@ -136,8 +143,10 @@ public enum ConfigFile {
     /// default included. A `sites` entry itself stays, even as `{}`: only its default-valued fields go.
     public static func tidy(_ data: Data, shortcutDefaults: [String: Shortcut] = [:]) -> Result<TidyResult, ConfigWriteError> {
         let spans: JSONSpans
+        let issues: [ConfigIssue]
         do {
             spans = try JSONSpans.scan(data)
+            issues = try PaddleConfig.decodeReportingIssues(data).issues
         } catch {
             return .failure(.invalidFile(describe(error)))
         }
@@ -167,7 +176,14 @@ public enum ConfigFile {
                 }
             }
         }
+        // Tidy leaves alone what Paddle skips or can't read (an entry with a wrong-typed field, say): those stay as written.
+        changes = changes.filter { blocker(for: $0.path, in: issues) == nil }
         return apply(changes: changes, base: data, disk: data).map { TidyResult(removed: changes.map(\.path), data: $0) }
+    }
+
+    /// The first decode issue a change to `path` would land on: one at `path`, inside it, or on an entry `path` is inside.
+    static func blocker(for path: [String], in issues: [ConfigIssue]) -> ConfigIssue? {
+        issues.first { $0.path.starts(with: path) || path.starts(with: $0.path) }
     }
 
     /// Top-level keys `PaddleConfig` doesn't read, in file order: typos and leftovers from old versions.

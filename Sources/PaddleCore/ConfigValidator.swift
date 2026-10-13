@@ -26,7 +26,8 @@ public struct ConfigIssue: Sendable, Equatable, Identifiable {
     }
 }
 
-/// Checks a decoded config for values that parse but can't work. The decoder already rejects wrong types.
+/// Checks a decoded config for values that parse but can't work. Wrong types never get here: `PaddleConfig.decodeReportingIssues`
+/// reports them and falls back per key.
 public enum ConfigValidator {
     /// Every issue, in key order. `actionNames` are the menu action names `shortcuts` may bind; `defaults` are the
     /// keys each action has before `shortcuts` changes it (more than one for an action with a hidden alias), so a

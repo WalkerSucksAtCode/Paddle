@@ -72,7 +72,9 @@ struct ExtensionPersonaTests {
         #expect(!config.compat(forFolder: "x").shimsEnabled && config.compat(forFolder: "x").wantsPublicID)
         #expect(config.compat(forFolder: "absent") == ExtensionCompatConfig())
         #expect(config.extensionUpdates)
-        #expect(throws: DecodingError.self) { try PaddleConfig.decode(Data(#"{"extensionCompat": {"a": {"persona": "edge"}}}"#.utf8)) }
+        let unknownPersona = try PaddleConfig.decodeReportingIssues(Data(#"{"extensionCompat": {"a": {"persona": "edge"}}}"#.utf8))
+        #expect(unknownPersona.config.extensionCompat.isEmpty)
+        #expect(unknownPersona.issues.map(\.path) == [["extensionCompat", "a"]])
     }
 
     @Test func newKeysDefaultAndRoundTrip() throws {

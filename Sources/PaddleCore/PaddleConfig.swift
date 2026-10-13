@@ -1,7 +1,9 @@
 import Foundation
 
 /// Everything a user can change by editing `config.json`. Missing keys fall back to the defaults below,
-/// so a config file only needs the keys it changes.
+/// so a config file only needs the keys it changes. Each key decodes on its own: a value of the wrong type falls back
+/// to its default, an object key skips only the entry that is wrong and a list only the item, and
+/// `decodeReportingIssues` says which. Only invalid JSON, or a top level that isn't an object, refuses the whole file.
 public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Page loaded in a new window. `about:blank` gives an empty page with the address field focused.
     public var homepage: String
@@ -142,42 +144,61 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.sitePersonas = sitePersonas
     }
 
+    /// Where `decodeReportingIssues` leaves its ``ConfigIssueCollector`` in the decoder's `userInfo`.
+    static let issueCollectorKey = CodingUserInfoKey(rawValue: "paddleConfigIssues")!
+
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let issues = decoder.userInfo[PaddleConfig.issueCollectorKey] as? ConfigIssueCollector
         let d = PaddleConfig()
-        homepage = try c.decodeIfPresent(String.self, forKey: .homepage) ?? d.homepage
-        newTabPage = try c.decodeIfPresent(String.self, forKey: .newTabPage) ?? d.newTabPage
-        searchTemplate = try c.decodeIfPresent(String.self, forKey: .searchTemplate) ?? d.searchTemplate
-        searchSuggestTemplate = try c.decodeIfPresent(String.self, forKey: .searchSuggestTemplate) ?? d.searchSuggestTemplate
-        historyDays = try c.decodeIfPresent(Int.self, forKey: .historyDays) ?? d.historyDays
-        tabSleepAfterMinutes = try c.decodeIfPresent(Double.self, forKey: .tabSleepAfterMinutes) ?? d.tabSleepAfterMinutes
-        maxAwakeTabs = try c.decodeIfPresent(Int.self, forKey: .maxAwakeTabs) ?? d.maxAwakeTabs
-        sleepPinnedTabs = try c.decodeIfPresent(Bool.self, forKey: .sleepPinnedTabs) ?? d.sleepPinnedTabs
-        sessionHistoryTabs = try c.decodeIfPresent(Int.self, forKey: .sessionHistoryTabs) ?? d.sessionHistoryTabs
-        contentBlocking = try c.decodeIfPresent(Bool.self, forKey: .contentBlocking) ?? d.contentBlocking
-        filterLists = try c.decodeIfPresent([String].self, forKey: .filterLists) ?? d.filterLists
-        filterUpdateDays = try c.decodeIfPresent(Int.self, forKey: .filterUpdateDays) ?? d.filterUpdateDays
-        scriptlets = try c.decodeIfPresent(Bool.self, forKey: .scriptlets) ?? d.scriptlets
-        trustedLists = try c.decodeIfPresent([String].self, forKey: .trustedLists) ?? d.trustedLists
-        userAgentSuffix = try c.decodeIfPresent(String.self, forKey: .userAgentSuffix) ?? d.userAgentSuffix
-        siteUserAgents = try c.decodeIfPresent([String: String].self, forKey: .siteUserAgents) ?? d.siteUserAgents
-        sites = try c.decodeIfPresent([String: SiteSettings].self, forKey: .sites) ?? d.sites
-        showTabMemory = try c.decodeIfPresent(Bool.self, forKey: .showTabMemory) ?? d.showTabMemory
-        developerTools = try c.decodeIfPresent(Bool.self, forKey: .developerTools) ?? d.developerTools
-        shortcuts = try c.decodeIfPresent([String: String].self, forKey: .shortcuts) ?? d.shortcuts
-        extensions = try c.decodeIfPresent([String: Bool].self, forKey: .extensions) ?? d.extensions
-        extensionsInPrivate = try c.decodeIfPresent(Bool.self, forKey: .extensionsInPrivate) ?? d.extensionsInPrivate
-        extensionCompat = try c.decodeIfPresent([String: ExtensionCompatConfig].self, forKey: .extensionCompat) ?? d.extensionCompat
-        extensionUpdates = try c.decodeIfPresent(Bool.self, forKey: .extensionUpdates) ?? d.extensionUpdates
-        sitePersonas = try c.decodeIfPresent([String: Persona].self, forKey: .sitePersonas) ?? d.sitePersonas
+        homepage = c.decodeValue(.homepage, d.homepage, issues)
+        newTabPage = c.decodeValue(.newTabPage, d.newTabPage, issues)
+        searchTemplate = c.decodeValue(.searchTemplate, d.searchTemplate, issues)
+        searchSuggestTemplate = c.decodeValue(.searchSuggestTemplate, d.searchSuggestTemplate, issues)
+        historyDays = c.decodeValue(.historyDays, d.historyDays, issues)
+        tabSleepAfterMinutes = c.decodeValue(.tabSleepAfterMinutes, d.tabSleepAfterMinutes, issues)
+        maxAwakeTabs = c.decodeValue(.maxAwakeTabs, d.maxAwakeTabs, issues)
+        sleepPinnedTabs = c.decodeValue(.sleepPinnedTabs, d.sleepPinnedTabs, issues)
+        sessionHistoryTabs = c.decodeValue(.sessionHistoryTabs, d.sessionHistoryTabs, issues)
+        contentBlocking = c.decodeValue(.contentBlocking, d.contentBlocking, issues)
+        filterLists = c.decodeStrings(.filterLists, d.filterLists, issues)
+        filterUpdateDays = c.decodeValue(.filterUpdateDays, d.filterUpdateDays, issues)
+        scriptlets = c.decodeValue(.scriptlets, d.scriptlets, issues)
+        trustedLists = c.decodeStrings(.trustedLists, d.trustedLists, issues)
+        userAgentSuffix = c.decodeValue(.userAgentSuffix, d.userAgentSuffix, issues)
+        siteUserAgents = c.decodeEntries(.siteUserAgents, d.siteUserAgents, issues)
+        sites = c.decodeEntries(.sites, d.sites, issues)
+        showTabMemory = c.decodeValue(.showTabMemory, d.showTabMemory, issues)
+        developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
+        shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
+        extensions = c.decodeEntries(.extensions, d.extensions, issues)
+        extensionsInPrivate = c.decodeValue(.extensionsInPrivate, d.extensionsInPrivate, issues)
+        extensionCompat = c.decodeEntries(.extensionCompat, d.extensionCompat, issues)
+        extensionUpdates = c.decodeValue(.extensionUpdates, d.extensionUpdates, issues)
+        sitePersonas = c.decodeEntries(.sitePersonas, d.sitePersonas, issues)
     }
 
+    /// Decodes `config.json`, dropping the issues. Throws only when the data isn't JSON or its top level isn't an
+    /// object; see `decodeReportingIssues`.
     public static func decode(_ data: Data) throws -> PaddleConfig {
-        try JSONDecoder().decode(PaddleConfig.self, from: data)
+        try decodeReportingIssues(data).config
     }
 
-    /// Why config.json didn't load, in words someone can act on: which key had the wrong type, or where the JSON
-    /// broke. `localizedDescription` only says the data "isn't in the correct format".
+    /// Decodes `config.json` and lists what didn't apply: a value of the wrong type is replaced by its default, and an
+    /// object entry or list item of the wrong type is skipped, each with an issue at its path. A `null` or missing key
+    /// is the default with no issue, and unknown keys are ignored. Throws only when the data isn't JSON or its top
+    /// level isn't an object.
+    public static func decodeReportingIssues(_ data: Data) throws -> (config: PaddleConfig, issues: [ConfigIssue]) {
+        let collector = ConfigIssueCollector()
+        let decoder = JSONDecoder()
+        decoder.userInfo[PaddleConfig.issueCollectorKey] = collector
+        let config = try decoder.decode(PaddleConfig.self, from: data)
+        return (config, collector.issues)
+    }
+
+    /// Why config.json can't be read at all: the JSON syntax error (with its line and column) or a top level that isn't
+    /// an object. A wrong-typed value isn't an error here; `decodeReportingIssues` reports it. `localizedDescription`
+    /// only says the data "isn't in the correct format".
     public static func describe(_ error: any Error) -> String {
         guard let error = error as? DecodingError else {
             // A bare `JSONSerialization` error keeps its line and column only in the debug description.
@@ -189,7 +210,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
             return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
         case .dataCorrupted(let context):
             guard let underlying = context.underlyingError as NSError? else {
-                // No underlying error: a value of the right type Paddle can't use, like an unknown `autoplay` word.
+                // No underlying error: a value of the right type that the type itself rejects, like an unknown enum word.
                 let path = context.codingPath.map(\.stringValue).joined(separator: ".")
                 return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
             }
@@ -244,4 +265,130 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         if let agent = userAgent(forHost: host), !agent.isEmpty { return agent }
         return sitePersona(forHost: host)?.userAgent(.current)
     }
+}
+
+/// Receives the issues a lenient decode finds. `decodeReportingIssues` puts one in the decoder's `userInfo`; a plain
+/// `JSONDecoder().decode` has none, so its issues are dropped. Only ever used inside one synchronous decode, so the
+/// unchecked `Sendable` (for `userInfo`) is safe.
+final class ConfigIssueCollector: @unchecked Sendable {
+    var issues: [ConfigIssue] = []
+}
+
+/// One value decoded on its own. A failure is kept rather than thrown, so one bad entry or list item can't reject the
+/// rest of its object or list.
+private struct Lenient<Value: Decodable>: Decodable {
+    let result: Result<Value, any Error>
+
+    init(from decoder: any Decoder) throws {
+        result = Result { try Value(from: decoder) }
+    }
+}
+
+/// Each `config.json` key decodes on its own. A missing or `null` value gives the default with no issue.
+private extension KeyedDecodingContainer where Key == PaddleConfig.CodingKeys {
+    /// A plain value. A wrong type gives `fallback` with an issue at `[key]`.
+    func decodeValue<T: Codable>(_ key: Key, _ fallback: T, _ issues: ConfigIssueCollector?) -> T {
+        do {
+            return try decodeIfPresent(T.self, forKey: key) ?? fallback
+        } catch {
+            issues?.issues.append(configIssue(key, error: error, fallback: defaultText(fallback)))
+            return fallback
+        }
+    }
+
+    /// An object whose entries decode on their own. A value that isn't an object gives `fallback` with an issue at
+    /// `[key]`; an entry of the wrong type is skipped with an issue at `[key, name]`.
+    func decodeEntries<V: Codable>(_ key: Key, _ fallback: [String: V], _ issues: ConfigIssueCollector?) -> [String: V] {
+        let raw: [String: Lenient<V>]
+        do {
+            guard let decoded = try decodeIfPresent([String: Lenient<V>].self, forKey: key) else { return fallback }
+            raw = decoded
+        } catch {
+            issues?.issues.append(configIssue(key, error: error, fallback: defaultText(fallback)))
+            return fallback
+        }
+        var entries: [String: V] = [:]
+        for (name, entry) in raw.sorted(by: { $0.key < $1.key }) {
+            switch entry.result {
+            case .success(let value): entries[name] = value
+            case .failure(let error): issues?.issues.append(configIssue(key, entry: name, error: error, fallback: nil))
+            }
+        }
+        return entries
+    }
+
+    /// A list of text. A value that isn't a list gives `fallback` with an issue at `[key]`; an item that isn't text is
+    /// skipped with an issue at `[key, index]`, the index in the file's list.
+    func decodeStrings(_ key: Key, _ fallback: [String], _ issues: ConfigIssueCollector?) -> [String] {
+        let raw: [Lenient<String>]
+        do {
+            guard let decoded = try decodeIfPresent([Lenient<String>].self, forKey: key) else { return fallback }
+            raw = decoded
+        } catch {
+            issues?.issues.append(configIssue(key, error: error, fallback: defaultText(fallback)))
+            return fallback
+        }
+        var items: [String] = []
+        for (index, item) in raw.enumerated() {
+            switch item.result {
+            case .success(let text): items.append(text)
+            case .failure(let error):
+                issues?.issues.append(configIssue(key, entry: String(index), error: error, fallback: nil, unit: "item"))
+            }
+        }
+        return items
+    }
+}
+
+/// The issue for one value that fell back to its default (`fallback` is that default as text) or one entry or list item
+/// that was skipped (`fallback` is nil, `entry` names it, and `unit` says which in the message).
+private func configIssue(
+    _ key: PaddleConfig.CodingKeys, entry: String? = nil, error: any Error, fallback: String?, unit: String = "entry"
+) -> ConfigIssue {
+    let path = [key.rawValue] + (entry.map { [$0] } ?? [])
+    let kind = expectedKind(error)
+    // The error's coding path starts at the key and the entry (or list index); what is left names the field that was wrong.
+    let field = codingPath(of: error).dropFirst(path.count)
+    let message: String
+    if let fallback {
+        message = "Expected \(kind). Paddle uses the default, \(fallback), until this is fixed."
+    } else if field.isEmpty {
+        message = "Expected \(kind) for this \(unit). Paddle ignores this \(unit) until it is fixed."
+    } else {
+        message = "Expected \(kind) for \(field.joined(separator: ".")) in this \(unit). Paddle ignores this \(unit) until it is fixed."
+    }
+    return ConfigIssue(key: key, path: path, severity: .warning, message: message)
+}
+
+/// What a failed decode wanted, in words for someone editing config.json.
+private func expectedKind(_ error: any Error) -> String {
+    guard let error = error as? DecodingError else { return "a different value" }
+    switch error {
+    case .typeMismatch(let type, _), .valueNotFound(let type, _):
+        if type == Int.self { return "a whole number" }
+        if type == Double.self || type == Float.self { return "a number" }
+        if type == Bool.self { return "true or false" }
+        if type == String.self { return "text" }
+        // Lists and objects: arrays are named `Array<…>`; anything else that decodes from a JSON object is an object.
+        return String(describing: type).hasPrefix("Array<") ? "a list" : "an object"
+    case .dataCorrupted: return "one of the allowed words"
+    default: return "a different value"
+    }
+}
+
+private func codingPath(of error: any Error) -> [String] {
+    guard let error = error as? DecodingError else { return [] }
+    switch error {
+    case .typeMismatch(_, let context), .valueNotFound(_, let context), .keyNotFound(_, let context), .dataCorrupted(let context):
+        return context.codingPath.map(\.stringValue)
+    default: return []
+    }
+}
+
+/// A default as compact JSON, cut to 60 characters with "…" so a long one (a list of URLs) stays readable in a message.
+private func defaultText<T: Encodable>(_ value: T) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    let text = (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+    return text.count > 60 ? String(text.prefix(60)) + "…" : text
 }

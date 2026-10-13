@@ -165,6 +165,48 @@ struct ConfigFileTests {
         }
     }
 
+    @Test func editElsewhereSucceedsBesideAWrongTypedValue() throws {
+        // The bad value is someone's hand edit: it survives, and the edit to another key still lands.
+        let disk = "{\n  \"maxAwakeTabs\": \"four\",\n  \"homepage\": \"x\"\n}\n"
+        let result = try applied([ConfigChange("historyDays", 30)], to: disk)
+        #expect(result == "{\n  \"maxAwakeTabs\": \"four\",\n  \"homepage\": \"x\",\n  \"historyDays\": 30\n}\n")
+        #expect(try PaddleConfig.decodeReportingIssues(data(result)).issues.map(\.path) == [["maxAwakeTabs"]])
+    }
+
+    @Test func editOntoAnEntryPaddleSkipsIsRefused() throws {
+        // `zoom` is wrong, so Paddle skips the whole a.com entry; writing a sibling field into it would keep it skipped.
+        let disk = "{\"sites\": {\"a.com\": {\"zoom\": \"big\"}}}"
+        let result = ConfigFile.apply(changes: [ConfigChange(path: ["sites", "a.com", "javaScript"], value: .bool(false))], base: data(disk), disk: data(disk))
+        if case .failure(.invalidResult(let why)) = result {
+            #expect(why.hasPrefix("sites.a.com: Expected a number for zoom in this entry."), "\(why)")
+        } else {
+            Issue.record("an edit inside a skipped entry must be refused, got \(result)")
+        }
+        // Fixing the value in the same edit is fine: the entry decodes again.
+        let fixed = try ConfigFile.apply(changes: [ConfigChange(path: ["sites", "a.com", "zoom"], value: .number(1.5))], base: data(disk), disk: data(disk)).get()
+        #expect(try PaddleConfig.decode(fixed).sites == ["a.com": SiteSettings(zoom: 1.5)])
+    }
+
+    @Test func editOntoAnUnknownWordIsRefused() {
+        let disk = "{\"sites\": {\"a.com\": {\"zoom\": 1.5}}}"
+        let result = ConfigFile.apply(changes: [ConfigChange(path: ["sites", "a.com", "autoplay"], value: .string("loud"))], base: data(disk), disk: data(disk))
+        if case .failure(.invalidResult(let why)) = result {
+            #expect(why.hasPrefix("sites.a.com: Expected one of the allowed words for autoplay in this entry."), "\(why)")
+        } else {
+            Issue.record("an unknown autoplay word must not produce a file, got \(result)")
+        }
+    }
+
+    @Test func tidyLeavesEntriesPaddleSkipsAlone() throws {
+        let disk = "{\"sites\": {\"a.com\": {\"zoom\": \"big\", \"javaScript\": true}, \"b.com\": {\"javaScript\": true}}}"
+        let tidy = try ConfigFile.tidy(data(disk)).get()
+        #expect(tidy.removed == [["sites", "b.com", "javaScript"]])
+        #expect(try JSONSpans.scan(tidy.data).object["sites"] == .object([
+            "a.com": .object(["zoom": "big", "javaScript": true]),
+            "b.com": .object([:]),
+        ]))
+    }
+
     @Test func duplicatedKeyIsSetOrRemovedAsOne() throws {
         // The first copy is the one the app runs with; the edit changes it and drops the stale second copy.
         let dup = "{\n  \"maxAwakeTabs\" : 10,\n  \"homepage\" : \"x\",\n  \"maxAwakeTabs\": 6\n}\n"
