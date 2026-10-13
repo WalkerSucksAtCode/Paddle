@@ -167,6 +167,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
         if let item = store.item(for: download) {
             item.filename = destination.lastPathComponent
             item.destination = destination
+            AccessibilityNotification.Announcement("Downloading \(item.filename)").post()
         }
         return destination
     }
@@ -175,6 +176,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
         guard let item = store?.item(for: download) else { return }
         item.state = .finished
         item.fraction = 1
+        AccessibilityNotification.Announcement("\(item.filename) downloaded").post()
         if let path = item.destination?.path {
             // Bounces the Downloads stack in the Dock, as Safari does.
             DistributedNotificationCenter.default().post(name: .init("com.apple.DownloadFileFinished"), object: path)
@@ -185,6 +187,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
     func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
         guard let item = store?.item(for: download), item.state != .cancelled else { return }
         item.state = .failed(error.localizedDescription)
+        AccessibilityNotification.Announcement("\(item.filename) failed to download").post()
         // "File exists" means the file at that path isn't this download's, so leave it alone.
         let nsError = error as NSError
         if !(nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteFileExistsError) {

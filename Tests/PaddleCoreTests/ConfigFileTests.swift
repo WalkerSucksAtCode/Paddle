@@ -205,6 +205,49 @@ struct ConfigFileTests {
         #expect(try ConfigFile.tidy(data("{\"maxAwakeTabs\": 4}")).get() == ConfigFile.TidyResult(removed: [], data: data("{\"maxAwakeTabs\": 4}")))
     }
 
+    @Test func tidyDropsShortcutsThatRepeatTheDefaultAndSiteFieldsAtDefaults() throws {
+        let standard: [String: Shortcut] = [
+            "togglePin": Shortcut(key: ""),
+            "newTab": Shortcut(key: "t", command: true),
+            "closeTab": Shortcut(key: "w", command: true),
+        ]
+        let disk = """
+            {
+              "shortcuts" : {"togglePin": "none", "newTab": "Command+T", "closeTab": "none", "mystery": "none", "bad": "x+"},
+              "sites" : {
+                "a.com": {"zoom": 1, "javaScript": true, "autoplay": "muted", "contentBlocking": true, "location": "ask"},
+                "b.com": {"zoom": 1.25, "javaScript": true, "autoplay": "block", "location": "deny"},
+                "c.com": {"zoom": 1.5}
+              }
+            }
+
+            """
+        let tidy = try ConfigFile.tidy(data(disk), shortcutDefaults: standard).get()
+        #expect(tidy.removed == [
+            ["shortcuts", "togglePin"], ["shortcuts", "newTab"],
+            ["sites", "a.com", "autoplay"], ["sites", "a.com", "contentBlocking"], ["sites", "a.com", "javaScript"],
+            ["sites", "a.com", "location"], ["sites", "a.com", "zoom"], ["sites", "b.com", "javaScript"],
+        ])
+        let after = try JSONSpans.scan(tidy.data).object
+        #expect(after["shortcuts"] == .object(["closeTab": "none", "mystery": "none", "bad": "x+"]))
+        // The entry stays, empty, until Remove Site; the others keep their non-default fields.
+        #expect(after["sites"] == .object([
+            "a.com": .object([:]),
+            "b.com": .object(["zoom": 1.25, "autoplay": "block", "location": "deny"]),
+            "c.com": .object(["zoom": 1.5]),
+        ]))
+        // Without shortcut defaults the shortcuts are left alone.
+        #expect(try ConfigFile.tidy(data("{\"shortcuts\": {\"togglePin\": \"none\"}}")).get().removed == [])
+    }
+
+    @Test func applyEditsOneFieldOfASitesEntry() throws {
+        let disk = "{\"sites\": {\"a.com\": {\"zoom\": 1.5, \"javaScript\": false}}}"
+        let result = try applied([ConfigChange(path: ["sites", "a.com", "zoom"], value: nil)], to: disk)
+        #expect(try JSONSpans.scan(data(result)).object["sites"] == .object(["a.com": .object(["javaScript": false])]))
+        #expect(ConfigFile.apply(changes: [ConfigChange(path: ["sites", "a.com", "zoom", "x"], value: nil)], base: data(disk), disk: data(disk))
+            == .failure(.badPath(["sites", "a.com", "zoom", "x"])))
+    }
+
     @Test func unknownKeysAreListedInFileOrder() throws {
         #expect(try ConfigFile.unknownKeys(in: data("{\"zeta\": 1, \"homepage\": \"x\", \"alpha\": {}, \"zeta\": 2}")) == ["zeta", "alpha"])
         #expect(try ConfigFile.unknownKeys(in: Data()) == [])

@@ -1,6 +1,7 @@
 import Foundation
 @testable import PaddleCore
 import Testing
+import WebKit
 
 struct FaviconsTests {
     let page = URL(string: "https://example.com/dir/page.html")!
@@ -126,11 +127,41 @@ struct FaviconsTests {
         #expect(FaviconPicker.isStale(fetchedAt: fetched, now: fetched.addingTimeInterval(7 * 86_400 + 1)))
     }
 
-    @Test func collectScriptShape() {
-        let script = FaviconPicker.collectScript
-        #expect(script.contains("link"))
-        #expect(script.contains("mask-icon"))
-        #expect(script.contains("indexOf('icon')"))
-        #expect(script.contains("link.href"))
+    /// Runs the real script in a windowless web view on an offline page (an https base URL, as the scriptlet tests do).
+    @MainActor @Test func collectScriptReadsTheLinksOfALoadedPage() async throws {
+        let html = """
+            <html><head>
+            <link rel="stylesheet" href="/style.css">
+            <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+            <link rel="Shortcut Icon" href="fav.ico">
+            <link rel="apple-touch-icon" href="https://cdn.example.net/touch.png" sizes="180x180">
+            <link rel="mask-icon" href="/mask.svg">
+            <link rel="icon" href="">
+            <link rel="icon">
+            </head><body>page</body></html>
+            """
+        let webView = WKWebView(frame: .zero, configuration: {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = .nonPersistent()
+            return configuration
+        }())
+        webView.loadHTMLString(html, baseURL: URL(string: "https://example.com/dir/page.html"))
+        let deadline = ContinuousClock.now + .seconds(5)
+        while ContinuousClock.now < deadline {
+            // The initial about:blank is "complete" at once; wait for the page itself.
+            let ready = "location.protocol === 'https:' && document.readyState === 'complete'"
+            if (try? await webView.evaluateJavaScript(ready) as? Bool) == true { break }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        let json = try #require(try await webView.evaluateJavaScript(FaviconPicker.collectScript) as? String)
+        let found = try JSONDecoder().decode([IconCandidate].self, from: Data(json.utf8))
+        #expect(found == [
+            IconCandidate(href: "https://example.com/favicon-32.png", rel: "icon", sizes: "32x32", type: "image/png"),
+            IconCandidate(href: "https://example.com/dir/fav.ico", rel: "Shortcut Icon"),
+            IconCandidate(href: "https://cdn.example.net/touch.png", rel: "apple-touch-icon", sizes: "180x180"),
+        ])
+        // What the app does next: pick from what the page returned.
+        #expect(FaviconPicker.bestIcon(found, pageURL: URL(string: "https://example.com/dir/page.html")!)?.absoluteString
+            == "https://example.com/favicon-32.png")
     }
 }

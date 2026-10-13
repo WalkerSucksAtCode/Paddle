@@ -9,9 +9,9 @@ extension SettingsModel {
         (try? ConfigFile.unknownKeys(in: base)) ?? []
     }
 
-    /// What Tidy would remove: known keys (and `extensions` entries) that hold their default.
+    /// What Tidy would remove: known keys, `extensions` and `shortcuts` entries and `sites` fields that hold their default.
     var tidyPaths: [[String]] {
-        guard case .success(let result) = ConfigFile.tidy(base) else { return [] }
+        guard case .success(let result) = ConfigFile.tidy(base, shortcutDefaults: MainMenu.defaultBindings) else { return [] }
         return result.removed
     }
 

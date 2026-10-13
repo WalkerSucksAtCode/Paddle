@@ -1,7 +1,8 @@
 import Foundation
 
-/// One edit to `config.json`: a top-level key (`["maxAwakeTabs"]`) or one entry of an object key such as
-/// `shortcuts`, `extensions` or `siteUserAgents` (`["shortcuts", "nextTab"]`). A `nil` value removes it.
+/// One edit to `config.json`: a top-level key (`["maxAwakeTabs"]`), one entry of an object key such as
+/// `shortcuts`, `extensions` or `siteUserAgents` (`["shortcuts", "nextTab"]`), or one field of a `sites` entry
+/// (`["sites", "example.com", "zoom"]`). A `nil` value removes it.
 public struct ConfigChange: Sendable, Equatable {
     public var path: [String]
     public var value: JSONValue?
@@ -18,7 +19,7 @@ public struct ConfigChange: Sendable, Equatable {
 public enum ConfigWriteError: Error, Equatable, Sendable {
     /// The file on disk (or the copy the edit was based on) isn't a JSON object Paddle can edit.
     case invalidFile(String)
-    /// A path with no key, more than two parts, or an entry inside a key that isn't an object.
+    /// A path with no key, more than three parts, or an entry inside a value that isn't an object.
     case badPath([String])
     /// These paths changed on disk after `base` was read; nothing was written.
     case conflict([[String]])
@@ -40,6 +41,15 @@ public enum ConfigFile {
     /// The default for one entry of an object key, where there is one: an extension not listed is on.
     static func entryDefault(in key: String) -> JSONValue? { key == PaddleConfig.CodingKeys.extensions.rawValue ? .bool(true) : nil }
 
+    /// The default of each field of a `sites` entry (`SitePolicy.defaults`), as the file writes it.
+    static let siteFieldDefaults: [String: JSONValue] = [
+        "zoom": .number(SitePolicy.defaults.zoom),
+        "javaScript": .bool(SitePolicy.defaults.javaScript),
+        "autoplay": .string(SitePolicy.defaults.autoplay.rawValue),
+        "contentBlocking": .bool(SitePolicy.defaults.contentBlocking),
+        "location": .string(SitePolicy.defaults.location.rawValue),
+    ]
+
     /// `disk` with `changes` applied, where `base` is what the editor read before the user made them.
     /// - A path whose disk value differs from its base value is a conflict: nothing is written.
     /// - A value equal to its default removes the key; an entry equal to its default is removed from its object,
@@ -57,8 +67,12 @@ public enum ConfigFile {
         }
 
         for change in changes {
-            guard (1...2).contains(change.path.count) else { return .failure(.badPath(change.path)) }
-            if change.path.count == 2, let top = diskSpans.object[change.path[0]], top.objectValue == nil {
+            guard (1...3).contains(change.path.count) else { return .failure(.badPath(change.path)) }
+            if change.path.count >= 2, let top = diskSpans.object[change.path[0]], top.objectValue == nil {
+                return .failure(.badPath(change.path))
+            }
+            if change.path.count == 3, let entry = diskSpans.object[change.path[0]]?.objectValue?[change.path[1]],
+               entry.objectValue == nil {
                 return .failure(.badPath(change.path))
             }
         }
@@ -116,9 +130,11 @@ public enum ConfigFile {
         public var data: Data
     }
 
-    /// Drops every known key (or `extensions` entry) that holds its default. An explicit user action, so the
-    /// result lists what went.
-    public static func tidy(_ data: Data) -> Result<TidyResult, ConfigWriteError> {
+    /// Drops every known key, `extensions` entry, `shortcuts` entry and `sites` field that holds its default. An
+    /// explicit user action, so the result lists what went. `shortcutDefaults` is each action's default binding
+    /// (an empty key for none); a `shortcuts` entry that parses to it is dropped, `"none"` on an action with no
+    /// default included. A `sites` entry itself stays, even as `{}`: only its default-valued fields go.
+    public static func tidy(_ data: Data, shortcutDefaults: [String: Shortcut] = [:]) -> Result<TidyResult, ConfigWriteError> {
         let spans: JSONSpans
         do {
             spans = try JSONSpans.scan(data)
@@ -136,6 +152,19 @@ public enum ConfigFile {
                 for entry in spans.nestedKeys(of: key) ?? [] where object[entry] == entryDefault {
                     changes.append(ConfigChange(key, entry, nil))
                 }
+            } else if key == PaddleConfig.CodingKeys.shortcuts.rawValue, let object = value.objectValue {
+                for entry in spans.nestedKeys(of: key) ?? [] {
+                    guard case .string(let text)? = object[entry], let bound = Shortcut.parse(text),
+                          let standard = shortcutDefaults[entry], bound.canonical == standard.canonical else { continue }
+                    changes.append(ConfigChange(key, entry, nil))
+                }
+            } else if key == PaddleConfig.CodingKeys.sites.rawValue, let object = value.objectValue {
+                for host in spans.nestedKeys(of: key) ?? [] {
+                    guard let fields = object[host]?.objectValue else { continue }
+                    for field in fields.keys.sorted() where fields[field] == siteFieldDefaults[field] {
+                        changes.append(ConfigChange(path: [key, host, field], value: nil))
+                    }
+                }
             }
         }
         return apply(changes: changes, base: data, disk: data).map { TidyResult(removed: changes.map(\.path), data: $0) }
@@ -152,8 +181,12 @@ public enum ConfigFile {
     }
 
     static func value(at path: [String], in object: [String: JSONValue]) -> JSONValue? {
-        guard let first = path.first, let top = object[first] else { return nil }
-        return path.count == 1 ? top : top.objectValue?[path[1]]
+        guard let first = path.first, var current = object[first] else { return nil }
+        for part in path.dropFirst() {
+            guard let next = current.objectValue?[part] else { return nil }
+            current = next
+        }
+        return current
     }
 
     static func set(_ value: JSONValue?, at path: [String], in object: inout [String: JSONValue]) {
@@ -162,7 +195,7 @@ public enum ConfigFile {
             return
         }
         var nested = object[path[0]]?.objectValue ?? [:]
-        nested[path[1]] = value
+        set(value, at: Array(path.dropFirst()), in: &nested)
         object[path[0]] = .object(nested)
     }
 

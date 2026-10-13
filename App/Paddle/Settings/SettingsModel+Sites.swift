@@ -20,7 +20,6 @@ struct SiteRow: Identifiable, Equatable {
     let issues: [ConfigIssue]
 
     var id: String { key }
-    var contentBlocking: Bool { policy.contentBlocking && blockingOffBy == nil }
 
     static func == (a: SiteRow, b: SiteRow) -> Bool {
         a.key == b.key && a.userAgent?.key == b.userAgent?.key && a.userAgent?.value == b.userAgent?.value

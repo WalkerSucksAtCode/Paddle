@@ -17,6 +17,8 @@
 # outside a check (or Ctrl-C) marks the step it was in as FAIL through the ERR/INT traps.
 # Only a notarized, stapled build is written to dist/ without the -unnotarized suffix.
 # Signing is set on the xcodebuild command line only; project.yml stays on automatic Apple Development signing.
+# CURRENT_PROJECT_VERSION is the commit count on the command line (project.yml's "1" stays the Debug value), so
+# each release has its own build number: <b> in the zip names and the install line is the built app's CFBundleVersion.
 # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO keeps Xcode from adding get-task-allow, which it otherwise does here.
 set -Eeuo pipefail
 
@@ -93,6 +95,7 @@ if ! xcodebuild -project "$ROOT/Paddle.xcodeproj" -scheme Paddle -configuration 
     PROVISIONING_PROFILE_SPECIFIER= \
     OTHER_CODE_SIGN_FLAGS=--timestamp \
     CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+    CURRENT_PROJECT_VERSION="$(git -C "$ROOT" rev-list --count HEAD)" \
     clean build >"$BUILD_LOG" 2>&1; then
   grep -E 'error:|BUILD FAILED' "$BUILD_LOG" | tail -20 >&2 || true
   fail build "xcodebuild failed, see $BUILD_LOG"
@@ -129,10 +132,11 @@ fi
 pass entitlements "no get-task-allow"
 
 # ---- zip -----------------------------------------------------------------------------------------
-# make_zip <dest>: zips $APP via a temporary name, so <dest> is either complete or absent.
+# make_zip <dest>: zips $APP via a temporary name; mv replaces an older <dest> in one step, so <dest> is never
+# missing or half-written.
 make_zip() {
   local dest="$1"
-  rm -f "$dest" "$dest.partial"
+  rm -f "$dest.partial"
   ditto -c -k --keepParent "$APP" "$dest.partial" && mv "$dest.partial" "$dest"
 }
 ZIP_BASE="Paddle-$VERSION-$BUILD_NUMBER"
@@ -219,7 +223,9 @@ if [[ $INSTALL -eq 1 ]]; then
   }
   trap 'cleanup_install; summary' EXIT
 
-  rm -rf "$STAGING" "$BACKUP"
+  # A leftover $BACKUP may be the only copy of the old app (an earlier swap was interrupted), so it is not
+  # removed here; it goes only once the new copy is staged and verified, below.
+  rm -rf "$STAGING"
   ditto "$APP" "$STAGING" || fail install "could not copy to $STAGING"
   codesign --verify --deep --strict "$STAGING" || fail install "staged copy fails codesign --verify; $INSTALL_PATH untouched"
   if [[ $NOTARIZE -eq 1 ]]; then
@@ -227,6 +233,8 @@ if [[ $INSTALL -eq 1 ]]; then
   fi
 
   if [[ -e "$INSTALL_PATH" ]]; then
+    # $INSTALL_PATH exists, so a $BACKUP beside it is stale; without one, $BACKUP is kept until the swap is done.
+    rm -rf "$BACKUP"
     mv "$INSTALL_PATH" "$BACKUP" || fail install "could not move the old app aside to $BACKUP"
   fi
   if ! mv "$STAGING" "$INSTALL_PATH"; then

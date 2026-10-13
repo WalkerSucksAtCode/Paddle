@@ -2,7 +2,7 @@ import AppKit
 import os
 import PaddleCore
 
-/// The menu bar. Every command has an action name (in brackets in README) that config.json's
+/// The menu bar. Every command has an action name (listed under "Shortcut action names" in README) that config.json's
 /// `shortcuts` can rebind, e.g. `"shortcuts": { "nextTab": "cmd+option+right" }`.
 enum MainMenu {
     private static var itemsByName: [String: NSMenuItem] = [:]
@@ -238,6 +238,11 @@ enum MainMenu {
     /// The hidden second shortcuts an action keeps whatever `shortcuts` says (⇧⌘] for `nextTab`).
     static func aliasShortcuts(for name: String) -> [Shortcut] {
         (aliases[name] ?? []).compactMap { shortcut($0.0, $0.1) }
+    }
+
+    /// Each action's own default shortcut (an empty key: none), for `ConfigFile.tidy(_:shortcutDefaults:)`.
+    static var defaultBindings: [String: Shortcut] {
+        Dictionary(uniqueKeysWithValues: order.compactMap { name in defaultShortcut(for: name).map { (name, $0) } })
     }
 
     /// Each action's default and hidden shortcuts, for `ConfigValidator.issues(_:actionNames:defaults:)`.

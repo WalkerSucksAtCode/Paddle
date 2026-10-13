@@ -71,6 +71,8 @@ final class ExtensionActionNSButton: NSButton {
         focusRingType = .none
         target = self
         action = #selector(clicked)
+        badge.setAccessibilityElement(false)
+        setAccessibilityValue("")
         addSubview(badge)
     }
 
@@ -101,8 +103,14 @@ final class ExtensionActionNSButton: NSButton {
         let label = ExtensionPermissionText.sanitize(rawLabel.isEmpty ? ext.displayName : rawLabel, max: 120)
         toolTip = label
         setAccessibilityLabel(label)
-        badge.text = Self.badgeText(action)
+        showBadge(Self.badgeText(action))
         needsLayout = true
+    }
+
+    /// Draws the badge and speaks it as the button's value (empty without one), since the badge view is not read.
+    private func showBadge(_ text: String) {
+        badge.text = text
+        setAccessibilityValue(text)
     }
 
     /// At most four characters, as Chrome shows.
@@ -123,7 +131,7 @@ final class ExtensionActionNSButton: NSButton {
         // started closing on this click's mouse-down, so this also covers a popup that closed a moment ago.
         if host.popups.closeForToggle(ext.context) { return }
         currentAction?.hasUnreadBadgeText = false
-        badge.text = Self.badgeText(currentAction)
+        showBadge(Self.badgeText(currentAction))
         host.popups.noteClick(from: self, for: ext.context)
         host.performAction(ext, in: tab)
     }
