@@ -5,6 +5,7 @@ import Foundation
 /// and `$` only at the ends. This rewrites what has an exact equivalent and refuses the rest, never widening or
 /// narrowing what the rule matches:
 /// - `\d` `\D` `\w` `\W` become character classes; other escapes of punctuation become the literal character.
+/// - Inside a class, a `-` next to `\d` or `\w` (or first or last) is a literal hyphen, as JavaScript reads it.
 /// - `{n}`, `{n,m}` and `{n,}` are written out (`a{2,3}` → `aaa?`), at most `maxRepetitions` copies per atom.
 /// - `(a|b)` becomes one url-filter per alternative, at most `maxAlternatives` per rule.
 /// - Lazy quantifiers become greedy ones (whether a URL matches does not depend on laziness).
@@ -118,46 +119,101 @@ public enum RegexTranslator {
                 guard peek() == ")" else { throw Refusal.malformed }
                 index += 1
                 return .group(alternatives)
-            case "\\": return .single(try parseEscape(inClass: false))
+            case "\\":
+                switch try parseEscape(inClass: false) {
+                case .character(let ch): return .single(RegexTranslator.literal(ch))
+                case .set(let set, let negated): return .single("[" + (negated ? "^" : "") + set + "]")
+                }
             case "*", "+", "?", "{", ")": throw Refusal.malformed
             default: return .single(RegexTranslator.literal(ch))
             }
         }
 
-        /// The escape after a backslash, as url-filter text (a literal or a class body when `inClass`).
-        mutating func parseEscape(inClass: Bool) throws -> String {
+        /// The escape after a backslash: one literal character, or a set (`\d` → `0-9`) as a class body.
+        enum Escape {
+            case character(Character)
+            case set(String, negated: Bool)
+        }
+
+        mutating func parseEscape(inClass: Bool) throws -> Escape {
             guard let ch = peek() else { throw Refusal.malformed }
             index += 1
             switch ch {
-            case "d": return inClass ? "0-9" : "[0-9]"
-            case "w": return inClass ? "A-Za-z0-9_" : "[A-Za-z0-9_]"
+            case "d": return .set("0-9", negated: false)
+            case "w": return .set("A-Za-z0-9_", negated: false)
             case "D", "W":
                 guard !inClass else { throw Refusal.unsupportedEscape(ch) }  // a negated set inside a set
-                return ch == "D" ? "[^0-9]" : "[^A-Za-z0-9_]"
+                return .set(ch == "D" ? "0-9" : "A-Za-z0-9_", negated: true)
             case "b", "B": throw inClass ? Refusal.unsupportedEscape(ch) : Refusal.wordBoundary
             case "1"..."9": throw Refusal.backreference
             case "k": throw Refusal.backreference
             default:
                 guard !ch.isLetter, !ch.isNumber else { throw Refusal.unsupportedEscape(ch) }  // \s \n \t \x \u \c \0
-                return inClass ? RegexTranslator.classLiteral(ch) : RegexTranslator.literal(ch)
+                return .character(ch)
             }
         }
 
-        /// `[...]` with the opening bracket consumed, rewritten with plain escapes.
+        /// One member of a class as written: a character (plain or escaped), a set, or an unescaped `-`.
+        enum ClassItem {
+            case character(Character)
+            case set(String)
+            case hyphen
+        }
+
+        /// `[...]` with the opening bracket consumed, rewritten with plain escapes. A `-` between two characters is
+        /// a range, refused when it runs high to low (JavaScript refuses it too); a `-` next to a set, or first or
+        /// last, is a literal hyphen (JavaScript's Annex B reading of `[a-\d]`).
         mutating func parseClass() throws -> String {
             var body = ""
             if peek() == "^" { body = "^"; index += 1 }
             if peek() == "]" { throw Refusal.malformed }  // `[]` and `[^]` mean other things in JavaScript
+            var items: [ClassItem] = []
+            var closed = false
             while let ch = peek() {
                 index += 1
+                if ch == "]" { closed = true; break }
                 switch ch {
-                case "]": return "[" + body + "]"
-                case "\\": body += try parseEscape(inClass: true)
-                case "[": body += "\\["
-                default: body.append(ch)
+                case "\\":
+                    switch try parseEscape(inClass: true) {
+                    case .character(let literal): items.append(.character(literal))
+                    case .set(let set, _): items.append(.set(set))
+                    }
+                case "-": items.append(.hyphen)
+                default: items.append(.character(ch))
                 }
             }
-            throw Refusal.malformed
+            guard closed else { throw Refusal.malformed }
+
+            func text(_ item: ClassItem) -> String {
+                switch item {
+                case .character(let ch): RegexTranslator.classLiteral(ch)
+                case .set(let set): set
+                case .hyphen: "\\-"
+                }
+            }
+            func character(_ item: ClassItem) -> Character? {
+                switch item {
+                case .character(let ch): ch
+                case .hyphen: "-"
+                case .set: nil
+                }
+            }
+            var i = 0
+            while i < items.count {
+                guard i + 2 < items.count, case .hyphen = items[i + 1] else {
+                    body += text(items[i])
+                    i += 1
+                    continue
+                }
+                if let low = character(items[i]), let high = character(items[i + 2]) {
+                    guard let a = low.asciiValue, let b = high.asciiValue, a <= b else { throw Refusal.malformed }
+                    body += RegexTranslator.classLiteral(low) + "-" + RegexTranslator.classLiteral(high)
+                } else {
+                    body += text(items[i]) + "\\-" + text(items[i + 2])
+                }
+                i += 3
+            }
+            return "[" + body + "]"
         }
 
         mutating func parseQuantifier(into term: inout Term) throws {

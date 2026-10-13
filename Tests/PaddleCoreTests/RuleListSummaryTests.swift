@@ -113,6 +113,20 @@ struct RuleListSummaryTests {
         #expect(try! JSONDecoder().decode(RuleListSummary.self, from: old).regexRefused == 0)
     }
 
+    /// A list WebKit refused that compiled once its regex rules were left out says so, and the note survives the
+    /// sidecar; a sidecar from before the field decodes without it.
+    @Test func regexDroppedShowsInTheStatusLine() throws {
+        var s = RuleListSummary(ruleCount: 1_200, skipped: 0, commentLines: 0, truncated: false, regexTranslated: 3)
+        s.regexDropped = "invalid or unsupported regular expression"
+        #expect(s.installable)
+        #expect(s.statusLine(name: "easylist", cached: true, locale: us)
+            == "easylist: 1,200 rules (regex: 3 translated, 0 refused; regex rules left out: WebKit refused them (invalid or unsupported regular expression); cached)")
+        let data = try JSONEncoder().encode(s)
+        #expect(try JSONDecoder().decode(RuleListSummary.self, from: data) == s)
+        let old = Data(#"{"ruleCount":1,"skipped":0,"commentLines":0,"truncated":false}"#.utf8)
+        #expect(try JSONDecoder().decode(RuleListSummary.self, from: old).regexDropped == nil)
+    }
+
     @Test func compileFailureReasons() {
         // NSHelpAnchor texts WebKit returned in the B3 probe (WKErrorDomain 6).
         #expect(RuleListSummary.compileFailureReason(

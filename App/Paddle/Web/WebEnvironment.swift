@@ -413,13 +413,36 @@ final class WebEnvironment {
             log.info("compiled \(job.identifier, privacy: .public): \(result.ruleCount) rules, \(result.skippedLines) lines skipped, \(result.styleInjection) style rules, \(result.invalidSelectors) invalid selectors, regex \(result.regexTranslated) translated \(result.regexRefused) refused")
             return CompileOutcome(job: job, line: summary.statusLine(name: job.name, cached: false), installed: true, sidecar: false)
         } catch {
-            var failed = summary
-            failed.compileFailure = RuleListSummary.compileFailureReason(
+            let reason = RuleListSummary.compileFailureReason(
                 helpAnchor: (error as NSError).userInfo[NSHelpAnchorErrorKey] as? String,
                 fallback: error.localizedDescription
             )
-            saveSummary(failed, identifier: job.identifier)
             log.error("compile \(job.identifier, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            // One rule WebKit refuses fails the whole list, and a translated regex is the likeliest culprit: compile
+            // once more without the regex rules rather than leave the list blocking nothing.
+            if result.containsRegexRules {
+                let (retry, retrySummary) = await Task.detached(priority: .utility) {
+                    let retry = await FilterListConverter.convert(text, shared: shared, dropRegex: true) { await validator.validate($0) }
+                    return (retry, RuleListSummary(text: text, result: retry))
+                }.value
+                do {
+                    if retry.ruleCount > 0,
+                       let list = try await ruleStore.compileContentRuleList(forIdentifier: job.identifier, encodedContentRuleList: retry.json) {
+                        install(list, identifier: job.identifier)
+                        var dropped = retrySummary
+                        dropped.regexDropped = reason
+                        saveSummary(dropped, identifier: job.identifier)
+                        log.info("compiled \(job.identifier, privacy: .public) without its regex rules: \(retry.ruleCount) rules")
+                        return CompileOutcome(job: job, line: dropped.statusLine(name: job.name, cached: false), installed: true, sidecar: false)
+                    }
+                    log.error("compile \(job.identifier, privacy: .public) without its regex rules gave no rule list (\(retry.ruleCount) rules)")
+                } catch {
+                    log.error("compile \(job.identifier, privacy: .public) without its regex rules failed too: \(String(describing: error), privacy: .public)")
+                }
+            }
+            var failed = summary
+            failed.compileFailure = reason
+            saveSummary(failed, identifier: job.identifier)
             return CompileOutcome(job: job, line: failed.statusLine(name: job.name, cached: false), installed: false, sidecar: true)
         }
     }

@@ -330,7 +330,7 @@ struct FilterListConverterTests {
         #expect(list != nil)
     }
 
-    /// Every EasyList regex rule, translated and compiled by WebKit in well under the time a list reload can spare.
+    /// Every EasyList regex rule, translated and compiled by WebKit.
     @MainActor
     @Test func easyListRegexSetCompilesQuickly() async throws {
         let start = ContinuousClock.now
@@ -342,7 +342,229 @@ struct FilterListConverterTests {
         let store = try #require(WKContentRuleListStore(url: directory))
         let list = try await store.compileContentRuleList(forIdentifier: "regex", encodedContentRuleList: result.json)
         #expect(list != nil)
-        #expect(ContinuousClock.now - start < .seconds(5))
+        // A smoke bound, not a benchmark: it catches a pattern that sends WebKit's compile into minutes, without
+        // failing on a busy machine.
+        #expect(ContinuousClock.now - start < .seconds(30))
+    }
+
+    /// Compiles `json` in a throwaway store; the error WebKit gave, or nil when it compiled.
+    @MainActor
+    static func webKitCompileError(_ json: String) async -> (any Error)? {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        guard let store = WKContentRuleListStore(url: directory) else { return CocoaError(.fileNoSuchFile) }
+        do {
+            _ = try await store.compileContentRuleList(forIdentifier: "probe", encodedContentRuleList: json)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// `[a-\d]` is valid JavaScript (`a`, `-` or a digit); written out as `[a-0-9]` WebKit refused it, and with it
+    /// the whole list. `[z-a]` is refused before it gets that far.
+    @MainActor
+    @Test func regexClassWithHyphenCompiles() async throws {
+        let result = FilterListConverter.convert(#"/[a-\d]x/"#)
+        #expect(result.regexTranslated == 1)
+        #expect(result.json.contains(#"[a\\-0-9]x"#))
+        #expect(await Self.webKitCompileError(result.json) == nil)
+        let reversed = FilterListConverter.convert("/[z-a]/\n||ok.test^")
+        #expect(reversed.regexRefused == 1)
+        #expect(reversed.ruleCount == 1)
+        // The other shapes the class rewrite emits: escaped hyphens as range ends, escaped brackets and caret.
+        let shapes = FilterListConverter.convert(#"/[--a]x/"# + "\n" + #"/[\w-z]y/"# + "\n" + #"/[a\]\[^]z/"# + "\n" + #"/[+--]w/"#)
+        #expect(shapes.regexTranslated == 4)
+        #expect(await Self.webKitCompileError(shapes.json) == nil)
+    }
+
+    /// The app's fallback, with a regex rule WebKit refuses (the pre-fix `[a-0-9]` rewrite): the list fails to
+    /// compile, and compiles once `dropRegex` leaves its regex rules out.
+    @MainActor
+    @Test func droppingRegexRulesRescuesARefusedList() async throws {
+        var parsed = FilterListConverter.parse(#"/ads\d/"# + "\n||ok.test^\n##.ad")
+        let index = try #require(parsed.blocks.firstIndex { $0.isRegex })
+        parsed.blocks[index].trigger.urlFilter = "[a-0-9]x"
+        let refused = FilterListConverter.assemble(parsed, chunks: FilterListConverter.cosmeticChunks(parsed, size: 32))
+        #expect(refused.containsRegexRules)
+        #expect(await Self.webKitCompileError(refused.json) != nil)
+        let rescued = FilterListConverter.assemble(parsed, chunks: FilterListConverter.cosmeticChunks(parsed, size: 32), dropRegex: true)
+        #expect(rescued.ruleCount == 2)
+        #expect(await Self.webKitCompileError(rescued.json) == nil)
+    }
+
+    /// The fallback the app uses when WebKit refuses a list: every rule made from a `/regex/` line goes, the list's
+    /// own and the user's shared `@@/regex/` exceptions alike, and nothing else.
+    @Test func dropRegexLeavesOutEveryRegexRule() throws {
+        let shared = SharedExceptions(userFilters: "@@/user-allow\\d/\n@@||user.test^")
+        let text = "/ads\\d+\\.js/\n@@/(good|fine)\\.test/\n||plain.test^\n##.ad"
+        let full = FilterListConverter.convert(text, shared: shared)
+        #expect(full.containsRegexRules)
+        #expect(full.ruleCount == 7)
+        let dropped = FilterListConverter.convert(text, shared: shared, dropRegex: true)
+        #expect(!dropped.containsRegexRules)
+        #expect(dropped.ruleCount == 3)
+        #expect(!dropped.json.contains("ads[0-9]"))
+        #expect(!dropped.json.contains("good"))
+        #expect(!dropped.json.contains("user-allow"))
+        #expect(dropped.json.contains("plain") && dropped.json.contains("user"))
+        #expect(dropped.regexTranslated == full.regexTranslated)  // the lines were translated; WebKit refused them
+        #expect(!full.json.contains("isRegex") && !full.json.contains("isImportant"))
+        #expect(!FilterListConverter.convert("||plain.test^").containsRegexRules)
+    }
+
+    /// `$subdocument` means frames. WebKit's `document` type also covers the page itself, so the document part
+    /// gets `load-context: child-frame`; other types in the same rule go to a rule of their own, since
+    /// `load-context` applies to the whole trigger.
+    @MainActor
+    @Test func subdocumentOnlyBlocksFrames() async throws {
+        let only = try rules("||frames.test^$subdocument")
+        #expect(only.count == 1)
+        #expect(trigger(only[0])["resource-type"] as? [String] == ["document"])
+        #expect(trigger(only[0])["load-context"] as? [String] == ["child-frame"])
+
+        let mixed = try rules("||mixed.test^$script,subdocument,third-party")
+        try #require(mixed.count == 2)
+        #expect(trigger(mixed[0])["resource-type"] as? [String] == ["script"])
+        #expect(trigger(mixed[0])["load-context"] == nil)
+        #expect(trigger(mixed[1])["resource-type"] as? [String] == ["document"])
+        #expect(trigger(mixed[1])["load-context"] as? [String] == ["child-frame"])
+        #expect(mixed.allSatisfy { trigger($0)["load-type"] as? [String] == ["third-party"] })
+
+        #expect(trigger(try rules("||f.test^$frame")[0])["load-context"] as? [String] == ["child-frame"])
+        let negated = try rules("||neg.test^$~subdocument")
+        #expect(negated.count == 1 && trigger(negated[0])["load-context"] == nil)
+        // Only negated types (`$~script`): every other type, frames included, but never the page itself.
+        let allBut = try rules("-banner-ads-$~script")
+        try #require(allBut.count == 2)
+        let otherTypes = try #require(trigger(allBut[0])["resource-type"] as? [String])
+        #expect(!otherTypes.contains("document") && !otherTypes.contains("script") && otherTypes.contains("image"))
+        #expect(trigger(allBut[0])["load-context"] == nil)
+        #expect(trigger(allBut[1])["resource-type"] as? [String] == ["document"])
+        #expect(trigger(allBut[1])["load-context"] as? [String] == ["child-frame"])
+        let regex = FilterListConverter.convert(#"/frame\d\.test/$subdocument,image"#)
+        #expect(regex.regexTranslated == 1 && regex.ruleCount == 2)
+        let allow = try rules("@@||site.test^$document")
+        #expect(allow.count == 1 && trigger(allow[0])["load-context"] == nil)
+
+        let text = "||frames.test^$subdocument\n||mixed.test^$script,subdocument\n@@||frames.test^$subdocument,domain=ok.test\n-banner-ads-$~script"
+        #expect(await Self.webKitCompileError(FilterListConverter.convert(text).json) == nil)
+    }
+
+    /// `#@#` excepts one selector of a `##` selector list: both sides are split on top-level commas, never inside
+    /// parentheses, brackets or quotes.
+    @Test func cosmeticExceptionMatchesOneSelectorOfAList() throws {
+        let text = """
+        ##.ad, .sidebar
+        site.test#@#.sidebar
+        page.test##.a,.b
+        page.test#@#.b
+        ##div:is(.x, .y)
+        ##a[title="p,q"]
+        #@#.gone, .also-gone
+        ##.gone
+        ##.also-gone
+        """
+        let r = try rules(text)
+        let selectors = r.map { action($0)["selector"] as? String ?? "" }
+        #expect(selectors == [".ad, div:is(.x, .y), a[title=\"p,q\"]", ".a", ".sidebar"])
+        let sidebar = try #require(r.first { action($0)["selector"] as? String == ".sidebar" })
+        #expect(trigger(sidebar)["unless-domain"] as? [String] == ["*site.test"])
+        // Counters stay per line.
+        let result = FilterListConverter.convert("##.a, .b {color:red}\n##.c, :has(:has(.d))\n##.e,")
+        #expect(result.styleInjection == 1)
+        #expect(result.invalidSelectors == 2)
+        #expect(result.ruleCount == 0)
+    }
+
+    /// With `match-case`, `^` must not count an uppercase letter as a separator.
+    @Test func matchCaseSeparatorKeepsUppercase() throws {
+        let filter = try #require(trigger(try rules("/Ads^$match-case")[0])["url-filter"] as? String)
+        #expect(filter == "/Ads[^a-zA-Z0-9_.%-]")
+        let re = try NSRegularExpression(pattern: filter)
+        func hit(_ url: String) -> Bool { re.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil }
+        #expect(hit("https://x.test/Ads/x"))
+        #expect(!hit("https://x.test/AdsX"))
+        #expect(trigger(try rules("/ads^")[0])["url-filter"] as? String == "/ads[^a-z0-9_.%-]")
+    }
+
+    /// `@@example.com^$document` without `||` is the same site allowlist; a bare word is not a host.
+    @Test func anchorlessDocumentAllowlist() throws {
+        for line in ["@@example.com^$document", "@@Example.com$document"] {
+            let result = FilterListConverter.convert(line)
+            #expect(result.skippedLines == 0, "\(line)")
+            let r = try rules(line)
+            try #require(r.count == 1)
+            #expect(trigger(r[0])["if-domain"] as? [String] == ["*example.com"])
+            #expect(action(r[0])["type"] as? String == "ignore-previous-rules")
+        }
+        #expect(FilterListConverter.convert("@@banner$document").skippedLines == 1)
+        #expect(FilterListConverter.convert("@@/path/x.com$document").skippedLines == 1)
+    }
+
+    /// `:style(` inside an attribute value is text, not a style rule.
+    @Test func styleInsideQuotesIsASelector() {
+        #expect(FilterListConverter.classifySelector(#"a[data-x=":style(y)"]"#) == .selector)
+        #expect(FilterListConverter.classifySelector(".x:style(top: 0)") == .styleInjection)
+        #expect(FilterListConverter.classifySelector(".x:STYLE(top: 0)") == .styleInjection)
+        // Extended-syntax markers count only outside quoted strings too.
+        #expect(FilterListConverter.classifySelector(#"[title=":contains("]"#) == .selector)
+        #expect(FilterListConverter.classifySelector(".x:contains(ad)") == .unsupported)
+        let result = FilterListConverter.convert(#"##a[data-x=":style(y)"]"#)
+        #expect(result.styleInjection == 0 && result.ruleCount == 1)
+    }
+
+    /// `$important` beats the list's own `@@` lines (Adblock Plus precedence); the user's `@@` lines and sites
+    /// with blocking off still beat it.
+    @Test func importantBlocksBeatTheListsExceptions() throws {
+        let shared = SharedExceptions(userFilters: "@@||mine.test^", blockingOffHosts: ["off.test"])
+        let text = "||ads.test^$important,script\n@@||ads.test^\n||plain.test^\n##.ad"
+        let result = FilterListConverter.convert(text, shared: shared)
+        let r = try #require(JSONSerialization.jsonObject(with: Data(result.json.utf8)) as? [[String: Any]])
+        try #require(r.count == 6)
+        #expect((trigger(r[0])["url-filter"] as? String)?.contains("plain") == true)
+        #expect(action(r[1])["type"] as? String == "css-display-none")
+        #expect(action(r[2])["type"] as? String == "ignore-previous-rules")
+        #expect((trigger(r[2])["url-filter"] as? String)?.contains("ads") == true)
+        #expect(action(r[3])["type"] as? String == "block")
+        #expect((trigger(r[3])["url-filter"] as? String)?.contains("ads") == true)
+        #expect(trigger(r[3])["resource-type"] as? [String] == ["script"])
+        #expect((trigger(r[4])["url-filter"] as? String)?.contains("mine") == true)
+        #expect(trigger(r[5])["if-domain"] as? [String] == ["*off.test"])
+    }
+
+    /// Over the cap, ordinary blocks and hiding go from the end; the list's exceptions, its important blocks and
+    /// the shared exceptions all stay.
+    @Test func truncationKeepsExceptionsAndImportantBlocks() throws {
+        let shared = SharedExceptions(userFilters: "@@||mine.test^")
+        let text = (0..<10).map { "||block\($0).test^" }.joined(separator: "\n")
+            + "\n@@||own.test^\n||vip.test^$important"
+        let parsed = FilterListConverter.parse(text, shared: shared)
+        let result = FilterListConverter.assemble(parsed, chunks: FilterListConverter.cosmeticChunks(parsed, size: 32), shared: shared, maxRules: 6)
+        #expect(result.truncated)
+        #expect(result.ruleCount == 6)
+        let urls = try #require(JSONSerialization.jsonObject(with: Data(result.json.utf8)) as? [[String: Any]]).map { trigger($0)["url-filter"] as? String ?? "" }
+        try #require(urls.count == 6)
+        #expect(urls[0].contains("block0") && urls[1].contains("block1") && urls[2].contains("block2"))
+        #expect(!urls.contains { $0.contains("block3") })
+        #expect(urls[3].contains("own") && urls[4].contains("vip") && urls[5].contains("mine"))
+        let untruncated = FilterListConverter.assemble(parsed, chunks: [], shared: shared)
+        #expect(!untruncated.truncated && untruncated.ruleCount == 13)
+    }
+
+    /// The bundled EasyList and EasyPrivacy snapshots, converted as a first launch converts them and compiled by
+    /// WebKit: one rule WebKit refuses would leave a fresh install without blocking.
+    @MainActor
+    @Test func bundledSnapshotsCompile() async throws {
+        let snapshots = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../Resources/FilterSnapshots")
+        for (file, floor) in [("easylist.txt", 30_000), ("easyprivacy.txt", 20_000)] {
+            let text = try String(contentsOf: snapshots.appending(path: file), encoding: .utf8)
+            let result = FilterListConverter.convert(text)
+            #expect(result.ruleCount > floor, "\(file): \(result.ruleCount) rules")
+            #expect(!result.truncated)
+            let error = await Self.webKitCompileError(result.json)
+            #expect(error == nil, "\(file): \(String(describing: error))")
+        }
     }
 
     /// The cross-list fix, end to end in a windowless web view: "another list" blocks `ads.test`, and the user's

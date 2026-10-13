@@ -23,6 +23,9 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
     /// load just to fail the same way; the sidecar is keyed by list text and converter version, so a change to
     /// either retries.
     public var compileFailure: String?
+    /// Why WebKit refused the list with its regex rules, when it compiled only once they were left out
+    /// (`FilterListConverter.convert(dropRegex:)`). The list is installed without them.
+    public var regexDropped: String?
 
     /// Nothing to install: no rules, or WebKit refused them. Such lists are remembered by sidecar alone.
     public var installable: Bool { ruleCount > 0 && compileFailure == nil }
@@ -30,7 +33,7 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
     public init(
         ruleCount: Int, skipped: Int, commentLines: Int, truncated: Bool,
         styleInjection: Int = 0, invalidSelectors: Int = 0, regexTranslated: Int = 0, regexRefused: Int = 0,
-        compileFailure: String? = nil
+        compileFailure: String? = nil, regexDropped: String? = nil
     ) {
         self.ruleCount = ruleCount
         self.skipped = skipped
@@ -41,6 +44,7 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
         self.regexTranslated = regexTranslated
         self.regexRefused = regexRefused
         self.compileFailure = compileFailure
+        self.regexDropped = regexDropped
     }
 
     /// The summary of `text` converted into `result`; comment lines are counted from `text`.
@@ -69,6 +73,7 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
         regexTranslated = try c.decodeIfPresent(Int.self, forKey: .regexTranslated) ?? 0
         regexRefused = try c.decodeIfPresent(Int.self, forKey: .regexRefused) ?? 0
         compileFailure = try c.decodeIfPresent(String.self, forKey: .compileFailure)
+        regexDropped = try c.decodeIfPresent(String.self, forKey: .regexDropped)
     }
 
     /// Lines the converter ignores as comments: the same test it uses (`!` or `[` after trimming spaces).
@@ -80,7 +85,8 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
     }
 
     /// "easylist: 61,234 rules (1,830 lines unsupported; 40 style rules; 3 invalid selectors; regex: 8 translated,
-    /// 14 refused; cached)",
+    /// 14 refused; cached)", "easylist: 61,220 rules (regex: 8 translated, 0 refused; regex rules left out: WebKit
+    /// refused them (invalid or unsupported regular expression))",
     /// "user-filters: empty", "user-filters: 0 rules (4 comment lines; 2 lines unsupported)",
     /// "user-filters: failed to compile (invalid or unsupported regular expression)".
     public func statusLine(name: String, cached: Bool, locale: Locale = .current) -> String {
@@ -102,6 +108,7 @@ public struct RuleListSummary: Codable, Sendable, Equatable {
             let n = { (value: Int) in value.formatted(.number.locale(locale)) }
             notes.append("regex: \(n(regexTranslated)) translated, \(n(regexRefused)) refused")
         }
+        if let regexDropped { notes.append("regex rules left out: WebKit refused them (\(regexDropped))") }
         if cached, ruleCount > 0 { notes.append("cached") }
         let head = "\(name): \(count(ruleCount, "rule", "rules"))"
         return notes.isEmpty ? head : "\(head) (\(notes.joined(separator: "; ")))"

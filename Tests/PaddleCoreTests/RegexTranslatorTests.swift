@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 @testable import PaddleCore
 import Testing
 
@@ -79,6 +80,47 @@ struct RegexTranslatorTests {
         #expect(refusal("a{2") == .malformed)
         #expect(refusal("[]") == .malformed)
         #expect(refusal("+a") == .malformed)
+    }
+
+    /// A `-` next to `\d` or `\w`, or first or last in the class, is a literal hyphen (JavaScript's Annex B reading);
+    /// a range runs low to high or is refused, as JavaScript refuses it.
+    @Test func classRangesAndHyphens() {
+        #expect(filters(#"[a-\d]x"#) == [#"[a\-0-9]x"#])
+        #expect(filters(#"[\w-z]"#) == [#"[A-Za-z0-9_\-z]"#])
+        #expect(filters("[-a]") == [#"[\-a]"#])
+        #expect(filters("[a-]") == [#"[a\-]"#])
+        #expect(filters(#"[a\-z]"#) == [#"[a\-z]"#])
+        #expect(filters("[0-9a-f]+") == ["[0-9a-f]+"])
+        #expect(filters(#"[!-\/]"#) == ["[!-/]"])
+        #expect(filters("[--a]") == [#"[\--a]"#])
+        #expect(refusal("[z-a]") == .malformed)
+        #expect(refusal("[a--]") == .malformed)  // `a` down to `-`
+        #expect(refusal(#"[\]-!]"#) == .malformed)
+    }
+
+    /// The same classes run through JavaScriptCore: the translation is refused exactly when JavaScript rejects
+    /// the pattern, and otherwise matches the same strings (case-insensitively, like a url-filter).
+    @Test func classesAgreeWithJavaScript() throws {
+        let context = try #require(JSContext())
+        let compiles = try #require(context.evaluateScript("(function (p) { try { new RegExp(p); return true } catch (e) { return false } })"))
+        let matches = try #require(context.evaluateScript("(function (p, s) { return new RegExp(p, 'i').test(s) })"))
+        let patterns = [
+            #"[a-\d]x"#, #"[\w-z]"#, "[-a]", "[a-]", #"[a\-z]"#, "[0-9a-f]+", #"[!-\/]"#, "[--a]", "[+--]", "[---]",
+            #"[\d-a-c]"#, "[z-a]", "[a--]", #"[\]-!]"#, "[^a-c-]",
+        ]
+        let samples = ["a", "b", "c", "d", "z", "Z", "-", "5", "_", "+", ",", "!", "/", "x", "ax", "-x", "5x", "bx"]
+        for pattern in patterns {
+            let valid = compiles.call(withArguments: [pattern]).toBool()
+            let translated = filters(pattern)
+            #expect((translated != nil) == valid, "\(pattern)")
+            guard valid, let translated else { continue }
+            let regexes = try translated.map { try NSRegularExpression(pattern: "^(" + $0 + ")$", options: [.caseInsensitive]) }
+            for sample in samples {
+                let expected = matches.call(withArguments: ["^(?:" + pattern + ")$", sample]).toBool()
+                let actual = regexes.contains { $0.firstMatch(in: sample, range: NSRange(sample.startIndex..., in: sample)) != nil }
+                #expect(actual == expected, "\(pattern) on \(sample)")
+            }
+        }
     }
 
     @Test func longFiltersAreRefused() {
