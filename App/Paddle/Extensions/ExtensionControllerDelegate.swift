@@ -14,7 +14,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
 
     // MARK: - Windows and tabs
 
-    /// Front window first, then the others in screen order.
+    /// Front window first, then the others in screen order. Only the windows this extension may see.
     func webExtensionController(_ controller: WKWebExtensionController, openWindowsFor extensionContext: WKWebExtensionContext) -> [any WKWebExtensionWindow] {
         var ordered: [BrowserWindowController] = []
         if let front = app.frontWindow { ordered.append(front) }
@@ -23,12 +23,12 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
             ordered.append(controller)
         }
         for controller in app.windows where !ordered.contains(where: { $0 === controller }) { ordered.append(controller) }
-        return host.registered(ordered).map(\.extensionWindow)
+        return ordered.filter { host.isVisible($0, to: extensionContext) }.map(\.extensionWindow)
     }
 
     /// Always the front browser window, even while Paddle is inactive: Chrome's "last focused" window.
     func webExtensionController(_ controller: WKWebExtensionController, focusedWindowFor extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
-        guard let front = app.frontExtensionWindow else { return nil }
+        guard let front = app.frontExtensionWindow(for: extensionContext) else { return nil }
         return front.extensionWindow
     }
 
@@ -39,7 +39,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     ) async throws -> (any WKWebExtensionTab)? {
         if let url = configuration.url { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
         let url = configuration.url ?? app.newTabPageURL
-        let target = (configuration.window as? ExtensionWindow)?.controller ?? app.frontExtensionWindow
+        let target = (configuration.window as? ExtensionWindow)?.controller ?? app.frontExtensionWindow(for: extensionContext)
         guard let target else {
             let window = app.openWindow(url: url)
             return window.model.selectedTab?.extensionTab
@@ -59,13 +59,16 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         openNewWindowUsing configuration: WKWebExtension.WindowConfiguration,
         for extensionContext: WKWebExtensionContext
     ) async throws -> (any WKWebExtensionWindow)? {
-        guard !configuration.shouldBePrivate else { throw PaddleExtensionError.unsupported("Private windows") }
-        // `tabId`: those tabs move into the new window (WebKit has checked they are in normal windows).
+        guard !configuration.shouldBePrivate || extensionContext.hasAccessToPrivateData else { throw PaddleExtensionError.privateNotAllowed }
+        // `tabId`: those tabs move into the new window. WebKit only looks the tabs up, so their kind is checked here.
         let moving = configuration.tabs.compactMap { ($0 as? ExtensionTab)?.tab }
         guard moving.count == configuration.tabs.count else { throw PaddleExtensionError.tabNotFound }
+        guard moving.allSatisfy({ $0.isPrivate == configuration.shouldBePrivate }) else { throw PaddleExtensionError.privacyMismatch }
         let urls = configuration.tabURLs
         for url in urls { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
-        let window = moving.isEmpty ? app.openWindow(url: urls.first ?? app.newTabPageURL) : app.openWindow(moving: moving)
+        let window = moving.isEmpty
+            ? app.openWindow(url: urls.first ?? app.newTabPageURL, isPrivate: configuration.shouldBePrivate)
+            : app.openWindow(isPrivate: configuration.shouldBePrivate, moving: moving)
         for url in moving.isEmpty ? Array(urls.dropFirst()) : urls { window.model.newTab(url: url, select: false) }
         let frame = configuration.frame
         if !frame.isNull, frame.origin.x.isFinite, frame.origin.y.isFinite, frame.width.isFinite, frame.height.isFinite {

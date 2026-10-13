@@ -13,6 +13,12 @@ extension SettingsModel {
     func setExtensionsInPrivate(_ on: Bool) async {
         await save([ConfigChange("extensionsInPrivate", .bool(on))])
     }
+
+    /// One folder's "Allow in private windows" (`extensionCompat.<folder>.private`). A value equal to the global switch
+    /// removes the field, so the folder follows `extensionsInPrivate` again.
+    func setExtensionInPrivate(_ folder: String, _ on: Bool) async {
+        await save([ConfigChange(path: ["extensionCompat", folder, "private"], value: on == file.extensionsInPrivate ? nil : .bool(on))])
+    }
 }
 
 /// What the running extensions cost, measured while the Extensions pane is shown.

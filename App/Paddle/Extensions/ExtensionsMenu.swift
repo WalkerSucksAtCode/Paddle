@@ -62,11 +62,11 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     private func submenu(for ext: LoadedExtension) -> NSMenu {
         let menu = NSMenu(title: ext.displayName)
         let context = ext.context
-        // A private window extensions can't see is in front: actions and commands would act on (and grant
+        // A private window this extension can't see is in front: actions and commands would act on (and grant
         // activeTab to) a hidden window's tab, so they are disabled (no action).
-        let frontIsHidden = AppModel.shared.frontWindowIsHiddenFromExtensions
+        let frontIsHidden = AppModel.shared.frontWindowIsHidden(from: context)
         if ext.hasAction {
-            let tab = AppModel.shared.frontExtensionWindow?.model.selectedTab
+            let tab = AppModel.shared.frontExtensionWindow(for: context)?.model.selectedTab
             let presentsPopup = context.action(for: tab?.extensionTab)?.presentsPopup ?? false
             let item = own(presentsPopup ? "Show Popup" : "Run Action", #selector(performAction(_:)), ext)
             if frontIsHidden { item.action = nil }
@@ -115,7 +115,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
 
     @objc private func performCommand(_ sender: Any?) {
         guard let choice = (sender as? NSMenuItem)?.representedObject as? CommandChoice,
-              host.loaded.contains(where: { $0 === choice.ext }), !AppModel.shared.frontWindowIsHiddenFromExtensions else { return }
+              host.loaded.contains(where: { $0 === choice.ext }), !AppModel.shared.frontWindowIsHidden(from: choice.ext.context) else { return }
         host.performCommand(choice.command, of: choice.ext)
     }
 
@@ -133,8 +133,8 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     @objc private func performAction(_ sender: Any?) {
-        guard let ext = ext(sender), !AppModel.shared.frontWindowIsHiddenFromExtensions else { return }
-        host.performAction(ext, in: AppModel.shared.frontExtensionWindow?.model.selectedTab)
+        guard let ext = ext(sender), !AppModel.shared.frontWindowIsHidden(from: ext.context) else { return }
+        host.performAction(ext, in: AppModel.shared.frontExtensionWindow(for: ext.context)?.model.selectedTab)
     }
 
     @objc private func openOptions(_ sender: Any?) {

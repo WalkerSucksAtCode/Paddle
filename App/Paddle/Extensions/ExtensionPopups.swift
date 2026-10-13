@@ -164,7 +164,7 @@ final class ExtensionPopupPresenter {
             view.customUserAgent = agent
         }
         guard let popover = action.popupPopover else { throw PaddleExtensionError.noPopup }
-        let controller = (action.associatedTab as? ExtensionTab)?.tab?.browser?.controller ?? AppModel.shared.frontExtensionWindow
+        let controller = (action.associatedTab as? ExtensionTab)?.tab?.browser?.controller ?? AppModel.shared.frontExtensionWindow(for: context)
         guard let window = controller?.window, let contentView = window.contentView else { throw PaddleExtensionError.noWindow }
 
         if let shownPopover, shownPopover !== popover, shownPopover.isShown {
@@ -234,6 +234,7 @@ final class ExtensionPopupPresenter {
     /// Inspectability and the delegates that open the popup's links as tabs.
     private func prepare(_ action: WKWebExtension.Action, for context: WKWebExtensionContext) {
         guard let webView = action.popupWebView else { return }
+        fallbackDelegate.context = context
         webView.isInspectable = AppModel.shared.config.developerTools
         if action.inspectionName == nil, let name = context.inspectionName { action.inspectionName = "\(name) popup" }
         // WebKit normally installs its own delegates on the popup web view (links and target=_blank go through
@@ -280,15 +281,18 @@ final class ExtensionPopupPresenter {
 }
 
 /// Fallback delegates for a popup web view: a web link in the popup opens as a selected tab in the front window
-/// and the popup stays on its own page; `window.open` and `target=_blank` do the same.
+/// the popup's extension may see, and the popup stays on its own page; `window.open` and `target=_blank` do the same.
 final class ExtensionPopupWebDelegate: NSObject, WKUIDelegate, WKNavigationDelegate {
+    /// The extension of the popup last shown (set each time the presenter shows one).
+    weak var context: WKWebExtensionContext?
+
     private static func isWebPage(_ url: URL?) -> Bool {
         guard let scheme = url?.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
     }
 
     private func openAsTab(_ url: URL) {
-        guard let front = AppModel.shared.frontExtensionWindow else {
+        guard let front = AppModel.shared.frontExtensionWindow(for: context) else {
             AppModel.shared.openWindow(url: url)
             return
         }

@@ -82,6 +82,40 @@ struct ExtensionPersonaTests {
         #expect(try PaddleConfig.decode(config.encoded()) == config)
     }
 
+    @Test func inPrivateOverridesTheGlobalSwitchPerFolder() throws {
+        let json = #"{"extensionCompat": {"a": {"private": true}, "b": {"private": false}}}"#
+        let on = try PaddleConfig.decode(Data(#"{"extensionsInPrivate": true, "extensionCompat": {"a": {"private": true}, "b": {"private": false}}}"#.utf8))
+        #expect(on.extensionAllowedInPrivate(folder: "a"))
+        #expect(!on.extensionAllowedInPrivate(folder: "b"))
+        #expect(on.extensionAllowedInPrivate(folder: "c"))
+        let off = try PaddleConfig.decode(Data(json.utf8))
+        #expect(off.extensionAllowedInPrivate(folder: "a"))
+        #expect(!off.extensionAllowedInPrivate(folder: "b"))
+        #expect(!off.extensionAllowedInPrivate(folder: "c"))
+    }
+
+    @Test func anyExtensionInPrivateCountsGlobalAndOverrides() {
+        #expect(!PaddleConfig(extensionsInPrivate: false).anyExtensionInPrivate)
+        #expect(PaddleConfig(extensionsInPrivate: false, extensionCompat: ["a": ExtensionCompatConfig(inPrivate: true)]).anyExtensionInPrivate)
+        #expect(PaddleConfig(extensionsInPrivate: true, extensionCompat: ["a": ExtensionCompatConfig(inPrivate: false)]).anyExtensionInPrivate)
+    }
+
+    @Test func inPrivateEncodesAsPrivateAndRoundTrips() throws {
+        let entry = ExtensionCompatConfig(inPrivate: true)
+        let data = try JSONEncoder().encode(entry)
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["private"] as? Bool == true)
+        #expect(object["inPrivate"] == nil)
+        #expect(try JSONDecoder().decode(ExtensionCompatConfig.self, from: data) == entry)
+    }
+
+    @Test func inPrivateCountsAsAnEntryButNotForReloads() {
+        #expect(ExtensionCompatConfig().isEmpty)
+        #expect(!ExtensionCompatConfig(inPrivate: true).isEmpty)
+        #expect(ExtensionCompatConfig(persona: .chrome, inPrivate: true).reloadKey == ExtensionCompatConfig(persona: .chrome, inPrivate: false).reloadKey)
+        #expect(ExtensionCompatConfig(persona: .chrome, inPrivate: true).reloadKey != ExtensionCompatConfig(persona: .firefox, inPrivate: true).reloadKey)
+    }
+
     @Test func sitePersonaMatchesLongestHostSuffix() {
         let config = PaddleConfig(sitePersonas: ["google.com": .chrome, "mail.google.com": .none, "mozilla.org": .firefox, "x.org": .native])
         #expect(config.sitePersona(forHost: "docs.google.com") == .chrome)

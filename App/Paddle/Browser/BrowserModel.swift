@@ -9,7 +9,8 @@ final class BrowserModel {
     /// A private window: non-persistent data store, no history, favicons, session or recently closed tabs.
     let isPrivate: Bool
     /// Extensions see this window and its web views carry the extension controller. Always for normal windows;
-    /// private windows only with `extensionsInPrivate`, as it was when the window opened, until it is turned off.
+    /// private windows only when any extension may run in private windows (`anyExtensionInPrivate`), as it was when
+    /// the window opened, until that is turned off.
     private(set) var extensionsAllowed: Bool
 
     init(isPrivate: Bool = false, extensionsAllowed: Bool = true) {
@@ -186,9 +187,10 @@ final class BrowserModel {
         return record
     }
 
-    /// `extensionsInPrivate` was turned off while this private window was open (the host has already been told
-    /// it closed). Awake web views were made with the extension controller, so they are dropped; the selected tab
-    /// comes back in an ordinary web view with its history, other tabs when next selected.
+    /// No extension may run in private windows any more (`anyExtensionInPrivate` turned off) while this private
+    /// window was open (the host has already been told it closed). Awake web views were made with the extension
+    /// controller, so they are dropped; the selected tab comes back in an ordinary web view with its history, other
+    /// tabs when next selected.
     func withdrawExtensions() {
         extensionsAllowed = false
         for tab in tabs where tab.isAwake { tab.sleep() }

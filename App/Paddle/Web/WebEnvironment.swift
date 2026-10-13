@@ -47,8 +47,9 @@ final class WebEnvironment {
     /// last one closes (`endPrivateSession`), so the next private window starts with no cookies or storage.
     @ObservationIgnored private var privateDataStore: WKWebsiteDataStore?
 
-    /// Web views of private windows get the private store and, unless `extensions` (config `extensionsInPrivate`),
-    /// no extension controller. Content blockers, user CSS and userscripts are the same as everywhere.
+    /// Web views of private windows get the private store and, unless `extensions` (the window carries extensions,
+    /// see `BrowserModel.extensionsAllowed`), no extension controller. Content blockers, user CSS and userscripts are
+    /// the same as everywhere.
     func makeConfiguration(isPrivate: Bool, extensions: Bool) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
         c.userContentController = contentController

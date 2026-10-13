@@ -2,9 +2,9 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Extensions: every folder in `extensions/`, running or not, with its switch (`extensions`), status,
-/// answers, compatibility notes and memory; `extensionsInPrivate`; and the folder and reload actions. Memory is
-/// measured every 5 s only while the pane is shown.
+/// Settings > Extensions: every folder in `extensions/`, running or not, with its switches (`extensions`, and
+/// `extensionCompat` `private` for private windows), status, answers, compatibility notes and memory;
+/// `extensionsInPrivate`; and the folder and reload actions. Memory is measured every 5 s only while the pane is shown.
 struct ExtensionsPane: View {
     let model: SettingsModel
     @State private var memory = ExtensionMemory()
@@ -35,7 +35,7 @@ struct ExtensionsPane: View {
                     set: { on in run("") { await model.setExtensionsInPrivate(on) } }
                 ))
                 .help("extensionsInPrivate in config.json")
-                Text("Turning this on applies to private windows opened afterwards; turning it off also takes extensions out of private windows already open.")
+                Text("Turning this on applies to private windows opened afterwards; turning it off also takes extensions out of private windows already open. Each extension's own \"Allow in private windows\" switch overrides this.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -112,6 +112,13 @@ struct ExtensionsPane: View {
             }
             .multilineTextAlignment(.trailing)
         }
+
+        Toggle("Allow in private windows", isOn: Binding(
+            get: { model.file.extensionAllowedInPrivate(folder: summary.folder) },
+            set: { on in run(summary.folder) { await model.setExtensionInPrivate(summary.folder, on) } }
+        ))
+        .help("extensionCompat.\(summary.folder).private in config.json; unset follows extensionsInPrivate")
+        .disabled(model.controlsDisabled || busy.contains(summary.folder))
 
         if !summary.compatNotes.isEmpty {
             LabeledContent("Compatibility") {

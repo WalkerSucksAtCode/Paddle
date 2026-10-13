@@ -169,7 +169,7 @@ public struct BrowserVersions: Codable, Sendable, Equatable {
 }
 
 /// Per-folder compatibility settings, from `config.json` `extensionCompat`:
-/// `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false}}`. Every field is optional.
+/// `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false, "private": true}}`. Every field is optional.
 public struct ExtensionCompatConfig: Codable, Sendable, Equatable {
     /// Forces the persona; nil lets `Persona.detect` choose.
     public var persona: Persona?
@@ -179,14 +179,29 @@ public struct ExtensionCompatConfig: Codable, Sendable, Equatable {
     /// A Chrome-persona extension uses its public id (the Web Store id, or a sideloaded manifest `key`) instead of
     /// the private one. Default off; store installs that need it for sign-in or website messaging get it anyway.
     public var publicID: Bool?
+    /// Runs the extension in private windows (true) or keeps it out (false), overriding `extensionsInPrivate` for
+    /// this folder; nil follows `extensionsInPrivate`. Applies without a reload.
+    public var inPrivate: Bool?
 
-    public init(persona: Persona? = nil, shims: Bool? = nil, publicID: Bool? = nil) {
+    public init(persona: Persona? = nil, shims: Bool? = nil, publicID: Bool? = nil, inPrivate: Bool? = nil) {
         self.persona = persona
         self.shims = shims
         self.publicID = publicID
+        self.inPrivate = inPrivate
+    }
+
+    public enum CodingKeys: String, CodingKey {
+        case persona, shims, publicID, inPrivate = "private"
     }
 
     public var shimsEnabled: Bool { shims ?? true }
     public var wantsPublicID: Bool { publicID ?? false }
-    public var isEmpty: Bool { persona == nil && shims == nil && publicID == nil }
+    public var isEmpty: Bool { persona == nil && shims == nil && publicID == nil && inPrivate == nil }
+
+    /// The fields whose change reloads the extension: everything but `inPrivate`, which applies live.
+    public var reloadKey: ExtensionCompatConfig {
+        var copy = self
+        copy.inPrivate = nil
+        return copy
+    }
 }

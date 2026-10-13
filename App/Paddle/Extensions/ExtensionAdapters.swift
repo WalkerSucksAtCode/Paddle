@@ -10,6 +10,8 @@ enum PaddleExtensionError: LocalizedError {
     case noPopup
     case noUserAction
     case noOptions
+    case privateNotAllowed
+    case privacyMismatch
     case unsupported(String)
 
     var errorDescription: String? {
@@ -20,6 +22,8 @@ enum PaddleExtensionError: LocalizedError {
         case .noPopup: "The action has no popup"
         case .noUserAction: "A popup opens only when the user clicks the extension's button"
         case .noOptions: "The extension has no options page"
+        case .privateNotAllowed: "This extension isn't allowed in private windows (Settings > Extensions)"
+        case .privacyMismatch: "Tabs can only move between windows of the same kind (private or normal)"
         case .unsupported(let what): "\(what) is not supported in Paddle"
         }
     }

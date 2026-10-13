@@ -57,10 +57,12 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
 
     /// Turn an extension off by its folder name in `extensions/`, e.g. `{"bitwarden": false}`. Folders not listed are on.
     public var extensions: [String: Bool]
-    /// Run extensions in private windows too. Off by default: private windows and their tabs are hidden from
-    /// extensions, and their web views don't carry the extension controller.
+    /// Run extensions in private windows too (the default for every extension; `extensionCompat.<folder>.private`
+    /// overrides it per folder, see `extensionAllowedInPrivate`). A private window carries the extension controller
+    /// only when any extension may run there (`anyExtensionInPrivate`), decided when it opens; an extension not
+    /// allowed there can't see private windows or tabs.
     public var extensionsInPrivate: Bool
-    /// Per-folder compatibility settings: `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false}}`.
+    /// Per-folder compatibility settings: `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false, "private": true}}`.
     /// See `ExtensionCompatConfig`; folders not listed get the detected persona, shims on and a private id.
     public var extensionCompat: [String: ExtensionCompatConfig]
     /// Check store-installed extensions for updates daily (and from Check for Extension Updates).
@@ -208,6 +210,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
 
     /// The `extensionCompat` entry for folder `folder`, or the defaults.
     public func compat(forFolder folder: String) -> ExtensionCompatConfig { extensionCompat[folder] ?? ExtensionCompatConfig() }
+
+    /// Whether the extension in folder `folder` may run in private windows: its `private` setting, else `extensionsInPrivate`.
+    public func extensionAllowedInPrivate(folder: String) -> Bool { compat(forFolder: folder).inPrivate ?? extensionsInPrivate }
+
+    /// Whether any extension may run in private windows. A private window carries extensions (decided when it opens)
+    /// when this is true.
+    public var anyExtensionInPrivate: Bool { extensionsInPrivate || extensionCompat.values.contains { $0.inPrivate == true } }
 
     /// The persona `sitePersonas` gives `host` (longest matching host suffix, as `userAgent(forHost:)`); nil when
     /// none, or when the entry is `native` / `none`, which don't apply to websites.

@@ -405,7 +405,7 @@ private struct NavigationBar: View {
             addressField
                 .padding(.horizontal, 4)
             if model.extensionsAllowed {
-                ExtensionToolbar(host: app.extensions, tab: tab)
+                ExtensionToolbar(host: app.extensions, tab: tab, isPrivate: model.isPrivate)
             }
             if app.config.showTabMemory {
                 MemoryButton(app: app, model: model)

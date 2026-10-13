@@ -5,15 +5,17 @@ import WebKit
 
 /// One button per running extension with a toolbar action, right of the address bar: its icon, badge and enabled
 /// state for the selected tab. A button redraws when WebKit reports a change to its own extension's action
-/// (`LoadedExtension.actionGeneration`) and when the selected tab changes.
+/// (`LoadedExtension.actionGeneration`) and when the selected tab changes. A private window shows only the buttons
+/// of extensions allowed in private windows.
 struct ExtensionToolbar: View {
     let host: ExtensionHost
     let tab: Tab?
+    let isPrivate: Bool
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(host.loaded) { ext in
-                if ext.hasAction {
+                if ext.hasAction && (!isPrivate || ext.allowedInPrivate) {
                     ExtensionToolbarItem(ext: ext, tab: tab)
                 }
             }

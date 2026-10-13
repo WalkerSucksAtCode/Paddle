@@ -27,7 +27,7 @@ final class Tab: Identifiable {
     /// Muted by the user. Kept while the tab sleeps and applied again to the next web view.
     private(set) var isMuted = false
     /// Belongs to a private window: its web views use the private data store, and nothing it does is written to
-    /// history, favicons or the session. Fixed for the tab's life (tabs never move between windows).
+    /// history, favicons or the session. Fixed for the tab's life (tabs only move between windows of the same kind).
     let isPrivate: Bool
     /// A View Source tab: shows this HTML instead of loading `url` (about:blank). Not saved in the session.
     @ObservationIgnored private(set) var sourceHTML: String?
@@ -128,7 +128,7 @@ final class Tab: Identifiable {
     }
 
     /// Whether this tab's web views may carry the extension controller: its window's setting, fixed when the
-    /// window opened (private windows only with `extensionsInPrivate`).
+    /// window opened (private windows only when any extension may run in private windows, `anyExtensionInPrivate`).
     var extensionsAllowed: Bool { browser?.extensionsAllowed ?? !isPrivate }
 
     var displayTitle: String {
@@ -165,8 +165,9 @@ final class Tab: Identifiable {
         }
         let pageID = ExtensionIdentity.identifier(of: url)
         if let url, pageID != nil {
-            // A private window without extensions shows no extension page (it would run outside the private store).
-            guard extensionsAllowed else { return showExtensionUnavailable(inPrivateWindow: true) }
+            // A private window without extensions shows no extension page (it would run outside the private store), and
+            // neither does a private window for an extension that isn't allowed in private windows (`allowsPrivatePage`).
+            guard extensionsAllowed, !isPrivate || host.allowsPrivatePage(url) else { return showExtensionUnavailable(inPrivateWindow: true) }
             guard let pageConfiguration = host.pageConfiguration(for: url) else {
                 if host.deferWake(self) { return nil }
                 return showExtensionUnavailable()
@@ -259,8 +260,8 @@ final class Tab: Identifiable {
         showsExtensionUnavailable = true
         let html = inPrivateWindow
             ? TabWebDelegate.errorPage(
-                title: "Extensions are off in private windows",
-                message: "Open this page in a normal window, or set \"extensionsInPrivate\": true in config.json and open a new private window.",
+                title: "This extension is off in private windows",
+                message: "Open this page in a normal window, or allow the extension in private windows in Settings > Extensions and open a new private window.",
                 url: url
             )
             : TabWebDelegate.errorPage(

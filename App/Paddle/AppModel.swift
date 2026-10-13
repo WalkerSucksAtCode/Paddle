@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import os
 import PaddleCore
+import WebKit
 
 /// App-wide state: config, shared WebKit environment, windows, session saving,
 /// tab sleeping and memory sampling.
@@ -283,13 +284,14 @@ final class AppModel {
         if !changed.isDisjoint(with: [.contentBlocking, .filterLists, .filterUpdateDays]) {
             Task { await updateFilterListsIfDue() }
         }
-        // A changed `extensionCompat` entry reloads that extension (`reconcile` compares each one).
+        // A changed `extensionCompat` entry reloads that extension (`reconcile` compares each one's reload key).
         if !keys.isDisjoint(with: [.extensions, .extensionsInPrivate, .extensionCompat]) { await extensions.reconcile(config: new) }
-        if keys.contains(.extensionsInPrivate) {
-            for ext in extensions.loaded { ext.context.hasAccessToPrivateData = new.extensionsInPrivate }
-            // Turning extensionsInPrivate off takes extensions out of private windows already open (turning it on
-            // applies to new private windows only).
-            if !new.extensionsInPrivate {
+        if !keys.isDisjoint(with: [.extensionsInPrivate, .extensionCompat]) {
+            extensions.applyPrivateAccess(config: new)
+            // No extension may run in private windows any more, so private windows already open drop extensions. An
+            // extension newly allowed joins private windows that already carry extensions at once; others only when
+            // opened afterwards.
+            if !new.anyExtensionInPrivate {
                 for controller in windows where controller.model.isPrivate && controller.model.extensionsAllowed {
                     extensions.windowClosing(controller)
                     controller.model.withdrawExtensions()
@@ -597,12 +599,13 @@ final class AppModel {
     }
 
     /// `isPrivate`: File > New Private Window. Private windows are never restored, so they never have a `record`.
-    /// Extensions are told about a window only when they may see it (private ones need `extensionsInPrivate`).
+    /// Extensions are told about a window only when they may see it: a private window carries them when any extension
+    /// may run in private windows (`anyExtensionInPrivate`), decided here, when it opens.
     /// `moving`: tabs taken from other windows to fill it (`windows.create` with tab ids), instead of a new tab.
     @discardableResult
     func openWindow(record: WindowRecord? = nil, url: URL? = nil, isPrivate: Bool = false, moving: [Tab] = []) -> BrowserWindowController {
         let controller = BrowserWindowController(
-            record: isPrivate ? nil : record, isPrivate: isPrivate, extensionsAllowed: !isPrivate || config.extensionsInPrivate
+            record: isPrivate ? nil : record, isPrivate: isPrivate, extensionsAllowed: !isPrivate || config.anyExtensionInPrivate
         )
         windows.append(controller)
         if controller.model.extensionsAllowed { extensions.windowOpened(controller) }
@@ -644,19 +647,20 @@ final class AppModel {
             ?? windows.last
     }
 
-    /// The front window extensions may see and open things in: the front browser window when the extension host
-    /// knows it, else the frontmost one it knows. Private windows aren't known unless `extensionsInPrivate`.
-    var frontExtensionWindow: BrowserWindowController? {
-        if let front = frontWindow, extensions.isRegistered(front) { return front }
-        return NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first { self.extensions.isRegistered($0) }
-            ?? extensions.registered(windows).last
+    /// The front window the extension `context` may see and open things in: the front browser window when the
+    /// extension host shows it to `context`, else the frontmost one it does. Private windows `context` isn't allowed
+    /// in are skipped (`ExtensionHost.isVisible`); a nil context sees every window the host carries.
+    func frontExtensionWindow(for context: WKWebExtensionContext?) -> BrowserWindowController? {
+        if let front = frontWindow, extensions.isVisible(front, to: context) { return front }
+        return NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first { self.extensions.isVisible($0, to: context) }
+            ?? windows.last { extensions.isVisible($0, to: context) }
     }
 
-    /// The browser window the user is in is a private one extensions can't see. Extension actions and commands
-    /// started from the menu then do nothing rather than act on a window behind it.
-    var frontWindowIsHiddenFromExtensions: Bool {
+    /// The browser window the user is in is one the extension `context` can't see: a private window it isn't allowed
+    /// in. Its actions and commands started from the menu then do nothing rather than act on a window behind it.
+    func frontWindowIsHidden(from context: WKWebExtensionContext?) -> Bool {
         guard let front = frontWindow else { return false }
-        return !extensions.isRegistered(front)
+        return !extensions.isVisible(front, to: context)
     }
 
     /// The front normal (non-private) window, for links from other apps.

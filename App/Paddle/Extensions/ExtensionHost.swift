@@ -28,7 +28,8 @@ final class LoadedExtension: Identifiable {
     let isPublicID: Bool
     /// The user agent its own views send (`Persona.userAgent`); nil for WebKit's own.
     let userAgent: String?
-    /// The `extensionCompat` entry it was loaded with; a change reloads it.
+    /// The `extensionCompat` entry it was loaded with. A change to its reload key reloads it; `private` is applied
+    /// live (`ExtensionHost.applyPrivateAccess`), so this copy's `inPrivate` can be stale.
     let compat: ExtensionCompatConfig
     /// "v2", "4b", "none" or "off (fallback)", for the log and status.
     let preludeMode: String
@@ -42,6 +43,9 @@ final class LoadedExtension: Identifiable {
     /// toolbar button. WebKit hands back an action object for every extension, so the manifest decides. Read once:
     /// the manifest doesn't change while the extension is loaded.
     let hasAction: Bool
+    /// Whether it runs in private windows: `context.hasAccessToPrivateData`, kept in step by `ExtensionHost.applyPrivateAccess`.
+    /// Observed, so the toolbars of private windows redraw when it changes.
+    var allowedInPrivate: Bool
     var problems: [String]
     /// Bumped when WebKit reports a change to this extension's action as the toolbar shows it; only its own
     /// buttons redraw.
@@ -67,6 +71,7 @@ final class LoadedExtension: Identifiable {
         self.problems = problems
         let manifest = webExtension.manifest
         hasAction = manifest["action"] != nil || manifest["browser_action"] != nil || manifest["page_action"] != nil
+        allowedInPrivate = context.hasAccessToPrivateData
     }
 
     var displayName: String { ExtensionPermissionText.sanitize(webExtension.displayName ?? name) }
@@ -456,8 +461,9 @@ final class ExtensionHost {
                     unload(ext, closingTabs: false)
                     continue
                 }
-                // A changed `extensionCompat` entry (persona, shims, publicID): load again with it.
-                if ext.compat != config.compat(forFolder: ext.name) {
+                // A changed `extensionCompat` entry reloads it: persona, shims and publicID. `private` applies live
+                // (`applyPrivateAccess`), so a change to it alone doesn't.
+                if ext.compat.reloadKey != config.compat(forFolder: ext.name).reloadKey {
                     log.info("\(ext.name, privacy: .public): extensionCompat changed; reloading it")
                     unload(ext, closingTabs: false)
                     continue
@@ -479,6 +485,26 @@ final class ExtensionHost {
             if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
             finishLoad()
         }.value
+    }
+
+    /// Sets each running extension's private-window access (`extensionAllowedInPrivate`) on its context, live: no
+    /// reload. An extension turned off also leaves the private windows already open: its pages there sleep, and a
+    /// selected one wakes again into the unavailable page (`Tab.wake` checks `allowsPrivatePage`).
+    func applyPrivateAccess(config: PaddleConfig) {
+        for ext in loaded {
+            let allowed = config.extensionAllowedInPrivate(folder: ext.name)
+            guard allowed != ext.context.hasAccessToPrivateData else { continue }
+            ext.context.hasAccessToPrivateData = allowed
+            ext.allowedInPrivate = allowed
+            log.info("\(ext.name, privacy: .public): private windows \(allowed ? "on" : "off", privacy: .public)")
+            guard !allowed else { continue }
+            for window in AppModel.shared.windows where window.model.isPrivate {
+                for tab in window.model.tabs where ext.owns(tab.url) {
+                    if tab.isAwake { tab.sleep() }
+                    if tab === window.model.selectedTab { tab.wake() }
+                }
+            }
+        }
     }
 
     /// Extensions > Reload Extensions: unloads everything, then loads the folder again. Open extension pages sleep
@@ -736,8 +762,8 @@ final class ExtensionHost {
         context.baseURL = identity.baseURL
         context.isInspectable = config.developerTools
         context.inspectionName = "\(displayName) — Paddle"
-        // Private windows (only registered with `extensionsInPrivate`) are visible to the extension only with this.
-        context.hasAccessToPrivateData = config.extensionsInPrivate
+        // Private windows the extension may see: its `private` setting, else `extensionsInPrivate`. Kept live by `applyPrivateAccess`.
+        context.hasAccessToPrivateData = config.extensionAllowedInPrivate(folder: entry.name)
 
         if let snapshot = decisions.byFolder[entry.name] {
             var granted: [WKWebExtension.Permission: Date] = [:]
@@ -1370,9 +1396,16 @@ final class ExtensionHost {
         registeredWindows.contains { $0.value === window }
     }
 
-    /// `windows` filtered to the registered ones, order kept.
-    func registered(_ windows: [BrowserWindowController]) -> [BrowserWindowController] {
-        windows.filter(isRegistered)
+    /// Whether the extension `context` may see `window`: the window carries the controller, and a private window
+    /// also needs the extension allowed in private windows. A nil context (no extension asking) sees any it carries.
+    func isVisible(_ window: BrowserWindowController, to context: WKWebExtensionContext?) -> Bool {
+        isRegistered(window) && (!window.model.isPrivate || (context?.hasAccessToPrivateData ?? true))
+    }
+
+    /// Whether a private window may show `url`: false only for an extension's page whose extension isn't allowed in
+    /// private windows. Pages no extension owns are allowed.
+    func allowsPrivatePage(_ url: URL) -> Bool {
+        loaded.first { $0.owns(url) }?.context.hasAccessToPrivateData ?? true
     }
 
     private func isRegistered(_ tab: Tab) -> Bool {
@@ -1429,7 +1462,8 @@ final class ExtensionHost {
 
     /// Extension commands run before the page and the window see the key, as in Chrome, so a page that handles
     /// the same key (Google Docs and ⌘⇧L) can't swallow them. A key one of Paddle's menu items uses is left to
-    /// the menu. Only in browser windows, and not while a sheet is up.
+    /// the menu. Only in browser windows, and not while a sheet is up. An extension's command doesn't run in a
+    /// private window it isn't allowed in.
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -1444,7 +1478,7 @@ final class ExtensionHost {
         guard controller != nil, !loaded.isEmpty, let window = event.window as? BrowserWindow,
               window.isKeyWindow, window.attachedSheet == nil,
               let browser = window.windowController as? BrowserWindowController, isRegistered(browser) else { return false }
-        for ext in loaded {
+        for ext in loaded where isVisible(browser, to: ext.context) {
             guard let command = ext.context.command(for: event) else { continue }
             if MainMenu.usesKeyEquivalent(command.activationKey, modifiers: command.modifierFlags) {
                 log.debug("command \(command.id, privacy: .public) of \(ext.name, privacy: .public): key taken by Paddle's menu")
@@ -1477,18 +1511,18 @@ final class ExtensionHost {
     }
 
     /// `runtime.openOptionsPage()`, the menus and the button's right-click: the options page in a tab of the front
-    /// window, selecting an existing one.
+    /// window the extension may see, selecting an existing one.
     func openOptionsPage(for context: WKWebExtensionContext) throws {
         guard let url = context.optionsPageURL else { throw PaddleExtensionError.noOptions }
         let app = AppModel.shared
-        for window in registered(app.windows) {
+        for window in app.windows where isVisible(window, to: context) {
             if let tab = window.model.tabs.first(where: { $0.url == url }) {
                 window.model.select(tab)
                 window.window?.makeKeyAndOrderFront(nil)
                 return
             }
         }
-        guard let front = app.frontExtensionWindow else {
+        guard let front = app.frontExtensionWindow(for: context) else {
             app.openWindow(url: url)
             return
         }
