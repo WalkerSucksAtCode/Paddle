@@ -207,7 +207,9 @@ final class WebEnvironment {
     /// (`BundledFilterSnapshots`). Every list gets a status line, including empty and failed ones. The `@@` and
     /// `#@#` lines of `user-filters.txt`, and an exception for each site with `contentBlocking: false`, are appended
     /// to every list (`SharedExceptions`), since WebKit applies an exception only within its own list; the cache key
-    /// carries their fingerprint, so changing them recompiles every list. Opens `blockersReady` when done.
+    /// carries their fingerprint, so changing them recompiles every list. Each list also gets the other lists' `@@`
+    /// network exceptions, as uBlock Origin applies them, and a digest of the other lists' text in its key, so updating
+    /// one list recompiles the rest. Opens `blockersReady` when done.
     func loadContentBlockers() async {
         let previous = blockerLoadTail
         let load = Task {
@@ -234,6 +236,8 @@ final class WebEnvironment {
         let identifier: String
         let text: String
         let shared: SharedExceptions
+        /// The other filter lists' text: their `@@` exceptions join this list's (`SharedExceptions.adding`).
+        let otherLists: [String]
     }
 
     /// One line of the Content blocking status. `summary` is set for an installed block list: its counts feed the
@@ -301,6 +305,10 @@ final class WebEnvironment {
         // Sidecars of lists that are current but not installed (no rules, or WebKit refused them).
         var sidecars: Set<String> = []
         var jobs: [CompileJob] = []
+        // Every filter list's text up front: each list carries the others' exceptions, so their text is part of its key.
+        let listTexts: [URL: String] = Dictionary(uniqueKeysWithValues: sources.filter { $0 != Paths.userFilters }.compactMap { file in
+            (try? String(contentsOf: file, encoding: .utf8)).map { (file, $0) }
+        })
         for file in sources {
             let name = file.deletingPathExtension().lastPathComponent
             guard let text = try? String(contentsOf: file, encoding: .utf8) else {
@@ -312,8 +320,13 @@ final class WebEnvironment {
             let trusted = file == Paths.userFilters || config.trustedLists.contains { FilterUpdatePolicy.fileName(forList: $0) == file.lastPathComponent }
             scriptletInputs.append((text, trusted))
             let listShared = file == Paths.userFilters ? shared.forUserFilters : shared
+            let otherLists = sources.filter { $0 != file }.compactMap { listTexts[$0] }
             let fingerprint = listShared.fingerprint
-            let keyText = fingerprint.isEmpty ? text : text + "\n\u{0}shared exceptions\n" + fingerprint
+            var keyText = fingerprint.isEmpty ? text : text + "\n\u{0}shared exceptions\n" + fingerprint
+            // A digest per other list, not their exceptions: those are only parsed when this list compiles.
+            for other in otherLists {
+                keyText += "\n\u{0}other list " + SHA256.hash(data: Data(other.utf8)).map { String(format: "%02x", $0) }.joined()
+            }
             let digest = SHA256.hash(data: Data(keyText.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
             // Text, shared exceptions and converter version: a new converter recompiles lists WebKit still has cached
             // from the old one.
@@ -324,7 +337,7 @@ final class WebEnvironment {
             if let cached {
                 wanted[identifier] = cached
                 install(cached, identifier: identifier)
-                let summary = await cachedSummary(identifier: identifier, text: text, shared: listShared)
+                let summary = await cachedSummary(identifier: identifier, text: text, shared: listShared, otherLists: otherLists)
                 status.append(BlockerLine(summary.statusLine(name: name, cached: true), summary: summary))
                 continue
             }
@@ -334,7 +347,9 @@ final class WebEnvironment {
                 status.append(BlockerLine(remembered.statusLine(name: name, cached: true)))
                 continue
             }
-            jobs.append(CompileJob(index: status.count, name: name, identifier: identifier, text: text, shared: listShared))
+            jobs.append(CompileJob(
+                index: status.count, name: name, identifier: identifier, text: text, shared: listShared, otherLists: otherLists
+            ))
             status.append(BlockerLine("\(name): compiling"))
         }
         // Scriptlets are in place before the startup gate opens, like the cached lists.
@@ -407,7 +422,10 @@ final class WebEnvironment {
 
     /// Converts and compiles one list, installing it as soon as WebKit has compiled it.
     private func compile(_ job: CompileJob, validator: SelectorValidator) async -> CompileOutcome {
-        let text = job.text, shared = job.shared
+        let text = job.text, otherLists = job.otherLists
+        let shared = await Task.detached(priority: .utility) {
+            job.shared.adding(otherLists.map(SharedExceptions.listExceptions(in:)))
+        }.value
         let (result, summary) = await Task.detached(priority: .utility) {
             let result = await FilterListConverter.convert(text, shared: shared) { await validator.validate($0) }
             return (result, RuleListSummary(text: text, result: result))
@@ -517,7 +535,7 @@ final class WebEnvironment {
     /// recompiled) to recover them. A sidecar from before the skip breakdown keeps its saved counts and gets the
     /// breakdown re-derived from the list text (a parse, no WebKit compile), then is saved again. Its selector counts
     /// stay as saved: only WebKit's own selector check could recount them.
-    private func cachedSummary(identifier: String, text: String, shared: SharedExceptions) async -> RuleListSummary {
+    private func cachedSummary(identifier: String, text: String, shared: SharedExceptions, otherLists: [String]) async -> RuleListSummary {
         if var summary = savedSummary(identifier: identifier) {
             guard !summary.hasSkipBreakdown else { return summary }
             summary.skips = await Task.detached(priority: .utility) { FilterListConverter.skipBreakdown(text) }.value
@@ -525,7 +543,9 @@ final class WebEnvironment {
             return summary
         }
         let summary = await Task.detached(priority: .utility) {
-            RuleListSummary(text: text, result: FilterListConverter.convert(text, shared: shared))
+            RuleListSummary(text: text, result: FilterListConverter.convert(
+                text, shared: shared.adding(otherLists.map(SharedExceptions.listExceptions(in:)))
+            ))
         }.value
         saveSummary(summary, identifier: identifier)
         return summary

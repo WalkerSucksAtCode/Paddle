@@ -201,4 +201,24 @@ struct WebKitRuleEvaluatorTests {
         #expect(e.stats.fallback > 0)
         #expect(e.stats.indexed > 0)
     }
+
+    /// One list's `@@` exception cancels another list's block once the other list carries it (`SharedExceptions.adding`),
+    /// but not a `$important` block, which no exception cancels.
+    @Test func otherListExceptionsCancelBlocks() throws {
+        let privacy = "||servebom.test^$third-party\n||beacon.test^$important"
+        let easylist = "@@||servebom.test/tmn*.js$script\n@@||beacon.test^"
+        let alone = try WebKitRuleEvaluator(json: FilterListConverter.convert(privacy).json)
+        let shared = SharedExceptions.none.adding([SharedExceptions.listExceptions(in: easylist)])
+        let joined = try WebKitRuleEvaluator(json: FilterListConverter.convert(privacy, shared: shared).json)
+        let script = Request(url: "https://ads.servebom.test/tmnhead.js", sourceURL: "https://news.test/", resourceType: "script")
+        let image = Request(url: "https://ads.servebom.test/pixel.gif", sourceURL: "https://news.test/", resourceType: "image")
+        let beacon = Request(url: "https://beacon.test/b", sourceURL: "https://news.test/", resourceType: "script")
+        #expect(alone.evaluate(script).blocked)
+        #expect(!joined.evaluate(script).blocked)
+        #expect(joined.evaluate(image).blocked)
+        #expect(joined.evaluate(beacon).blocked)
+        #expect(SharedExceptions.none.adding([SharedExceptions.listExceptions(in: easylist)]).fingerprint != "")
+        // A list that blocks nothing gets none of them: they would cancel nothing.
+        #expect(FilterListConverter.convert("@@||own.test^", shared: shared).ruleCount == 1)
+    }
 }

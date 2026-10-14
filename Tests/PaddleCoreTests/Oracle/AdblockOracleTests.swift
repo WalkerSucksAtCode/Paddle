@@ -8,8 +8,9 @@ import Testing
 /// `build/oracle` in the repo) and `PADDLE_ORACLE_LIMIT` (rows to run, default all). The full report goes to
 /// `<data directory>/report.txt`.
 ///
-/// WebKit applies each content-rule list on its own, so an exception in one list does not cancel a block in the
-/// other. A request counts as blocked by Paddle when either list blocks it.
+/// WebKit applies each content-rule list on its own; as in the app, each list is converted with the other's `@@`
+/// exceptions, so one list's exception still cancels the other's block. A request counts as blocked by Paddle when
+/// either list blocks it.
 ///
 /// Disagreement is reported, not failed. The test fails when the data is missing, or when the token index disagrees
 /// with brute force on the first 300 rows.
@@ -100,12 +101,12 @@ struct AdblockOracleTests {
 
         let clock = ContinuousClock()
 
-        // Conversion: one list at a time, default arguments, no shared exceptions.
+        // Conversion as the app does it: each list with the other's `@@` exceptions (`SharedExceptions.adding`).
         let convertStart = clock.now
         let easyText = try String(contentsOf: easylistURL, encoding: .utf8)
-        let easyResult = FilterListConverter.convert(easyText)
         let privacyText = try String(contentsOf: easyprivacyURL, encoding: .utf8)
-        let privacyResult = FilterListConverter.convert(privacyText)
+        let easyResult = FilterListConverter.convert(easyText, shared: SharedExceptions.none.adding([SharedExceptions.listExceptions(in: privacyText)]))
+        let privacyResult = FilterListConverter.convert(privacyText, shared: SharedExceptions.none.adding([SharedExceptions.listExceptions(in: easyText)]))
         let easy = try WebKitRuleEvaluator(json: easyResult.json)
         let privacy = try WebKitRuleEvaluator(json: privacyResult.json)
         let convertTime = clock.now - convertStart

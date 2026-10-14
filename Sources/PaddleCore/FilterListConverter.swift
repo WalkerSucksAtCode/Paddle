@@ -32,7 +32,7 @@ public enum FilterListConverter {
     public static let maxRulesPerList = 150_000
     /// Part of the compiled-list cache key. Bump it whenever the JSON for the same list text changes, so lists
     /// compiled by the previous converter are recompiled instead of loaded from WebKit's cache.
-    public static let converterVersion = 5
+    public static let converterVersion = 6
 
     public struct Result: Sendable {
         public var json: String
@@ -328,11 +328,13 @@ public enum FilterListConverter {
         func kept(_ rules: [Rule]) -> [Rule] { dropRegex ? rules.filter { !$0.isRegex } : rules }
 
         // `ignore-previous-rules` only cancels rules listed before it, so the order is: ordinary blocks and hiding,
-        // the list's own exceptions, `$important` blocks (which those exceptions must not cancel), then the shared
-        // exceptions (the user's, and sites with blocking off), which beat everything.
+        // the list's own exceptions and the other lists', `$important` blocks (which those exceptions must not
+        // cancel), then the shared exceptions (the user's, and sites with blocking off), which beat everything.
         var ordinary = kept(parsed.blocks) + cosmetic
         var important = kept(parsed.importantBlocks)
-        var exceptions = kept(parsed.exceptions)
+        // Other lists' exceptions only cancel blocks; a list without any (an empty user-filters.txt) skips them.
+        let blocksAnything = !ordinary.isEmpty || !important.isEmpty
+        var exceptions = kept(parsed.exceptions) + (blocksAnything ? kept(shared.listRules) : [])
         var sharedRules = kept(shared.userRules) + shared.siteRules
         // Over the cap, rules go from the end of the ordinary ones first; the rest only if those were not enough.
         var excess = ordinary.count + important.count + exceptions.count + sharedRules.count - maxRules
@@ -780,6 +782,10 @@ public struct SharedExceptions: Sendable {
     var userRules: [FilterListConverter.Rule] = []
     /// One per host in `blockingOffHosts`.
     var siteRules: [FilterListConverter.Rule] = []
+    /// The other filter lists' `@@` network exceptions (EasyList's, for EasyPrivacy). uBlock Origin applies every list's
+    /// exceptions to every list's blocks; WebKit doesn't, so each list carries the others'. They go with the list's own
+    /// exceptions, before its `$important` blocks, which no exception cancels.
+    var listRules: [FilterListConverter.Rule] = []
     /// The user's `#@#` lines, as `Parsed` keeps them.
     var cosmetic: [String: [String]] = [:]
     var globalCosmetic: Set<String> = []
@@ -799,16 +805,37 @@ public struct SharedExceptions: Sendable {
         siteRules = hosts.sorted().map(FilterListConverter.siteAllowRule)
     }
 
-    /// What `user-filters.txt` itself needs: only the site exceptions, since its own `@@` and `#@#` lines are in it.
+    /// What `user-filters.txt` itself needs: the site exceptions and the lists' exceptions, since its own `@@` and
+    /// `#@#` lines are in it.
     public var forUserFilters: SharedExceptions {
         var own = SharedExceptions()
         own.siteRules = siteRules
+        own.listRules = listRules
         return own
+    }
+
+    /// One filter list's `@@` network exceptions, for `adding(_:)`.
+    public struct ListExceptions: Sendable {
+        var rules: [FilterListConverter.Rule]
+    }
+
+    /// The `@@` network exceptions in `text` (a filter list): `$document` site allowlists included, cosmetic `#@#` lines not.
+    public static func listExceptions(in text: String) -> ListExceptions {
+        ListExceptions(rules: FilterListConverter.parse(text).exceptions)
+    }
+
+    /// These exceptions plus other filter lists' (see `listRules`).
+    public func adding(_ lists: [ListExceptions]) -> SharedExceptions {
+        var shared = self
+        shared.listRules += lists.flatMap(\.rules)
+        return shared
     }
 
     var rules: [FilterListConverter.Rule] { userRules + siteRules }
 
-    public var isEmpty: Bool { userRules.isEmpty && siteRules.isEmpty && cosmetic.isEmpty && globalCosmetic.isEmpty }
+    public var isEmpty: Bool {
+        userRules.isEmpty && siteRules.isEmpty && listRules.isEmpty && cosmetic.isEmpty && globalCosmetic.isEmpty
+    }
 
     /// Stable text that changes whenever what these exceptions add to a list changes; part of the compiled-list
     /// cache key, so editing an `@@` line recompiles every list. Empty when there are none.
@@ -816,7 +843,7 @@ public struct SharedExceptions: Sendable {
         guard !isEmpty else { return "" }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let rulesJSON = (try? encoder.encode(rules)).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        let rulesJSON = (try? encoder.encode(rules + listRules)).map { String(decoding: $0, as: UTF8.self) } ?? ""
         let cosmeticLines = cosmetic.keys.sorted().map { "\($0)\t\(cosmetic[$0, default: []].joined(separator: ","))" }
         return ([rulesJSON] + cosmeticLines + globalCosmetic.sorted().map { "*\t\($0)" }).joined(separator: "\n")
     }
