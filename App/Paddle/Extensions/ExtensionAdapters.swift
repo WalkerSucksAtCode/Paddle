@@ -66,9 +66,11 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         tab?.opener = (parentTab as? ExtensionTab)?.tab
     }
 
-    /// nil while asleep: no content injection until the tab shows again.
+    /// nil while asleep: no content injection until the tab shows again. A frozen page can't run injected scripts,
+    /// so it is resumed first.
     func webView(for context: WKWebExtensionContext) -> WKWebView? {
-        tab?.webView
+        tab?.unfreeze()
+        return tab?.webView
     }
 
     func title(for context: WKWebExtensionContext) -> String? {
@@ -175,6 +177,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
     /// `snapshot(using:for:)` (WK_SWIFT_ASYNC_NAME), which the DEBUG selector check guards.
     func snapshot(using configuration: WKSnapshotConfiguration, for context: WKWebExtensionContext) async throws -> NSImage? {
         guard let webView = tab?.webView else { return nil }
+        tab?.unfreeze()
         return try await webView.takeSnapshot(configuration: configuration)
     }
 

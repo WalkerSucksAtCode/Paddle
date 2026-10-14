@@ -11,9 +11,12 @@ public struct TabSnapshot: Sendable, Equatable {
     public var isBusy: Bool
     /// When this tab's process started using at least the CPU limit without a break; nil when under it or unknown.
     public var cpuBusySince: Date?
+    /// Frozen: its page is kept but not running (see `TabSleepPolicy.tabsToFreeze`). Still awake.
+    public var isFrozen: Bool
 
     public init(
-        id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool, cpuBusySince: Date? = nil
+        id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool, cpuBusySince: Date? = nil,
+        isFrozen: Bool = false
     ) {
         self.id = id
         self.lastActive = lastActive
@@ -22,10 +25,12 @@ public struct TabSnapshot: Sendable, Equatable {
         self.isPinned = isPinned
         self.isBusy = isBusy
         self.cpuBusySince = cpuBusySince
+        self.isFrozen = isFrozen
     }
 }
 
-/// Decides which background tabs to put to sleep. A sleeping tab keeps its URL and back/forward history
+/// Decides which background tabs to freeze and which to put to sleep. A frozen tab keeps its page in memory but
+/// stops running it, and shows again without a reload. A sleeping tab keeps its URL and back/forward history
 /// but has no web view, so its web content process exits and its memory is returned.
 public struct TabSleepPolicy: Sendable, Equatable {
     public var sleepAfter: TimeInterval
@@ -33,16 +38,21 @@ public struct TabSleepPolicy: Sendable, Equatable {
     public var sleepPinnedTabs: Bool
     /// Percent of one CPU core a background tab's process must keep busy to sleep; 0 turns CPU-based sleeping off.
     public var cpuPercent: Double
+    /// Idle time after which a background tab is frozen; 0 turns freezing off.
+    public var freezeAfter: TimeInterval
 
     /// How long a tab must stay at `cpuPercent` before it sleeps. A short burst (a download, a build step) doesn't
     /// count, and the sweep that checks this runs once a minute.
     public static let cpuSustain: TimeInterval = 3 * 60
 
-    public init(sleepAfter: TimeInterval, maxAwakeTabs: Int, sleepPinnedTabs: Bool, cpuPercent: Double = 0) {
+    public init(
+        sleepAfter: TimeInterval, maxAwakeTabs: Int, sleepPinnedTabs: Bool, cpuPercent: Double = 0, freezeAfter: TimeInterval = 0
+    ) {
         self.sleepAfter = sleepAfter
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
         self.cpuPercent = cpuPercent
+        self.freezeAfter = freezeAfter
     }
 
     public init(config: PaddleConfig) {
@@ -50,11 +60,29 @@ public struct TabSleepPolicy: Sendable, Equatable {
             sleepAfter: config.tabSleepAfterMinutes * 60,
             maxAwakeTabs: config.maxAwakeTabs,
             sleepPinnedTabs: config.sleepPinnedTabs,
-            cpuPercent: Double(config.cpuSleepPercent)
+            cpuPercent: Double(config.cpuSleepPercent),
+            freezeAfter: config.tabFreezeAfterMinutes * 60
         )
     }
 
-    /// Tabs to put to sleep now, least recently used first.
+    /// Background tabs to freeze now, least recently used first. Freezing is the first stage, before any sleep: a
+    /// frozen tab is still awake and keeps its page, so it can still be put to sleep later by `tabsToSleep`.
+    /// Only tabs idle for `freezeAfter` qualify, and they get the same protections as sleep: never the selected tab,
+    /// never a busy tab, never a pinned tab unless `sleepPinnedTabs`. Tabs in `discard` are left out because the caller
+    /// is about to put them to sleep (the second stage) instead.
+    /// - Parameter discard: the tabs `tabsToSleep` chose for this sweep.
+    public func tabsToFreeze(_ tabs: [TabSnapshot], now: Date, excluding discard: Set<UUID>) -> [UUID] {
+        guard freezeAfter > 0 else { return [] }
+        return tabs
+            .filter {
+                $0.isAwake && !$0.isFrozen && !$0.isSelected && !$0.isBusy && (sleepPinnedTabs || !$0.isPinned)
+                    && !discard.contains($0.id) && now.timeIntervalSince($0.lastActive) >= freezeAfter
+            }
+            .sorted { $0.lastActive < $1.lastActive }
+            .map(\.id)
+    }
+
+    /// Tabs to put to sleep now, least recently used first. A frozen tab is awake, so it is eligible like any other.
     /// - Parameter memoryPressure: the system reported memory pressure; every eligible tab sleeps.
     public func tabsToSleep(_ tabs: [TabSnapshot], now: Date, memoryPressure: Bool = false) -> [UUID] {
         let eligible = tabs

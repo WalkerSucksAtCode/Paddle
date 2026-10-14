@@ -41,6 +41,15 @@ struct ConfigTests {
         #expect(try PaddleConfig.decode(Data(#"{"cpuSleepPercent": 0}"#.utf8)).cpuSleepPercent == 0)
     }
 
+    @Test func tabFreezeAfterMinutesDefaultsToFiveAndWrongTypeFallsBack() throws {
+        #expect(PaddleConfig().tabFreezeAfterMinutes == 5)
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"tabFreezeAfterMinutes": "soon"}"#.utf8))
+        #expect(config.tabFreezeAfterMinutes == 5)
+        #expect(issues.count == 1)
+        #expect(issues.first?.path == ["tabFreezeAfterMinutes"])
+        #expect(try PaddleConfig.decode(Data(#"{"tabFreezeAfterMinutes": 0}"#.utf8)).tabFreezeAfterMinutes == 0)
+    }
+
     @Test func nullAndMissingKeysAreTheDefaultWithNoIssue() throws {
         let (config, issues) = try PaddleConfig.decodeReportingIssues(
             Data(#"{"maxAwakeTabs": null, "sites": null, "filterLists": null, "unknownKey": [1]}"#.utf8)

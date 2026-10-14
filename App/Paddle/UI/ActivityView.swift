@@ -155,9 +155,12 @@ struct ActivityView: View {
                 .truncationMode(.tail)
                 .font(.system(size: 12))
             Spacer()
-            Text(tab.isAwake ? (tab.memoryBytes.map(ProcessMemory.format) ?? "–") + (tab.sharesProcess ? "*" : "") : "asleep")
-                .font(.system(size: 11).monospacedDigit())
-                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                if tab.isFrozen { Text("frozen") }
+                Text(tab.isAwake ? (tab.memoryBytes.map(ProcessMemory.format) ?? "–") + (tab.sharesProcess ? "*" : "") : "asleep")
+            }
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundStyle(.secondary)
             Button(tab.isAwake ? "Sleep" : "Show") {
                 if tab.isAwake, tab.browser?.selectedID != tab.id {
                     tab.sleep()

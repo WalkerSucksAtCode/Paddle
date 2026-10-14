@@ -20,6 +20,12 @@ final class Tab: Identifiable {
     var isSecure = false
     var isPinned: Bool
     var isAwake = false
+    /// Frozen: WebKit has suspended the page (`freeze()`), so it keeps its memory but runs nothing, and `unfreeze()`
+    /// shows it again with no reload. Still awake; a sleep drops the frozen page as it does any other.
+    private(set) var isFrozen = false
+    /// A suspend was asked for and not undone: its answer may still be on the way, and `unfreeze()` must resume the
+    /// page even before the answer lands.
+    @ObservationIgnored private var suspendRequested = false
     /// Using the camera or microphone. Such tabs never sleep.
     var isCapturing = false
     /// The page is making sound (WebKit's private `_isPlayingAudio`; stays false where that is missing).
@@ -163,7 +169,11 @@ final class Tab: Identifiable {
     /// after startup); the web view comes back at once.
     @discardableResult
     func wake() -> WKWebView? {
-        if let webView { return webView }
+        // Every path that wants the page live (selecting it, navigating it, extension calls) comes through here.
+        if let webView {
+            unfreeze()
+            return webView
+        }
         // Settings is drawn by SwiftUI and loads nothing, so it never gets a web view.
         if settingsPane != nil { return nil }
         let host = AppModel.shared.extensions
@@ -241,6 +251,7 @@ final class Tab: Identifiable {
     func reloadIfLoadedUnblocked() async {
         guard loadedUnblocked, let webView else { return }
         loadedUnblocked = false
+        unfreeze()
         let page = commitCount
         let post = committedPost
         let busy = await isBusy()
@@ -343,6 +354,8 @@ final class Tab: Identifiable {
         self.webView = nil
         delegate = nil
         isAwake = false
+        isFrozen = false
+        suspendRequested = false
         isLoading = false
         progress = 0
         isCapturing = false
@@ -350,6 +363,54 @@ final class Tab: Identifiable {
         sharesProcess = false
         extensionPageID = nil
         generation += 1
+    }
+
+    // MARK: - Freeze
+
+    /// WebKit's private `_suspendPage:` and `_resumePage:` both exist. Without them nothing freezes and tabs only sleep.
+    private static let suspendSelector = NSSelectorFromString("_suspendPage:")
+    private static let resumeSelector = NSSelectorFromString("_resumePage:")
+    static let supportsFreezing = WKWebView.instancesRespond(to: suspendSelector) && WKWebView.instancesRespond(to: resumeSelector)
+
+    /// Freezes an awake background page: WebKit stops its JavaScript, timers and animations and keeps it in memory, so
+    /// `unfreeze()` shows it again with no reload. Settings tabs have no web view, so they never reach this. Skips a
+    /// page still loading or waiting for the block lists, since suspending it would stall its first load. Returns
+    /// whether a freeze was asked for; WebKit's answer lands later and sets `isFrozen`.
+    @discardableResult
+    func freeze() -> Bool {
+        guard Self.supportsFreezing, let webView, !isFrozen, !suspendRequested, !isLoading, !awaitingBlockers,
+              webView.responds(to: Self.suspendSelector), webView.responds(to: Self.resumeSelector) else { return false }
+        suspendRequested = true
+        // Private WebKit API (`_suspendPage:`, a reply block with a BOOL), called the way `applyMute` calls its selectors.
+        typealias Suspend = @convention(c) (AnyObject, Selector, @escaping @convention(block) (Bool) -> Void) -> Void
+        let suspend = unsafeBitCast(webView.method(for: Self.suspendSelector), to: Suspend.self)
+        suspend(webView, Self.suspendSelector) { [weak self] suspended in
+            Task { @MainActor in
+                // A sleep, a reload or a select meanwhile has already settled the state: this answer is stale.
+                guard let self, self.webView === webView, self.suspendRequested else { return }
+                if suspended {
+                    self.isFrozen = true
+                } else {
+                    self.suspendRequested = false
+                    Self.log.info("WebKit did not freeze a background page")
+                }
+            }
+        }
+        return true
+    }
+
+    /// Shows a frozen page again, and cancels a freeze whose answer hasn't come back. Every path that needs the page
+    /// live calls this (`wake()`, `reload`, `load`, the block-list reload, View Source, extension calls).
+    func unfreeze() {
+        guard isFrozen || suspendRequested else { return }
+        isFrozen = false
+        suspendRequested = false
+        guard let webView, Self.supportsFreezing, webView.responds(to: Self.resumeSelector) else { return }
+        typealias Resume = @convention(c) (AnyObject, Selector, @escaping @convention(block) (Bool) -> Void) -> Void
+        let resume = unsafeBitCast(webView.method(for: Self.resumeSelector), to: Resume.self)
+        resume(webView, Self.resumeSelector) { resumed in
+            if !resumed { Self.log.info("WebKit did not resume a frozen page") }
+        }
     }
 
     /// Address bar, session restore and extension `tabs.update`. Crossing between an extension page and a web
@@ -366,6 +427,7 @@ final class Tab: Identifiable {
                 // The first load, still waiting for the block lists, loads this URL instead.
                 savedState = nil
             } else {
+                unfreeze()
                 webView.load(URLRequest(url: url))
             }
         } else {
@@ -421,6 +483,7 @@ final class Tab: Identifiable {
     /// pages that loads the page's URL again: WebKit's reload would only show the error page again.
     func reload(fromOrigin: Bool = false) {
         guard let webView else { return }
+        unfreeze()
         if committedErrorPage, let url {
             webView.load(URLRequest(url: url, cachePolicy: fromOrigin ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy))
         } else if fromOrigin {
@@ -464,6 +527,8 @@ final class Tab: Identifiable {
     /// observed, any media playing counts, which takes a round trip to the page.
     func isBusy() async -> Bool {
         guard let webView else { return false }
+        // A frozen page runs nothing, so it plays nothing; asking it would wait on a page that can't answer.
+        if isFrozen { return false }
         let observable = audioObserver != nil
         if MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: false, audioIsObservable: observable) { return true }
         guard !observable else { return false }

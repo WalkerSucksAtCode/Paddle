@@ -10,6 +10,15 @@ struct TabsMemoryPane: View {
     var body: some View {
         SettingsForm {
             Section("Sleeping tabs") {
+                Picker("Freeze background tabs after", selection: Binding(
+                    get: { model.file.tabFreezeAfterMinutes },
+                    set: { value in Task { await model.saveKey(.tabFreezeAfterMinutes, .number(value)) } }
+                )) {
+                    ForEach(Set([0, 1, 2, 5, 10, 15, model.file.tabFreezeAfterMinutes]).sorted(), id: \.self) { minutes in
+                        Text(minutes == 0 ? "Off" : "\(minutes.formatted()) minute\(minutes == 1 ? "" : "s")").tag(minutes)
+                    }
+                }
+                .help("tabFreezeAfterMinutes in config.json (0 = off)")
                 SleepAfterRows(model: model)
                 MaxAwakeRow(model: model)
                 Toggle("Let pinned tabs sleep", isOn: Binding(
@@ -35,7 +44,7 @@ struct TabsMemoryPane: View {
                     }
                 }
                 .help("sessionHistoryTabs in config.json: other tabs reopen at next launch on their page, with no Back history")
-                SettingsCaption("A sleeping tab's web process exits; the tab reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake. A background tab that keeps a CPU core busy also sleeps.")
+                SettingsCaption("A frozen tab keeps its page and stops running it, and shows again instantly with no reload. A sleeping tab's web process exits, and it reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake. A background tab that keeps a CPU core busy also sleeps.")
             }
             .disabled(model.controlsDisabled)
 

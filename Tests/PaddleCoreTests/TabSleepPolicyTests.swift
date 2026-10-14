@@ -7,11 +7,12 @@ struct TabSleepPolicyTests {
 
     func tab(
         _ minutesAgo: Double, awake: Bool = true, selected: Bool = false, pinned: Bool = false, busy: Bool = false,
-        cpuBusyMinutes: Double? = nil
+        cpuBusyMinutes: Double? = nil, frozen: Bool = false
     ) -> TabSnapshot {
         TabSnapshot(
             id: UUID(), lastActive: now.addingTimeInterval(-minutesAgo * 60), isAwake: awake, isSelected: selected,
-            isPinned: pinned, isBusy: busy, cpuBusySince: cpuBusyMinutes.map { now.addingTimeInterval(-$0 * 60) }
+            isPinned: pinned, isBusy: busy, cpuBusySince: cpuBusyMinutes.map { now.addingTimeInterval(-$0 * 60) },
+            isFrozen: frozen
         )
     }
 
@@ -43,6 +44,59 @@ struct TabSleepPolicyTests {
         let policy = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 10, sleepPinnedTabs: true)
         let a = tab(1, selected: true), b = tab(1), c = tab(2, pinned: true), d = tab(3, busy: true)
         #expect(policy.tabsToSleep([a, b, c, d], now: now, memoryPressure: true) == [c.id, b.id])
+    }
+
+    // MARK: - Freeze
+
+    /// Freezing on at 5 minutes, sleep and the cap off, so only the freeze rule is under test.
+    private let freezeOnly = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: false, freezeAfter: 5 * 60)
+
+    @Test func freezesBackgroundTabsIdleForFreezeAfter() {
+        let idle = tab(6), justUnder = tab(4.9)
+        #expect(freezeOnly.tabsToFreeze([justUnder, idle], now: now, excluding: []) == [idle.id])
+        #expect(freezeOnly.tabsToFreeze([tab(5)], now: now, excluding: []).count == 1)
+    }
+
+    @Test func freezeAfterZeroNeverFreezes() {
+        let policy = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 0, sleepPinnedTabs: false, freezeAfter: 0)
+        #expect(policy.tabsToFreeze([tab(600)], now: now, excluding: []).isEmpty)
+    }
+
+    @Test func freezeSkipsSelectedBusyPinnedFrozenAndAsleepTabs() {
+        let selected = tab(60, selected: true), busy = tab(60, busy: true), pinned = tab(60, pinned: true)
+        let frozen = tab(60, frozen: true), asleep = tab(60, awake: false), ok = tab(60)
+        let result = freezeOnly.tabsToFreeze([selected, busy, pinned, frozen, asleep, ok], now: now, excluding: [])
+        #expect(result == [ok.id])
+    }
+
+    @Test func freezeIncludesPinnedTabsOnlyWhenSleepPinnedTabs() {
+        let pinned = tab(60, pinned: true)
+        #expect(freezeOnly.tabsToFreeze([pinned], now: now, excluding: []).isEmpty)
+        let policy = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: true, freezeAfter: 5 * 60)
+        #expect(policy.tabsToFreeze([pinned], now: now, excluding: []) == [pinned.id])
+    }
+
+    @Test func freezeLeavesOutTabsBeingDiscarded() {
+        let discarded = tab(60), kept = tab(30)
+        #expect(freezeOnly.tabsToFreeze([discarded, kept], now: now, excluding: [discarded.id]) == [kept.id])
+    }
+
+    @Test func freezeIsLeastRecentlyUsedFirst() {
+        let a = tab(10), b = tab(20), c = tab(7)
+        #expect(freezeOnly.tabsToFreeze([a, b, c], now: now, excluding: []) == [b.id, a.id, c.id])
+    }
+
+    @Test func frozenTabPastSleepAfterIsStillDiscarded() {
+        let policy = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 0, sleepPinnedTabs: false, freezeAfter: 5 * 60)
+        let frozenOld = tab(45, frozen: true)
+        #expect(policy.tabsToSleep([frozenOld], now: now) == [frozenOld.id])
+    }
+
+    @Test func freezeAfterFromConfig() {
+        var config = PaddleConfig()
+        #expect(TabSleepPolicy(config: config).freezeAfter == 5 * 60)
+        config.tabFreezeAfterMinutes = 0
+        #expect(TabSleepPolicy(config: config).freezeAfter == 0)
     }
 
     // MARK: - CPU

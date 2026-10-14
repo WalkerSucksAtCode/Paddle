@@ -327,7 +327,9 @@ final class AppModel {
                 }
             }
         }
-        if !keys.isDisjoint(with: [.tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs, .cpuSleepPercent]) { sweepSleepingTabs() }
+        if !keys.isDisjoint(with: [.tabFreezeAfterMinutes, .tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs, .cpuSleepPercent]) {
+            sweepSleepingTabs()
+        }
     }
 
     /// The keys whose values differ. The switch is exhaustive, so a new key must say how it compares.
@@ -339,6 +341,7 @@ final class AppModel {
             case .searchTemplate: old.searchTemplate != new.searchTemplate
             case .searchSuggestTemplate: old.searchSuggestTemplate != new.searchSuggestTemplate
             case .historyDays: old.historyDays != new.historyDays
+            case .tabFreezeAfterMinutes: old.tabFreezeAfterMinutes != new.tabFreezeAfterMinutes
             case .tabSleepAfterMinutes: old.tabSleepAfterMinutes != new.tabSleepAfterMinutes
             case .maxAwakeTabs: old.maxAwakeTabs != new.maxAwakeTabs
             case .sleepPinnedTabs: old.sleepPinnedTabs != new.sleepPinnedTabs
@@ -1029,10 +1032,24 @@ final class AppModel {
                     id: tab.id, lastActive: tab.lastActive, isAwake: tab.isAwake,
                     isSelected: selected.contains(tab.id), isPinned: tab.isPinned, isBusy: busy.contains(tab.id),
                     // Not before the tab was last shown: viewing it between two sweeps restarts its clock too.
-                    cpuBusySince: sampling ? cpuUsage.busySince(tab.id).map { max($0, tab.lastActive) } : nil
+                    cpuBusySince: sampling ? cpuUsage.busySince(tab.id).map { max($0, tab.lastActive) } : nil,
+                    isFrozen: tab.isFrozen
                 )
             }
             let ids = Set(policy.tabsToSleep(snapshots, now: now, memoryPressure: memoryPressure))
+            // Freezing is the first stage: an idle tab keeps its page, stopped, before any sleep. Freezing is skipped
+            // under memory pressure, where the sweep discards. It runs even when nothing sleeps this time.
+            let freezeIDs = memoryPressure ? [] : policy.tabsToFreeze(snapshots, now: now, excluding: ids)
+            if !freezeIDs.isEmpty {
+                let freezing = Set(freezeIDs)
+                var froze = 0
+                for tab in tabs where freezing.contains(tab.id) {
+                    if tab.freeze() { froze += 1 }
+                    // A frozen page uses no CPU, so its busy clock must not straddle the freeze.
+                    cpuUsage.reset(tab.id)
+                }
+                if froze > 0 { log.info("froze \(froze) tab(s)") }
+            }
             guard !ids.isEmpty else { return }
             // Tabs the CPU rule chose, worked out before any of them sleeps: they had been busy for the sustain period.
             let cpuSlept = Set(snapshots.filter { snapshot in

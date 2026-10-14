@@ -229,6 +229,7 @@ final class BrowserModel {
     /// request to the site), shown as escaped text in a new tab after this one.
     func viewSource(of tab: Tab) async {
         guard let webView = tab.webView else { return }
+        tab.unfreeze()
         let script = """
             const doctype = document.doctype ? new XMLSerializer().serializeToString(document.doctype) + "\\n" : "";
             return doctype + (document.documentElement ? document.documentElement.outerHTML : "");

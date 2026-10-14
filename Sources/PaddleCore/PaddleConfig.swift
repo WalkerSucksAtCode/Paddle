@@ -17,6 +17,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Days of browsing history kept in history.sqlite. 0 turns history off.
     public var historyDays: Int
 
+    /// Background tabs idle longer than this are frozen: the page is kept and stops running, and shows again without a
+    /// reload. A frozen tab is still awake, so it can later sleep as usual. 0 turns freezing off.
+    public var tabFreezeAfterMinutes: Double
     /// Background tabs idle longer than this are put to sleep (their web process exits). 0 disables idle sleep.
     public var tabSleepAfterMinutes: Double
     /// At most this many tabs stay awake at once; the least recently used extra tabs sleep. 0 disables the cap.
@@ -87,7 +90,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
+        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, developerTools
@@ -101,6 +104,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         searchTemplate: String = "https://duckduckgo.com/?q=%s",
         searchSuggestTemplate: String = "https://duckduckgo.com/ac/?q=%s&type=list",
         historyDays: Int = 365,
+        tabFreezeAfterMinutes: Double = 5,
         tabSleepAfterMinutes: Double = 30,
         maxAwakeTabs: Int = 10,
         sleepPinnedTabs: Bool = false,
@@ -129,6 +133,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.searchTemplate = searchTemplate
         self.searchSuggestTemplate = searchSuggestTemplate
         self.historyDays = historyDays
+        self.tabFreezeAfterMinutes = tabFreezeAfterMinutes
         self.tabSleepAfterMinutes = tabSleepAfterMinutes
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
@@ -165,6 +170,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         searchTemplate = c.decodeValue(.searchTemplate, d.searchTemplate, issues)
         searchSuggestTemplate = c.decodeValue(.searchSuggestTemplate, d.searchSuggestTemplate, issues)
         historyDays = c.decodeValue(.historyDays, d.historyDays, issues)
+        tabFreezeAfterMinutes = c.decodeValue(.tabFreezeAfterMinutes, d.tabFreezeAfterMinutes, issues)
         tabSleepAfterMinutes = c.decodeValue(.tabSleepAfterMinutes, d.tabSleepAfterMinutes, issues)
         maxAwakeTabs = c.decodeValue(.maxAwakeTabs, d.maxAwakeTabs, issues)
         sleepPinnedTabs = c.decodeValue(.sleepPinnedTabs, d.sleepPinnedTabs, issues)

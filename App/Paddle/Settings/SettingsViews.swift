@@ -48,7 +48,8 @@ enum SettingsPane: String, CaseIterable {
             "bookmarks bar", "default browser",
         ]
         case .tabsMemory: [
-            "tabs", "memory", "sleep", "background tabs", "pinned tabs", "sleepPinnedTabs", "tabSleepAfterMinutes",
+            "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",
+            "tabFreezeAfterMinutes", "tabSleepAfterMinutes",
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
             "awake",
         ]

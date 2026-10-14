@@ -46,6 +46,7 @@ public enum ConfigValidator {
 
         for (key, value) in [
             (PaddleConfig.CodingKeys.historyDays, Double(config.historyDays)),
+            (.tabFreezeAfterMinutes, config.tabFreezeAfterMinutes),
             (.tabSleepAfterMinutes, config.tabSleepAfterMinutes),
             (.maxAwakeTabs, Double(config.maxAwakeTabs)),
             (.sessionHistoryTabs, Double(config.sessionHistoryTabs)),

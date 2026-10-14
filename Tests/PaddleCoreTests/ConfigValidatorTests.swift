@@ -54,12 +54,14 @@ struct ConfigValidatorTests {
         var config = PaddleConfig()
         config.historyDays = -1
         config.tabSleepAfterMinutes = -0.5
+        config.tabFreezeAfterMinutes = -2
         config.maxAwakeTabs = -3
         config.filterUpdateDays = -7
-        #expect(paths(config, .error) == ["historyDays", "tabSleepAfterMinutes", "maxAwakeTabs", "filterUpdateDays"])
+        #expect(paths(config, .error) == ["historyDays", "tabFreezeAfterMinutes", "tabSleepAfterMinutes", "maxAwakeTabs", "filterUpdateDays"])
         config = PaddleConfig()
         config.historyDays = 0
         config.tabSleepAfterMinutes = 0
+        config.tabFreezeAfterMinutes = 0
         #expect(issues(config).isEmpty)
     }
 

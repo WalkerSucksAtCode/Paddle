@@ -324,6 +324,7 @@ private struct TabButton: View {
         var parts: [String] = []
         if tab.isPinned { parts.append("pinned") }
         if tab.isAsleep { parts.append("asleep") }
+        if tab.isFrozen { parts.append("frozen") }
         if tab.isLoading { parts.append("loading") }
         if tab.isCapturing { parts.append("using camera or microphone") }
         switch audio {
@@ -354,6 +355,7 @@ private struct TabButton: View {
         } else if let hoverMemory {
             lines.append("Memory: \(ProcessMemory.format(hoverMemory.bytes))\(hoverMemory.shared ? " (shared with other tabs from this site)" : "")")
         }
+        if tab.isFrozen { lines.append("Frozen: paused, shows again without a reload.") }
         return lines.joined(separator: "\n")
     }
 }
