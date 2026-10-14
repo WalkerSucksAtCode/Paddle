@@ -23,9 +23,10 @@ public struct Suggestion: Sendable, Equatable, Identifiable {
     public enum Kind: Sendable, Equatable { case openTab(UUID), bookmark, history, search, url }
 
     public var kind: Kind
-    /// What the row shows first: the page title, the search phrase, or the URL for `.url` rows.
+    /// What the row shows first: the page title, the search phrase, or the address for `.url` rows.
     public var title: String
-    /// Second line: the display URL for pages, "Search" for search rows, "" for `.url` rows.
+    /// Second line: the display URL for pages, "Search" for search rows, "Opens Settings" for settings
+    /// addresses, "" for other `.url` rows.
     public var detail: String
     /// Set for pages and `.url` rows.
     public var url: String?
@@ -57,17 +58,25 @@ public enum SuggestionRanker {
     /// Rows for the dropdown: at most `limit`, page matches first, then up to `maxSearch` search phrases.
     ///
     /// Every whitespace-separated word of `text` must match (case-insensitive) the title or the display URL,
-    /// otherwise the page is left out. Pages are deduped by normalized URL and keep their best kind
-    /// (open tab > bookmark > history). They are listed open tabs first, then bookmarks, then history; within
-    /// a kind the order is:
-    /// 1. host starts with the first word ("git" matches github.com),
-    /// 2. a word of the title starts with the first word,
-    /// 3. any other substring match,
-    /// with ties broken by `score` descending, then shorter URL, then input order.
+    /// otherwise the page is left out. Pages are deduped by normalized URL: the row keeps the best kind
+    /// (open tab > bookmark > history) and title of its sources, plus the highest score and the best match
+    /// quality among them. Pages are ordered by:
+    /// 1. match quality of the first word: the page's host or host + "/" ("github.com" matches
+    ///    https://github.com/anthropics), then a host that starts with it ("git" matches github.com), then a
+    ///    word of the title that starts with it, then any other substring match,
+    /// 2. kind: open tab, then bookmark, then history,
+    /// 3. `score` descending, then shorter URL, then input order.
     /// Search phrases equal to the typed text (case-insensitive) or repeated are dropped.
     /// The page rows and search rows together are cut to `limit`, so a long page list can crowd search out.
     public static func suggestions(for text: String, pages: [SuggestionSource], searchPhrases: [String], limit: Int = 8, maxSearch: Int = 4) -> [Suggestion] {
-        let words = text.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
+        // Matched against display URLs, which drop "www." and a bare trailing "/": typed words drop them too, so
+        // "www.github.com" and "github.com/" still find github.com.
+        let words = text.split(whereSeparator: \.isWhitespace).map { word -> String in
+            var word = word.lowercased()
+            if word.hasPrefix("www."), word.count > 4 { word.removeFirst(4) }
+            while word.count > 1, word.hasSuffix("/") { word.removeLast() }
+            return word
+        }
         guard let first = words.first, limit > 0 else { return [] }
 
         // Best candidate per normalized URL.
@@ -83,8 +92,15 @@ public enum SuggestionRanker {
                 quality: quality(of: first, title: title, display: display)
             )
             let key = normalized(page.url)
-            if let existing = best[key], !candidate.beats(existing) { continue }
-            best[key] = candidate
+            if let existing = best[key] {
+                // One row per page: the kind winner's title and URL, with the better score and quality of both.
+                var merged = candidate.beats(existing) ? candidate : existing
+                merged.source.score = max(candidate.source.score, existing.source.score)
+                merged.quality = min(candidate.quality, existing.quality)
+                best[key] = merged
+            } else {
+                best[key] = candidate
+            }
         }
 
         let rows = best.values.sorted { $0.sortsBefore($1) }.map { candidate -> Suggestion in
@@ -161,6 +177,7 @@ public enum SuggestionRanker {
         var source: SuggestionSource
         var index: Int
         var kindRank: Int
+        /// Lower is better; see `quality(of:title:display:)`.
         var quality: Int
 
         /// Used when two pages share a URL: the better kind wins, then the higher score.
@@ -169,8 +186,8 @@ public enum SuggestionRanker {
         }
 
         func sortsBefore(_ other: Candidate) -> Bool {
-            if kindRank != other.kindRank { return kindRank < other.kindRank }
             if quality != other.quality { return quality < other.quality }
+            if kindRank != other.kindRank { return kindRank < other.kindRank }
             if source.score != other.source.score { return source.score > other.source.score }
             if source.url.count != other.source.url.count { return source.url.count < other.source.url.count }
             return index < other.index
@@ -185,12 +202,14 @@ public enum SuggestionRanker {
         }
     }
 
-    /// 0: host starts with the word. 1: a title word starts with it. 2: plain substring.
+    /// 0: the word is the host or host + "/". 1: host starts with the word. 2: a title word starts with it.
+    /// 3: plain substring.
     private static func quality(of word: String, title: String, display: String) -> Int {
         let host = display.prefix { $0 != "/" && $0 != "?" && $0 != "#" }
-        if host.hasPrefix(word) { return 0 }
-        if title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains(where: { $0.hasPrefix(word) }) { return 1 }
-        return 2
+        if word == host || word == host + "/" { return 0 }
+        if host.hasPrefix(word) { return 1 }
+        if title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains(where: { $0.hasPrefix(word) }) { return 2 }
+        return 3
     }
 
     /// Dedupe key: the lowercase display URL without any trailing slash.

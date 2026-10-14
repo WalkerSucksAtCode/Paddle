@@ -109,7 +109,13 @@ final class BrowserModel {
         if previous !== tab { AppModel.shared.extensions.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
         suggestions.dismiss()
-        syncAddress()
+        if previous !== tab {
+            // The field's text belonged to the old tab, typed or not: show this tab's address even while the field
+            // keeps focus (⌘L then ⌘T, or closing a tab mid-edit), when `syncAddress` would leave it alone.
+            addressText = tab.url.map(Self.displayString) ?? ""
+        } else {
+            syncAddress()
+        }
         findNoMatch = false
         controller?.focusWebView()
         AppModel.shared.sessionChanged()

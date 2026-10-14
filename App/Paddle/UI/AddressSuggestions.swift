@@ -162,9 +162,18 @@ final class AddressSuggestions {
         return pages
     }
 
-    /// What pressing Return does with the text: go to it when it looks like an address, otherwise search.
+    /// What pressing Return does with the text: open Settings for a settings address, go to it when it looks like
+    /// an address, otherwise search.
     private static func primaryRow(for text: String) -> Suggestion {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Kept as a `.url` row: `BrowserModel.open(_:)` parses its url back into a SettingsLink.
+        if let link = SettingsLink.parse(query) {
+            let pane = link.pane.flatMap { SettingsPane(rawValue: $0.rawValue)?.title }
+            return Suggestion(
+                kind: .url, title: pane.map { "Paddle Settings: \($0)" } ?? "Paddle Settings",
+                detail: "Opens Settings", url: query, query: nil
+            )
+        }
         let template = AppModel.shared.config.searchTemplate
         let resolver = AddressResolver(searchTemplate: template)
         if let url = resolver.resolve(query), url != resolver.searchURL(for: query) {
@@ -268,7 +277,8 @@ extension Suggestion {
         case .bookmark: ["Bookmark", title, detail]
         case .history: ["History", title, detail]
         case .search: [title, detail]
-        case .url: ["Go to", title]
+        // A settings address says what it does ("Opens Settings"); an ordinary address has no detail.
+        case .url: detail.isEmpty ? ["Go to", title] : [title, detail]
         }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }

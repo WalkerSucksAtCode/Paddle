@@ -45,13 +45,47 @@ struct SuggestionsTests {
         #expect(rank("docs", [low, high, shortA]).map(\.url) == [high.url, shortA.url, low.url])
     }
 
-    @Test func kindsGroupTabsThenBookmarksThenHistory() {
+    @Test func kindsOrderTabsThenBookmarksThenHistoryWithinAQuality() {
         let id = UUID()
+        // All three are host-prefix matches for "swift", so kind decides and the history score (99) does not.
         let history = page(.history, "Swift", "https://swift.org/", score: 99)
         let bookmark = page(.bookmark, "Swift Package", "https://swiftpackageindex.com/")
-        let tab = page(.openTab(id), "Swift Forums", "https://forums.swift.org/")
+        let tab = page(.openTab(id), "Forums", "https://swiftforums.org/")
         let result = rank("swift", [history, bookmark, tab])
         #expect(result.map(\.kind) == [.openTab(id), .bookmark, .history])
+    }
+
+    @Test func matchQualityComesBeforeKind() {
+        let id = UUID()
+        // Open tab: "digital" contains "git" but no word starts with it (substring only).
+        let tab = page(.openTab(id), "Digital notes", "https://notes.example.com/")
+        // Bookmark: a title word starts with "git", so it beats the tab although bookmarks rank after tabs.
+        let bookmark = page(.bookmark, "Git guide", "https://guides.example.org/")
+        // History: the host starts with "git", so it beats both.
+        let history = page(.history, "Code", "https://github.com/", score: 1)
+        #expect(rank("git", [tab, bookmark, history]).map(\.url) == [history.url, bookmark.url, tab.url])
+    }
+
+    @Test func exactHostBeatsHostPrefix() {
+        // Both start with the typed host; only the first one's host is exactly that host.
+        let lookalike = page("Evil", "https://news.ycombinator.com.evil.example/", score: 100)
+        let exact = page("Hacker News", "https://news.ycombinator.com/", score: 1)
+        #expect(rank("news.ycombinator.com", [lookalike, exact]).map(\.url) == [exact.url, lookalike.url])
+    }
+
+    @Test func typedHostWithSlashIsExactForPagesUnderIt() {
+        let lookalike = page("Evil", "https://news.ycombinator.com.evil.example/news.ycombinator.com/x", score: 100)
+        let exact = page("Hacker News", "https://news.ycombinator.com/item?id=1", score: 1)
+        #expect(rank("news.ycombinator.com/", [lookalike, exact]).map(\.url) == [exact.url, lookalike.url])
+    }
+
+    @Test func typedWWWAndTrailingSlashMatchBareHost() {
+        let home = page("GitHub", "https://github.com/")
+        #expect(rank("github.com/", [home]).map(\.url) == [home.url])
+        #expect(rank("www.github.com", [home]).map(\.url) == [home.url])
+        #expect(rank("WWW.GitHub.com/", [home]).map(\.url) == [home.url])
+        // "www." alone and "/" alone are still words of their own.
+        #expect(rank("www.", [home]).isEmpty)
     }
 
     @Test func dedupeKeepsBestKind() {
@@ -61,6 +95,28 @@ struct SuggestionsTests {
         let tab = page(.openTab(id), "GitHub", "https://github.com/")
         #expect(rank("github", [history, bookmark, tab]).map(\.kind) == [.openTab(id)])
         #expect(rank("github", [history, bookmark]).map(\.kind) == [.bookmark])
+    }
+
+    @Test func dedupeKeepsHighestScore() {
+        // The bookmark's URL is also in history with frecency 40: the row keeps the bookmark kind and title with
+        // score 40, so it beats the other bookmark (score 0) even though that URL is shorter.
+        let saved = page(.bookmark, "Swift Book", "https://swift.org/book")
+        let visited = page(.history, "Swift Book", "https://www.swift.org/book/", score: 40)
+        let other = page(.bookmark, "Swift", "https://swift.io")
+        let result = rank("swift", [other, saved, visited])
+        #expect(result.map(\.url) == [saved.url, other.url])
+        #expect(result.first?.kind == .bookmark)
+        #expect(result.first?.title == "Swift Book")
+    }
+
+    @Test func dedupeUsesBestMatchOfItsSources() {
+        // Same URL: the history title matches "git" by word start (tier 2), the bookmark title only inside
+        // "digital" (tier 3). The bookmark still wins the kind, and its row keeps the better match, so it
+        // ranks above the other history page that matches the same way.
+        let bookmark = page(.bookmark, "Digital notes", "https://example.org/page")
+        let history = page(.history, "Git tips", "https://example.org/page")
+        let other = page(.history, "Git tips", "https://other.example/")
+        #expect(rank("git", [other, bookmark, history]).map(\.url) == [bookmark.url, other.url])
     }
 
     @Test func rowsCarryDisplayFieldsAndStableIDs() throws {

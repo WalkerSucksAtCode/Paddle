@@ -90,7 +90,7 @@ Paddle runs WebExtensions (the Chrome and Firefox add-on format) on WebKit's own
 
 ## Other files
 
-- `history.sqlite`: browsing history (History > Show All History, ⌘Y; File > Import from Browser… adds another browser's). The address bar suggests open tabs, history and search phrases as you type and completes known hosts inline.
+- `history.sqlite`: browsing history (History > Show All History, ⌘Y; File > Import from Browser… adds another browser's). The address bar suggests open tabs, bookmarks, history and search phrases as you type. Pages rank by how well they match (the site's address itself, then the start of its address, then a word of its title, then anywhere), then open tab, bookmark, history, then how often and recently you visited. It completes known hosts inline.
 - `bookmarks.json`: bookmarks, as `{"bar": [...], "menu": [...]}` of `{"title": …, "url": …}`; folders have `children` instead of `url`. Paddle adds an `id` to each entry; hand-written entries can leave it out. Edit by hand and Reload Config (an in-app edit also picks up hand edits first), or use Bookmarks > Show Bookmarks (⌥⌘B). ⌘D or the star bookmarks the page to the bar; Edit > Undo reverses bookmark edits. Import/Export Bookmarks… read and write the HTML file Safari, Firefox and Chrome use.
 - `favicons/`: site icons, one 32 px PNG per site, refetched weekly. WebKit fetches them (512 KB cap) only from hosts the page itself loaded from, otherwise `/favicon.ico`; SVG icons are skipped. Clear History removes them except for bookmarked sites, and with history off only bookmarked sites' icons are kept. Safe to delete.
 - `user.css`: applied to every page.
