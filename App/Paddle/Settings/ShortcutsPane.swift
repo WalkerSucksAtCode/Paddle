@@ -1,9 +1,9 @@
 import PaddleCore
 import SwiftUI
 
-/// Settings > Shortcuts: every menu command with its default and current shortcut and a recorder (`shortcuts`).
-/// A clash with another menu item, a hidden second shortcut or a running extension's command is shown before
-/// anything is saved. Fixed height; the table scrolls.
+/// Settings > Shortcuts: every menu command with a recorder for its shortcut (`shortcuts`), and its default under
+/// the recorder when that differs. A clash with another menu item, a hidden second shortcut or a running
+/// extension's command is shown before anything is saved. Fixed height; the table scrolls.
 struct ShortcutsPane: View {
     let model: SettingsModel
     @State private var search = ""
@@ -38,21 +38,25 @@ struct ShortcutsPane: View {
                 TableColumn("Command") { row in
                     VStack(alignment: .leading, spacing: 1) {
                         Text(row.title)
+                            .lineLimit(2)
                         caption(row)
                     }
                     .accessibilityElement(children: .combine)
+                    .help(idHelp(row))
                 }
-                TableColumn("Default") { row in
-                    Text(defaultText(row))
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("Default: " + ([row.defaultShortcut] + row.aliases).map(\.spokenText).joined(separator: ", or "))
-                }
-                .width(min: 80, ideal: 110)
                 TableColumn("Shortcut") { row in
-                    ShortcutRecorder(shortcut: row.current, title: row.title) { recorded in
-                        propose(recorded, for: row)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ShortcutRecorder(shortcut: row.current, title: row.title) { recorded in
+                            propose(recorded, for: row)
+                        }
+                        .help(idHelp(row))
+                        if row.current != row.defaultShortcut {
+                            Text("Default: " + defaultText(row))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Default: " + row.defaultShortcut.spokenText)
+                        }
                     }
-                    .help("shortcuts.\(row.name) in config.json")
                 }
                 .width(min: 120, ideal: 130)
                 TableColumn("") { row in
@@ -84,7 +88,7 @@ struct ShortcutsPane: View {
                 }
             }
 
-            Text("Click a shortcut, or select it and press Space, then type the new one. Escape cancels; Delete sets none. Saved to shortcuts in config.json.")
+            Text("Click a shortcut, or select it and press Space, then type the new one; Escape cancels and Delete clears it.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -113,7 +117,7 @@ struct ShortcutsPane: View {
         }
     }
 
-    /// The line under a command: what's wrong with its entry (icon plus words), else its menu and action name.
+    /// The line under a command: what's wrong with its entry (icon plus words), else its menu name.
     @ViewBuilder private func caption(_ row: ShortcutRow) -> some View {
         if let text = row.notUnderstood {
             Label("Not understood: \"\(text)\"; the default applies", systemImage: "exclamationmark.triangle")
@@ -123,16 +127,24 @@ struct ShortcutsPane: View {
                 .font(.caption)
                 .help(row.issues.joined(separator: "\n"))
         } else {
-            Text("\(row.menu) · \(row.name)")
+            Text(row.menu)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }
 
+    /// The default as the Shortcut column shows it: "⌘X", or "none" for a command with no default key.
     private func defaultText(_ row: ShortcutRow) -> String {
-        let main = row.defaultShortcut.key.isEmpty ? "None" : row.defaultShortcut.displayText
-        guard !row.aliases.isEmpty else { return main }
-        return main + " or " + row.aliases.map(\.displayText).joined(separator: " or ")
+        row.defaultShortcut.key.isEmpty ? "none" : row.defaultShortcut.displayText
+    }
+
+    /// The row's tooltip: where its entry lives in config.json, and any hidden second shortcut that also works.
+    private func idHelp(_ row: ShortcutRow) -> String {
+        var text = "shortcuts.\(row.name) in config.json"
+        if !row.aliases.isEmpty {
+            text += "\nAlso works: " + row.aliases.map(\.displayText).joined(separator: ", ")
+        }
+        return text
     }
 
     /// Saves at once unless the shortcut clashes; then the sheet asks first.

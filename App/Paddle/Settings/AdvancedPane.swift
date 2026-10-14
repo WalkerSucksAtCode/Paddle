@@ -2,20 +2,16 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Advanced: developer tools and user agents, then the file itself: keys Paddle ignores, problems in
+/// Settings > Advanced: developer tools and the user agent suffix, then the file itself: keys Paddle ignores, problems in
 /// values it reads, and Tidy for keys that only repeat a default.
 struct AdvancedPane: View {
     let model: SettingsModel
     @State private var removal: Removal?
     @State private var tidyPaths: TidyList?
-    @State private var newHost = ""
-    @State private var newAgent = ""
-    @State private var agentProblem: String?
 
     var body: some View {
         SettingsForm {
             developerSection
-            siteAgentsSection
             fileSection
             unknownKeysSection
             issuesSection
@@ -56,93 +52,6 @@ struct AdvancedPane: View {
             .help("userAgentSuffix in config.json: replaces Version/… Safari/… at the end of the user agent. Empty matches the installed Safari. Tabs opened or woken afterwards use it.")
         }
         .disabled(model.controlsDisabled)
-    }
-
-    // MARK: - Site user agents
-
-    private var siteAgentsSection: some View {
-        Section {
-            let agents = model.file.siteUserAgents
-            ForEach(agents.keys.sorted(), id: \.self) { host in
-                HStack(spacing: 8) {
-                    DraftField(title: "Site", value: host, model: model, labelHidden: true) { text, snapshot in
-                        let newHost = text.trimmingCharacters(in: .whitespaces)
-                        guard !newHost.isEmpty, newHost != host else { return }
-                        guard model.file.siteUserAgents[newHost] == nil else {
-                            agentProblem = "\(newHost) already has a user agent; the rename wasn't saved."
-                            return
-                        }
-                        agentProblem = nil
-                        await model.setSiteUserAgent(host: newHost, agent: agents[host] ?? "", replacing: host, basedOn: snapshot)
-                    }
-                    .frame(width: 170)
-                    .accessibilityLabel("Site")
-                    DraftField(title: "User agent", value: agents[host] ?? "", model: model, labelHidden: true) { text, snapshot in
-                        await model.setSiteUserAgent(host: host, agent: text, basedOn: snapshot)
-                    }
-                    .accessibilityLabel("User agent for \(host)")
-                    Button {
-                        Task { await model.setSiteUserAgent(host: host, agent: nil) }
-                    } label: {
-                        Image(systemName: "minus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Remove user agent for \(host)")
-                    .help("Removes siteUserAgents.\(host) from config.json")
-                }
-            }
-            HStack(spacing: 8) {
-                TextField("Site", text: $newHost, prompt: Text("example.com"))
-                    .labelsHidden()
-                    .frame(width: 170)
-                    .accessibilityLabel("New site")
-                TextField("User agent", text: $newAgent, prompt: Text("Mozilla/5.0 …"))
-                    .labelsHidden()
-                    .accessibilityLabel("User agent for the new site")
-                    .onSubmit(addAgent)
-                Button(action: addAgent) {
-                    Image(systemName: "plus.circle")
-                }
-                .buttonStyle(.borderless)
-                .disabled(newHost.trimmingCharacters(in: .whitespaces).isEmpty || newAgent.isEmpty)
-                .accessibilityLabel("Add Site User Agent")
-                .help("Adds an entry to siteUserAgents in config.json")
-            }
-            if let agentProblem {
-                Label(agentProblem, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Site User Agents")
-        } footer: {
-            Text("A full user agent for a site and its subdomains (siteUserAgents), used from its next load. \(Self.builtInAgents)")
-                .foregroundStyle(.secondary)
-        }
-        .disabled(model.controlsDisabled)
-    }
-
-    /// Paddle's built-in fixes (`SiteCompat`), in words: whose user agent goes to which hosts, and how an entry here
-    /// overrides them.
-    private static var builtInAgents: String {
-        let byPersona = Dictionary(grouping: SiteCompat.defaults, by: { $0.value.persona == .chrome ? "Chrome" : "Firefox" })
-        let parts = byPersona.keys.sorted().map { name in
-            "\(name)'s to \(byPersona[name, default: []].map(\.key).sorted().joined(separator: ", "))"
-        }
-        return "Built in: \(parts.joined(separator: "; ")), unless an entry here or a persona covers the host (an empty entry sends WebKit's own)."
-    }
-
-    private func addAgent() {
-        let host = newHost.trimmingCharacters(in: .whitespaces)
-        guard !host.isEmpty, !newAgent.isEmpty else { return }
-        guard model.file.siteUserAgents[host] == nil else {
-            agentProblem = "\(host) already has a user agent; edit its row instead."
-            return
-        }
-        agentProblem = nil
-        let agent = newAgent
-        newHost = ""
-        newAgent = ""
-        Task { await model.setSiteUserAgent(host: host, agent: agent) }
     }
 
     // MARK: - The file

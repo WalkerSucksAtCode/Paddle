@@ -62,7 +62,8 @@ private struct BlockingRows: View {
         .disabled(model.controlsDisabled || !model.file.contentBlocking)
         if model.file.scriptlets, model.file.contentBlocking,
            let line = web.blockerStatus.first(where: { $0.hasPrefix("scriptlets: ") }) {
-            SettingsCaption("S" + line.dropFirst())
+            SettingsCaption(scriptletSummary(line))
+            StatusDetails(text: "S" + line.dropFirst(), font: .callout)
         }
 
         Picker("Download list updates", selection: Binding(
@@ -183,7 +184,7 @@ private struct FilterListRows: View {
         if let trashResult {
             SettingsCaption(trashResult)
         }
-        SettingsCaption("Only these lists and your own rules block. A removed list stops blocking at once; its file stays in filters/ until you remove unused list files.")
+        SettingsCaption("Only these lists and your own rules block; removing a list stops it at once, and its file stays in filters/ until you use Remove Unused List Files.")
             .sheet(isPresented: Binding(get: { unusedFiles != nil }, set: { if !$0 { unusedFiles = nil } })) {
                 UnusedFilesSheet(files: unusedFiles ?? []) { confirmed in
                     if confirmed, let files = unusedFiles {
@@ -197,7 +198,8 @@ private struct FilterListRows: View {
     }
 
     private func listRow(_ row: PrivacySettings.ListRow) -> some View {
-        HStack(alignment: .top) {
+        let status = statusParts(row)
+        return HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name).fontWeight(.medium)
                 Text(row.url)
@@ -206,11 +208,14 @@ private struct FilterListRows: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
-                statusLabel(row)
+                StatusLine(text: status.text, symbol: status.symbol, font: .caption)
                 if let downloaded = row.downloaded {
                     Text("Downloaded \(downloaded, format: .relative(presentation: .named))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                if foldedRuleCount(status.text) != nil {
+                    StatusDetails(text: status.text, font: .caption)
                 }
             }
             Spacer()
@@ -227,8 +232,8 @@ private struct FilterListRows: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The list's state as icon and text: a failed download, its compiled status, or why it has none yet.
-    private func statusLabel(_ row: PrivacySettings.ListRow) -> some View {
+    /// The list's state as text and a symbol: a failed download, its compiled status, or why it has none yet.
+    private func statusParts(_ row: PrivacySettings.ListRow) -> (text: String, symbol: String) {
         let text: String
         let symbol: String
         if let problem = row.problem {
@@ -252,9 +257,7 @@ private struct FilterListRows: View {
             // In config.json but not what Paddle is running with: a hand edit the banner offers to apply.
             (text, symbol) = ("Not applied yet.", "clock")
         }
-        return Label(text, systemImage: symbol)
-            .font(.caption)
-            .fixedSize(horizontal: false, vertical: true)
+        return (text, symbol)
     }
 
     private func add() {
@@ -341,14 +344,16 @@ private struct UserFilterRows: View {
             }
         }
         if let status {
-            Label(String(status.drop { $0 != ":" }.dropFirst(2)), systemImage: empty ? "exclamationmark.triangle" : "checkmark.circle")
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
+            let text = String(status.drop { $0 != ":" }.dropFirst(2))
+            StatusLine(text: text, symbol: empty ? "exclamationmark.triangle" : "checkmark.circle", font: .callout)
+            if foldedRuleCount(text) != nil {
+                StatusDetails(text: text, font: .callout)
+            }
         }
         if empty {
             SettingsCaption("Your rules block nothing yet: the file is empty or only comments.")
         }
-        SettingsCaption("@@ and #@# exceptions here also apply to EasyList and the other lists; changing them recompiles every list.")
+        SettingsCaption("@@ and #@# exceptions here also apply to EasyList and the other lists, so changing them rebuilds every list.")
     }
 }
 
@@ -419,4 +424,60 @@ private struct HistoryRows: View {
             pending = Pending(days: days, count: count)
         }
     }
+}
+
+/// The rule count in front of a status's notes: "62,141 rules" from "62,141 rules (1,286 lines unsupported; cached)".
+/// nil when there are no notes or the text doesn't start with a rule count, so the text is shown whole.
+private func foldedRuleCount(_ text: String) -> String? {
+    guard let open = text.range(of: " (") else { return nil }
+    let head = String(text[..<open.lowerBound])
+    return head.hasSuffix(" rule") || head.hasSuffix(" rules") ? head : nil
+}
+
+/// A status as icon and text. A rule count with notes shows as just the count, with the full text as its tooltip.
+private struct StatusLine: View {
+    let text: String
+    let symbol: String
+    let font: Font
+
+    var body: some View {
+        let summary = foldedRuleCount(text)
+        let label = Label(summary ?? text, systemImage: symbol)
+            .font(font)
+            .fixedSize(horizontal: false, vertical: true)
+        if summary != nil {
+            label.help(text)
+        } else {
+            label
+        }
+    }
+}
+
+/// The full status text behind a short summary, collapsed under "Details". Its text can be selected and copied.
+private struct StatusDetails: View {
+    let text: String
+    let font: Font
+
+    var body: some View {
+        DisclosureGroup("Details") {
+            Text(text)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .font(font)
+    }
+}
+
+/// "scriptlets: 23 rules from 23 lines; 6 skipped (names Paddle doesn't run: …)" as "23 scriptlets in use; 6 skipped".
+/// Any other shape is shown whole.
+private func scriptletSummary(_ line: String) -> String {
+    let parts = line.components(separatedBy: " (")[0].components(separatedBy: "; ")
+    let words = parts[0].split(separator: " ")
+    guard words.count > 1, words[0] == "scriptlets:" else { return line }
+    let noun = words[1] == "1" ? "scriptlet" : "scriptlets"
+    let inUse = "\(words[1]) \(noun) in use"
+    if parts.count == 1 { return inUse }
+    guard parts.count == 2, parts[1].hasSuffix(" skipped") else { return line }
+    return "\(inUse); \(parts[1])"
 }

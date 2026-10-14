@@ -29,16 +29,13 @@ enum SettingsPane: String, CaseIterable {
         }
     }
 
-    /// Panes with a table get a fixed height and scroll inside it; the rest are as tall as their form.
-    var fixedHeight: CGFloat? {
-        switch self {
-        case .sites, .shortcuts: 520
-        default: nil
-        }
-    }
+}
 
-    /// Sites is wider: its table has seven columns, each a pop-up or checkbox that must show its value.
-    var width: CGFloat { self == .sites ? 760 : 640 }
+/// One size for every pane, so switching panes never moves the toolbar or resizes the window; each pane scrolls
+/// inside it. Wide enough for the Sites table's seven columns. The window is resizable from there.
+private enum SettingsWindowSize {
+    static let initial = CGSize(width: 760, height: 640)
+    static let minimum = CGSize(width: 700, height: 440)
 }
 
 /// Paddle > Settings… (⌘,): a preferences-style toolbar of panes over `config.json`. Exists only while open:
@@ -63,7 +60,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.canPropagateSelectedChildViewControllerTitle = true
         for pane in SettingsPane.allCases {
             let host = NSHostingController(rootView: SettingsPaneView(pane: pane, model: model))
-            host.sizingOptions = [.preferredContentSize]
+            // No preferred size: the tab view controller would resize the window to each pane's.
+            host.sizingOptions = []
             // The window title follows the selected pane (`canPropagateSelectedChildViewControllerTitle`).
             host.title = pane.title
             let item = NSTabViewItem(viewController: host)
@@ -77,15 +75,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         tabs.onSelect = { pane in UserDefaults.standard.set(pane.rawValue, forKey: Self.paneKey) }
 
         let window = NSWindow(contentViewController: tabs)
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
+        window.contentMinSize = SettingsWindowSize.minimum
+        window.setContentSize(SettingsWindowSize.initial)
         super.init(window: window)
         window.delegate = self
-        window.setFrameAutosaveName("PaddleSettings")
-        if !window.setFrameUsingName("PaddleSettings") { window.center() }
-        updatePaneHeightLimit()
-        tabs.fitWindow(animated: false)
+        // A new name: frames saved under "PaddleSettings" were each pane's own size.
+        window.setFrameAutosaveName("PaddleSettingsWindow")
+        if !window.setFrameUsingName("PaddleSettingsWindow") { window.center() }
 
         watcher = ConfigWatcher { [weak self] in self?.model.refresh() }
     }
@@ -101,18 +100,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         model.refresh()
     }
 
-    func windowDidChangeScreen(_ notification: Notification) {
-        updatePaneHeightLimit()
-    }
-
-    /// A pane may be as tall as the window's screen allows, less the title bar and toolbar, room for the banner
-    /// and a margin; taller panes scroll.
-    private func updatePaneHeightLimit() {
-        guard let window, let screen = window.screen ?? NSScreen.main else { return }
-        let chrome = window.frame.height - window.contentRect(forFrameRect: window.frame).height
-        model.maxPaneHeight = max(320, screen.visibleFrame.height - chrome - 120)
-    }
-
     func windowWillClose(_ notification: Notification) {
         watcher?.cancel()
         watcher = nil
@@ -120,68 +107,29 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Remembers the selected pane and sizes the window to it. The toolbar style also resizes on selection; doing it
-/// here too covers a pane whose height changes while shown (the banner appearing) and the first pane on open.
+/// Remembers the selected pane. The window keeps its size across panes (`SettingsWindowSize`).
 private final class SettingsTabViewController: NSTabViewController {
     var onSelect: ((SettingsPane) -> Void)?
 
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
         super.tabView(tabView, didSelect: tabViewItem)
         if let id = tabViewItem?.identifier as? String, let pane = SettingsPane(rawValue: id) { onSelect?(pane) }
-        fitWindow(animated: true)
-    }
-
-    override func preferredContentSizeDidChange(for viewController: NSViewController) {
-        super.preferredContentSizeDidChange(for: viewController)
-        guard viewController === tabViewItems[safe: selectedTabViewItemIndex]?.viewController else { return }
-        fitWindow(animated: true)
-    }
-
-    /// Resizes the window to the selected pane's preferred size, keeping its top edge in place.
-    func fitWindow(animated: Bool) {
-        guard let window = view.window,
-              let size = tabViewItems[safe: selectedTabViewItemIndex]?.viewController?.preferredContentSize,
-              size.width > 0, size.height > 0 else { return }
-        let content = window.contentRect(forFrameRect: window.frame)
-        guard content.size != size else { return }
-        var frame = window.frameRect(forContentRect: NSRect(origin: content.origin, size: size))
-        frame.origin.y = window.frame.maxY - frame.height
-        // Keeping the top edge can push the bottom off the screen; move the window up instead.
-        if let visible = window.screen?.visibleFrame, frame.minY < visible.minY {
-            frame.origin.y = min(visible.minY, visible.maxY - frame.height)
-        }
-        window.setFrame(frame, display: true, animate: animated && window.isVisible)
     }
 }
 
-private extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
-}
-
-/// One pane: the banner above the pane's form, at the fixed width (and, for table panes, height).
+/// One pane: the banner above the pane, filling the window; forms scroll inside it, tables scroll themselves.
 private struct SettingsPaneView: View {
     let pane: SettingsPane
     let model: SettingsModel
-    /// The form's own height, measured, so a pane taller than the screen scrolls instead of running off it.
-    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
             if let banner = model.banner {
                 SettingsBanner(banner: banner, model: model)
             }
-            if pane.fixedHeight == nil {
-                ScrollView(.vertical) {
-                    content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(height: contentHeight > 0 ? min(contentHeight, model.maxPaneHeight) : nil)
-            } else {
-                content
-            }
+            content
         }
-        .frame(width: pane.width, height: pane.fixedHeight, alignment: .top)
-        .fixedSize(horizontal: false, vertical: pane.fixedHeight == nil)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
 
@@ -198,15 +146,12 @@ private struct SettingsPaneView: View {
     }
 }
 
-/// The form style every pane uses: grouped, not scrolling, as tall as its content, so the hosting controller
-/// reports a real preferred height (an unbounded grouped form reports 10000).
+/// The form style every pane uses: grouped, scrolling inside the pane.
 struct SettingsForm<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
         Form { content }
             .formStyle(.grouped)
-            .scrollDisabled(true)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }

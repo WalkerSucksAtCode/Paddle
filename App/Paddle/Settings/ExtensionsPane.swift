@@ -2,14 +2,18 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Extensions: every folder in `extensions/`, running or not, with its switches (`extensions`, and
-/// `extensionCompat` `private` for private windows), status, answers, compatibility notes and memory;
-/// `extensionsInPrivate`; and the folder and reload actions. Memory is measured every 5 s only while the pane is shown.
+/// Settings > Extensions: every folder in `extensions/`, running or not, as one row each (icon, name, version and status,
+/// and the `extensions` load switch). Each row's Details disclosure, collapsed by default and remembered per folder for
+/// this session only, holds the folder, memory, answers, the `extensionCompat` `private` switch for private windows,
+/// compatibility notes and the folder actions. Also `extensionsInPrivate`, and the folder and reload actions. Memory is
+/// measured every 5 s only while the pane is shown.
 struct ExtensionsPane: View {
     let model: SettingsModel
     @State private var memory = ExtensionMemory()
     /// Folders with a save, Ask Again or reload in flight (prompts included); "" is the whole folder.
     @State private var busy: Set<String> = []
+    /// Folders whose Details disclosure is open. Not persisted.
+    @State private var expanded: Set<String> = []
 
     private var host: ExtensionHost { AppModel.shared.extensions }
 
@@ -27,6 +31,12 @@ struct ExtensionsPane: View {
             ForEach(summaries) { summary in
                 Section {
                     row(summary)
+                    DisclosureGroup(isExpanded: isExpanded(summary.folder)) {
+                        details(summary)
+                    } label: {
+                        Text("Details")
+                            .accessibilityLabel("Details for \(summary.displayName)")
+                    }
                 }
             }
             Section {
@@ -35,7 +45,7 @@ struct ExtensionsPane: View {
                     set: { on in run("") { await model.setExtensionsInPrivate(on) } }
                 ))
                 .help("extensionsInPrivate in config.json")
-                Text("Turning this on applies to private windows opened afterwards; turning it off also takes extensions out of private windows already open. Each extension's own \"Allow in private windows\" switch overrides this.")
+                Text("Applies to private windows opened afterwards; turning it off also removes extensions from private windows already open. Each extension's own switch under Details overrides this.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -69,33 +79,40 @@ struct ExtensionsPane: View {
         }
     }
 
+    /// The always-visible line: icon, name, "Version X · status" and the load switch on the right.
     @ViewBuilder private func row(_ summary: ExtensionFolderSummary) -> some View {
         let enabled = model.file.isExtensionEnabled(summary.folder)
-        Toggle(isOn: Binding(
-            get: { enabled },
-            set: { on in run(summary.folder) { await model.setExtension(summary.folder, enabled: on) } }
-        )) {
-            HStack(spacing: 10) {
-                icon(summary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(summary.displayName).font(.headline)
-                    Text([summary.version.isEmpty ? nil : "Version \(summary.version)", "folder \(summary.folder)"]
-                        .compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        let state = status(summary, enabled: enabled)
+        HStack(spacing: 10) {
+            icon(summary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(summary.displayName).font(.headline)
+                HStack(spacing: 4) {
+                    if !summary.version.isEmpty { Text("Version \(summary.version) ·") }
+                    Label(state.text, systemImage: state.symbol)
                 }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .help(state.text)
             }
+            Spacer(minLength: 8)
+            Toggle("Load \(summary.displayName)", isOn: Binding(
+                get: { enabled },
+                set: { on in run(summary.folder) { await model.setExtension(summary.folder, enabled: on) } }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .accessibilityLabel("Load \(summary.displayName)")
+            .help("extensions.\(summary.folder) in config.json: false turns it off; on removes the entry.")
+            .disabled(model.controlsDisabled || busy.contains(summary.folder))
         }
-        .toggleStyle(.switch)
-        .accessibilityLabel("Load \(summary.displayName)")
-        .help("extensions.\(summary.folder) in config.json: false turns it off; on removes the entry.")
-        .disabled(model.controlsDisabled || busy.contains(summary.folder))
+    }
 
-        LabeledContent("Status") {
-            let state = status(summary, enabled: enabled)
-            Label(state.text, systemImage: state.symbol)
-                .multilineTextAlignment(.trailing)
-        }
+    /// Everything else for one folder, shown under its Details disclosure.
+    @ViewBuilder private func details(_ summary: ExtensionFolderSummary) -> some View {
+        let enabled = model.file.isExtensionEnabled(summary.folder)
+        LabeledContent("Folder") { Text(summary.folder) }
 
         if summary.isLoaded {
             LabeledContent("Memory") { Text(memoryText(summary.folder)) }
@@ -169,6 +186,16 @@ struct ExtensionsPane: View {
         if !enabled { return ("Off", "pause.circle") }
         if summary.access == .declined { return ("Not running: permissions declined", "hand.raised") }
         return (summary.status, "exclamationmark.triangle")
+    }
+
+    /// Whether one folder's Details disclosure is open.
+    private func isExpanded(_ folder: String) -> Binding<Bool> {
+        Binding(
+            get: { expanded.contains(folder) },
+            set: { on in
+                if on { expanded.insert(folder) } else { expanded.remove(folder) }
+            }
+        )
     }
 
     private func memoryText(_ folder: String) -> String {

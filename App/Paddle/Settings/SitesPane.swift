@@ -81,6 +81,8 @@ struct SitesPane: View {
                 TableColumn("User agent") { row in userAgentPicker(row) }
                     .width(90)
             }
+            // No striped placeholder rows below the last site.
+            .alternatingRowBackgrounds(.disabled)
             .accessibilityLabel("Site settings")
             .contextMenu(forSelectionType: String.self) { keys in
                 if let key = keys.first, let row = rows.first(where: { $0.key == key }) {
@@ -116,7 +118,7 @@ struct SitesPane: View {
 
             sessionSection
 
-            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies to open tabs at once, the rest from each tab's next page load. Saved to sites and siteUserAgents in config.json. Websites can't show notifications in Paddle: WebKit offers apps no API for them.")
+            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies at once, the rest from the next page load. \(Self.builtInAgents) Websites can't show notifications in Paddle: WebKit offers apps no API for them.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -273,6 +275,15 @@ struct SitesPane: View {
         }
         .padding(20)
         .frame(width: 460)
+    }
+
+    /// Paddle's built-in user agent fixes (`SiteCompat`), in words, and how a row's own user agent overrides them.
+    private static var builtInAgents: String {
+        let byPersona = Dictionary(grouping: SiteCompat.defaults, by: { $0.value.persona == .chrome ? "Chrome" : "Firefox" })
+        let parts = byPersona.keys.sorted().map { name in
+            "\(name)'s user agent to \(byPersona[name, default: []].map(\.key).sorted().joined(separator: ", "))"
+        }
+        return "Paddle sends \(parts.joined(separator: "; ")) unless a row here sets one."
     }
 
     /// Where a cell's value comes from, for its tooltip.

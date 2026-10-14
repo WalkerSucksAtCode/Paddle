@@ -39,9 +39,6 @@ final class SettingsModel {
     /// Values in `file`'s config.json that have the wrong type (or are entries or list items Paddle skips). Each uses
     /// its default in `file`; Settings > Advanced lists them with Reset or Remove where that drops only the bad value.
     private(set) var decodeIssues: [ConfigIssue] = []
-    /// The tallest a pane's form may be before it scrolls, from the screen the Settings window is on
-    /// (`SettingsWindowController`).
-    var maxPaneHeight: CGFloat = 640
     private(set) var banner: Banner? {
         didSet {
             guard banner != oldValue, let banner else { return }

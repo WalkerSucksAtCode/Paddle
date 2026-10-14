@@ -53,16 +53,4 @@ extension SettingsModel {
     func reset(_ path: [String], basedOn snapshot: Data) async {
         await save([ConfigChange(path: path, value: nil)], basedOn: snapshot)
     }
-
-    // MARK: - Site user agents
-
-    /// Sets (or with `agent` nil removes) the user agent for `host`; renaming a host removes `oldHost` in the same
-    /// write. `snapshot` is the base the row's draft started from.
-    func setSiteUserAgent(host: String, agent: String?, replacing oldHost: String? = nil, basedOn snapshot: Data? = nil) async {
-        let key = PaddleConfig.CodingKeys.siteUserAgents.rawValue
-        var changes: [ConfigChange] = []
-        if let oldHost, oldHost != host { changes.append(ConfigChange(key, oldHost, nil)) }
-        changes.append(ConfigChange(key, host, agent.map(JSONValue.string)))
-        await save(changes, basedOn: snapshot)
-    }
 }
