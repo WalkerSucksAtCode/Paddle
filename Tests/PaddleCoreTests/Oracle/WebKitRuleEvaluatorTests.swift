@@ -221,4 +221,13 @@ struct WebKitRuleEvaluatorTests {
         // A list that blocks nothing gets none of them: they would cancel nothing.
         #expect(FilterListConverter.convert("@@||own.test^", shared: shared).ruleCount == 1)
     }
+
+    /// The cache key's view of another list: only its `@@` lines, so blocks and comments changing don't count.
+    @Test func exceptionLinesIgnoreEverythingElse() {
+        let v1 = "! Version: 1\n||ads.test^\n@@||ok.test^\n  @@||also.test^$script  \n##.banner"
+        let v2 = "! Version: 2\n||ads.test^\n||more.test^\n@@||ok.test^\n@@||also.test^$script\n##.other"
+        #expect(SharedExceptions.exceptionLines(in: v1) == SharedExceptions.exceptionLines(in: v2))
+        #expect(SharedExceptions.exceptionLines(in: v1) == "@@||ok.test^\n@@||also.test^$script")
+        #expect(SharedExceptions.exceptionLines(in: v1 + "\n@@||new.test^") != SharedExceptions.exceptionLines(in: v1))
+    }
 }

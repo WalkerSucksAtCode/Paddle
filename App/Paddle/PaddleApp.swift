@@ -15,11 +15,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var started = false
     private var pendingURLs: [URL] = []
 
+    /// Another Paddle with this bundle id that was already running (a second copy of the app, such as a development
+    /// build next to the installed one). Two copies would share Application Support: each one's start-up tidy-up
+    /// deletes block lists the other is compiling (so the next launch recompiles them for 20-30 s), and both write the
+    /// session, history and config. This one hands its links to the running copy and quits before touching any of it.
+    private var runningCopy: NSRunningApplication?
+
     func applicationWillFinishLaunching(_ notification: Notification) {
+        runningCopy = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .first { $0.processIdentifier != getpid() && !$0.isTerminated }
+        guard runningCopy == nil else { return }
         NSApp.mainMenu = MainMenu.build(appDelegate: self)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let runningCopy {
+            // Links that launched this copy arrive just before or after this call; give them a moment, then pass them on.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
+                if !pendingURLs.isEmpty, let app = runningCopy.bundleURL {
+                    NSWorkspace.shared.open(pendingURLs, withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+                }
+                runningCopy.activate()
+                NSApp.terminate(nil)
+            }
+            return
+        }
         // Before the first window: a notification click can launch Paddle, and macOS only delivers it to a delegate
         // that is already set.
         WebsiteNotifications.shared.install(on: AppModel.shared.web.dataStore)
@@ -33,22 +53,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        if started { AppModel.shared.open(urls) } else { pendingURLs += urls }
+        if started, runningCopy == nil { AppModel.shared.open(urls) } else { pendingURLs += urls }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     /// Extensions see the front browser window as focused while Paddle is active, and no window otherwise.
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard runningCopy == nil else { return }
         AppModel.shared.extensions.windowFocused(AppModel.shared.frontWindow)
     }
 
     func applicationDidResignActive(_ notification: Notification) {
+        guard runningCopy == nil else { return }
         AppModel.shared.extensions.windowFocused(nil)
     }
 
     /// Quitting stops running downloads (Paddle doesn't resume them), so ask first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard runningCopy == nil else { return .terminateNow }
         let running = AppModel.shared.downloads.activeCount
         guard running > 0 else { return .terminateNow }
         let alert = NSAlert()
@@ -60,11 +83,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard runningCopy == nil else { return false }
         if !flag, AppModel.shared.windows.isEmpty { AppModel.shared.openWindow() }
         return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // A second copy never loaded the session; saving here would write an empty one over the running copy's.
+        guard runningCopy == nil else { return }
         AppModel.shared.willTerminate()
     }
 

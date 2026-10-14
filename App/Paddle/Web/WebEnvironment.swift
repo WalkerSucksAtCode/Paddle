@@ -332,9 +332,11 @@ final class WebEnvironment {
             let otherLists = sources.filter { $0 != file }.compactMap { listTexts[$0] }
             let fingerprint = listShared.fingerprint
             var keyText = fingerprint.isEmpty ? text : text + "\n\u{0}shared exceptions\n" + fingerprint
-            // A digest per other list, not their exceptions: those are only parsed when this list compiles.
+            // Only the other lists' `@@` lines go in the key, not their whole text: an EasyList update rarely changes its
+            // exceptions (none changed between two versions a day apart, 2026-10), so EasyPrivacy needn't recompile.
             for other in otherLists {
-                keyText += "\n\u{0}other list " + SHA256.hash(data: Data(other.utf8)).map { String(format: "%02x", $0) }.joined()
+                let lines = SharedExceptions.exceptionLines(in: other)
+                keyText += "\n\u{0}other list " + SHA256.hash(data: Data(lines.utf8)).map { String(format: "%02x", $0) }.joined()
             }
             let digest = SHA256.hash(data: Data(keyText.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
             // Text, shared exceptions and converter version: a new converter recompiles lists WebKit still has cached

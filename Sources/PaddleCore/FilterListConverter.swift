@@ -824,6 +824,15 @@ public struct SharedExceptions: Sendable {
         ListExceptions(rules: FilterListConverter.parse(text).exceptions)
     }
 
+    /// The `@@` lines of a filter list, in order, joined by newlines: everything `listExceptions(in:)` reads, without
+    /// parsing. Cheap enough for a cache key, so a list's update recompiles the other lists only when these change.
+    public static func exceptionLines(in text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("@@") }
+            .joined(separator: "\n")
+    }
+
     /// These exceptions plus other filter lists' (see `listRules`).
     public func adding(_ lists: [ListExceptions]) -> SharedExceptions {
         var shared = self
