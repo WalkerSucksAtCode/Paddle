@@ -15,10 +15,12 @@ extension SettingsModel {
         return result.removed
     }
 
-    /// Problems in values that parse, from `ConfigValidator`: errors block saving that key, warnings don't.
+    /// Problems in config.json's values: first the values of the wrong type that fell back to their defaults or were
+    /// skipped (`decodeIssues`), then the problems in values that parse, from `ConfigValidator` (errors block saving
+    /// that key, warnings don't).
     var issues: [ConfigIssue] {
         // With the default shortcuts, a binding that takes another action's default key shows up here too.
-        ConfigValidator.issues(file, actionNames: Set(MainMenu.actionNames), defaults: MainMenu.validatorDefaults)
+        decodeIssues + ConfigValidator.issues(file, actionNames: Set(MainMenu.actionNames), defaults: MainMenu.validatorDefaults)
     }
 
     /// A key's value as written in the file, shortened for a confirmation message.
@@ -35,12 +37,14 @@ extension SettingsModel {
     }
 
     /// An issue can be fixed by removing what it points at when that only drops one value: a whole key (it falls
-    /// back to its default) or one entry of an object key. Not an array element (`filterLists`) and not a field
-    /// inside a `sites` entry, where removing the entry would take the host's other settings with it.
+    /// back to its default) or one entry of an object key, which Paddle already ignores when it is wrong. Not an
+    /// array element (`filterLists`) and not a field inside a `sites` entry, where removing the entry would take the
+    /// host's other settings with it.
     static func resetPath(for issue: ConfigIssue) -> [String]? {
         switch issue.path.count {
         case 1: issue.path
-        case 2 where [.shortcuts, .siteUserAgents, .sites].contains(issue.key): issue.path
+        case 2 where [.shortcuts, .siteUserAgents, .sites, .extensions, .extensionCompat, .sitePersonas].contains(issue.key):
+            issue.path
         default: nil
         }
     }

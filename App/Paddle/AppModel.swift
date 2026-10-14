@@ -13,8 +13,13 @@ final class AppModel {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "app")
 
     private(set) var config = PaddleConfig()
-    /// Set when config.json fails to parse; Paddle keeps running on the previous config.
+    /// Set when config.json doesn't parse at all (invalid JSON, or a top level that isn't an object); Paddle keeps
+    /// running on the previous config.
     private(set) var configError: String?
+    /// Values in config.json of the wrong type, and entries or list items Paddle skips: each uses its default (or is
+    /// left out) and the rest of the file applies. Listed in Settings > Advanced > Problems. Set on every read and
+    /// write of config.json; empty while `configError` is set.
+    private(set) var configWarnings: [ConfigIssue] = []
     let web = WebEnvironment()
     let downloads = DownloadStore()
     let bookmarks = BookmarkStore()
@@ -133,7 +138,8 @@ final class AppModel {
 
     /// What `writeConfig` did. Success only when the bytes are on disk and Paddle runs with them.
     enum ConfigWriteResult {
-        case written(PaddleConfig, data: Data, stamp: ConfigStamp?)
+        /// `issues` are the values of the written file that fell back or were skipped (see `configWarnings`).
+        case written(PaddleConfig, issues: [ConfigIssue], data: Data, stamp: ConfigStamp?)
         /// These paths changed on disk since the edit's base was read; nothing was written.
         case conflict([[String]])
         case failed(String)
@@ -144,17 +150,35 @@ final class AppModel {
     /// The write before this one, so writes run one at a time in order.
     @ObservationIgnored private var configWriteTail: Task<Void, Never>?
 
-    /// config.json decoded, or nil (and `configError` set) when it doesn't load.
+    /// config.json decoded, or nil (and `configError` set) when it doesn't parse. Values of the wrong type don't stop
+    /// the read: they use their defaults and are kept in `configWarnings`.
     private func readConfig() -> PaddleConfig? {
         do {
-            let config = try Self.decodeConfigFile(Self.readConfigFile(Paths.config))
+            let decoded = try Self.decodeConfigFile(Self.readConfigFile(Paths.config))
             configError = nil
-            return config
+            setConfigWarnings(decoded.issues)
+            return decoded.config
         } catch {
             configError = "config.json: \(PaddleConfig.describe(error))"
+            configWarnings = []
             log.error("\(self.configError ?? "", privacy: .public)")
             return nil
         }
+    }
+
+    /// Keeps `issues` as the config warnings and logs each one, once per read or write of config.json.
+    private func setConfigWarnings(_ issues: [ConfigIssue]) {
+        configWarnings = issues
+        for issue in issues {
+            log.error("config.json: \(issue.path.joined(separator: "."), privacy: .public) : \(issue.message, privacy: .public)")
+        }
+    }
+
+    /// "1 value has the wrong type and uses its default", or the plural: the config warnings counted in words.
+    var configWarningPhrase: String {
+        configWarnings.count == 1
+            ? "1 value has the wrong type and uses its default"
+            : "\(configWarnings.count) values have the wrong type and use their defaults"
     }
 
     /// config.json's bytes; a missing file reads as empty (every key at its default).
@@ -167,9 +191,11 @@ final class AppModel {
     }
 
     /// Decodes config.json, reading an empty file (or one with only a byte-order mark) as `{}` as ConfigFile does.
-    static func decodeConfigFile(_ data: Data) throws -> PaddleConfig {
+    /// Also returns the values that fell back or were skipped (`PaddleConfig.decodeReportingIssues`). Throws only
+    /// when the file isn't JSON or its top level isn't an object.
+    static func decodeConfigFile(_ data: Data) throws -> (config: PaddleConfig, issues: [ConfigIssue]) {
         let blank = data.drop { [0x20, 0x09, 0x0A, 0x0D, 0xEF, 0xBB, 0xBF].contains($0) }.isEmpty
-        return try PaddleConfig.decode(blank ? Data("{}".utf8) : data)
+        return try PaddleConfig.decodeReportingIssues(blank ? Data("{}".utf8) : data)
     }
 
     /// Settings' write path: applies `changes` to config.json as it is on disk now, where `base` is the copy the
@@ -218,7 +244,7 @@ final class AppModel {
             recomputed = true
             disk = current
         }
-        let new: PaddleConfig
+        let new: (config: PaddleConfig, issues: [ConfigIssue])
         do {
             new = try Self.decodeConfigFile(data)
             try data.write(to: url, options: .atomic)
@@ -230,8 +256,9 @@ final class AppModel {
         if let stamp { lastConfigWrite = (stamp, data) }
         log.info("config.json written: \(changes.map { $0.path.joined(separator: ".") }.joined(separator: ", "), privacy: .public)")
         configError = nil
-        await apply(new)
-        return .written(new, data: data, stamp: stamp)
+        setConfigWarnings(new.issues)
+        await apply(new.config)
+        return .written(new.config, issues: new.issues, data: data, stamp: stamp)
     }
 
     private static func describe(_ error: ConfigWriteError) -> String {
@@ -411,18 +438,26 @@ final class AppModel {
     }
 
     /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/, block lists, extension folders and
-    /// bookmarks. A config.json that doesn't load keeps the previous settings; everything else is still re-read.
-    /// Only that error stops you with an alert; a reload that worked is announced and logged, and its status stays in
-    /// the Activity popover and the Extensions menu, so it never waits for a click. Settings' Apply Now runs the same
-    /// path without the announcement.
+    /// bookmarks. A config.json that doesn't parse keeps the previous settings; everything else is still re-read.
+    /// Only that error stops you with an alert. A reload that worked is announced and logged, and a file with values
+    /// of the wrong type says how many (`configWarnings`) in the announcement rather than alerting. Its status stays
+    /// in the Activity popover and the Extensions menu, so it never waits for a click. Settings' Apply Now runs the
+    /// same path without the announcement.
     func reloadConfig(showAlert: Bool = true) async {
         await apply(readConfig() ?? config, reloading: true)
         bookmarks.load()
         guard showAlert else { return }
 
         guard let configError else {
-            log.info("config reloaded")
-            AccessibilityNotification.Announcement("Config reloaded").post()
+            if configWarnings.isEmpty {
+                log.info("config reloaded")
+                AccessibilityNotification.Announcement("Config reloaded").post()
+            } else {
+                log.info("config reloaded with \(self.configWarnings.count) wrong-typed values")
+                AccessibilityNotification.Announcement(
+                    "Config reloaded. \(configWarningPhrase) (Settings > Advanced > Problems)."
+                ).post()
+            }
             return
         }
         let alert = NSAlert()

@@ -9,8 +9,9 @@ import SwiftUI
 @Observable
 final class SettingsModel {
     enum Banner: Equatable {
-        /// config.json doesn't parse, or a key has the wrong type (`key` then names it so it can be reset).
-        case invalid(message: String, key: String?, badValue: String?)
+        /// config.json can't be read at all: it isn't JSON, its top level isn't an object, or the file can't be read.
+        /// Values of the wrong type don't get here (see `decodeIssues`).
+        case invalid(message: String)
         /// The file holds valid edits Paddle isn't running with yet.
         case unapplied
         /// A save was refused because these paths changed on disk; `pendingChanges` holds the user's edit.
@@ -19,7 +20,7 @@ final class SettingsModel {
 
         var text: String {
             switch self {
-            case .invalid(let message, _, _):
+            case .invalid(let message):
                 "config.json can't be read: \(message.hasSuffix(".") ? String(message.dropLast()) : message). "
                     + "Paddle keeps running on the last good settings."
             case .unapplied:
@@ -35,6 +36,9 @@ final class SettingsModel {
     /// The decoded file as last read or written here. Panes show these values, not `AppModel.config`, so a hand
     /// edit shows up even before it is applied.
     private(set) var file: PaddleConfig
+    /// Values in `file`'s config.json that have the wrong type (or are entries or list items Paddle skips). Each uses
+    /// its default in `file`; Settings > Advanced lists them with Reset or Remove where that drops only the bad value.
+    private(set) var decodeIssues: [ConfigIssue] = []
     /// The tallest a pane's form may be before it scrolls, from the screen the Settings window is on
     /// (`SettingsWindowController`).
     var maxPaneHeight: CGFloat = 640
@@ -79,6 +83,7 @@ final class SettingsModel {
             baseStamp = stamp
             base = written.data
             file = AppModel.shared.config
+            decodeIssues = AppModel.shared.configWarnings
             setBanner(nil)
             return
         }
@@ -86,30 +91,22 @@ final class SettingsModel {
         do {
             data = try AppModel.readConfigFile(url)
         } catch {
-            setBanner(.invalid(message: error.localizedDescription, key: nil, badValue: nil))
+            setBanner(.invalid(message: error.localizedDescription))
             return
         }
         baseStamp = stamp
         base = data
 
-        let spans: JSONSpans
+        let decoded: (config: PaddleConfig, issues: [ConfigIssue])
         do {
-            spans = try JSONSpans.scan(data)
+            _ = try JSONSpans.scan(data)
+            decoded = try AppModel.decodeConfigFile(data)
         } catch {
-            setBanner(.invalid(message: Self.describe(error), key: nil, badValue: nil))
+            setBanner(.invalid(message: Self.describe(error)))
             return
         }
-        do {
-            file = try AppModel.decodeConfigFile(data)
-        } catch {
-            // Valid JSON with a wrong type: the first coding-path component is the top-level key to reset.
-            let key = (error as? DecodingError).flatMap(Self.codingPath)?.first?.stringValue
-            let badValue = key.flatMap(spans.member).map { member in
-                String(decoding: data[member.valueRange], as: UTF8.self).prefix(80).description
-            }
-            setBanner(.invalid(message: PaddleConfig.describe(error), key: key, badValue: badValue))
-            return
-        }
+        file = decoded.config
+        decodeIssues = decoded.issues
         setBanner(file == AppModel.shared.config ? nil : .unapplied)
     }
 
@@ -145,8 +142,9 @@ final class SettingsModel {
     private func write(_ changes: [ConfigChange], basedOn snapshot: Data? = nil) async {
         guard !controlsDisabled else { return }
         switch await AppModel.shared.writeConfig(changes, base: snapshot ?? base) {
-        case .written(let config, let data, let stamp):
+        case .written(let config, let issues, let data, let stamp):
             file = config
+            decodeIssues = issues
             base = data
             baseStamp = stamp
             pendingChanges = []
@@ -184,25 +182,6 @@ final class SettingsModel {
         await save(changes)
     }
 
-    /// Invalid file > Reset key: removes only that key, so it falls back to its default.
-    func resetKey(_ key: String) async {
-        await serialized { await self.writeReset(key) }
-    }
-
-    private func writeReset(_ key: String) async {
-        refresh(force: true)
-        guard case .invalid(_, key?, _)? = banner else { return }
-        switch await AppModel.shared.writeConfig([ConfigChange(key, nil)], base: base) {
-        case .written:
-            banner = nil
-            refresh(force: true)
-        case .conflict:
-            refresh(force: true)
-        case .failed(let message):
-            banner = .writeFailed(message)
-        }
-    }
-
     func dismissFailure() {
         banner = nil
         refresh(force: true)
@@ -219,15 +198,6 @@ final class SettingsModel {
         }
         writeTail = task
         await task.value
-    }
-
-    private static func codingPath(_ error: DecodingError) -> [any CodingKey]? {
-        switch error {
-        case .typeMismatch(_, let context), .valueNotFound(_, let context), .keyNotFound(_, let context), .dataCorrupted(let context):
-            context.codingPath
-        @unknown default:
-            nil
-        }
     }
 
     private static func describe(_ error: any Error) -> String {

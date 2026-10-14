@@ -6,6 +6,17 @@ struct BrowserView: View {
     @Bindable var model: BrowserModel
     let app: AppModel
 
+    /// The strip under the toolbar for config.json: a file that doesn't parse, else the values that fell back to
+    /// their defaults (at most three paths named).
+    private var configNotice: String? {
+        if let error = app.configError { return error }
+        let warnings = app.configWarnings
+        guard !warnings.isEmpty else { return nil }
+        let paths = warnings.prefix(3).map { $0.path.joined(separator: ".") }.joined(separator: ", ")
+        let more = warnings.count > 3 ? ", …" : ""
+        return "config.json: \(app.configWarningPhrase) (\(paths)\(more)). Settings > Advanced lists them."
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             TabStrip(model: model)
@@ -16,8 +27,8 @@ struct BrowserView: View {
             if app.showBookmarksBar {
                 BookmarksBar(app: app)
             }
-            if let error = app.configError {
-                Label(error, systemImage: "exclamationmark.triangle")
+            if let notice = configNotice {
+                Label(notice, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 11))
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
