@@ -30,8 +30,10 @@
 		45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEA8DA57CE8927AE3C65953 /* ConfigWatcher.swift */; };
 		4BBC5398DF7F6A4E9CACAA4A /* ExtensionUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */; };
 		4EC203CCBE4EA078557D477C /* SettingsModel+Keys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D00D63F94925290CC4D169 /* SettingsModel+Keys.swift */; };
+		4FCB6755611238489C8BA11B /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25922B0DB334CF68223037F6 /* SettingsTabView.swift */; };
 		5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */; };
 		51F4933CF1904CF98671BEBC /* ExtensionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */; };
+		5C478FFBF2FEFB8939B4F03F /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35942D5DECDC242D193A6BA /* SettingsViews.swift */; };
 		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
 		60312E19BA4F1F8CDA9A8449 /* WebsiteDataSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */; };
 		6219413CB10CDA63036C1A16 /* SettingsModel+Sites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B449E7E2031D289F74768AF /* SettingsModel+Sites.swift */; };
@@ -61,7 +63,6 @@
 		DBA96E6E8A40CCD5B60D2146 /* SettingsModel+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */; };
 		E6F0DD8E856915E572E3E940 /* SelectorValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */; };
 		E70CDDB3B1D8423F9981F8D3 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */; };
-		EAC0EE2FECB0EEE092175CC1 /* SettingsWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EE5D6C79ECA0F8FAAD8A4D /* SettingsWindowController.swift */; };
 		F2713F9A8877E5D392A8390E /* GeneralPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */; };
 		F5BFE827260C731264C4F715 /* WebInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74ED21DEB238D504EB6834C7 /* WebInspector.swift */; };
 		F99206FE17D134F5D7D59D28 /* SettingsBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4AC197DD8EEDFE2EE7ECA58 /* SettingsBanner.swift */; };
@@ -80,6 +81,7 @@
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
+		25922B0DB334CF68223037F6 /* SettingsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
 		25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEnvironment.swift; sourceTree = "<group>"; };
 		2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Scriptlets.swift; sourceTree = "<group>"; };
 		352D2127E14005724BE87B4B /* AdvancedPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedPane.swift; sourceTree = "<group>"; };
@@ -117,10 +119,10 @@
 		B4AC197DD8EEDFE2EE7ECA58 /* SettingsBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsBanner.swift; sourceTree = "<group>"; };
 		B638B1EE7C20C00722F34C1E /* ExtensionAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionAdapters.swift; sourceTree = "<group>"; };
 		BDB45BBE62413E30D184AA5E /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
+		C35942D5DECDC242D193A6BA /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
 		C3D0FE4D946C5EE2383EBBDC /* TabsMemoryPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsMemoryPane.swift; sourceTree = "<group>"; };
 		CD82DDC1093768507B67A449 /* CompatBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompatBus.swift; sourceTree = "<group>"; };
 		D10F08E60740FF045413DAC8 /* Bookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmarks.swift; sourceTree = "<group>"; };
-		D4EE5D6C79ECA0F8FAAD8A4D /* SettingsWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowController.swift; sourceTree = "<group>"; };
 		D6AB8511862F229DB168B109 /* SitesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SitesPane.swift; sourceTree = "<group>"; };
 		DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteDataSheet.swift; sourceTree = "<group>"; };
 		E05B63171469865BF8E8104E /* Paddle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paddle.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -169,7 +171,8 @@
 				69D00D63F94925290CC4D169 /* SettingsModel+Keys.swift */,
 				9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */,
 				0B449E7E2031D289F74768AF /* SettingsModel+Sites.swift */,
-				D4EE5D6C79ECA0F8FAAD8A4D /* SettingsWindowController.swift */,
+				25922B0DB334CF68223037F6 /* SettingsTabView.swift */,
+				C35942D5DECDC242D193A6BA /* SettingsViews.swift */,
 				91F6090B48E416A87BCCC699 /* ShortcutRecorder.swift */,
 				0FF189A4771C73A817501D59 /* ShortcutsPane.swift */,
 				D6AB8511862F229DB168B109 /* SitesPane.swift */,
@@ -425,7 +428,8 @@
 				DBA96E6E8A40CCD5B60D2146 /* SettingsModel+Shortcuts.swift in Sources */,
 				6219413CB10CDA63036C1A16 /* SettingsModel+Sites.swift in Sources */,
 				E70CDDB3B1D8423F9981F8D3 /* SettingsModel.swift in Sources */,
-				EAC0EE2FECB0EEE092175CC1 /* SettingsWindowController.swift in Sources */,
+				4FCB6755611238489C8BA11B /* SettingsTabView.swift in Sources */,
+				5C478FFBF2FEFB8939B4F03F /* SettingsViews.swift in Sources */,
 				8996CB86020598BC61B32AF1 /* ShortcutRecorder.swift in Sources */,
 				3B65193D181EA4FA135659EA /* ShortcutsPane.swift in Sources */,
 				0F6E165D6ACF3FF836033255 /* SitesPane.swift in Sources */,

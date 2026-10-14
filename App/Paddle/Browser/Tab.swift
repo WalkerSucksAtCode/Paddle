@@ -129,7 +129,18 @@ final class Tab: Identifiable {
     /// window opened (private windows only when any extension may run in private windows, `anyExtensionInPrivate`).
     var extensionsAllowed: Bool { browser?.extensionsAllowed ?? !isPrivate }
 
+    /// The Settings pane this tab shows (`paddle://settings/<pane>`; bare `paddle://settings` is General). Nil for
+    /// every other tab. A settings tab has no web view: it never wakes or sleeps, and SwiftUI draws it (`SettingsTabView`).
+    var settingsPane: SettingsPane? {
+        guard url?.scheme?.lowercased() == "paddle", url?.host()?.lowercased() == "settings", let url else { return nil }
+        return SettingsLink.parse(url.absoluteString)?.pane.flatMap { SettingsPane(rawValue: $0.rawValue) } ?? .general
+    }
+
+    /// A page tab with no web view. A settings tab has none and is not asleep.
+    var isAsleep: Bool { !isAwake && settingsPane == nil }
+
     var displayTitle: String {
+        if settingsPane != nil { return "Settings" }
         if !title.isEmpty { return title }
         if let host = url?.host() { return host }
         return url == nil ? "New Tab" : (url?.absoluteString ?? "")
@@ -153,6 +164,8 @@ final class Tab: Identifiable {
     @discardableResult
     func wake() -> WKWebView? {
         if let webView { return webView }
+        // Settings is drawn by SwiftUI and loads nothing, so it never gets a web view.
+        if settingsPane != nil { return nil }
         let host = AppModel.shared.extensions
         let configuration: WKWebViewConfiguration
         // A saved page of an extension whose persona changed (webkit-extension:// to moz-extension://) moves to its

@@ -3,8 +3,8 @@ import Foundation
 import PaddleCore
 import SwiftUI
 
-/// The Settings window's view of `config.json`: what the panes show, the bytes their edits are based on, and the
-/// banner. Lives only while the window is open. Every save goes through `AppModel.writeConfig`, which refuses to
+/// Settings' view of `config.json`: what the panes show, the bytes their edits are based on, and the banner. Lives
+/// only while a Settings tab shows (`SettingsTabView`). Every save goes through `AppModel.writeConfig`, which refuses to
 /// overwrite a key that changed on disk since `base` was read.
 @Observable
 final class SettingsModel {

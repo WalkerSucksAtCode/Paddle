@@ -11,11 +11,12 @@ struct ActivityView: View {
 
     private func isListed(_ tab: Tab) -> Bool { !tab.isPrivate || tab.browser === browser }
 
+    /// A Settings tab uses no memory and has no sleep state, so it isn't listed or counted.
     private var tabs: [Tab] {
-        app.allTabs.filter(isListed).sorted { ($0.memoryBytes ?? 0) > ($1.memoryBytes ?? 0) }
+        app.allTabs.filter { $0.settingsPane == nil && isListed($0) }.sorted { ($0.memoryBytes ?? 0) > ($1.memoryBytes ?? 0) }
     }
 
-    private var hiddenPrivateTabs: [Tab] { app.allTabs.filter { !isListed($0) } }
+    private var hiddenPrivateTabs: [Tab] { app.allTabs.filter { $0.settingsPane == nil && !isListed($0) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

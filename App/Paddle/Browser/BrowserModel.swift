@@ -44,6 +44,18 @@ final class BrowserModel {
 
     var selectedTab: Tab? { tabs.first { $0.id == selectedID } }
 
+    /// The tab "Current Page" and "Add Current Site" mean: the selected tab when it shows a page with one of
+    /// `schemes`, else the most recently active tab that does. The selected one comes first because switching tabs
+    /// stamps the old and new tab with the same time. With Settings selected, that is the page before it.
+    func currentPageTab(schemes: Set<String>) -> Tab? {
+        func showsPage(_ tab: Tab) -> Bool {
+            guard let scheme = tab.url?.scheme?.lowercased() else { return false }
+            return schemes.contains(scheme)
+        }
+        if let selected = selectedTab, showsPage(selected) { return selected }
+        return tabs.filter(showsPage).max { $0.lastActive < $1.lastActive }
+    }
+
     /// The window's title (hidden in the title bar; shown in the Window menu, Mission Control and the Dock).
     /// Private windows get a fixed title: window titles reach other apps (window server, Accessibility), and
     /// time trackers log them.
@@ -332,9 +344,27 @@ final class BrowserModel {
         go(to: url, typed: true)
     }
 
+    /// Shows Settings in this window: its settings tab moves to `pane` and is selected, or a new one opens after the
+    /// selected tab. A window can hold more than one settings tab (Duplicate Tab); the first one is used.
+    func showSettings(pane: SettingsPane) {
+        if let tab = tabs.first(where: { $0.settingsPane != nil }) {
+            showPane(pane, in: tab)
+            select(tab)
+        } else {
+            insert(Tab(url: pane.url, isPrivate: isPrivate), after: selectedTab, select: true)
+        }
+    }
+
+    /// Moves the settings tab `tab` to `pane`. Its address follows, so the field and the session do too.
+    func showPane(_ pane: SettingsPane, in tab: Tab) {
+        tab.load(pane.url)
+        SettingsPane.remembered = pane
+        tabURLChanged(tab)
+    }
+
     /// A settings address typed into the field: Settings opens (on its pane) and the field shows the tab's page again.
     private func openSettings(_ link: SettingsLink) {
-        SettingsWindowController.show(pane: link.pane.flatMap { SettingsPane(rawValue: $0.rawValue) })
+        AppModel.shared.showSettings(pane: link.pane.flatMap { SettingsPane(rawValue: $0.rawValue) })
         suggestions.dismiss()
         isEditingAddress = false
         // Leave the field too (as picking an open tab does), or it stays in edit mode when this window is key again.

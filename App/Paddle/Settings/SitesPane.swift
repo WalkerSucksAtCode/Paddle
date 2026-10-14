@@ -39,10 +39,10 @@ struct SitesPane: View {
                     if let host = model.currentSiteHost {
                         addSite(host)
                     } else {
-                        status = "The front window's tab isn't showing a website."
+                        status = "The front window has no website open."
                     }
                 }
-                .help("Adds the site of the front window's tab (private windows aside).")
+                .help("Adds the site of the front window's page (private windows aside).")
                 Spacer()
                 TextField("Search sites", text: $search)
                     .textFieldStyle(.roundedBorder)

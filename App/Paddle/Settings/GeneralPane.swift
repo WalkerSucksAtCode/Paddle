@@ -98,11 +98,9 @@ private struct PageRows: View {
         Task { await model.saveKey(key, .string(Self.emptyPage)) }
     }
 
-    /// The front normal window's page, when it is a web page worth opening again.
+    /// The front normal window's page, when it is a web page worth opening again (`BrowserModel.currentPageTab`).
     private var currentPage: URL? {
-        guard let url = AppModel.shared.frontNormalWindow?.model.selectedTab?.url,
-              let scheme = url.scheme?.lowercased(), ["http", "https", "file"].contains(scheme) else { return nil }
-        return url
+        AppModel.shared.frontNormalWindow?.model.currentPageTab(schemes: ["http", "https", "file"])?.url
     }
 
     private func useCurrentPage() {

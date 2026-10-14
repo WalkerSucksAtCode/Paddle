@@ -74,7 +74,10 @@ struct BrowserView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let tab = model.selectedTab, tab.url != nil {
+        if let tab = model.selectedTab, tab.settingsPane != nil {
+            SettingsTabView(tab: tab)
+                .id(tab.id)
+        } else if let tab = model.selectedTab, tab.url != nil {
             WebContainer(tab: tab, generation: tab.generation)
         } else {
             StartPage()
@@ -193,7 +196,7 @@ private struct TabButton: View {
                     .font(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(tab.isAwake || isSelected ? .primary : .secondary)
+                    .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
                 Spacer(minLength: 0)
                 if audio != .none {
                     Button {
@@ -291,6 +294,8 @@ private struct TabButton: View {
                 ProgressView().controlSize(.mini)
             } else if tab.isCapturing {
                 Image(systemName: "video.fill")
+            } else if tab.settingsPane != nil {
+                Image(systemName: "gearshape")
             } else if !tab.isAwake {
                 Glyph(name: "surf-tab-sleep")
             } else {
@@ -318,7 +323,7 @@ private struct TabButton: View {
     static func spokenState(_ tab: Tab, audio: AudioIndicator) -> String {
         var parts: [String] = []
         if tab.isPinned { parts.append("pinned") }
-        if !tab.isAwake { parts.append("asleep") }
+        if tab.isAsleep { parts.append("asleep") }
         if tab.isLoading { parts.append("loading") }
         if tab.isCapturing { parts.append("using camera or microphone") }
         switch audio {
@@ -344,7 +349,7 @@ private struct TabButton: View {
         case .muted: lines.append("Muted")
         case .none: break
         }
-        if !tab.isAwake {
+        if tab.isAsleep {
             lines.append("Asleep: no memory used. Click to wake.")
         } else if let hoverMemory {
             lines.append("Memory: \(ProcessMemory.format(hoverMemory.bytes))\(hoverMemory.shared ? " (shared with other tabs from this site)" : "")")
@@ -418,7 +423,7 @@ private struct NavigationBar: View {
         HStack(spacing: 4) {
             iconButton("chevron.left", help: "Back", enabled: tab?.canGoBack == true) { tab?.webView?.goBack() }
             iconButton("chevron.right", help: "Forward", enabled: tab?.canGoForward == true) { tab?.webView?.goForward() }
-            iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil) {
+            iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil && tab?.settingsPane == nil) {
                 if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.reload() }
             }
             if model.isPrivate {

@@ -702,6 +702,22 @@ final class AppModel {
         return !extensions.isVisible(front, to: context)
     }
 
+    /// Opens Settings as a tab (Paddle > Settings…, ⌘, and typed settings addresses): a window that already has a
+    /// settings tab shows it, a normal window first and the front one preferred; else the front window opens one
+    /// after its selected tab. `pane` nil opens the pane shown last.
+    func showSettings(pane: SettingsPane? = nil) {
+        let chosen = pane ?? SettingsPane.remembered
+        SettingsPane.remembered = chosen
+        let candidates = [frontWindow].compactMap { $0 } + windows
+        let withSettings = candidates.filter { $0.model.tabs.contains { $0.settingsPane != nil } }
+        guard let window = withSettings.first(where: { !$0.model.isPrivate }) ?? withSettings.first ?? frontWindow else {
+            openWindow(url: chosen.url)
+            return
+        }
+        window.model.showSettings(pane: chosen)
+        window.window?.makeKeyAndOrderFront(nil)
+    }
+
     /// The front normal (non-private) window, for links from other apps.
     var frontNormalWindow: BrowserWindowController? {
         if let front = frontWindow, !front.model.isPrivate { return front }

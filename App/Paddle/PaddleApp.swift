@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func paddleOpenLocation(_ sender: Any?) { AppModel.shared.openWindow().model.focusAddress() }
 
-    @objc func paddleShowSettings(_ sender: Any?) { SettingsWindowController.show() }
+    @objc func paddleShowSettings(_ sender: Any?) { AppModel.shared.showSettings() }
 
     @objc func paddleOpenConfigFolder(_ sender: Any?) { NSWorkspace.shared.open(Paths.support) }
 

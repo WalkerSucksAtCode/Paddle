@@ -66,15 +66,12 @@ extension SettingsModel {
         await save([ConfigChange("siteUserAgents", row.userAgent?.key ?? row.key, text.map(JSONValue.string))])
     }
 
-    /// The host of the frontmost ordinary window's tab, for Add Current Site. Private windows don't count: adding
-    /// their site would write it to config.json.
+    /// The host of the frontmost ordinary window's page, for Add Current Site (`BrowserModel.currentPageTab`). Private
+    /// windows don't count: adding their site would write it to config.json.
     var currentSiteHost: String? {
         let front = NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }
             .first { !$0.model.isPrivate }
-        guard let url = front?.model.selectedTab?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
-            return nil
-        }
-        return url.host()
+        return front?.model.currentPageTab(schemes: ["http", "https"])?.url?.host()
     }
 
     /// The key `text` would be added under: a pasted URL gives its host; the host is lowercased with no trailing
