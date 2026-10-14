@@ -2,14 +2,16 @@ import Foundation
 
 /// Per-site settings from the `sites` key of `config.json`, keyed by host suffix like `siteUserAgents`:
 /// `"sites": {"example.com": {"zoom": 1.25, "javaScript": false, "autoplay": "muted", "contentBlocking": false,
-/// "location": "deny"}}`. Every field is optional; a missing field means Paddle's default for that host.
-/// User agents stay in `siteUserAgents`. There is no notifications field: WebKit gives apps no API for them.
+/// "location": "deny", "notifications": "allow"}}`. Every field is optional; a missing field means Paddle's default for
+/// that host. User agents stay in `siteUserAgents`.
 public struct SiteSettings: Codable, Sendable, Equatable {
     public enum Autoplay: String, Codable, Sendable, CaseIterable {
         case allow, muted, block
     }
 
-    public enum Location: String, Codable, Sendable, CaseIterable {
+    /// What a permission request (location, notifications) gets: `ask` prompts once per site per session, `allow` and
+    /// `deny` answer without a prompt.
+    public enum Permission: String, Codable, Sendable, CaseIterable {
         case ask, allow, deny
     }
 
@@ -22,25 +24,31 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     /// Whether the content blocker applies on this site.
     public var contentBlocking: Bool?
     /// What a geolocation request gets without a prompt.
-    public var location: Location?
+    public var location: Permission?
+    /// What a notification request gets without a prompt. Web Push (notifications while the site is closed) is not
+    /// supported.
+    public var notifications: Permission?
 
     public init(
         zoom: Double? = nil,
         javaScript: Bool? = nil,
         autoplay: Autoplay? = nil,
         contentBlocking: Bool? = nil,
-        location: Location? = nil
+        location: Permission? = nil,
+        notifications: Permission? = nil
     ) {
         self.zoom = zoom
         self.javaScript = javaScript
         self.autoplay = autoplay
         self.contentBlocking = contentBlocking
         self.location = location
+        self.notifications = notifications
     }
 
     /// True when no field is set, so the entry says nothing and can be dropped.
     public var isEmpty: Bool {
         zoom == nil && javaScript == nil && autoplay == nil && contentBlocking == nil && location == nil
+            && notifications == nil
     }
 
     /// `other` laid over self: every field `other` sets replaces the one here.
@@ -50,7 +58,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
             javaScript: other.javaScript ?? javaScript,
             autoplay: other.autoplay ?? autoplay,
             contentBlocking: other.contentBlocking ?? contentBlocking,
-            location: other.location ?? location
+            location: other.location ?? location,
+            notifications: other.notifications ?? notifications
         )
     }
 }

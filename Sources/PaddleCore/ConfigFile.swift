@@ -49,6 +49,7 @@ public enum ConfigFile {
         "autoplay": .string(SitePolicy.defaults.autoplay.rawValue),
         "contentBlocking": .bool(SitePolicy.defaults.contentBlocking),
         "location": .string(SitePolicy.defaults.location.rawValue),
+        "notifications": .string(SitePolicy.defaults.notifications.rawValue),
     ]
 
     /// `disk` with `changes` applied, where `base` is what the editor read before the user made them.

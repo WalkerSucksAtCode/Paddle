@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before the first window: a notification click can launch Paddle, and macOS only delivers it to a delegate
+        // that is already set.
+        WebsiteNotifications.shared.install(on: AppModel.shared.web.dataStore)
         Task {
             await AppModel.shared.start(openingURLs: [])
             started = true

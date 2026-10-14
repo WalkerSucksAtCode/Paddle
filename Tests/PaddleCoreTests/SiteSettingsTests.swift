@@ -34,6 +34,46 @@ struct SiteSettingsTests {
         #expect(issues.first?.message.contains("autoplay") == true, "\(issues)")
     }
 
+    @Test func notificationsDecodeMergeAndSkipBadValuesLikeLocation() throws {
+        let json = #"{"sites": {"example.com": {"notifications": "allow"}, "docs.example.com": {"notifications": "deny"}, "bad.example.com": {"notifications": "loud"}}}"#
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(json.utf8))
+        #expect(config.sites["example.com"] == SiteSettings(notifications: .allow))
+        #expect(config.sites["docs.example.com"] == SiteSettings(notifications: .deny))
+        #expect(config.sites["bad.example.com"] == nil)
+        #expect(issues.map(\.path) == [["sites", "bad.example.com"]])
+        #expect(issues.first?.message.contains("notifications") == true, "\(issues)")
+        #expect(config.siteSettings(forHost: "www.example.com").notifications == .allow)
+        #expect(config.siteSettings(forHost: "x.docs.example.com").notifications == .deny)
+        #expect(!SiteSettings(notifications: .ask).isEmpty)
+        #expect(SiteSettings(zoom: 1).overlaid(with: SiteSettings(notifications: .deny)).notifications == .deny)
+    }
+
+    /// Only fixed answers go into WebKit's permission map, per host with its effective value, `https` and `http`.
+    @Test func notificationPermissionsListFixedAnswersOnly() {
+        var config = PaddleConfig()
+        config.sites = [
+            "example.com": SiteSettings(notifications: .allow),
+            "docs.example.com": SiteSettings(notifications: .deny),
+            "quiet.test": SiteSettings(notifications: .ask),
+            "port.test:8080": SiteSettings(notifications: .allow),
+            "bücher.de": SiteSettings(notifications: .deny),
+            "zoomonly.test": SiteSettings(zoom: 1.2),
+        ]
+        #expect(config.notificationPermissions == [
+            "https://example.com": true, "http://example.com": true,
+            "https://docs.example.com": false, "http://docs.example.com": false,
+            "https://xn--bcher-kva.de": false, "http://xn--bcher-kva.de": false,
+        ])
+    }
+
+    /// Every `sites` field has a config default, and the defaults table covers exactly the fields.
+    @Test func siteFieldDefaultsCoverEveryField() {
+        #expect(Set(ConfigFile.siteFieldDefaults.keys) == Set(SiteSettings.Field.allCases.map(\.rawValue)))
+        for field in SiteSettings.Field.allCases {
+            #expect(ConfigFile.siteFieldDefaults[field.rawValue] == SiteSettings.defaultValue(field), "\(field)")
+        }
+    }
+
     @Test func lookupMatchesExactHostAndParentDomains() {
         var config = PaddleConfig()
         config.sites = [

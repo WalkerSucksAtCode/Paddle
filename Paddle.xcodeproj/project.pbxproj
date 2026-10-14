@@ -38,6 +38,7 @@
 		60312E19BA4F1F8CDA9A8449 /* WebsiteDataSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */; };
 		6219413CB10CDA63036C1A16 /* SettingsModel+Sites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B449E7E2031D289F74768AF /* SettingsModel+Sites.swift */; };
 		63D6A746C25A8289A6EF1D34 /* AMO in Resources */ = {isa = PBXBuildFile; fileRef = 6742A205E6C2867AE660D717 /* AMO */; };
+		64995873BFBBF2499CB2BFEA /* WebsiteNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */; };
 		6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE304A3A835594677036488 /* ProcessMemory.swift */; };
 		746D8AE754715FD5F613325D /* Scriptlets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */; };
 		7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622C488303FD517D47056F39 /* StoreInstaller.swift */; };
@@ -126,6 +127,7 @@
 		D6AB8511862F229DB168B109 /* SitesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SitesPane.swift; sourceTree = "<group>"; };
 		DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteDataSheet.swift; sourceTree = "<group>"; };
 		E05B63171469865BF8E8104E /* Paddle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paddle.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteNotifications.swift; sourceTree = "<group>"; };
 		E20AE5E86BBFB8E7575CB581 /* SettingsModel+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Extensions.swift"; sourceTree = "<group>"; };
 		EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaddleApp.swift; sourceTree = "<group>"; };
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
@@ -192,6 +194,7 @@
 				46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */,
 				25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */,
 				74ED21DEB238D504EB6834C7 /* WebInspector.swift */,
+				E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */,
 			);
 			path = Web;
 			sourceTree = "<group>";
@@ -442,6 +445,7 @@
 				CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */,
 				F5BFE827260C731264C4F715 /* WebInspector.swift in Sources */,
 				60312E19BA4F1F8CDA9A8449 /* WebsiteDataSheet.swift in Sources */,
+				64995873BFBBF2499CB2BFEA /* WebsiteNotifications.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

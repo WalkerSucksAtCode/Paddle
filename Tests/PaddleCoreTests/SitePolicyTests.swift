@@ -9,6 +9,27 @@ struct SitePolicyTests {
         #expect(policy.zoom == 1 && policy.javaScript && policy.autoplay == .muted && policy.contentBlocking && policy.location == .ask)
     }
 
+    @Test func notificationsDefaultToAskAndMergePerField() {
+        #expect(SitePolicy.defaults.notifications == .ask)
+        var config = PaddleConfig()
+        config.sites = ["example.com": SiteSettings(notifications: .allow), "docs.example.com": SiteSettings(location: .deny)]
+        let docs = config.sitePolicy(forHost: "docs.example.com")
+        #expect(docs.notifications == .allow && docs.location == .deny)
+        #expect(config.sitePolicy(forHost: "other.test").notifications == .ask)
+        #expect(SiteSettings.entry(nil, setting: .notifications, to: "allow") == ["notifications": "allow"])
+        #expect(SiteSettings.entry(nil, setting: .notifications, to: "ask") == nil)
+    }
+
+    /// Notification answers are kept apart from location answers for the same origin.
+    @Test func notificationSessionAnswersAreTheirOwnKind() {
+        var answers = SessionPermissions()
+        answers.record(true, site: "https://push.test:443", kinds: [.notifications])
+        #expect(answers.answer(site: "https://push.test:443", kind: .notifications) == true)
+        #expect(answers.answer(site: "https://push.test:443", kind: .location) == nil)
+        #expect(answers.all.map(\.kind) == [.notifications])
+        #expect(SessionPermissions.Kind.allCases.firstIndex(of: .notifications)! < SessionPermissions.Kind.allCases.firstIndex(of: .downloads)!)
+    }
+
     @Test func longestSuffixWinsPerField() {
         var config = PaddleConfig()
         config.sites = [

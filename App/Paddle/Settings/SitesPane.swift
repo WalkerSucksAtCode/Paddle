@@ -2,7 +2,7 @@ import PaddleCore
 import SwiftUI
 
 /// Settings > Sites: a row per host with a `sites` or `siteUserAgents` entry, with its zoom, JavaScript, autoplay,
-/// content blocking, location and user agent; Add Site / Add Current Site / Remove Site, Clear Data for a site, and
+/// content blocking, location, notifications and user agent; Add Site / Add Current Site / Remove Site, Clear Data for a site, and
 /// "This session": permission answers kept only for this run, each host with Forget. Fixed height; the table
 /// scrolls. While config.json can't be read only the config edits are off: Clear Data and Forget don't touch the file.
 struct SitesPane: View {
@@ -78,6 +78,8 @@ struct SitesPane: View {
                     .width(58)
                 TableColumn("Location") { row in locationPicker(row) }
                     .width(74)
+                TableColumn("Notifications") { row in notificationsPicker(row) }
+                    .width(92)
                 TableColumn("User agent") { row in userAgentPicker(row) }
                     .width(90)
             }
@@ -118,7 +120,7 @@ struct SitesPane: View {
 
             sessionSection
 
-            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies at once, the rest from the next page load. \(Self.builtInAgents) Websites can't show notifications in Paddle: WebKit offers apps no API for them.")
+            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies at once, the rest from the next page load. \(Self.builtInAgents) Web Push (notifications while a site is closed) isn't supported.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -213,13 +215,27 @@ struct SitesPane: View {
             get: { row.policy.location },
             set: { set(.location, .string($0.rawValue), on: row) }
         )) {
-            Text("Ask").tag(SiteSettings.Location.ask)
-            Text("Allow").tag(SiteSettings.Location.allow)
-            Text("Deny").tag(SiteSettings.Location.deny)
+            Text("Ask").tag(SiteSettings.Permission.ask)
+            Text("Allow").tag(SiteSettings.Permission.allow)
+            Text("Deny").tag(SiteSettings.Permission.deny)
         }
         .labelsHidden()
         .disabled(model.controlsDisabled)
         .help("Ask asks once per site per session. " + source(row, .location))
+    }
+
+    private func notificationsPicker(_ row: SiteRow) -> some View {
+        Picker("Notifications for \(row.key)", selection: Binding(
+            get: { row.policy.notifications },
+            set: { set(.notifications, .string($0.rawValue), on: row) }
+        )) {
+            Text("Ask").tag(SiteSettings.Permission.ask)
+            Text("Allow").tag(SiteSettings.Permission.allow)
+            Text("Deny").tag(SiteSettings.Permission.deny)
+        }
+        .labelsHidden()
+        .disabled(model.controlsDisabled)
+        .help("Ask asks once per site per session. Allowed notifications appear in macOS Notification Center. " + source(row, .notifications))
     }
 
     /// Default (Safari's), Chrome, Firefox, Custom (a hand-written string; shown only when set), or Custom… to type one.
@@ -304,6 +320,7 @@ struct SitesPane: View {
         case .autoplay: return entry.autoplay != nil
         case .contentBlocking: return entry.contentBlocking != nil
         case .location: return entry.location != nil
+        case .notifications: return entry.notifications != nil
         }
     }
 
@@ -314,7 +331,7 @@ struct SitesPane: View {
         return VStack(alignment: .leading, spacing: 4) {
             Text("This session").font(.headline)
             if groups.isEmpty {
-                Text("No camera, microphone, location or download answers yet. They last until Paddle quits.")
+                Text("No camera, microphone, location, notification or download answers yet. They last until Paddle quits.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             } else {
@@ -351,6 +368,7 @@ struct SitesPane: View {
             case .camera: "Camera"
             case .microphone: "Microphone"
             case .location: "Location"
+            case .notifications: "Notifications"
             case .downloads: "Downloads"
             }
             return "\(kind) \(answer.allowed ? "allowed" : "denied")"

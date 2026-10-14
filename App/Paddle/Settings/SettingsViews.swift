@@ -59,7 +59,7 @@ enum SettingsPane: String, CaseIterable {
             "history", "historyDays", "clear history", "cookies", "website data", "site storage",
         ]
         case .sites: [
-            "site", "zoom", "JavaScript", "autoplay", "location", "camera", "microphone", "downloads", "blocking",
+            "site", "zoom", "JavaScript", "autoplay", "location", "notifications", "camera", "microphone", "downloads", "blocking",
             "user agent", "siteUserAgents", "sitePersonas", "persona", "clear data", "permissions", "this session",
         ]
         case .extensions: [

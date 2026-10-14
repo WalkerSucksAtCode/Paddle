@@ -124,7 +124,8 @@ extension SettingsModel {
         case (.javaScript, .bool(let on)): entry.javaScript = on
         case (.autoplay, .string(let text)): entry.autoplay = SiteSettings.Autoplay(rawValue: text)
         case (.contentBlocking, .bool(let on)): entry.contentBlocking = on
-        case (.location, .string(let text)): entry.location = SiteSettings.Location(rawValue: text)
+        case (.location, .string(let text)): entry.location = SiteSettings.Permission(rawValue: text)
+        case (.notifications, .string(let text)): entry.notifications = SiteSettings.Permission(rawValue: text)
         default: return "\(field.rawValue) can't be set to that value."
         }
         candidate.sites[key] = entry
@@ -157,7 +158,7 @@ extension SettingsModel {
         return hosts.map { host in (host, all.filter { $0.host == host }) }
     }
 
-    /// Forget: the host's next camera, microphone, location or download request asks again.
+    /// Forget: the host's next camera, microphone, location, notification or download request asks again.
     func forgetSessionAnswers(_ host: String) {
         AppModel.shared.forgetSessionAnswers(forHost: host)
     }
@@ -170,6 +171,7 @@ extension SettingsModel {
         case .autoplay: .string(policy.autoplay.rawValue)
         case .contentBlocking: .bool(policy.contentBlocking)
         case .location: .string(policy.location.rawValue)
+        case .notifications: .string(policy.notifications.rawValue)
         }
     }
 }

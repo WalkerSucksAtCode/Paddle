@@ -614,12 +614,65 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         case .deny: return .deny
         case .ask: break
         }
+        let allowed = await askSitePermission(
+            .location,
+            field: .location,
+            origin: origin,
+            question: "Allow \(host.isEmpty ? "this page" : host) to use your location?"
+        )
+        return allowed ? .grant : .deny
+    }
+
+    /// Notifications, from WebKit's private UI delegate method for `Notification.requestPermission()`:
+    /// `sites.<host>.notifications` allow or deny answers without asking, otherwise the location prompt's (once per
+    /// site per session, "Remember" writes `sites.<host>.notifications`). Private windows always get no. A yes asks
+    /// macOS once whether Paddle may post notifications (`WebsiteNotifications`). WebKit calls this on the main thread.
+    @objc(_webView:requestNotificationPermissionForSecurityOrigin:decisionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        requestNotificationPermissionForSecurityOrigin origin: WKSecurityOrigin,
+        decisionHandler: @escaping (Bool) -> Void
+    ) {
+        Task { decisionHandler(await notificationDecision(for: origin)) }
+    }
+
+    private func notificationDecision(for origin: WKSecurityOrigin) async -> Bool {
+        let isPrivate = tab?.isPrivate ?? true
+        guard !isPrivate else { return false }
+        let host = origin.host
+        let allowed: Bool
+        switch AppModel.shared.config.sitePolicy(forHost: host).notifications {
+        case .allow: allowed = true
+        case .deny: allowed = false
+        case .ask:
+            allowed = await askSitePermission(
+                .notifications,
+                field: .notifications,
+                origin: origin,
+                question: "\(host.isEmpty ? "This page" : host) wants to show notifications"
+            )
+        }
+        if allowed { WebsiteNotifications.shared.requestSystemAuthorization() }
+        return allowed
+    }
+
+    /// The Allow / Don't Allow prompt behind location and notifications. An answer already given for this origin and
+    /// kind this run comes back without asking; else the prompt shows (a sheet, one at a time per window). "Remember
+    /// for <host>", offered outside private windows, also writes `field` for the host as "allow" or "deny".
+    private func askSitePermission(
+        _ kind: SessionPermissions.Kind,
+        field: SiteSettings.Field,
+        origin: WKSecurityOrigin,
+        question: String
+    ) async -> Bool {
+        let app = AppModel.shared
+        let host = origin.host
         let site = Self.site(of: origin)
         let isPrivate = tab?.isPrivate ?? true
-        if let answer = app[permissionsFor: isPrivate].answer(site: site, kind: .location) { return answer ? .grant : .deny }
+        if let answer = app[permissionsFor: isPrivate].answer(site: site, kind: kind) { return answer }
 
         let alert = NSAlert()
-        alert.messageText = "Allow \(host.isEmpty ? "this page" : host) to use your location?"
+        alert.messageText = question
         alert.informativeText = "Paddle won’t ask again for this site until it quits."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
@@ -628,15 +681,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             alert.suppressionButton?.title = "Remember for \(host)"
             alert.suppressionButton?.state = .off
         }
-        let response = await present(alert) { app[permissionsFor: isPrivate].answer(site: site, kind: .location) == nil }
-        if response == .abort { return app[permissionsFor: isPrivate].answer(site: site, kind: .location) == true ? .grant : .deny }
+        let response = await present(alert) { app[permissionsFor: isPrivate].answer(site: site, kind: kind) == nil }
+        if response == .abort { return app[permissionsFor: isPrivate].answer(site: site, kind: kind) == true }
         let allowed = response == .alertFirstButtonReturn
-        app[permissionsFor: isPrivate].record(allowed, site: site, kinds: [.location])
+        app[permissionsFor: isPrivate].record(allowed, site: site, kinds: [kind])
         if alert.showsSuppressionButton, alert.suppressionButton?.state == .on {
-            let value: SiteSettings.Location = allowed ? .allow : .deny
             let key = app.config.siteKey(forHost: host)
-            Task { await app.writeSiteSetting(.location, .string(value.rawValue), forKey: key) }
+            Task { await app.writeSiteSetting(field, .string(allowed ? "allow" : "deny"), forKey: key) }
         }
-        return allowed ? .grant : .deny
+        return allowed
     }
 }

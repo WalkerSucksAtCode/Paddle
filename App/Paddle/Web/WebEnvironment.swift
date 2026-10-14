@@ -52,6 +52,9 @@ final class WebEnvironment {
     /// the same as everywhere.
     func makeConfiguration(isPrivate: Bool, extensions: Bool) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
+        // This configuration's process pool gets the page notification provider (WebsiteNotifications). KVC, not
+        // `processPool`: that property is deprecated.
+        WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: isPrivate)
         c.userContentController = contentController
         if isPrivate {
             let store = privateDataStore ?? .nonPersistent()
@@ -99,7 +102,9 @@ final class WebEnvironment {
     /// - `requestIdleCallback`, which Chrome and Firefox ship and extensions (Proton Pass's form detector) and some
     ///   sites call without a fallback (the extension prelude has a stand-in);
     /// - `HiddenPageDOMTimerThrottlingAutoIncreases`, so timers in hidden pages are throttled harder the longer
-    ///   they stay hidden (WebKit already throttles them; this lets the interval grow).
+    ///   they stay hidden (WebKit already throttles them; this lets the interval grow);
+    /// - `AllowsPictureInPictureMediaPlayback` and `VideoPresentationManagerEnabled`, which picture-in-picture needs
+    ///   together: without both, `requestPictureInPicture()` fails with NotSupportedError (measured 2026-10).
     /// Private `_setEnabled:forFeature:`, guarded (`WebFeatureToggles`); without it nothing changes.
     private static func enableWebFeatures(_ preferences: WKPreferences) {
         WebFeatureToggles.enable(enabledFeatures, in: preferences)
@@ -108,7 +113,10 @@ final class WebEnvironment {
     /// The `_WKFeature` objects for `enableWebFeatures`, looked up once: `+_features` builds an object for every
     /// WebKit feature (hundreds), which is wasted work on each new web view.
     private static let enabledFeatures: [NSObject] = WebFeatureToggles.features(
-        named: ["RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases"],
+        named: [
+            "RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases",
+            "AllowsPictureInPictureMediaPlayback", "VideoPresentationManagerEnabled",
+        ],
         in: WKPreferences.self as AnyObject
     )
 
@@ -117,6 +125,7 @@ final class WebEnvironment {
     /// and block lists never reach extension pages.
     func makeExtensionPageBaseConfiguration() -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
+        WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: false)
         c.websiteDataStore = dataStore
         c.applicationNameForUserAgent = applicationName
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")

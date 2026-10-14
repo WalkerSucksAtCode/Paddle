@@ -51,7 +51,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var userAgentSuffix: String
     /// Full user agent for specific sites, keyed by host suffix (e.g. `"example.com"` also covers `www.example.com`).
     public var siteUserAgents: [String: String]
-    /// Per-site zoom, JavaScript, autoplay, content blocking and location, keyed by host suffix like
+    /// Per-site zoom, JavaScript, autoplay, content blocking, location and notifications, keyed by host suffix like
     /// `siteUserAgents`. See `SiteSettings`.
     public var sites: [String: SiteSettings]
 

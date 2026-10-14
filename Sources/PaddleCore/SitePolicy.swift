@@ -9,10 +9,11 @@ public struct SitePolicy: Sendable, Equatable {
     public var autoplay: SiteSettings.Autoplay
     /// False takes the host out of every block list (a site-wide exception compiled into each list).
     public var contentBlocking: Bool
-    public var location: SiteSettings.Location
+    public var location: SiteSettings.Permission
+    public var notifications: SiteSettings.Permission
 
     /// Paddle's defaults: 100 %, JavaScript on, media may autoplay muted (Safari's "Stop media with sound"),
-    /// blocking on, location asked once per site per session.
+    /// blocking on, location and notifications asked once per site per session.
     public static let defaults = SitePolicy(SiteSettings())
 
     public init(_ settings: SiteSettings) {
@@ -21,6 +22,7 @@ public struct SitePolicy: Sendable, Equatable {
         autoplay = settings.autoplay ?? .muted
         contentBlocking = settings.contentBlocking ?? true
         location = settings.location ?? .ask
+        notifications = settings.notifications ?? .ask
     }
 
     /// The smallest and largest zoom Zoom In / Zoom Out reach, and their step.
@@ -59,6 +61,28 @@ extension PaddleConfig {
         return Set(hosts).filter(PaddleConfig.isPlainHost).sorted()
     }
 
+    /// Notification answers the `sites` settings fix in advance, for WebKit's permission lookup on page load
+    /// (`_WKWebsiteDataStoreDelegate`'s `notificationPermissionsForWebsiteDataStore:`): `true` for `allow`, `false` for
+    /// `deny`, keyed by origin (`https://example.com` and `http://example.com`, for each plain host with an entry). A
+    /// host's value is its own effective `notifications`, so a subdomain entry wins over its parent's. `ask` gives no
+    /// key: WebKit then reports the permission as default and asks through the UI delegate. Subdomains that only a
+    /// parent entry covers are not listed; WebKit looks up exact origins.
+    public var notificationPermissions: [String: Bool] {
+        let hosts = Set(sites.keys.map(PaddleConfig.normalizedHost)).filter(PaddleConfig.isPlainHost)
+        var answers: [String: Bool] = [:]
+        for host in hosts {
+            let answer: Bool
+            switch sitePolicy(forHost: host).notifications {
+            case .allow: answer = true
+            case .deny: answer = false
+            case .ask: continue
+            }
+            answers["https://\(host)"] = answer
+            answers["http://\(host)"] = answer
+        }
+        return answers
+    }
+
     /// Letters, digits, dots and hyphens, not starting or ending with a dot: a host a match pattern or rule can name.
     public static func isPlainHost(_ host: String) -> Bool {
         !host.isEmpty && !host.hasPrefix(".") && !host.hasSuffix(".") && !host.contains("..")
@@ -93,7 +117,7 @@ extension PaddleConfig {
 extension SiteSettings {
     /// The field names as config.json writes them.
     public enum Field: String, Sendable, CaseIterable {
-        case zoom, javaScript, autoplay, contentBlocking, location
+        case zoom, javaScript, autoplay, contentBlocking, location, notifications
     }
 
     /// A `sites` entry as it is in the file (`existing`, nil when there is none) with one field set to `value`, or
@@ -114,16 +138,18 @@ extension SiteSettings {
         case .autoplay: return .string(d.autoplay.rawValue)
         case .contentBlocking: return .bool(d.contentBlocking)
         case .location: return .string(d.location.rawValue)
+        case .notifications: return .string(d.notifications.rawValue)
         }
     }
 }
 
-/// Answers to permission prompts for this run of Paddle only (camera, microphone, location, downloads from another
-/// site's frame), keyed by site: an origin (`https://example.com:443`) for capture and location, a host for
-/// downloads. Never written to disk. Settings lists them under "This session" with a Forget button.
+/// Answers to permission prompts for this run of Paddle only (camera, microphone, location, notifications, downloads
+/// from another site's frame), keyed by site: an origin (`https://example.com:443`) for capture, location and
+/// notifications, a host for downloads. Never written to disk. Settings lists them under "This session" with a Forget
+/// button.
 public struct SessionPermissions: Sendable, Equatable {
     public enum Kind: String, Sendable, CaseIterable, Comparable {
-        case camera, microphone, location, downloads
+        case camera, microphone, location, notifications, downloads
 
         public static func < (a: Kind, b: Kind) -> Bool {
             allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
