@@ -115,10 +115,20 @@ struct AdvancedPane: View {
         } header: {
             Text("Site User Agents")
         } footer: {
-            Text("A full user agent for a site and its subdomains (siteUserAgents), used from its next load.")
+            Text("A full user agent for a site and its subdomains (siteUserAgents), used from its next load. \(Self.builtInAgents)")
                 .foregroundStyle(.secondary)
         }
         .disabled(model.controlsDisabled)
+    }
+
+    /// Paddle's built-in fixes (`SiteCompat`), in words: whose user agent goes to which hosts, and how an entry here
+    /// overrides them.
+    private static var builtInAgents: String {
+        let byPersona = Dictionary(grouping: SiteCompat.defaults, by: { $0.value.persona == .chrome ? "Chrome" : "Firefox" })
+        let parts = byPersona.keys.sorted().map { name in
+            "\(name)'s to \(byPersona[name, default: []].map(\.key).sorted().joined(separator: ", "))"
+        }
+        return "Built in: \(parts.joined(separator: "; ")), unless an entry here or a persona covers the host (an empty entry sends WebKit's own)."
     }
 
     private func addAgent() {

@@ -141,6 +141,30 @@ struct ExtensionPersonaTests {
         #expect(config.pageUserAgent(forHost: "other.org") == nil)
     }
 
+    @Test func builtInSiteFixAppliesOnlyWhereConfigIsSilent() {
+        let firefox = Persona.firefox.userAgent(.current)
+        let empty = PaddleConfig()
+        #expect(empty.pageUserAgent(forHost: "account.proton.me") == firefox)
+        #expect(empty.pageUserAgent(forHost: "pass.proton.me") == firefox)
+        #expect(empty.pageUserAgent(forHost: "proton.me") == nil)
+        #expect(empty.pageUserAgent(forHost: "mail.proton.me") == nil)
+        // Any entry covering the host wins: a string, "" (WebKit's own) or a persona, "none" included.
+        #expect(PaddleConfig(siteUserAgents: ["pass.proton.me": "Custom"]).pageUserAgent(forHost: "pass.proton.me") == "Custom")
+        #expect(PaddleConfig(siteUserAgents: ["proton.me": ""]).pageUserAgent(forHost: "pass.proton.me") == nil)
+        #expect(PaddleConfig(sitePersonas: ["proton.me": .none]).pageUserAgent(forHost: "account.proton.me") == nil)
+        #expect(PaddleConfig(sitePersonas: ["account.proton.me": .chrome]).pageUserAgent(forHost: "account.proton.me") == Persona.chrome.userAgent(.current))
+        // An entry for another host leaves the fix alone.
+        #expect(PaddleConfig(siteUserAgents: ["example.com": "Custom"]).pageUserAgent(forHost: "account.proton.me") == firefox)
+    }
+
+    @Test func builtInSiteFixesAreWellFormed() {
+        for (host, entry) in SiteCompat.defaults {
+            #expect(PaddleConfig.normalizedHost(host) == host)
+            #expect(entry.persona == .chrome || entry.persona == .firefox)
+            #expect(!entry.reason.isEmpty)
+        }
+    }
+
     @Test func validatorFlagsBadPersonaEntries() {
         let config = PaddleConfig(
             extensionCompat: ["a/b": ExtensionCompatConfig(), "ff": ExtensionCompatConfig(persona: .firefox, publicID: true), "ok": ExtensionCompatConfig(persona: .chrome, publicID: true)],

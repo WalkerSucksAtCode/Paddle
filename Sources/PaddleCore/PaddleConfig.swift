@@ -260,10 +260,20 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     }
 
     /// The user agent a page on `host` is sent: the `siteUserAgents` string when one covers the host and isn't empty,
-    /// else the `sitePersonas` persona's (Chrome or Firefox at `BrowserVersions.current`), else nil (WebKit's own).
+    /// else the `sitePersonas` persona's (Chrome or Firefox at `BrowserVersions.current`), else Paddle's built-in fix
+    /// (`SiteCompat`) when neither key has any entry covering the host, else nil (WebKit's own).
     public func pageUserAgent(forHost host: String) -> String? {
-        if let agent = userAgent(forHost: host), !agent.isEmpty { return agent }
-        return sitePersona(forHost: host)?.userAgent(.current)
+        let configured = userAgent(forHost: host)
+        if let configured, !configured.isEmpty { return configured }
+        if let persona = sitePersona(forHost: host) { return persona.userAgent(.current) }
+        guard configured == nil, !hasSitePersonaEntry(forHost: host) else { return nil }
+        return SiteCompat.entry(forHost: host)?.persona.userAgent(.current)
+    }
+
+    /// Whether any `sitePersonas` entry covers `host`, `none` and `native` included.
+    func hasSitePersonaEntry(forHost host: String) -> Bool {
+        let host = PaddleConfig.normalizedHost(host)
+        return sitePersonas.keys.contains { PaddleConfig.hostKey($0, matches: host) }
     }
 }
 
