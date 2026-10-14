@@ -49,9 +49,13 @@ public enum ConfigValidator {
             (.tabSleepAfterMinutes, config.tabSleepAfterMinutes),
             (.maxAwakeTabs, Double(config.maxAwakeTabs)),
             (.sessionHistoryTabs, Double(config.sessionHistoryTabs)),
+            (.cpuSleepPercent, Double(config.cpuSleepPercent)),
             (.filterUpdateDays, Double(config.filterUpdateDays)),
         ] where value < 0 {
             issues.append(ConfigIssue(key: key, severity: .error, message: "Can't be negative (0 turns it off)."))
+        }
+        if config.cpuSleepPercent > 800 {
+            issues.append(ConfigIssue(key: .cpuSleepPercent, severity: .error, message: "Can't be above 800 (eight cores). 0 turns it off."))
         }
 
         for (index, list) in config.trustedLists.enumerated() where !config.filterLists.contains(list) {

@@ -31,11 +31,11 @@ struct ExtensionsPane: View {
             ForEach(summaries) { summary in
                 Section {
                     row(summary)
-                    DisclosureGroup(isExpanded: isExpanded(summary.folder)) {
+                    SettingsDisclosure(
+                        title: "Details", isExpanded: isExpanded(summary.folder),
+                        accessibilityLabel: "Details for \(summary.displayName)"
+                    ) {
                         details(summary)
-                    } label: {
-                        Text("Details")
-                            .accessibilityLabel("Details for \(summary.displayName)")
                     }
                 }
             }

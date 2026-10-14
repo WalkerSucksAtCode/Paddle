@@ -63,6 +63,18 @@ struct ConfigValidatorTests {
         #expect(issues(config).isEmpty)
     }
 
+    @Test func cpuSleepPercentIsZeroToEightHundred() {
+        var config = PaddleConfig()
+        config.cpuSleepPercent = -1
+        #expect(paths(config, .error) == ["cpuSleepPercent"])
+        config.cpuSleepPercent = 801
+        #expect(paths(config, .error) == ["cpuSleepPercent"])
+        config.cpuSleepPercent = 800
+        #expect(issues(config).isEmpty)
+        config.cpuSleepPercent = 0
+        #expect(issues(config).isEmpty)
+    }
+
     @Test func filterListsMustBeHTTPS() {
         var config = PaddleConfig()
         config.filterLists = ["https://easylist.to/easylist/easylist.txt", "http://example.com/list.txt", "easylist"]

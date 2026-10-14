@@ -23,6 +23,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var maxAwakeTabs: Int
     /// Pinned tabs never sleep unless this is true.
     public var sleepPinnedTabs: Bool
+    /// A background tab whose web process keeps at least this percent of one CPU core busy for 3 minutes in a row
+    /// sleeps, as an idle one does, so a page that spins in the background doesn't run all day. 0 turns it off.
+    public var cpuSleepPercent: Int
     /// Tabs whose back/forward history the saved session keeps: the most recently used ones, plus pinned tabs. The
     /// others come back on their page with no Back history.
     public var sessionHistoryTabs: Int
@@ -51,6 +54,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
 
     /// Show per-tab memory in the toolbar and tab tooltips.
     public var showTabMemory: Bool
+    /// The address field shows a web page's whole address while you aren't editing it; off shows only its site.
+    public var showFullAddress: Bool
     /// Right-click > Inspect Element and the Web Inspector.
     public var developerTools: Bool
 
@@ -82,10 +87,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, sessionHistoryTabs
+        case tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
-        case showTabMemory, developerTools
+        case showTabMemory, showFullAddress, developerTools
         case shortcuts
         case extensions, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -99,6 +104,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         tabSleepAfterMinutes: Double = 30,
         maxAwakeTabs: Int = 10,
         sleepPinnedTabs: Bool = false,
+        cpuSleepPercent: Int = 30,
         sessionHistoryTabs: Int = 30,
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
@@ -109,6 +115,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         siteUserAgents: [String: String] = [:],
         sites: [String: SiteSettings] = [:],
         showTabMemory: Bool = true,
+        showFullAddress: Bool = false,
         developerTools: Bool = true,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
@@ -125,6 +132,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.tabSleepAfterMinutes = tabSleepAfterMinutes
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
+        self.cpuSleepPercent = cpuSleepPercent
         self.sessionHistoryTabs = sessionHistoryTabs
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
@@ -135,6 +143,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.siteUserAgents = siteUserAgents
         self.sites = sites
         self.showTabMemory = showTabMemory
+        self.showFullAddress = showFullAddress
         self.developerTools = developerTools
         self.shortcuts = shortcuts
         self.extensions = extensions
@@ -159,6 +168,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         tabSleepAfterMinutes = c.decodeValue(.tabSleepAfterMinutes, d.tabSleepAfterMinutes, issues)
         maxAwakeTabs = c.decodeValue(.maxAwakeTabs, d.maxAwakeTabs, issues)
         sleepPinnedTabs = c.decodeValue(.sleepPinnedTabs, d.sleepPinnedTabs, issues)
+        cpuSleepPercent = c.decodeValue(.cpuSleepPercent, d.cpuSleepPercent, issues)
         sessionHistoryTabs = c.decodeValue(.sessionHistoryTabs, d.sessionHistoryTabs, issues)
         contentBlocking = c.decodeValue(.contentBlocking, d.contentBlocking, issues)
         filterLists = c.decodeStrings(.filterLists, d.filterLists, issues)
@@ -169,6 +179,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         siteUserAgents = c.decodeEntries(.siteUserAgents, d.siteUserAgents, issues)
         sites = c.decodeEntries(.sites, d.sites, issues)
         showTabMemory = c.decodeValue(.showTabMemory, d.showTabMemory, issues)
+        showFullAddress = c.decodeValue(.showFullAddress, d.showFullAddress, issues)
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
         extensions = c.decodeEntries(.extensions, d.extensions, issues)

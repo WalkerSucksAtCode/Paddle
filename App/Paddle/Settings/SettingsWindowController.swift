@@ -146,6 +146,27 @@ private struct SettingsPaneView: View {
     }
 }
 
+/// A collapsed group (collapsed until opened) whose whole label opens it, not only the chevron: a plain
+/// `DisclosureGroup` in a grouped form answers clicks on its chevron alone. `isExpanded` nil keeps the state here.
+struct SettingsDisclosure<Content: View>: View {
+    let title: String
+    var isExpanded: Binding<Bool>?
+    var accessibilityLabel: String?
+    @ViewBuilder var content: Content
+    @State private var expandedHere = false
+
+    var body: some View {
+        let expanded = isExpanded ?? $expandedHere
+        DisclosureGroup(isExpanded: expanded) {
+            content
+        } label: {
+            Button(title) { withAnimation { expanded.wrappedValue.toggle() } }
+                .buttonStyle(.plain)
+                .accessibilityLabel(accessibilityLabel ?? title)
+        }
+    }
+}
+
 /// The form style every pane uses: grouped, scrolling inside the pane.
 struct SettingsForm<Content: View>: View {
     @ViewBuilder var content: Content

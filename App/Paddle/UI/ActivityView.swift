@@ -27,7 +27,7 @@ struct ActivityView: View {
                     .foregroundStyle(.secondary)
             }
 
-            ScrollView {
+            FittedScrollView(maxHeight: 320) {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(tabs) { tab in
                         row(tab)
@@ -37,7 +37,6 @@ struct ActivityView: View {
                     }
                 }
             }
-            .frame(maxHeight: 320)
 
             breakdownRows
 
@@ -52,11 +51,7 @@ struct ActivityView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack {
-                Button("Sleep Background Tabs") { app.sleepBackgroundTabs() }
-                Spacer()
-                Button("Reload Config") { Task { await app.reloadConfig() } }
-            }
+            Button("Sleep Background Tabs") { app.sleepBackgroundTabs() }
 
             Divider()
 
@@ -65,13 +60,26 @@ struct ActivityView: View {
                 if app.web.isUpdatingFilters {
                     Text("Updating filter lists…").font(.system(size: 11)).foregroundStyle(.secondary)
                 }
-                // Keyed by position: a line keeps its identity while the lists compile, so an open disclosure stays open.
+                // One plain line per list ("easylist: 62,141 rules"); the converter's statistics and what it couldn't
+                // cover wait under Details. Keyed by position: a line keeps its identity while the lists compile.
                 ForEach(app.web.blockerLines.indices, id: \.self) { index in
                     let line = app.web.blockerLines[index]
-                    Text(line.text).font(.system(size: 11)).foregroundStyle(.secondary)
-                    if let summary = line.summary {
-                        CoverageDisclosure(summary: summary, scriptletsOn: app.config.scriptlets)
+                    Text(Self.shortLine(line.text)).font(.system(size: 11)).foregroundStyle(.secondary).help(line.text)
+                }
+                if app.web.blockerLines.contains(where: { $0.summary != nil || Self.shortLine($0.text) != $0.text }) {
+                    SettingsDisclosure(title: "Details") {
+                        ForEach(app.web.blockerLines.indices, id: \.self) { index in
+                            let line = app.web.blockerLines[index]
+                            Text(line.text)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let summary = line.summary {
+                                CoverageDisclosure(summary: summary, scriptletsOn: app.config.scriptlets)
+                            }
+                        }
                     }
+                    .font(.system(size: 11))
                 }
                 ForEach(app.web.filterUpdateProblems.values.sorted(), id: \.self) { line in
                     Label(line, systemImage: "exclamationmark.triangle")
@@ -84,6 +92,11 @@ struct ActivityView: View {
         // Fresh numbers every 5 s while open, with a full helper scan each time.
         .onAppear { app.beginMemoryReadout() }
         .onDisappear { app.endMemoryReadout() }
+    }
+
+    /// A block list's status line without its parenthesised statistics: "easylist: 62,141 rules".
+    private static func shortLine(_ text: String) -> String {
+        text.components(separatedBy: " (").first ?? text
     }
 
     /// Where the total goes: every WebContent process lands in one row, plus the shared processes, the app and
@@ -200,14 +213,13 @@ struct DownloadsView: View {
                 Button("Clear") { store.clearFinished() }
                     .disabled(store.items.allSatisfy { $0.state == .running })
             }
-            ScrollView {
+            FittedScrollView(maxHeight: 360) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(store.items) { item in
                         row(item)
                     }
                 }
             }
-            .frame(maxHeight: 360)
         }
         .padding(14)
         .frame(width: 340)
@@ -255,5 +267,21 @@ struct DownloadsView: View {
 
     private func bytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+    }
+}
+
+/// A vertical scroll view as tall as its content up to `maxHeight`: a plain `ScrollView` in a popover takes its whole
+/// maximum, leaving a gap under a short list.
+private struct FittedScrollView<Content: View>: View {
+    let maxHeight: CGFloat
+    @ViewBuilder var content: Content
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView {
+            content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: min(max(contentHeight, 1), maxHeight))
     }
 }

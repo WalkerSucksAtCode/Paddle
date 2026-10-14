@@ -31,6 +31,16 @@ struct ConfigTests {
         #expect(try PaddleConfig.decode(Data(#"{"maxAwakeTabs": "four"}"#.utf8)).maxAwakeTabs == 10)
     }
 
+    @Test func cpuSleepPercentDefaultsToThirtyAndWrongTypeFallsBack() throws {
+        #expect(PaddleConfig().cpuSleepPercent == 30)
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"cpuSleepPercent": "lots"}"#.utf8))
+        #expect(config.cpuSleepPercent == 30)
+        #expect(issues.count == 1)
+        #expect(issues.first?.path == ["cpuSleepPercent"])
+        #expect(issues.first?.message == "Expected a whole number. Paddle uses the default, 30, until this is fixed.")
+        #expect(try PaddleConfig.decode(Data(#"{"cpuSleepPercent": 0}"#.utf8)).cpuSleepPercent == 0)
+    }
+
     @Test func nullAndMissingKeysAreTheDefaultWithNoIssue() throws {
         let (config, issues) = try PaddleConfig.decodeReportingIssues(
             Data(#"{"maxAwakeTabs": null, "sites": null, "filterLists": null, "unknownKey": [1]}"#.utf8)

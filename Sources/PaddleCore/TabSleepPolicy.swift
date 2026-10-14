@@ -9,14 +9,19 @@ public struct TabSnapshot: Sendable, Equatable {
     public var isPinned: Bool
     /// Playing audio or video, or using the camera or microphone. Never put to sleep.
     public var isBusy: Bool
+    /// When this tab's process started using at least the CPU limit without a break; nil when under it or unknown.
+    public var cpuBusySince: Date?
 
-    public init(id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool) {
+    public init(
+        id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool, cpuBusySince: Date? = nil
+    ) {
         self.id = id
         self.lastActive = lastActive
         self.isAwake = isAwake
         self.isSelected = isSelected
         self.isPinned = isPinned
         self.isBusy = isBusy
+        self.cpuBusySince = cpuBusySince
     }
 }
 
@@ -26,18 +31,26 @@ public struct TabSleepPolicy: Sendable, Equatable {
     public var sleepAfter: TimeInterval
     public var maxAwakeTabs: Int
     public var sleepPinnedTabs: Bool
+    /// Percent of one CPU core a background tab's process must keep busy to sleep; 0 turns CPU-based sleeping off.
+    public var cpuPercent: Double
 
-    public init(sleepAfter: TimeInterval, maxAwakeTabs: Int, sleepPinnedTabs: Bool) {
+    /// How long a tab must stay at `cpuPercent` before it sleeps. A short burst (a download, a build step) doesn't
+    /// count, and the sweep that checks this runs once a minute.
+    public static let cpuSustain: TimeInterval = 3 * 60
+
+    public init(sleepAfter: TimeInterval, maxAwakeTabs: Int, sleepPinnedTabs: Bool, cpuPercent: Double = 0) {
         self.sleepAfter = sleepAfter
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
+        self.cpuPercent = cpuPercent
     }
 
     public init(config: PaddleConfig) {
         self.init(
             sleepAfter: config.tabSleepAfterMinutes * 60,
             maxAwakeTabs: config.maxAwakeTabs,
-            sleepPinnedTabs: config.sleepPinnedTabs
+            sleepPinnedTabs: config.sleepPinnedTabs,
+            cpuPercent: Double(config.cpuSleepPercent)
         )
     }
 
@@ -59,6 +72,14 @@ public struct TabSleepPolicy: Sendable, Equatable {
             }
         }
 
+        if cpuPercent > 0 {
+            for tab in eligible where !chosenSet.contains(tab.id) {
+                guard let busySince = tab.cpuBusySince, now.timeIntervalSince(busySince) >= Self.cpuSustain else { continue }
+                chosen.append(tab.id)
+                chosenSet.insert(tab.id)
+            }
+        }
+
         if maxAwakeTabs > 0 {
             var awake = tabs.filter(\.isAwake).count - chosen.count
             for tab in eligible where awake > maxAwakeTabs && !chosenSet.contains(tab.id) {
@@ -71,6 +92,53 @@ public struct TabSleepPolicy: Sendable, Equatable {
         let order = Dictionary(uniqueKeysWithValues: eligible.enumerated().map { ($1.id, $0) })
         return chosen.sorted { order[$0, default: 0] < order[$1, default: 0] }
     }
+}
+
+/// Per-tab CPU use between sleep sweeps, from each tab's WebContent process CPU time.
+public struct CPUUsageTracker: Sendable {
+    /// The last sample of one tab, and when its sustained use began (nil while under the limit).
+    private struct Record {
+        var pid: Int32
+        var cpuSeconds: TimeInterval
+        var sampledAt: Date
+        var busySince: Date?
+    }
+
+    private var records: [UUID: Record] = [:]
+
+    public init() {}
+
+    /// Records `cpuSeconds` (user + system CPU time of the tab's process, `pid`) at `now`. Returns the share of one core
+    /// used since the previous sample of the same tab and pid (1.0 = one full core), or nil for a first sample.
+    /// A changed pid, or a nil `cpuSeconds`, restarts the tab. Maintains busySince: set to the previous sample's
+    /// time when usage first reaches `limit` (a fraction, e.g. 0.3), kept while it stays at or above, cleared below it.
+    public mutating func record(_ id: UUID, pid: Int32, cpuSeconds: TimeInterval?, at now: Date, limit: Double) -> Double? {
+        guard let cpuSeconds else {
+            records[id] = nil
+            return nil
+        }
+        guard let previous = records[id], previous.pid == pid, cpuSeconds >= previous.cpuSeconds else {
+            // A new process, or CPU time that went backwards (the process was replaced): this sample starts over.
+            records[id] = Record(pid: pid, cpuSeconds: cpuSeconds, sampledAt: now, busySince: nil)
+            return nil
+        }
+        // No forward time, no rate. The old sample stays, so the next one still measures from its own time.
+        let wall = now.timeIntervalSince(previous.sampledAt)
+        guard wall > 0 else { return nil }
+        let share = (cpuSeconds - previous.cpuSeconds) / wall
+        let busySince: Date? = share >= limit ? (previous.busySince ?? previous.sampledAt) : nil
+        records[id] = Record(pid: pid, cpuSeconds: cpuSeconds, sampledAt: now, busySince: busySince)
+        return share
+    }
+
+    /// When the tab's sustained use began (see `record`); nil while it is under the limit, or unknown.
+    public func busySince(_ id: UUID) -> Date? { records[id]?.busySince }
+
+    /// Forgets a tab (it was selected, is playing media, slept, or closed): its clock restarts from the next sample.
+    public mutating func reset(_ id: UUID) { records[id] = nil }
+
+    /// Forgets every tab not in `ids`.
+    public mutating func retain(_ ids: Set<UUID>) { records = records.filter { ids.contains($0.key) } }
 }
 
 /// The Mac's power situation as the sleep policy sees it: Low Power Mode and the thermal state

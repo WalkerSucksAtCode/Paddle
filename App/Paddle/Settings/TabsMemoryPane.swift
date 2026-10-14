@@ -17,6 +17,15 @@ struct TabsMemoryPane: View {
                     set: { value in Task { await model.saveKey(.sleepPinnedTabs, .bool(value)) } }
                 ))
                 .help("sleepPinnedTabs in config.json")
+                Picker("Sleep a background tab using", selection: Binding(
+                    get: { model.file.cpuSleepPercent },
+                    set: { value in Task { await model.saveKey(.cpuSleepPercent, .number(Double(value))) } }
+                )) {
+                    ForEach(Set([0, 15, 30, 50, 100, model.file.cpuSleepPercent]).sorted(), id: \.self) { percent in
+                        Text(percent == 0 ? "Off" : "\(percent)% of a core for 3 minutes").tag(percent)
+                    }
+                }
+                .help("cpuSleepPercent in config.json (0 = off)")
                 Picker("Save Back history for", selection: Binding(
                     get: { model.file.sessionHistoryTabs },
                     set: { value in Task { await model.saveKey(.sessionHistoryTabs, .number(Double(value))) } }
@@ -26,7 +35,7 @@ struct TabsMemoryPane: View {
                     }
                 }
                 .help("sessionHistoryTabs in config.json: other tabs reopen at next launch on their page, with no Back history")
-                SettingsCaption("A sleeping tab's web process exits; the tab reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake.")
+                SettingsCaption("A sleeping tab's web process exits; the tab reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake. A background tab that keeps a CPU core busy also sleeps.")
             }
             .disabled(model.controlsDisabled)
 

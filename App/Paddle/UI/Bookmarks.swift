@@ -4,7 +4,8 @@ import SwiftUI
 
 // MARK: - Bookmarks bar
 
-/// The row under the address bar (Bookmarks > Show Bookmarks Bar, ⇧⌘B). Folders open as menus.
+/// The row under the address bar (Bookmarks > Show Bookmarks Bar, ⇧⌘B), shown once it has a bookmark. Folders open
+/// as menus.
 struct BookmarksBar: View {
     let app: AppModel
 
@@ -12,12 +13,6 @@ struct BookmarksBar: View {
         let items = app.bookmarks.tree.bar
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                if items.isEmpty {
-                    Text("Press ⌘D to add the current page here.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                }
                 ForEach(items) { item in
                     BookmarkBarItem(item: item)
                 }

@@ -102,13 +102,34 @@ enum ProcessMemory {
     }
 
     static func footprint(of pid: pid_t) -> UInt64? {
+        resourceUsage(of: pid)?.ri_phys_footprint
+    }
+
+    /// CPU seconds (user plus system) the process has used since it started. `ri_user_time` and `ri_system_time`
+    /// are Mach absolute-time units, which are nanoseconds on Intel but not on Apple silicon, so they go through
+    /// `mach_timebase_info` rather than being read as nanoseconds.
+    static func cpuSeconds(of pid: pid_t) -> TimeInterval? {
+        guard let usage = resourceUsage(of: pid) else { return nil }
+        let ticks = Double(usage.ri_user_time) + Double(usage.ri_system_time)
+        return ticks * Double(machTimebase.numer) / Double(machTimebase.denom) / 1_000_000_000
+    }
+
+    /// Mach's ratio from absolute-time ticks to nanoseconds, read once.
+    private static let machTimebase: mach_timebase_info_data_t = {
+        var timebase = mach_timebase_info_data_t()
+        mach_timebase_info(&timebase)
+        return timebase
+    }()
+
+    /// `proc_pid_rusage` with the v4 record (physical footprint, CPU time); nil when the process is gone.
+    private static func resourceUsage(of pid: pid_t) -> rusage_info_v4? {
         var info = rusage_info_v4()
         let result = withUnsafeMutablePointer(to: &info) { pointer in
             pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
                 proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
             }
         }
-        return result == 0 ? info.ri_phys_footprint : nil
+        return result == 0 ? info : nil
     }
 
     /// The UI process (Paddle itself).

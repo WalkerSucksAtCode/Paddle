@@ -25,7 +25,13 @@ struct GeneralPane: View {
                     get: { AppModel.shared.showBookmarksBar },
                     set: { AppModel.shared.showBookmarksBar = $0 }
                 ))
-                .help("View > Show Bookmarks Bar. Saved with the app's preferences, not in config.json.")
+                .help("View > Show Bookmarks Bar. Saved with the app's preferences, not in config.json. The bar shows once it has a bookmark.")
+                Toggle("Show full website address", isOn: Binding(
+                    get: { model.file.showFullAddress },
+                    set: { value in Task { await model.saveKey(.showFullAddress, .bool(value)) } }
+                ))
+                .help("showFullAddress in config.json. Off, the address field shows only the site until you click it.")
+                .disabled(model.controlsDisabled)
             }
         }
     }

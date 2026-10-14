@@ -459,7 +459,7 @@ private struct StatusDetails: View {
     let font: Font
 
     var body: some View {
-        DisclosureGroup("Details") {
+        SettingsDisclosure(title: "Details") {
             Text(text)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

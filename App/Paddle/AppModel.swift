@@ -58,6 +58,8 @@ final class AppModel {
     @ObservationIgnored private(set) var windows: [BrowserWindowController] = []
     @ObservationIgnored private var sampleTimer: Timer?
     @ObservationIgnored private var sweepTimer: Timer?
+    /// Each awake tab's CPU use between sweeps, for the CPU-based sleep (`cpuSleepPercent`).
+    @ObservationIgnored private var cpuUsage = CPUUsageTracker()
     /// Open readouts that want the 5 s sampler even with `showTabMemory` off (Activity, Settings' memory pane).
     @ObservationIgnored private var memoryReaders = 0
     /// Activation and window-occlusion observers that start and stop the sampler.
@@ -325,7 +327,7 @@ final class AppModel {
                 }
             }
         }
-        if !keys.isDisjoint(with: [.tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs]) { sweepSleepingTabs() }
+        if !keys.isDisjoint(with: [.tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs, .cpuSleepPercent]) { sweepSleepingTabs() }
     }
 
     /// The keys whose values differ. The switch is exhaustive, so a new key must say how it compares.
@@ -340,6 +342,7 @@ final class AppModel {
             case .tabSleepAfterMinutes: old.tabSleepAfterMinutes != new.tabSleepAfterMinutes
             case .maxAwakeTabs: old.maxAwakeTabs != new.maxAwakeTabs
             case .sleepPinnedTabs: old.sleepPinnedTabs != new.sleepPinnedTabs
+            case .cpuSleepPercent: old.cpuSleepPercent != new.cpuSleepPercent
             case .sessionHistoryTabs: old.sessionHistoryTabs != new.sessionHistoryTabs
             case .contentBlocking: old.contentBlocking != new.contentBlocking
             case .filterLists: old.filterLists != new.filterLists
@@ -350,6 +353,7 @@ final class AppModel {
             case .siteUserAgents: old.siteUserAgents != new.siteUserAgents
             case .sites: old.sites != new.sites
             case .showTabMemory: old.showTabMemory != new.showTabMemory
+            case .showFullAddress: old.showFullAddress != new.showFullAddress
             case .developerTools: old.developerTools != new.developerTools
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
@@ -976,17 +980,57 @@ final class AppModel {
             let now = Date()
             let selected = Set(windows.compactMap { $0.model.selectedID })
             let tabs = allTabs
+            // A tab is sampled only when it could be judged: not selected, not playing, and not sharing its process with
+            // another tab, whose CPU time would be counted twice. Any sweep that doesn't sample drops every clock, so the
+            // next sample doesn't average over a gap and start one too early.
+            let limit = policy.cpuPercent / 100
+            let sampling = limit > 0 && !memoryPressure
+            var shares: [UUID: Double] = [:]
+            if sampling {
+                let awake = tabs.filter(\.isAwake)
+                var pids: [UUID: pid_t] = [:]
+                for tab in awake {
+                    if let view = tab.webView, let pid = ProcessMemory.pid(of: view) { pids[tab.id] = pid }
+                }
+                var tabsPerProcess: [pid_t: Int] = [:]
+                for pid in pids.values { tabsPerProcess[pid, default: 0] += 1 }
+                for tab in awake {
+                    guard let pid = pids[tab.id] else { continue }
+                    if selected.contains(tab.id) || busy.contains(tab.id) || tabsPerProcess[pid, default: 0] > 1 {
+                        cpuUsage.reset(tab.id)
+                    } else if let share = cpuUsage.record(
+                        tab.id, pid: pid, cpuSeconds: ProcessMemory.cpuSeconds(of: pid), at: now, limit: limit
+                    ) {
+                        shares[tab.id] = share
+                    }
+                }
+            }
+            cpuUsage.retain(sampling ? Set(tabs.filter(\.isAwake).map(\.id)) : [])
             let snapshots = tabs.map { tab in
                 // The idle clock starts when playback, capture or the popup ends, not when the tab was last viewed.
                 if busy.contains(tab.id) { tab.lastActive = now }
                 return TabSnapshot(
                     id: tab.id, lastActive: tab.lastActive, isAwake: tab.isAwake,
-                    isSelected: selected.contains(tab.id), isPinned: tab.isPinned, isBusy: busy.contains(tab.id)
+                    isSelected: selected.contains(tab.id), isPinned: tab.isPinned, isBusy: busy.contains(tab.id),
+                    // Not before the tab was last shown: viewing it between two sweeps restarts its clock too.
+                    cpuBusySince: sampling ? cpuUsage.busySince(tab.id).map { max($0, tab.lastActive) } : nil
                 )
             }
             let ids = Set(policy.tabsToSleep(snapshots, now: now, memoryPressure: memoryPressure))
             guard !ids.isEmpty else { return }
-            for tab in tabs where ids.contains(tab.id) { tab.sleep() }
+            // Tabs the CPU rule chose, worked out before any of them sleeps: they had been busy for the sustain period.
+            let cpuSlept = Set(snapshots.filter { snapshot in
+                guard ids.contains(snapshot.id), let since = snapshot.cpuBusySince else { return false }
+                return now.timeIntervalSince(since) >= TabSleepPolicy.cpuSustain
+            }.map(\.id))
+            for tab in tabs where ids.contains(tab.id) {
+                if cpuSlept.contains(tab.id) {
+                    let percent = Int(((shares[tab.id] ?? limit) * 100).rounded())
+                    log.info("slept \(tab.title) for CPU: \(percent, privacy: .public)% of a core for 3+ min")
+                }
+                tab.sleep()
+                cpuUsage.reset(tab.id)
+            }
             log.info("slept \(ids.count) tab(s)\(memoryPressure ? " under memory pressure" : "", privacy: .public)")
             sampleMemory()
         }

@@ -5,8 +5,14 @@ import Testing
 struct TabSleepPolicyTests {
     let now = Date(timeIntervalSince1970: 100_000)
 
-    func tab(_ minutesAgo: Double, awake: Bool = true, selected: Bool = false, pinned: Bool = false, busy: Bool = false) -> TabSnapshot {
-        TabSnapshot(id: UUID(), lastActive: now.addingTimeInterval(-minutesAgo * 60), isAwake: awake, isSelected: selected, isPinned: pinned, isBusy: busy)
+    func tab(
+        _ minutesAgo: Double, awake: Bool = true, selected: Bool = false, pinned: Bool = false, busy: Bool = false,
+        cpuBusyMinutes: Double? = nil
+    ) -> TabSnapshot {
+        TabSnapshot(
+            id: UUID(), lastActive: now.addingTimeInterval(-minutesAgo * 60), isAwake: awake, isSelected: selected,
+            isPinned: pinned, isBusy: busy, cpuBusySince: cpuBusyMinutes.map { now.addingTimeInterval(-$0 * 60) }
+        )
     }
 
     @Test func sleepsIdleBackgroundTabsOnly() {
@@ -37,6 +43,43 @@ struct TabSleepPolicyTests {
         let policy = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 10, sleepPinnedTabs: true)
         let a = tab(1, selected: true), b = tab(1), c = tab(2, pinned: true), d = tab(3, busy: true)
         #expect(policy.tabsToSleep([a, b, c, d], now: now, memoryPressure: true) == [c.id, b.id])
+    }
+
+    // MARK: - CPU
+
+    /// Idle sleep and the cap off, so only the CPU rule can sleep these tabs.
+    private let cpuOnly = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: false, cpuPercent: 30)
+
+    @Test func tabBusyForThreeMinutesSleeps() {
+        let recent = tab(1, cpuBusyMinutes: 3), older = tab(2, cpuBusyMinutes: 10)
+        #expect(cpuOnly.tabsToSleep([recent, older], now: now) == [older.id, recent.id])
+    }
+
+    @Test func tabBusyForTwoMinutesStaysAwake() {
+        #expect(cpuOnly.tabsToSleep([tab(1, cpuBusyMinutes: 2)], now: now).isEmpty)
+        #expect(cpuOnly.tabsToSleep([tab(1)], now: now).isEmpty)
+    }
+
+    @Test func cpuRuleSkipsSelectedPlayingAndPinnedTabs() {
+        let selected = tab(1, selected: true, cpuBusyMinutes: 5)
+        let playing = tab(1, busy: true, cpuBusyMinutes: 5)
+        let pinned = tab(1, pinned: true, cpuBusyMinutes: 5)
+        #expect(cpuOnly.tabsToSleep([selected, playing, pinned], now: now).isEmpty)
+        // Pinned tabs may sleep once sleepPinnedTabs allows it; the others stay put either way.
+        let pinnedAllowed = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: true, cpuPercent: 30)
+        #expect(pinnedAllowed.tabsToSleep([selected, playing, pinned], now: now) == [pinned.id])
+    }
+
+    @Test func zeroPercentNeverSleepsForCPU() {
+        let off = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: false, cpuPercent: 0)
+        #expect(off.tabsToSleep([tab(1, cpuBusyMinutes: 30)], now: now).isEmpty)
+    }
+
+    @Test func configCarriesCPUPercent() {
+        var config = PaddleConfig()
+        config.cpuSleepPercent = 50
+        #expect(TabSleepPolicy(config: config).cpuPercent == 50)
+        #expect(TabSleepPolicy(config: config).adjusted(for: PowerConditions(lowPowerMode: true)).cpuPercent == 50)
     }
 
     // MARK: - Power
@@ -85,5 +128,103 @@ struct TabSleepPolicyTests {
         #expect(PowerConditions(lowPowerMode: true).reason == "Low Power Mode")
         #expect(PowerConditions(lowPowerMode: true, thermal: .serious).reason == "Low Power Mode and the Mac running hot")
         #expect(PowerConditions(thermal: .critical).reason == "the Mac running very hot")
+    }
+}
+
+struct CPUUsageTrackerTests {
+    let t0 = Date(timeIntervalSince1970: 1_000)
+    let id = UUID()
+    let limit = 0.3
+
+    func at(_ seconds: Double) -> Date { t0.addingTimeInterval(seconds) }
+
+    @Test func firstSampleHasNoShare() {
+        var tracker = CPUUsageTracker()
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 10, at: t0, limit: limit) == nil)
+    }
+
+    @Test func shareIsCPUSecondsOverWallSeconds() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 30, at: at(60), limit: limit) == 0.5)
+    }
+
+    @Test func busySinceIsThePreviousSampleWhileUseStaysAboveTheLimit() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 30, at: at(60), limit: limit)
+        #expect(tracker.busySince(id) == t0)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 60, at: at(120), limit: limit)
+        #expect(tracker.busySince(id) == t0)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 61, at: at(180), limit: limit)
+        #expect(tracker.busySince(id) == nil)
+    }
+
+    @Test func busySinceStartsAtTheSampleBeforeTheFirstBusyOne() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 1, at: at(60), limit: limit)
+        #expect(tracker.busySince(id) == nil)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 31, at: at(120), limit: limit)
+        #expect(tracker.busySince(id) == at(60))
+    }
+
+    @Test func changedPidRestartsTheTab() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 30, at: at(60), limit: limit)
+        #expect(tracker.record(id, pid: 2, cpuSeconds: 5, at: at(120), limit: limit) == nil)
+        #expect(tracker.busySince(id) == nil)
+        #expect(tracker.record(id, pid: 2, cpuSeconds: 35, at: at(180), limit: limit) == 0.5)
+    }
+
+    @Test func missingCPUTimeRestartsTheTab() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 30, at: at(60), limit: limit)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: nil, at: at(120), limit: limit) == nil)
+        #expect(tracker.busySince(id) == nil)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 40, at: at(180), limit: limit) == nil)
+    }
+
+    @Test func cpuTimeGoingBackwardsRestartsTheTab() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 100, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 130, at: at(60), limit: limit)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 50, at: at(120), limit: limit) == nil)
+        #expect(tracker.busySince(id) == nil)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 80, at: at(180), limit: limit) == 0.5)
+    }
+
+    @Test func noForwardTimeGivesNoShareAndKeepsTheOldSample() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 30, at: at(60), limit: limit)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 40, at: at(60), limit: limit) == nil)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 45, at: at(30), limit: limit) == nil)
+        // Measured from the t0 + 60 s sample (30 s CPU), not from the discarded ones.
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 60, at: at(120), limit: limit) == 0.5)
+    }
+
+    @Test func resetRestartsTheClock() {
+        var tracker = CPUUsageTracker()
+        _ = tracker.record(id, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+        _ = tracker.record(id, pid: 1, cpuSeconds: 30, at: at(60), limit: limit)
+        tracker.reset(id)
+        #expect(tracker.busySince(id) == nil)
+        #expect(tracker.record(id, pid: 1, cpuSeconds: 60, at: at(120), limit: limit) == nil)
+    }
+
+    @Test func retainForgetsTabsNotKept() {
+        var tracker = CPUUsageTracker()
+        let other = UUID()
+        for tab in [id, other] {
+            _ = tracker.record(tab, pid: 1, cpuSeconds: 0, at: t0, limit: limit)
+            _ = tracker.record(tab, pid: 1, cpuSeconds: 30, at: at(60), limit: limit)
+        }
+        tracker.retain([id])
+        #expect(tracker.busySince(id) == t0)
+        #expect(tracker.busySince(other) == nil)
+        #expect(tracker.record(other, pid: 1, cpuSeconds: 60, at: at(120), limit: limit) == nil)
     }
 }

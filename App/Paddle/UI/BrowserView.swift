@@ -24,7 +24,8 @@ struct BrowserView: View {
             NavigationBar(model: model, app: app)
                 // The suggestion dropdown hangs below the bar, over the page and the bookmarks bar.
                 .zIndex(1)
-            if app.showBookmarksBar {
+            // An empty bar takes a row for nothing; ⌘D fills it and it appears.
+            if app.showBookmarksBar, !app.bookmarks.tree.bar.isEmpty {
                 BookmarksBar(app: app)
             }
             if let notice = configNotice {
@@ -343,7 +344,7 @@ private struct TabButton: View {
 
 // MARK: - Memory readout
 
-/// The toolbar's memory readout: this tab · all of Paddle, and the Activity popover. Its own view so a new
+/// The toolbar's memory readout: all of Paddle (this tab's share in the tooltip), and the Activity popover. Its own view so a new
 /// sample redraws only this label, not the address field and the rest of the toolbar.
 private struct MemoryButton: View {
     let app: AppModel
@@ -365,7 +366,7 @@ private struct MemoryButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help("Memory: this tab · all of Paddle. Click for details.")
+        .help(tooltip)
         .accessibilityLabel("Memory")
         .accessibilityValue(spokenLabel)
         .accessibilityHint("Shows memory and activity details.")
@@ -374,9 +375,12 @@ private struct MemoryButton: View {
         }
     }
 
-    private var label: String {
-        let current = model.selectedTab?.memoryBytes.map(ProcessMemory.format) ?? "–"
-        return "\(current) · \(ProcessMemory.format(app.totalWebMemory))"
+    private var label: String { ProcessMemory.format(app.totalWebMemory) }
+
+    private var tooltip: String {
+        let total = "Paddle is using \(ProcessMemory.format(app.totalWebMemory))"
+        guard let current = model.selectedTab?.memoryBytes.map(ProcessMemory.format) else { return total + ". Click for details." }
+        return total + ", this tab \(current). Click for details."
     }
 
     private var spokenLabel: String {
@@ -443,6 +447,18 @@ private struct NavigationBar: View {
             TextField("Search or enter address", text: $model.addressText, selection: $addressSelection)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
+                // Clear text, not removed, behind the site name: a click still lands in the field and edits the whole
+                // address. Not opacity 0, which also drops the field from accessibility.
+                .foregroundStyle(siteOnly == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.clear))
+                .overlay(alignment: .leading) {
+                    if let siteOnly {
+                        Text(siteOnly)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
                 .focused($addressFocused)
                 .onSubmit { model.submitAddress() }
                 .onChange(of: model.addressText) { old, new in
@@ -506,6 +522,15 @@ private struct NavigationBar: View {
             addressFocused = true
             DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
         }
+    }
+
+    /// The site shown in place of the address while the field isn't being edited (`showFullAddress` off): a web
+    /// page's host without "www.". Nil shows the whole address: other schemes, or the setting on.
+    private var siteOnly: String? {
+        guard !addressFocused, !app.config.showFullAddress, let url = tab?.url,
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = url.host(percentEncoded: false), !host.isEmpty else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     private func moveHighlight(by delta: Int) -> KeyPress.Result {
