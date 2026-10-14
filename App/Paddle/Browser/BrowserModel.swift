@@ -361,6 +361,12 @@ final class BrowserModel {
         tab.load(pane.url)
         SettingsPane.remembered = pane
         tabURLChanged(tab)
+        // A click in the sidebar means the field isn't being typed in, even if it kept focus: show the new pane's
+        // address rather than leave the old one, which `syncAddress` would while the field has focus.
+        if tab.id == selectedID, let url = tab.url {
+            suggestions.dismiss()
+            addressText = Self.displayString(url)
+        }
     }
 
     /// A settings address typed into the field: Settings opens (on its pane) and the field shows the tab's page again.

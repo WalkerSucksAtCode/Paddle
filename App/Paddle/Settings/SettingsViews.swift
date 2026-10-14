@@ -141,8 +141,44 @@ struct SettingsDisclosure<Content: View>: View {
 struct SettingsForm<Content: View>: View {
     @ViewBuilder var content: Content
 
+    /// From this width the sections flow into two columns. A grouped form never grows past about 700 pt, so a wide tab
+    /// would otherwise be mostly margin.
+    private var twoColumnWidth: CGFloat { 1100 }
+
     var body: some View {
-        Form { content }
-            .formStyle(.grouped)
+        GeometryReader { proxy in
+            if proxy.size.width >= twoColumnWidth {
+                HStack(alignment: .top, spacing: 0) {
+                    column(.left)
+                    column(.right)
+                }
+            } else {
+                Form { content }
+                    .formStyle(.grouped)
+            }
+        }
+    }
+
+    private enum Half { case left, right }
+
+    /// One column: its own grouped form holding half of the sections, the first half on the left so reading order
+    /// stays top to bottom, then left to right. The sections are picked inside the form, so they keep its styling
+    /// (switches, trailing values); taken out first, they would lose it.
+    private func column(_ half: Half) -> some View {
+        Form {
+            Group(sections: content) { sections in
+                let split = (sections.count + 1) / 2
+                ForEach(half == .left ? sections.prefix(split) : sections.dropFirst(split)) { section in
+                    Section {
+                        section.content
+                    } header: {
+                        section.header
+                    } footer: {
+                        section.footer
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
