@@ -179,8 +179,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - View
 
-    @objc func paddleReload(_ sender: Any?) { webView?.reload() }
-    @objc func paddleHardReload(_ sender: Any?) { webView?.reloadFromOrigin() }
+    @objc func paddleReload(_ sender: Any?) { model.selectedTab?.reload() }
+    @objc func paddleHardReload(_ sender: Any?) { model.selectedTab?.reload(fromOrigin: true) }
     @objc func paddleStop(_ sender: Any?) { webView?.stopLoading() }
     // The zoom is remembered for the site (`Tab.setZoom`).
     @objc func paddleZoomIn(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom + SitePolicy.zoomStep) } }

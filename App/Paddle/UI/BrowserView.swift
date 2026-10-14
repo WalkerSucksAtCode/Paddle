@@ -404,7 +404,7 @@ private struct NavigationBar: View {
             iconButton("chevron.left", help: "Back", enabled: tab?.canGoBack == true) { tab?.webView?.goBack() }
             iconButton("chevron.right", help: "Forward", enabled: tab?.canGoForward == true) { tab?.webView?.goForward() }
             iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil) {
-                if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.webView?.reload() }
+                if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.reload() }
             }
             if model.isPrivate {
                 Label("Private", systemImage: "eye.slash")

@@ -77,12 +77,10 @@ final class Tab: Identifiable {
     /// Set just before each such load and consumed by `pageCommitted()`.
     @ObservationIgnored var pendingOwnPage: OwnPage?
     enum OwnPage { case source, error }
-    /// Showing one of Paddle's error pages (load failure, crash loop, extension unavailable), not the site's page:
+    /// Showing one of Paddle's error pages (load failure, crash, extension unavailable), not the site's page:
     /// Print, Save Page As and View Source are off then.
     var isShowingErrorPage: Bool { committedErrorPage || showsExtensionUnavailable }
     @ObservationIgnored private var committedErrorPage = false
-    /// Recent web process crashes, with the host that was showing.
-    @ObservationIgnored private var crashes: [(date: Date, host: String?)] = []
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []
     /// This tab as WebKit's extension API sees it. One object for the tab's whole life, so an extension's tab id
     /// survives sleep and wake.
@@ -378,35 +376,44 @@ final class Tab: Identifiable {
         if !isPrivate { AppModel.shared.sessionChanged() }
     }
 
-    /// The web process crashed or was killed. A background tab just goes to sleep. The visible tab reloads,
-    /// unless it crashed already in the last minute: then it shows an error page instead of reloading forever.
-    func processTerminated() {
+    /// Why WebKit stopped a web process (`_WKProcessTerminationReason`, private WebKit API).
+    enum TerminationReason: Int {
+        case exceededMemoryLimit, exceededCPULimit, requestedByClient, crash, exceededSharedProcessCrashLimit
+    }
+
+    /// The web process crashed or was stopped. A background tab just goes to sleep and loads again when shown. The
+    /// visible tab shows a crash page with a Reload button instead of reloading by itself, so a page that crashes as
+    /// it loads can't loop; it says why when WebKit does (too much memory or CPU).
+    func processTerminated(reason: TerminationReason? = nil) {
         guard browser?.selectedTab === self, let webView else {
             sleep()
             return
         }
-        // Only crashes of the site now showing count, so one crash after another site's doesn't stop reloads.
-        let now = Date()
-        let host = url?.host()
-        crashes = crashes.filter { now.timeIntervalSince($0.date) < 60 && $0.host == host } + [(now, host)]
-        if crashes.count < 2 {
-            // Before the first page commits there is nothing to reload, so load the URL again.
-            if webView.url != nil {
-                webView.reload()
-            } else if let url {
-                webView.load(URLRequest(url: url))
-            }
+        let (title, message) = switch reason {
+        case .exceededMemoryLimit:
+            ("This page used too much memory", "macOS stopped its web process because it used more memory than a page may. Reload to start it again.")
+        case .exceededCPULimit:
+            ("This page used too much CPU", "WebKit stopped its web process because it kept the processor busy for too long. Reload to start it again.")
+        default:
+            ("This page crashed", "Its web process stopped unexpectedly. Reload to load it again.")
+        }
+        skipNextCommitInHistory = true
+        pendingOwnPage = .error
+        // Not `loadErrorPage`: after a crash there is no failed load to stand in for, and both of its loads append
+        // a second item for the crashed page. Loading with `url` as base URL reuses the crashed page's item.
+        webView.loadHTMLString(TabWebDelegate.errorPage(title: title, message: message, url: url, button: "Reload"), baseURL: url)
+    }
+
+    /// The toolbar's Reload, View > Reload Page and an extension's `tabs.reload`. On one of Paddle's error or crash
+    /// pages that loads the page's URL again: WebKit's reload would only show the error page again.
+    func reload(fromOrigin: Bool = false) {
+        guard let webView else { return }
+        if committedErrorPage, let url {
+            webView.load(URLRequest(url: url, cachePolicy: fromOrigin ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy))
+        } else if fromOrigin {
+            webView.reloadFromOrigin()
         } else {
-            let html = TabWebDelegate.errorPage(
-                title: "This page keeps crashing",
-                message: "Its web process stopped \(crashes.count) times in the last minute, so Paddle stopped reloading it.",
-                url: url
-            )
-            skipNextCommitInHistory = true
-            pendingOwnPage = .error
-            // Not `loadErrorPage`: after a crash there is no failed load to stand in for, and both of its loads append
-            // a second item for the crashed page. Loading with `url` as base URL reuses the crashed page's item.
-            webView.loadHTMLString(html, baseURL: url)
+            webView.reload()
         }
     }
 

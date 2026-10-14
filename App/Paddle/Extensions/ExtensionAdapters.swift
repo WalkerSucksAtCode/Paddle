@@ -126,11 +126,11 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func reload(fromOrigin: Bool, for context: WKWebExtensionContext) async throws {
         guard let tab else { throw PaddleExtensionError.noWindow }
-        guard let webView = tab.webView else {
+        guard tab.webView != nil else {
             tab.wake()
             return
         }
-        if fromOrigin { webView.reloadFromOrigin() } else { webView.reload() }
+        tab.reload(fromOrigin: fromOrigin)
     }
 
     func goBack(for context: WKWebExtensionContext) async throws {

@@ -352,6 +352,13 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         tab?.processTerminated()
     }
 
+    /// The same with WebKit's reason (private `WKNavigationDelegatePrivate`, in macOS 27's WebKit). WebKit calls this
+    /// instead of the public method when the delegate has it; the public one stays for a WebKit without it.
+    @objc(_webView:webContentProcessDidTerminateWithReason:)
+    func webView(_ webView: WKWebView, webContentProcessDidTerminateWithReason reason: Int) {
+        tab?.processTerminated(reason: Tab.TerminationReason(rawValue: reason))
+    }
+
     /// Back/forward items that showed one of Paddle's error pages. Going back or forward to one, WebKit can show
     /// the stored error page again without loading anything (no new `pendingOwnPage`); it is still an error page.
     private let errorPageItems = NSHashTable<WKBackForwardListItem>.weakObjects()
@@ -408,7 +415,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// A plain page with a Try Again button that reloads `url`. Loaded as the page for `url` (see `loadErrorPage`),
     /// so the address bar keeps showing the page that failed.
-    static func errorPage(title: String, message: String, url: URL?) -> String {
+    static func errorPage(title: String, message: String, url: URL?, button: String = "Try Again") -> String {
         func escape(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&#39;")
@@ -426,7 +433,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         <h1>\(escape(title))</h1>
         <p>\(escape(message))</p>
         <p>\(escape(urlText))</p>
-        <button data-url="\(escape(urlText))" onclick="location.href = this.dataset.url">Try Again</button>
+        <button data-url="\(escape(urlText))" onclick="location.href = this.dataset.url">\(escape(button))</button>
         """
     }
 
