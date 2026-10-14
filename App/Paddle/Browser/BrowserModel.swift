@@ -318,8 +318,22 @@ final class BrowserModel {
     }
 
     func navigate(_ input: String) {
+        if let link = SettingsLink.parse(input) {
+            openSettings(link)
+            return
+        }
         guard let url = AddressResolver(searchTemplate: config.searchTemplate).resolve(input) else { return }
         go(to: url, typed: true)
+    }
+
+    /// A settings address typed into the field: Settings opens (on its pane) and the field shows the tab's page again.
+    private func openSettings(_ link: SettingsLink) {
+        SettingsWindowController.show(pane: link.pane.flatMap { SettingsPane(rawValue: $0.rawValue) })
+        suggestions.dismiss()
+        isEditingAddress = false
+        // Leave the field too (as picking an open tab does), or it stays in edit mode when this window is key again.
+        controller?.window?.makeFirstResponder(nil)
+        syncAddress()
     }
 
     /// Loads `url` in the selected tab (a new one if there is none).
@@ -339,6 +353,12 @@ final class BrowserModel {
 
     /// A row picked in the address-bar dropdown. Picking counts as typing for history ranking.
     func open(_ suggestion: Suggestion) {
+        // The typed row (search or address) is what Return navigates to, so a settings address there opens Settings.
+        if suggestion.kind == .search || suggestion.kind == .url,
+           let link = SettingsLink.parse(suggestion.query ?? suggestion.url ?? "") {
+            openSettings(link)
+            return
+        }
         switch suggestion.kind {
         case .openTab(let id):
             suggestions.dismiss()

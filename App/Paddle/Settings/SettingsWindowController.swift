@@ -46,12 +46,22 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     private let model = SettingsModel()
     private var watcher: ConfigWatcher?
+    /// The panes' tab view, kept so `show(pane:)` can select one.
+    private let paneTabs: SettingsTabViewController
 
-    static func show() {
+    /// Opens Settings, on `pane` when one is given (selected and remembered, as a click on its toolbar item would).
+    static func show(pane: SettingsPane? = nil) {
         let controller = shared ?? SettingsWindowController()
         shared = controller
+        if let pane { controller.select(pane) }
         controller.showWindow(nil)
         controller.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Selects `pane` and saves it under `paneKey`, as `onSelect` does for a click.
+    private func select(_ pane: SettingsPane) {
+        paneTabs.selectedTabViewItemIndex = SettingsPane.allCases.firstIndex(of: pane) ?? 0
+        UserDefaults.standard.set(pane.rawValue, forKey: Self.paneKey)
     }
 
     private init() {
@@ -73,6 +83,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let saved = UserDefaults.standard.string(forKey: Self.paneKey).flatMap(SettingsPane.init(rawValue:)) ?? .general
         tabs.selectedTabViewItemIndex = SettingsPane.allCases.firstIndex(of: saved) ?? 0
         tabs.onSelect = { pane in UserDefaults.standard.set(pane.rawValue, forKey: Self.paneKey) }
+        paneTabs = tabs
 
         let window = NSWindow(contentViewController: tabs)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
