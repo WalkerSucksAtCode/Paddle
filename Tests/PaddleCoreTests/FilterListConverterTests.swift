@@ -336,11 +336,39 @@ struct FilterListConverterTests {
         #expect(FilterListConverter.urlFilter("|https://a.test/x.js|") == "^https://a\\.test/x\\.js$")
     }
 
+    /// `$object` (plugins) has no WebKit type: it adds nothing to a type list, and a rule with only plugin types is
+    /// skipped rather than widened to every type.
+    @Test func objectTypeAddsNoWebKitType() throws {
+        let mixed = try rules(".com/ads/$image,object,subdocument")
+        // Images, plus frames in a rule of their own; nothing for `object`.
+        #expect(mixed.map { trigger($0)["resource-type"] as? [String] } == [["image", "svg-document"], ["document"]])
+        let only = FilterListConverter.convert("/flash-ad/$object\n/plugin/$object-subrequest")
+        #expect(only.ruleCount == 0)
+        #expect(only.skips.options["object"] == 2)
+        // `~object` excludes nothing WebKit has: every type.
+        #expect(trigger(try rules("/x/$~object")[0])["resource-type"] == nil)
+    }
+
+    /// A closing `^` matches a separator or the end of the URL, as in uBlock Origin; one in the middle still needs a
+    /// separator.
+    @Test func closingSeparatorMatchesEndOfURL() {
+        let filter = FilterListConverter.urlFilter("||analytics.test/r/collect^")!
+        #expect(filterMatches(filter, "https://www.analytics.test/r/collect"))
+        #expect(filterMatches(filter, "https://www.analytics.test/r/collect?v=1"))
+        #expect(filterMatches(filter, "https://www.analytics.test/r/collect/x"))
+        #expect(!filterMatches(filter, "https://www.analytics.test/r/collector"))
+        let middle = FilterListConverter.urlFilter("/ads^banner")!
+        #expect(!filterMatches(middle, "https://x.test/ads"))
+        // An explicit end anchor keeps its meaning.
+        #expect(FilterListConverter.urlFilter("/x.js^|") == "/x\\.js[^a-z0-9_.%-]$")
+    }
+
     /// The real proof: WebKit itself accepts the generated JSON.
     @MainActor
     @Test func webKitCompilesOutput() async throws {
         let text = """
         ||ads.example.com^
+        ||analytics.test/r/collect^
         ||tracker.test^$script,third-party,domain=a.test|~b.test
         /banner/*$~image
         @@||good.test^
@@ -543,12 +571,13 @@ struct FilterListConverterTests {
     /// With `match-case`, `^` must not count an uppercase letter as a separator.
     @Test func matchCaseSeparatorKeepsUppercase() throws {
         let filter = try #require(trigger(try rules("/Ads^$match-case")[0])["url-filter"] as? String)
-        #expect(filter == "/Ads[^a-zA-Z0-9_.%-]")
+        #expect(filter == "/Ads([^a-zA-Z0-9_.%-].*)?$")
         let re = try NSRegularExpression(pattern: filter)
         func hit(_ url: String) -> Bool { re.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil }
         #expect(hit("https://x.test/Ads/x"))
         #expect(!hit("https://x.test/AdsX"))
-        #expect(trigger(try rules("/ads^")[0])["url-filter"] as? String == "/ads[^a-z0-9_.%-]")
+        #expect(hit("https://x.test/Ads"))
+        #expect(trigger(try rules("/ads^")[0])["url-filter"] as? String == "/ads([^a-z0-9_.%-].*)?$")
     }
 
     /// `@@example.com^$document` without `||` is the same site allowlist; a bare word is not a host.

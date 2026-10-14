@@ -32,7 +32,7 @@ public enum FilterListConverter {
     public static let maxRulesPerList = 150_000
     /// Part of the compiled-list cache key. Bump it whenever the JSON for the same list text changes, so lists
     /// compiled by the previous converter are recompiled instead of loaded from WebKit's cache.
-    public static let converterVersion = 4
+    public static let converterVersion = 5
 
     public struct Result: Sendable {
         public var json: String
@@ -401,6 +401,8 @@ public enum FilterListConverter {
         var isDocumentAllowlist = false
         var isImportant = false
         var framesOnly = false
+        /// A positive type option was given; if they all map to no WebKit type (`$object`), the rule has no form.
+        var typeListed = false
 
         for raw in options {
             let negated = raw.hasPrefix("~")
@@ -426,7 +428,7 @@ public enum FilterListConverter {
                 isDocumentAllowlist = true
             default:
                 guard let types = resourceTypeMap[name] else { return .unsupported(.option(optionKey(name))) }  // option WebKit can't express
-                if negated { excludedTypes.formUnion(types) } else { resourceTypes.formUnion(types) }
+                if negated { excludedTypes.formUnion(types) } else { resourceTypes.formUnion(types); typeListed = true }
                 if !negated, name == "subdocument" || name == "frame" { framesOnly = true }
             }
         }
@@ -436,6 +438,9 @@ public enum FilterListConverter {
             guard let host = plainHost(pattern) else { return .unsupported(.option("document (not a site)")) }
             return .rules([siteAllowRule(host)])
         }
+
+        // Only plugin types (`$object`): WebKit has no plugin type, and without one the rule would block every type.
+        if typeListed, resourceTypes.isEmpty { return .unsupported(.option("object")) }
 
         if !excludedTypes.isEmpty {
             // `$~script` means every other type a page loads, frames included but not the page itself.
@@ -533,14 +538,21 @@ public enum FilterListConverter {
             p = p.dropLast()
         }
 
+        let separator = caseSensitive ? "[^a-zA-Z0-9_.%-]" : "[^a-z0-9_.%-]"
+        // A closing `^` also matches the end of the URL (`||example.com/collect^` blocks `.../collect` itself). WebKit
+        // has no `|`, so it becomes "a separator and anything after it, or nothing", then the end.
+        let separatorEnds = !anchoredEnd && p.hasSuffix("^")
+        if separatorEnds { p = p.dropLast() }
+
         for ch in p {
             switch ch {
             case "*": out += ".*"
-            case "^": out += caseSensitive ? "[^a-zA-Z0-9_.%-]" : "[^a-z0-9_.%-]"
+            case "^": out += separator
             case ".", "?", "+", "(", ")", "[", "]", "{", "}", "\\", "$", "|": out += "\\" + String(ch)
             default: out.append(ch)
             }
         }
+        if separatorEnds { out += "(\(separator).*)?$" }
         if anchoredEnd { out += "$" }
         if out.isEmpty || out == "^" { return ".*" }
         return out
@@ -712,7 +724,8 @@ public enum FilterListConverter {
         "websocket": ["websocket"],
         "ping": ["ping"], "beacon": ["ping"],
         "popup": ["popup"],
-        "object": ["other"], "object-subrequest": ["other"], "other": ["other"],
+        // Plugins (`object`) have no WebKit type and are gone from browsers; `other` would also catch unrelated loads.
+        "object": [], "object-subrequest": [], "other": ["other"],
     ]
 
     // MARK: - JSON model
