@@ -181,6 +181,8 @@ private struct TabButton: View {
     @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
 
     private var isSelected: Bool { model.selectedID == tab.id }
+    /// From this width every tab shows its close button.
+    private static let alwaysCloseWidth: CGFloat = 110
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
 
     var body: some View {
@@ -208,7 +210,9 @@ private struct TabButton: View {
                     .help(audio == .muted ? "Unmute Tab" : "Mute Tab")
                     .accessibilityLabel(audio == .muted ? "Unmute Tab" : "Mute Tab")
                 }
-                if hovering || isSelected {
+                // Every tab wide enough for one shows its close button, not only the hovered one; a narrow tab keeps the
+                // room for its title and shows it on hover or when selected.
+                if hovering || isSelected || width >= Self.alwaysCloseWidth {
                     Button {
                         model.close(tab)
                     } label: {
@@ -226,12 +230,19 @@ private struct TabButton: View {
         .padding(.horizontal, tab.isPinned ? 0 : 8)
         .frame(width: width, height: 28)
         .background {
+            // The selected tab is lighter than the strip in dark mode and darker in light mode, with an edge, so it
+            // stands out by brightness alone: the window background colour it used before matched the strip.
             RoundedRectangle(cornerRadius: 7)
-                .fill(isSelected ? AnyShapeStyle(.background) : AnyShapeStyle(Color.primary.opacity(hovering ? 0.07 : 0)))
-                .shadow(color: .black.opacity(isSelected ? 0.12 : 0), radius: 1, y: 0.5)
+                .fill(Color.primary.opacity(isSelected ? 0.14 : hovering ? 0.06 : 0))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7)
+                        .strokeBorder(Color.primary.opacity(isSelected ? 0.18 : 0), lineWidth: 1)
+                }
         }
         .contentShape(Rectangle())
         .onTapGesture { model.select(tab) }
+        // A middle click closes the tab, as in other browsers.
+        .overlay(MiddleClickCatcher { model.close(tab) })
         // With keyboard navigation on (System Settings > Keyboard), Tab reaches each tab; Space or Return selects it.
         .focusable(interactions: .activate)
         .onKeyPress(keys: [.space, .return]) { _ in
@@ -659,5 +670,44 @@ private struct StartPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
+/// Calls `action` on a middle click (button 3) inside it and lets every other click through to the views around it:
+/// SwiftUI has no middle-click gesture.
+private struct MiddleClickCatcher: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView { CatcherView(action: action) }
+    func updateNSView(_ view: CatcherView, context: Context) { view.action = action }
+
+    final class CatcherView: NSView {
+        var action: () -> Void
+
+        init(action: @escaping () -> Void) {
+            self.action = action
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { fatalError("not used") }
+
+        /// Only middle-button events land here; left and right clicks fall through to the tab.
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            switch NSApp.currentEvent?.type {
+            case .otherMouseDown, .otherMouseUp: super.hitTest(point)
+            default: nil
+            }
+        }
+
+        override func otherMouseDown(with event: NSEvent) {
+            if event.buttonNumber != 2 { super.otherMouseDown(with: event) }
+        }
+
+        override func otherMouseUp(with event: NSEvent) {
+            guard event.buttonNumber == 2, bounds.contains(convert(event.locationInWindow, from: nil)) else {
+                return super.otherMouseUp(with: event)
+            }
+            action()
+        }
     }
 }
