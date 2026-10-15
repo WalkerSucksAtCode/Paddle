@@ -14,6 +14,31 @@ public enum TabLayout: String, Codable, Sendable, CaseIterable {
     case horizontal, vertical
 }
 
+/// Whether the windows are light or dark: follow macOS, or always one.
+public enum AppearanceMode: String, Codable, Sendable, CaseIterable {
+    case system, light, dark
+}
+
+/// How large Paddle's own text (tabs, toolbar, bars) is.
+public enum InterfaceTextSize: String, Codable, Sendable, CaseIterable {
+    case small, `default`, large, larger
+
+    /// The factor Paddle's chrome text and spacing are multiplied by.
+    public var scale: Double {
+        switch self {
+        case .small: 0.9
+        case .default: 1.0
+        case .large: 1.15
+        case .larger: 1.3
+        }
+    }
+}
+
+/// An accessibility option that follows the macOS setting unless forced on.
+public enum AccessibilityPreference: String, Codable, Sendable, CaseIterable {
+    case system, always
+}
+
 public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Page loaded in a new window. `about:blank` gives an empty page with the address field focused.
     public var homepage: String
@@ -71,6 +96,20 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var showFullAddress: Bool
     /// Where the tabs go: `horizontal` in a strip above the toolbar, `vertical` in a sidebar. View > Vertical Tabs.
     public var tabLayout: TabLayout
+    /// Light, dark, or follow macOS. Pages follow through their color scheme.
+    public var appearance: AppearanceMode
+    /// Draw the selected tab with a stronger outline and contrast (differs in brightness, not hue).
+    public var highContrastTabs: Bool
+    /// Size of Paddle's own text: tabs, toolbar, bars.
+    public var interfaceTextSize: InterfaceTextSize
+    /// Zoom of a page whose site has no `sites.<host>.zoom`, as a factor (1 is 100 %); clamped to 0.3...3.
+    public var defaultZoom: Double
+    /// Smallest text size pages may use, in points. 0 is off; otherwise clamped to 9...24.
+    public var minimumFontSize: Double
+    /// `always` reduces motion even when macOS doesn't; `system` follows System Settings > Accessibility > Display.
+    public var reduceMotion: AccessibilityPreference
+    /// Same for transparency and blur.
+    public var reduceTransparency: AccessibilityPreference
     /// Right-click > Inspect Element and the Web Inspector.
     public var developerTools: Bool
     /// Load http:// pages over https:// instead. A site that doesn't answer securely gets a notice with Continue to
@@ -113,6 +152,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites
+        case appearance, highContrastTabs, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -143,6 +183,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools: Bool = true,
         httpsOnly: Bool = true,
         newTabFrequentSites: Bool = true,
+        appearance: AppearanceMode = .system,
+        highContrastTabs: Bool = false,
+        interfaceTextSize: InterfaceTextSize = .default,
+        defaultZoom: Double = 1,
+        minimumFontSize: Double = 0,
+        reduceMotion: AccessibilityPreference = .system,
+        reduceTransparency: AccessibilityPreference = .system,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
         extensionToolbar: [String: ExtensionToolbarPlacement] = [:],
@@ -176,6 +223,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.developerTools = developerTools
         self.httpsOnly = httpsOnly
         self.newTabFrequentSites = newTabFrequentSites
+        self.appearance = appearance
+        self.highContrastTabs = highContrastTabs
+        self.interfaceTextSize = interfaceTextSize
+        self.defaultZoom = SitePolicy.normalizedZoom(defaultZoom)
+        self.minimumFontSize = PaddleConfig.normalizedMinimumFontSize(minimumFontSize)
+        self.reduceMotion = reduceMotion
+        self.reduceTransparency = reduceTransparency
         self.shortcuts = shortcuts
         self.extensions = extensions
         self.extensionToolbar = extensionToolbar
@@ -217,6 +271,19 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
         httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
         newTabFrequentSites = c.decodeValue(.newTabFrequentSites, d.newTabFrequentSites, issues)
+        appearance = c.decodeValue(.appearance, d.appearance, issues)
+        highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
+        interfaceTextSize = c.decodeValue(.interfaceTextSize, d.interfaceTextSize, issues)
+        defaultZoom = SitePolicy.normalizedZoom(c.decodeValue(.defaultZoom, d.defaultZoom, issues))
+        let fontSize: Double = c.decodeValue(.minimumFontSize, d.minimumFontSize, issues)
+        if fontSize < 0 || !fontSize.isFinite {
+            issues?.issues.append(ConfigIssue(
+                key: .minimumFontSize, path: ["minimumFontSize"], severity: .warning,
+                message: "Expected 0 (off) or a size from 9 to 24. Paddle uses the default, 0, until this is fixed."))
+        }
+        minimumFontSize = PaddleConfig.normalizedMinimumFontSize(fontSize)
+        reduceMotion = c.decodeValue(.reduceMotion, d.reduceMotion, issues)
+        reduceTransparency = c.decodeValue(.reduceTransparency, d.reduceTransparency, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
         extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)
@@ -272,6 +339,12 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(self)
+    }
+
+    /// `size` as `minimumFontSize` keeps it: 0 (off) for a negative or non-number, 9...24 otherwise (a value between 0 and 9 becomes 9).
+    static func normalizedMinimumFontSize(_ size: Double) -> Double {
+        guard size.isFinite, size > 0 else { return 0 }
+        return min(max(size.rounded(), 9), 24)
     }
 
     /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.

@@ -8,6 +8,7 @@ struct ActivityView: View {
     let app: AppModel
     /// The window the popover belongs to; its own private tabs are listed.
     let browser: BrowserModel
+    @Environment(\.chromeScale) private var scale
 
     private func isListed(_ tab: Tab) -> Bool { !tab.isPrivate || tab.browser === browser }
 
@@ -24,7 +25,7 @@ struct ActivityView: View {
                 Text("Tabs").font(.headline)
                 Spacer()
                 Text("Total \(ProcessMemory.format(app.totalWebMemory))")
-                    .font(.system(size: 11).monospacedDigit())
+                    .chromeFont(size: 11, monospacedDigit: true)
                     .foregroundStyle(.secondary)
             }
 
@@ -47,7 +48,7 @@ struct ActivityView: View {
                     "Saving power (\(reason)): \(policy.sleepAfter > 0 ? "tabs sleep after \(Int(policy.sleepAfter / 60)) min" : "idle sleep is off")\(policy.maxAwakeTabs > 0 ? ", at most \(policy.maxAwakeTabs) awake" : "").",
                     systemImage: "leaf"
                 )
-                .font(.system(size: 11))
+                .chromeFont(size: 11)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -59,20 +60,20 @@ struct ActivityView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Content blocking").font(.subheadline.weight(.semibold))
                 if app.web.isUpdatingFilters {
-                    Text("Updating filter lists…").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("Updating filter lists…").chromeFont(size: 11).foregroundStyle(.secondary)
                 }
                 // One plain line per list ("easylist: 62,141 rules"); the converter's statistics and what it couldn't
                 // cover wait under Details. Keyed by position: a line keeps its identity while the lists compile.
                 ForEach(app.web.blockerLines.indices, id: \.self) { index in
                     let line = app.web.blockerLines[index]
-                    Text(Self.shortLine(line.text)).font(.system(size: 11)).foregroundStyle(.secondary).help(line.text)
+                    Text(Self.shortLine(line.text)).chromeFont(size: 11).foregroundStyle(.secondary).help(line.text)
                 }
                 if app.web.blockerLines.contains(where: { $0.summary != nil || Self.shortLine($0.text) != $0.text }) {
                     SettingsDisclosure(title: "Details") {
                         ForEach(app.web.blockerLines.indices, id: \.self) { index in
                             let line = app.web.blockerLines[index]
                             Text(line.text)
-                                .font(.system(size: 11))
+                                .chromeFont(size: 11)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             if let summary = line.summary {
@@ -80,16 +81,16 @@ struct ActivityView: View {
                             }
                         }
                     }
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                 }
                 ForEach(app.web.filterUpdateProblems.values.sorted(), id: \.self) { line in
                     Label(line, systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 11))
+                        .chromeFont(size: 11)
                 }
             }
         }
         .padding(14)
-        .frame(width: 380)
+        .frame(width: 380 * scale)
         // Fresh numbers every 5 s while open, with a full helper scan each time.
         .onAppear { app.beginMemoryReadout() }
         .onDisappear { app.endMemoryReadout() }
@@ -124,7 +125,7 @@ struct ActivityView: View {
                 .accessibilityElement(children: .combine)
             }
         }
-        .font(.system(size: 11))
+        .chromeFont(size: 11)
         .foregroundStyle(.secondary)
     }
 
@@ -133,14 +134,14 @@ struct ActivityView: View {
         let bytes = tabs.compactMap(\.memoryBytes).reduce(0, +)
         return HStack(spacing: 8) {
             Image(systemName: "eye.slash")
-                .font(.system(size: 10))
+                .chromeFont(size: 10)
                 .frame(width: 12, height: 12)
             Text("Other private windows (\(tabs.count) \(tabs.count == 1 ? "tab" : "tabs"))")
                 .lineLimit(1)
-                .font(.system(size: 12))
+                .chromeFont(size: 12)
             Spacer()
             Text(bytes > 0 ? ProcessMemory.format(bytes) : "–")
-                .font(.system(size: 11).monospacedDigit())
+                .chromeFont(size: 11, monospacedDigit: true)
                 .foregroundStyle(.secondary)
         }
         .foregroundStyle(.secondary)
@@ -153,13 +154,13 @@ struct ActivityView: View {
             Text(tab.displayTitle)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .font(.system(size: 12))
+                .chromeFont(size: 12)
             Spacer()
             HStack(spacing: 4) {
                 if tab.isFrozen { Text("frozen") }
                 Text(tab.isAwake ? (tab.memoryBytes.map(ProcessMemory.format) ?? "–") + (tab.sharesProcess ? "*" : "") : "asleep")
             }
-            .font(.system(size: 11).monospacedDigit())
+            .chromeFont(size: 11, monospacedDigit: true)
             .foregroundStyle(.secondary)
             Button(tab.isAwake ? "Sleep" : "Show") {
                 if tab.isAwake, tab.browser?.selectedID != tab.id {
@@ -188,18 +189,18 @@ private struct CoverageDisclosure: View {
         if let notCovered = summary.notCoveredText(scriptletsOn: scriptletsOn) {
             DisclosureGroup {
                 Text(summary.scriptletText(scriptletsOn: scriptletsOn) ?? "The rest of this list is in effect.")
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } label: {
                 Text(notCovered)
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } else if let scriptlets = summary.scriptletText(scriptletsOn: scriptletsOn) {
             Text(scriptlets)
-                .font(.system(size: 11))
+                .chromeFont(size: 11)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -208,6 +209,7 @@ private struct CoverageDisclosure: View {
 
 struct DownloadsView: View {
     let store: DownloadStore
+    @Environment(\.chromeScale) private var scale
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -226,13 +228,13 @@ struct DownloadsView: View {
             }
         }
         .padding(14)
-        .frame(width: 340)
+        .frame(width: 340 * scale)
     }
 
     private func row(_ item: DownloadItem) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.filename).lineLimit(1).truncationMode(.middle).font(.system(size: 12))
+                Text(item.filename).lineLimit(1).truncationMode(.middle).chromeFont(size: 12)
                 switch item.state {
                 case .running:
                     // Servers that don't send a size get a moving bar and a byte count, not a bar stuck at zero.
@@ -265,8 +267,8 @@ struct DownloadsView: View {
         .buttonStyle(.borderless)
     }
 
-    private func status(_ text: String) -> Text {
-        Text(text).font(.system(size: 11)).foregroundStyle(.secondary)
+    private func status(_ text: String) -> some View {
+        Text(text).chromeFont(size: 11).foregroundStyle(.secondary)
     }
 
     private func bytes(_ count: Int64) -> String {

@@ -3,11 +3,12 @@ import SwiftUI
 /// Settings' panes, in sidebar order. Settings is a tab of a browser window (`SettingsTabView`), addressed as
 /// `paddle://settings/<rawValue>`.
 enum SettingsPane: String, CaseIterable {
-    case general, tabsMemory, privacy, sites, extensions, shortcuts, advanced
+    case general, appearance, tabsMemory, privacy, sites, extensions, shortcuts, advanced
 
     var title: String {
         switch self {
         case .general: "General"
+        case .appearance: "Appearance"
         case .tabsMemory: "Tabs & Memory"
         case .privacy: "Privacy & Blocking"
         case .sites: "Sites"
@@ -20,6 +21,7 @@ enum SettingsPane: String, CaseIterable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .appearance: "paintbrush"
         case .tabsMemory: "memorychip"
         case .privacy: "hand.raised"
         case .sites: "globe"
@@ -45,8 +47,14 @@ enum SettingsPane: String, CaseIterable {
         case .general: [
             "homepage", "newTabPage", "new tab page", "start page", "new windows", "new tabs", "search engine",
             "searchTemplate", "searchSuggestTemplate", "search suggestions", "address", "showFullAddress",
-            "bookmarks bar", "default browser", "tab layout", "vertical tabs", "sidebar", "tabLayout",
+            "bookmarks bar", "default browser",
             "new tab page", "pinned sites", "speed dial", "frequently visited", "newTabFrequentSites",
+        ]
+        case .appearance: [
+            "appearance", "theme", "dark mode", "light mode", "text size", "font size", "zoom", "contrast", "high contrast",
+            "motion", "transparency", "accessibility", "tab layout", "vertical tabs", "sidebar", "tabLayout",
+            "highContrastTabs", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
+            "reduceTransparency", "default zoom", "minimum font size", "reduce motion", "reduce transparency",
         ]
         case .tabsMemory: [
             "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",
@@ -107,6 +115,7 @@ struct SettingsPaneView: View {
     @ViewBuilder private var content: some View {
         switch pane {
         case .general: GeneralPane(model: model)
+        case .appearance: AppearancePane(model: model)
         case .tabsMemory: TabsMemoryPane(model: model)
         case .privacy: PrivacyPane(model: model)
         case .sites: SitesPane(model: model)

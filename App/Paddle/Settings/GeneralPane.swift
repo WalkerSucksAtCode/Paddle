@@ -38,15 +38,6 @@ struct GeneralPane: View {
                 ))
                 .help("newTabFrequentSites in config.json. A Frequently visited row on the New Tab page, from history; never in private windows.")
                 .disabled(model.controlsDisabled)
-                Picker("Tab layout", selection: Binding(
-                    get: { model.file.tabLayout },
-                    set: { value in Task { await model.saveKey(.tabLayout, .string(value.rawValue)) } }
-                )) {
-                    Text("Horizontal").tag(TabLayout.horizontal)
-                    Text("Vertical").tag(TabLayout.vertical)
-                }
-                .help("tabLayout in config.json, View > Vertical Tabs. Vertical shows the tabs in a sidebar.")
-                .disabled(model.controlsDisabled)
             }
         }
     }

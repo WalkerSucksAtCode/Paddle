@@ -9,6 +9,7 @@ struct NewTabPage: View {
     let app: AppModel
     @State private var frequent: [HistoryEntry] = []
     @State private var adding = false
+    @Environment(\.chromeScale) private var scale
 
     private var showsFrequent: Bool { app.config.newTabFrequentSites && !model.isPrivate }
 
@@ -18,9 +19,9 @@ struct NewTabPage: View {
             Spacer(minLength: 0)
             VStack(spacing: 22) {
                 Text("Paddle")
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .chromeFont(size: 22, weight: .semibold, design: .rounded)
                     .foregroundStyle(.secondary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 120), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], spacing: 12) {
                     ForEach(sites) { site in
                         PinnedTile(site: site, model: model, app: app)
                     }
@@ -33,10 +34,10 @@ struct NewTabPage: View {
                 if showsFrequent, !frequent.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Frequently visited")
-                            .font(.system(size: 11, weight: .semibold))
+                            .chromeFont(size: 11, weight: .semibold)
                             .foregroundStyle(.secondary)
                             .accessibilityAddTraits(.isHeader)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 120), spacing: 12)], alignment: .leading, spacing: 12) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], alignment: .leading, spacing: 12) {
                             ForEach(frequent) { entry in
                                 FrequentTile(entry: entry, model: model, app: app)
                             }
@@ -84,18 +85,19 @@ private struct TileFace: View {
     var focused: Bool
     @State private var hovering = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.chromeScale) private var scale
 
     var body: some View {
         VStack(spacing: 6) {
             icon
-                .frame(width: 40, height: 40)
+                .frame(width: 40 * scale, height: 40 * scale)
             Text(title)
-                .font(.system(size: 12))
+                .chromeFont(size: 12)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .padding(.horizontal, 6)
         }
-        .frame(width: TileMetrics.width, height: TileMetrics.height)
+        .frame(width: TileMetrics.width * scale, height: TileMetrics.height * scale)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.primary.opacity(focused ? 0.14 : hovering ? 0.09 : 0.04))
@@ -119,7 +121,7 @@ private struct TileFace: View {
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 16 * scale, height: 16 * scale)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
         } else {
@@ -127,7 +129,7 @@ private struct TileFace: View {
                 .fill(Color.primary.opacity(0.10))
                 .overlay {
                     Text(String(host.first.map { Character($0.uppercased()) } ?? "?"))
-                        .font(.system(size: 18, weight: .bold))
+                        .chromeFont(size: 18, weight: .bold)
                         .foregroundStyle(.secondary)
                 }
         }
@@ -250,18 +252,19 @@ private struct AddTile: View {
     let app: AppModel
     @FocusState private var focused: Bool
     @State private var hovering = false
+    @Environment(\.chromeScale) private var scale
 
     var body: some View {
         VStack(spacing: 6) {
             Image(systemName: "plus")
-                .font(.system(size: 18, weight: .semibold))
+                .chromeFont(size: 18, weight: .semibold)
                 .foregroundStyle(.secondary)
-                .frame(width: 40, height: 40)
+                .frame(width: 40 * scale, height: 40 * scale)
             Text("Add Site")
-                .font(.system(size: 12))
+                .chromeFont(size: 12)
                 .foregroundStyle(.secondary)
         }
-        .frame(width: TileMetrics.width, height: TileMetrics.height)
+        .frame(width: TileMetrics.width * scale, height: TileMetrics.height * scale)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.primary.opacity(focused ? 0.14 : hovering ? 0.09 : 0.04))
@@ -326,7 +329,7 @@ private struct SiteForm: View {
                 .onSubmit(commit)
             if let message {
                 Text(message)
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(message)
             }

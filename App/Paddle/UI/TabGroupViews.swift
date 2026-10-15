@@ -68,6 +68,7 @@ struct TabGroupLabel: View {
     let group: TabGroup
     let model: BrowserModel
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.chromeScale) private var scale
     @State private var draft = ""
     @State private var selection: TextSelection?
     @FocusState private var focused: Bool
@@ -76,14 +77,14 @@ struct TabGroupLabel: View {
     private var count: Int { model.tabs(in: group).count }
 
     /// The label's width: its text, capped at 120 pt. Also used by the strip to size itself.
-    static func width(for group: TabGroup, count: Int, renaming: Bool) -> CGFloat {
-        if renaming { return 120 }
+    static func width(for group: TabGroup, count: Int, renaming: Bool, scale: Double = 1) -> CGFloat {
+        if renaming { return 120 * scale }
         let text = text(for: group, count: count)
-        let font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let font = NSFont.systemFont(ofSize: 11 * scale, weight: .semibold)
         let textWidth = text.isEmpty ? 0 : (text as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
         let circle: CGFloat = group.name.isEmpty ? 12 : 0
         let gap: CGFloat = circle > 0 && !text.isEmpty ? 4 : 0
-        return min(120, max(22, textWidth + circle + gap + 16))
+        return min(120 * scale, max(22, textWidth + circle + gap + 16))
     }
 
     /// What the label spells: the name, plus the hidden count when collapsed ("Work · 3"; "3" for a nameless group).
@@ -99,7 +100,7 @@ struct TabGroupLabel: View {
             if isRenaming {
                 TextField("Group name", text: $draft, selection: $selection)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 11, weight: .semibold))
+                    .chromeFont(size: 11, weight: .semibold)
                     .foregroundStyle(foreground)
                     .focused($focused)
                     .onSubmit { commit() }
@@ -126,7 +127,7 @@ struct TabGroupLabel: View {
                 let text = Self.text(for: group, count: count)
                 if !text.isEmpty {
                     Text(text)
-                        .font(.system(size: 11, weight: .semibold))
+                        .chromeFont(size: 11, weight: .semibold)
                         .foregroundStyle(foreground)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -134,7 +135,7 @@ struct TabGroupLabel: View {
             }
         }
         .padding(.horizontal, 8)
-        .frame(width: Self.width(for: group, count: count, renaming: isRenaming), height: 22)
+        .frame(width: Self.width(for: group, count: count, renaming: isRenaming, scale: scale), height: 22)
         .background(RoundedRectangle(cornerRadius: 6).fill(group.color.fill(scheme)))
         .contentShape(Rectangle())
         .onTapGesture { if !isRenaming { model.toggleCollapsed(group) } }

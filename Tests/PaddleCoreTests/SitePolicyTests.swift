@@ -85,7 +85,7 @@ struct SitePolicyTests {
     @Test func entryEditKeepsOtherMembersAndDropsDefaults() {
         let existing: JSONValue = ["javaScript": false, "note": "mine"]
         #expect(SiteSettings.entry(existing, setting: .zoom, to: 1.25) == ["javaScript": false, "note": "mine", "zoom": 1.25])
-        #expect(SiteSettings.entry(["zoom": 1.5], setting: .zoom, to: 1) == nil)
+        #expect(SiteSettings.entry(["zoom": 1.5], setting: .zoom, to: 1) == ["zoom": 1])
         #expect(SiteSettings.entry(["zoom": 1.5, "location": "deny"], setting: .zoom, to: nil) == ["location": "deny"])
         #expect(SiteSettings.entry(nil, setting: .location, to: "allow") == ["location": "allow"])
         #expect(SiteSettings.entry(nil, setting: .location, to: "ask") == nil)

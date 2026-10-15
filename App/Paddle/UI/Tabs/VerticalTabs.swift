@@ -25,6 +25,8 @@ struct VerticalTabsSidebar: View {
     @AppStorage(SidebarMetrics.collapsedKey) private var collapsed = false
     @State private var dragStartWidth: Double?
     @Namespace private var rotor
+    @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeReducesMotion) private var reducesMotion
 
     /// One row of the list: a group's header or a tab (with its group, looked up once for the whole list).
     private enum Item: Identifiable {
@@ -72,7 +74,7 @@ struct VerticalTabsSidebar: View {
             }
             VStack(spacing: 0) {
                 if !pinned.isEmpty {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: 4)], spacing: 4) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44 * scale), spacing: 4)], spacing: 4) {
                         ForEach(pinned) { tab in
                             PinnedTile(tab: tab, model: model, isRenaming: model.renamingTabID == tab.id, iconsOnly: collapsed)
                                 .accessibilityRotorEntry(id: tab.id, in: rotor)
@@ -170,7 +172,7 @@ struct VerticalTabsSidebar: View {
             // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
             .onChange(of: model.selectedID) { _, id in
                 guard let id else { return }
-                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
+                withAnimation(reducesMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(id) }
             }
         }
     }
@@ -224,13 +226,13 @@ private struct TabStateIcon: View {
                 FaviconView(url: tab.url, fallback: tab.isPinned ? "pin.fill" : "globe", size: size)
             }
         }
-        .font(.system(size: size - 3))
+        .chromeFont(size: size - 3)
         .foregroundStyle(.secondary)
         .frame(width: size, height: size)
         .overlay(alignment: .bottomTrailing) {
             if audioBadge, audio != .none {
                 Image(systemName: audio == .muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 7, weight: .bold))
+                    .chromeFont(size: 7, weight: .bold)
                     .foregroundStyle(.secondary)
                     .padding(1)
                     .background(Circle().fill(.background))
@@ -310,12 +312,13 @@ private struct SidebarTabBehavior: ViewModifier {
 }
 
 /// The selected tab is brighter than the sidebar in both appearances, with an edge, so it stands out by brightness alone.
-private func sidebarBackground(selected: Bool, hovering: Bool, radius: CGFloat, selectedFill: Double = 0.14, idleFill: Double = 0, hoverFill: Double = 0.06) -> some View {
+/// With `highContrast` the fill and edge are stronger, still by brightness only.
+private func sidebarBackground(selected: Bool, hovering: Bool, radius: CGFloat, highContrast: Bool, selectedFill: Double = 0.14, idleFill: Double = 0, hoverFill: Double = 0.06) -> some View {
     RoundedRectangle(cornerRadius: radius)
-        .fill(Color.primary.opacity(selected ? selectedFill : hovering ? hoverFill : idleFill))
+        .fill(Color.primary.opacity(selected ? (highContrast ? 0.36 : selectedFill) : hovering ? hoverFill : idleFill))
         .overlay {
             RoundedRectangle(cornerRadius: radius)
-                .strokeBorder(Color.primary.opacity(selected ? 0.25 : 0), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(selected ? (highContrast ? 0.55 : 0.25) : 0), lineWidth: highContrast ? 1.5 : 1)
         }
 }
 
@@ -329,14 +332,16 @@ private struct PinnedTile: View {
     let iconsOnly: Bool
     @State private var hovering = false
     @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
+    @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeHighContrastTabs) private var highContrast
 
     private var isSelected: Bool { model.selectedID == tab.id }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
 
     var body: some View {
         TabStateIcon(tab: tab, size: 16, audioBadge: true)
-            .frame(width: 44, height: 36)
-            .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 8, selectedFill: 0.20, idleFill: 0.05, hoverFill: 0.10))
+            .frame(width: 44 * scale, height: 36 * scale)
+            .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 8, highContrast: highContrast, selectedFill: 0.20, idleFill: 0.05, hoverFill: 0.10))
             .modifier(SidebarTabBehavior(
                 tab: tab, model: model, group: nil, isRenaming: isRenaming, inlineRename: false,
                 tooltip: TabButton.tooltip(tab, audio: audio, memory: hoverMemory)
@@ -360,6 +365,8 @@ private struct SidebarTabRow: View {
     @State private var hovering = false
     @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeHighContrastTabs) private var highContrast
 
     private var isSelected: Bool { model.selectedID == tab.id }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
@@ -372,7 +379,7 @@ private struct SidebarTabRow: View {
                     TabRenameField(tab: tab, model: model)
                 } else {
                     Text(tab.displayTitle)
-                        .font(.system(size: 12.5))
+                        .chromeFont(size: 12.5, weight: highContrast && isSelected ? .semibold : .regular)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
@@ -388,7 +395,7 @@ private struct SidebarTabRow: View {
                         model.toggleMute(tab)
                     } label: {
                         Image(systemName: audio == .muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 10))
+                            .chromeFont(size: 10)
                             .foregroundStyle(.secondary)
                             .frame(width: 16, height: 16)
                             .contentShape(Rectangle())
@@ -403,7 +410,7 @@ private struct SidebarTabRow: View {
                     model.close(tab)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .chromeFont(size: 9, weight: .bold)
                         .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
@@ -417,8 +424,8 @@ private struct SidebarTabRow: View {
         }
         .padding(.horizontal, iconsOnly ? 0 : 8)
         .frame(maxWidth: .infinity, alignment: iconsOnly ? .center : .leading)
-        .frame(height: 30)
-        .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 7))
+        .frame(height: 30 * scale)
+        .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 7, highContrast: highContrast))
         // A grouped tab carries its group's colour along its leading edge, so the group's extent shows.
         .overlay(alignment: .leading) {
             if let group {
@@ -449,6 +456,7 @@ private struct SidebarGroupHeader: View {
     let model: BrowserModel
     let iconsOnly: Bool
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.chromeScale) private var scale
     @State private var hovering = false
 
     private var isRenaming: Bool { model.renamingGroupID == group.id }
@@ -479,21 +487,21 @@ private struct SidebarGroupHeader: View {
                         GroupNameField(group: group, model: model)
                     } else {
                         Text(name)
-                            .font(.system(size: 12, weight: .semibold))
+                            .chromeFont(size: 12, weight: .semibold)
                             .lineLimit(1)
                             .truncationMode(.tail)
                         Text("\(count)")
-                            .font(.system(size: 11))
+                            .chromeFont(size: 11)
                             .foregroundStyle(.secondary)
                         Spacer(minLength: 0)
                     }
                     Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
+                        .chromeFont(size: 9, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .frame(width: 12)
                 }
                 .padding(.horizontal, 8)
-                .frame(height: 26)
+                .frame(height: 26 * scale)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(hovering ? 0.06 : 0)))
             }
         }
@@ -528,7 +536,7 @@ private struct GroupNameField: View {
     var body: some View {
         TextField("Group name", text: $draft, selection: $selection)
             .textFieldStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
+            .chromeFont(size: 12, weight: .semibold)
             .focused($focused)
             .onSubmit { commit() }
             .onKeyPress(.escape) {

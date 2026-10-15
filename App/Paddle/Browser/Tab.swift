@@ -593,13 +593,14 @@ final class Tab: Identifiable {
         return url.host()
     }
 
-    /// Sets the page's zoom to its site's (`AppModel.siteZoom`), or 100 % for a page with no site (Paddle's own
-    /// pages, file:, about:blank), so the last site's zoom doesn't carry over. When a page commits and when `sites`
+    /// Sets the page's zoom to its site's (`AppModel.siteZoom`), the default zoom for a page with no site (file:,
+    /// about:blank) and 100 % for Paddle's own pages, so the last site's zoom doesn't carry over. When a page commits and when `sites`
     /// changes.
     func applySiteZoom() {
         guard let webView else { return }
         let own = pendingOwnPage != nil || committedErrorPage || sourceHTML != nil
-        let zoom = own ? 1 : siteHost.map { AppModel.shared.siteZoom(forHost: $0, isPrivate: isPrivate) } ?? 1
+        let model = AppModel.shared
+        let zoom = own ? 1 : siteHost.map { model.siteZoom(forHost: $0, isPrivate: isPrivate) } ?? model.config.defaultZoom
         if webView.pageZoom != zoom { webView.pageZoom = zoom }
     }
 

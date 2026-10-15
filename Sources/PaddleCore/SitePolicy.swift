@@ -18,8 +18,9 @@ public struct SitePolicy: Sendable, Equatable {
     /// blocking on, location and notifications asked once per site per session.
     public static let defaults = SitePolicy(SiteSettings())
 
-    public init(_ settings: SiteSettings) {
-        zoom = settings.zoom.map(Self.normalizedZoom) ?? 1
+    /// `defaultZoom` is the zoom of a site with no `zoom` of its own (`PaddleConfig.defaultZoom`).
+    public init(_ settings: SiteSettings, defaultZoom: Double = 1) {
+        zoom = settings.zoom.map(Self.normalizedZoom) ?? Self.normalizedZoom(defaultZoom)
         javaScript = settings.javaScript ?? true
         autoplay = settings.autoplay ?? .muted
         contentBlocking = settings.contentBlocking ?? true
@@ -51,7 +52,7 @@ public struct SitePolicy: Sendable, Equatable {
 extension PaddleConfig {
     /// The effective settings for `host` (see `SitePolicy`).
     public func sitePolicy(forHost host: String) -> SitePolicy {
-        SitePolicy(siteSettings(forHost: host))
+        SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom)
     }
 
     /// Hosts of `sites` keys with `contentBlocking: false`, for the block lists' site exceptions
@@ -128,7 +129,8 @@ extension SiteSettings {
     /// when nothing is left, so the entry is removed.
     public static func entry(_ existing: JSONValue?, setting field: Field, to value: JSONValue?) -> JSONValue? {
         var object = existing?.objectValue ?? [:]
-        object[field.rawValue] = value == defaultValue(field) ? nil : value
+        // A zoom equal to 1 is kept: with a `defaultZoom` other than 1 it is a real choice (callers pass nil to remove).
+        object[field.rawValue] = value == defaultValue(field) && field != .zoom ? nil : value
         return object.isEmpty ? nil : .object(object)
     }
 

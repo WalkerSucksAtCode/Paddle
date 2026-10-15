@@ -3,7 +3,7 @@ import Foundation
 /// A typed address that opens Settings instead of a page: `paddle://settings`, `paddle://settings/<pane>`, and the
 /// addresses other browsers use (about:settings, about:preferences, chrome://settings, chrome://extensions, about:addons).
 public struct SettingsLink: Sendable, Equatable {
-    public enum Pane: String, Sendable, CaseIterable { case general, tabsMemory, privacy, sites, extensions, shortcuts, advanced }
+    public enum Pane: String, Sendable, CaseIterable { case general, appearance, tabsMemory, privacy, sites, extensions, shortcuts, advanced }
     /// nil: Settings opens on the pane it showed last.
     public var pane: Pane?
 
@@ -55,6 +55,7 @@ public struct SettingsLink: Sendable, Equatable {
     /// Pane names and their aliases, as `paddle://` addresses and about:preferences fragments spell them.
     private static let panesByName: [String: Pane] = [
         "general": .general,
+        "appearance": .appearance, "theme": .appearance, "accessibility": .appearance,
         "tabsmemory": .tabsMemory, "tabs": .tabsMemory, "memory": .tabsMemory,
         "privacy": .privacy, "blocking": .privacy, "contentblocking": .privacy, "adblock": .privacy,
         "sites": .sites, "site": .sites,

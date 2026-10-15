@@ -40,6 +40,7 @@
 		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
 		60312E19BA4F1F8CDA9A8449 /* WebsiteDataSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */; };
 		6219413CB10CDA63036C1A16 /* SettingsModel+Sites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B449E7E2031D289F74768AF /* SettingsModel+Sites.swift */; };
+		638AF4B5750CBD54AA798836 /* AppearancePane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */; };
 		63D6A746C25A8289A6EF1D34 /* AMO in Resources */ = {isa = PBXBuildFile; fileRef = 6742A205E6C2867AE660D717 /* AMO */; };
 		64995873BFBBF2499CB2BFEA /* WebsiteNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */; };
 		6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE304A3A835594677036488 /* ProcessMemory.swift */; };
@@ -52,6 +53,7 @@
 		882FE6995813F4FA7F6583A5 /* FaviconStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4F309759477C08BF952345 /* FaviconStore.swift */; };
 		88EA62FF54CFC6F5BFCF208A /* SettingsModel+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20AE5E86BBFB8E7575CB581 /* SettingsModel+Extensions.swift */; };
 		8996CB86020598BC61B32AF1 /* ShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F6090B48E416A87BCCC699 /* ShortcutRecorder.swift */; };
+		919F620EBA3AFF98602BB16D /* ChromeStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60BD3A551575242DFC25D1CC /* ChromeStyle.swift */; };
 		972450F26A2D4D9240A889E0 /* SettingsModel+Advanced.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8C7EC334C5A367E069A808 /* SettingsModel+Advanced.swift */; };
 		9889453BFC7814356B7E0C3F /* FilterSnapshots in Resources */ = {isa = PBXBuildFile; fileRef = 08A0AF5CF0C8F628DF3A3616 /* FilterSnapshots */; };
 		9D1DD6B67A237E0F27BFD667 /* PrivacyPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B95CD836D55F745348E437 /* PrivacyPane.swift */; };
@@ -91,6 +93,7 @@
 		0FA6FEB74A284AD57FB757A0 /* Glyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Glyph.swift; sourceTree = "<group>"; };
 		0FF189A4771C73A817501D59 /* ShortcutsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsPane.swift; sourceTree = "<group>"; };
 		11E5FE7EECAC5C0800D39F69 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
+		11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePane.swift; sourceTree = "<group>"; };
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
@@ -112,6 +115,7 @@
 		482A1E734550D576E90F7F71 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectorValidator.swift; sourceTree = "<group>"; };
 		52C91606DA827F7C24613219 /* ExtensionControllerDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionControllerDelegate.swift; sourceTree = "<group>"; };
+		60BD3A551575242DFC25D1CC /* ChromeStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeStyle.swift; sourceTree = "<group>"; };
 		622C488303FD517D47056F39 /* StoreInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreInstaller.swift; sourceTree = "<group>"; };
 		6742A205E6C2867AE660D717 /* AMO */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AMO; path = Resources/AMO; sourceTree = SOURCE_ROOT; };
 		67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowController.swift; sourceTree = "<group>"; };
@@ -183,6 +187,7 @@
 			isa = PBXGroup;
 			children = (
 				352D2127E14005724BE87B4B /* AdvancedPane.swift */,
+				11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */,
 				8FEA8DA57CE8927AE3C65953 /* ConfigWatcher.swift */,
 				7879E7929052FF11CD3E3F68 /* ExtensionsPane.swift */,
 				74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */,
@@ -229,6 +234,7 @@
 				D10F08E60740FF045413DAC8 /* Bookmarks.swift */,
 				3FA5FEBD20A366AEBD2ED6A5 /* BrowserImport.swift */,
 				9881BDAB3248D8FEB481C88A /* BrowserView.swift */,
+				60BD3A551575242DFC25D1CC /* ChromeStyle.swift */,
 				3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */,
 				0FA6FEB74A284AD57FB757A0 /* Glyph.swift */,
 				9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */,
@@ -434,12 +440,14 @@
 				87C6D0593E0ED2F7BE658144 /* AddressSuggestions.swift in Sources */,
 				0F847D747DD9BFF41243A86B /* AdvancedPane.swift in Sources */,
 				DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */,
+				638AF4B5750CBD54AA798836 /* AppearancePane.swift in Sources */,
 				A2709A6C8A004234864B824C /* BookmarkStore.swift in Sources */,
 				B15050EC419C701DB0C5049D /* Bookmarks.swift in Sources */,
 				BBFDDBB44717A20FCF8E6112 /* BrowserImport.swift in Sources */,
 				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
 				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
 				BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */,
+				919F620EBA3AFF98602BB16D /* ChromeStyle.swift in Sources */,
 				2DC2C4B0EB7337CCBBADE0A1 /* CompatBus.swift in Sources */,
 				45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */,
 				5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */,

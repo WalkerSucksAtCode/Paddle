@@ -18,6 +18,7 @@ struct TabSearchView: View {
     @State private var query = ""
     @State private var highlighted: UUID?
     @FocusState private var focused: Bool
+    @Environment(\.chromeScale) private var scale
 
     private var entries: [TabSearchEntry] {
         var result: [TabSearchEntry] = []
@@ -47,7 +48,7 @@ struct TabSearchView: View {
         VStack(spacing: 0) {
             TextField("Search tabs", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .chromeFont(size: 14)
                 .padding(10)
                 .focused($focused)
                 .accessibilityLabel("Search tabs")
@@ -61,7 +62,7 @@ struct TabSearchView: View {
             Divider()
             if shown.isEmpty {
                 Text("No matching tabs")
-                    .font(.system(size: 12))
+                    .chromeFont(size: 12)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity)
                     .padding(16)
@@ -76,14 +77,14 @@ struct TabSearchView: View {
                         }
                         .padding(4)
                     }
-                    .frame(maxHeight: 360)
+                    .frame(maxHeight: 360 * scale)
                     .onChange(of: highlighted) { _, id in
                         if let id { proxy.scrollTo(id) }
                     }
                 }
             }
         }
-        .frame(width: 420)
+        .frame(width: 420 * scale)
         .onAppear {
             focused = true
         }
@@ -95,9 +96,9 @@ struct TabSearchView: View {
             HStack(spacing: 8) {
                 FaviconView(url: entry.url, size: 16)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.title).font(.system(size: 13)).lineLimit(1)
+                    Text(entry.title).chromeFont(size: 13).lineLimit(1)
                     if !entry.detail.isEmpty {
-                        Text(entry.detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(entry.detail).chromeFont(size: 11).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)

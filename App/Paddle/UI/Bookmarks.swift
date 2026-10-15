@@ -8,6 +8,7 @@ import SwiftUI
 /// as menus.
 struct BookmarksBar: View {
     let app: AppModel
+    @Environment(\.chromeScale) private var scale
 
     var body: some View {
         let items = app.bookmarks.tree.bar
@@ -19,7 +20,7 @@ struct BookmarksBar: View {
             }
             .padding(.horizontal, 8)
         }
-        .frame(height: 26)
+        .frame(height: 26 * scale)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Bookmarks bar")
     }
@@ -27,6 +28,7 @@ struct BookmarksBar: View {
 
 private struct BookmarkBarItem: View {
     let item: Bookmark
+    @Environment(\.chromeScale) private var scale
 
     var body: some View {
         if item.isFolder {
@@ -35,7 +37,7 @@ private struct BookmarkBarItem: View {
             } label: {
                 // Menu labels size to fit, so long folder names are shortened here (bookmarks cap at 160 pt).
                 Label(item.title.count > 28 ? item.title.prefix(27) + "…" : item.title, systemImage: "folder")
-                    .font(.system(size: 12))
+                    .chromeFont(size: 12)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -47,12 +49,12 @@ private struct BookmarkBarItem: View {
                 HStack(spacing: 4) {
                     FaviconView(url: item.url.flatMap(URL.init(string:)), size: 12)
                     Text(item.title)
-                        .font(.system(size: 12))
+                        .chromeFont(size: 12)
                         .lineLimit(1)
                 }
-                .frame(maxWidth: 160)
+                .frame(maxWidth: 160 * scale)
                 .padding(.horizontal, 6)
-                .frame(height: 22)
+                .frame(height: 22 * scale)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)

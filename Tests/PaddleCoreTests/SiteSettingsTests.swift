@@ -66,10 +66,12 @@ struct SiteSettingsTests {
         ])
     }
 
-    /// Every `sites` field has a config default, and the defaults table covers exactly the fields.
+    /// Every `sites` field but `zoom` (whose default is `defaultZoom`, so tidy never prunes it) has a config default,
+    /// and the defaults table covers exactly those fields.
     @Test func siteFieldDefaultsCoverEveryField() {
-        #expect(Set(ConfigFile.siteFieldDefaults.keys) == Set(SiteSettings.Field.allCases.map(\.rawValue)))
-        for field in SiteSettings.Field.allCases {
+        let fields = SiteSettings.Field.allCases.filter { $0 != .zoom }
+        #expect(Set(ConfigFile.siteFieldDefaults.keys) == Set(fields.map(\.rawValue)))
+        for field in fields {
             #expect(ConfigFile.siteFieldDefaults[field.rawValue] == SiteSettings.defaultValue(field), "\(field)")
         }
     }

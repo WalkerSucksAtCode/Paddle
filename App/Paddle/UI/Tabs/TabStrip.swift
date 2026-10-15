@@ -5,10 +5,12 @@ import SwiftUI
 struct TabStrip: View {
     @Bindable var model: BrowserModel
     @Namespace private var rotor
+    @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeReducesMotion) private var reducesMotion
 
     /// Room for the traffic lights.
     private let leadingInset: CGFloat = 78
-    private let pinnedWidth: CGFloat = 40
+    private var pinnedWidth: CGFloat { 40 * scale }
 
     /// One thing in the strip: a group's label or a tab. The tabs of a collapsed group are left out.
     private struct StripItem: Identifiable {
@@ -34,7 +36,7 @@ struct TabStrip: View {
     }
 
     private func labelWidth(_ group: TabGroup) -> CGFloat {
-        TabGroupLabel.width(for: group, count: model.tabs(in: group).count, renaming: model.renamingGroupID == group.id)
+        TabGroupLabel.width(for: group, count: model.tabs(in: group).count, renaming: model.renamingGroupID == group.id, scale: scale)
     }
 
     var body: some View {
@@ -44,7 +46,7 @@ struct TabStrip: View {
             let shownUnpinned = CGFloat(items.filter { $0.tab.map { !$0.isPinned } ?? false }.count)
             let labelsWidth = items.reduce(CGFloat(0)) { $0 + ($1.group.map(labelWidth) ?? 0) }
             let available = geometry.size.width - leadingInset - 44 - pinnedCount * (pinnedWidth + 2) - labelsWidth - 2 * CGFloat(items.filter { $0.tab == nil }.count)
-            let width = shownUnpinned == 0 ? 0 : min(240, max(110, available / shownUnpinned - 2))
+            let width = shownUnpinned == 0 ? 0 : min(240 * scale, max(TabButton.alwaysCloseWidth * scale, available / shownUnpinned - 2))
             let tabsWidth = pinnedCount * pinnedWidth + shownUnpinned * width + labelsWidth + 2 * max(0, CGFloat(items.count) - 1)
 
             HStack(spacing: 0) {
@@ -80,7 +82,7 @@ struct TabStrip: View {
                     // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
                     .onChange(of: model.selectedID) { _, id in
                         guard let id else { return }
-                        withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(id) }
+                        withAnimation(reducesMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(id) }
                     }
                 }
                 Button {
@@ -124,7 +126,7 @@ struct TabRenameField: View {
     var body: some View {
         TextField("Tab name", text: $draft, selection: $selection)
             .textFieldStyle(.plain)
-            .font(.system(size: 12))
+            .chromeFont(size: 12)
             .focused($focused)
             .onSubmit { commit() }
             .onKeyPress(.escape) {
@@ -165,10 +167,12 @@ struct TabButton: View {
     /// `body`, so a new sample doesn't redraw every tab button.
     @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeHighContrastTabs) private var highContrast
 
     private var isSelected: Bool { model.selectedID == tab.id }
-    /// From this width every tab shows its close button.
-    private static let alwaysCloseWidth: CGFloat = 110
+    /// From this width (at text size 100 %) every tab shows its close button.
+    static let alwaysCloseWidth: CGFloat = 110
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
 
     var body: some View {
@@ -179,7 +183,7 @@ struct TabButton: View {
                     TabRenameField(tab: tab, model: model)
                 } else {
                     Text(tab.displayTitle)
-                        .font(.system(size: 12))
+                        .chromeFont(size: 12, weight: highContrast && isSelected ? .semibold : .regular)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
@@ -195,7 +199,7 @@ struct TabButton: View {
                         model.toggleMute(tab)
                     } label: {
                         Image(systemName: audio == .muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 10))
+                            .chromeFont(size: 10)
                             .foregroundStyle(.secondary)
                             .frame(width: 16, height: 16)
                             .contentShape(Rectangle())
@@ -207,12 +211,12 @@ struct TabButton: View {
                 }
                 // Every tab wide enough for one shows its close button, not only the hovered one; a narrow tab keeps the
                 // room for its title and shows it on hover or when selected.
-                if hovering || isSelected || width >= Self.alwaysCloseWidth {
+                if hovering || isSelected || width >= Self.alwaysCloseWidth * scale {
                     Button {
                         model.close(tab)
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
+                            .chromeFont(size: 9, weight: .bold)
                             .frame(width: 16, height: 16)
                             .contentShape(Rectangle())
                     }
@@ -242,10 +246,10 @@ struct TabButton: View {
             // The selected tab is lighter than the strip in dark mode and darker in light mode, with an edge, so it
             // stands out by brightness alone: the window background colour it used before matched the strip.
             RoundedRectangle(cornerRadius: 7)
-                .fill(Color.primary.opacity(isSelected ? 0.14 : hovering ? 0.06 : 0))
+                .fill(Color.primary.opacity(isSelected ? (highContrast ? 0.30 : 0.14) : hovering ? 0.06 : 0))
                 .overlay {
                     RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color.primary.opacity(isSelected ? 0.18 : 0), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(isSelected ? (highContrast ? 0.55 : 0.18) : 0), lineWidth: highContrast ? 1.5 : 1)
                 }
         }
         // A grouped tab carries its group's colour along the bottom edge, so the group's extent shows.
@@ -309,14 +313,14 @@ struct TabButton: View {
                 FaviconView(url: tab.url, fallback: tab.isPinned ? "pin.fill" : "globe")
             }
         }
-        .font(.system(size: 11))
+        .chromeFont(size: 11)
         .foregroundStyle(.secondary)
         .frame(width: 14, height: 14)
         // Pinned tabs have no room for a button: a small speaker on the icon; mute from the context menu.
         .overlay(alignment: .bottomTrailing) {
             if tab.isPinned, audio != .none {
                 Image(systemName: audio == .muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 7, weight: .bold))
+                    .chromeFont(size: 7, weight: .bold)
                     .foregroundStyle(.secondary)
                     .padding(1)
                     .background(Circle().fill(.background))

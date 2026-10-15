@@ -212,7 +212,7 @@ struct SuggestionList: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Suggestions")
         .padding(4)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .chromeMaterial(in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.12)))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
     }
@@ -221,6 +221,7 @@ struct SuggestionList: View {
 private struct SuggestionRow: View {
     let row: Suggestion
     let highlighted: Bool
+    @Environment(\.chromeScale) private var scale
 
     var body: some View {
         HStack(spacing: 8) {
@@ -229,18 +230,18 @@ private struct SuggestionRow: View {
                     FaviconView(url: url, fallback: icon, size: 14, fallbackStyle: highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 } else {
                     Image(systemName: icon)
-                        .font(.system(size: 12))
+                        .chromeFont(size: 12)
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
                 }
             }
-            .frame(width: 16)
+            .frame(width: 16 * scale)
             VStack(alignment: .leading, spacing: 1) {
                 Text(row.title)
-                    .font(.system(size: 13))
+                    .chromeFont(size: 13)
                     .lineLimit(1)
                 if !row.detail.isEmpty {
                     Text(row.detail)
-                        .font(.system(size: 11))
+                        .chromeFont(size: 11)
                         .lineLimit(1)
                         .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
                 }
@@ -248,13 +249,13 @@ private struct SuggestionRow: View {
             Spacer(minLength: 8)
             if case .openTab = row.kind {
                 Text("Switch to Tab")
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                     .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
             }
         }
         .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
         .padding(.horizontal, 8)
-        .frame(height: row.detail.isEmpty ? 28 : 36)
+        .frame(height: (row.detail.isEmpty ? 28 : 36) * scale)
         .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.clear)))
     }
 

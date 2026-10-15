@@ -85,7 +85,42 @@ final class AppModel {
     /// Set once the final save has run at quit, so windows closing during teardown can't save a smaller session.
     @ObservationIgnored private var isTerminating = false
 
-    private init() {}
+    private init() {
+        let center = NSWorkspace.shared.notificationCenter
+        accessibilityObserver = center.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { AppModel.shared.readSystemAccessibility() }
+        }
+    }
+
+    // MARK: - Appearance and accessibility
+
+    /// macOS's Reduce motion / Reduce transparency settings, kept current by the display-options notification.
+    private(set) var systemReducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    private(set) var systemReducesTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    @ObservationIgnored private var accessibilityObserver: (any NSObjectProtocol)?
+
+    /// Factor for the chrome's text and spacing (`interfaceTextSize`).
+    var chromeScale: Double { config.interfaceTextSize.scale }
+    /// Animations in the chrome are off: `reduceMotion` is `always`, or macOS asks for it.
+    var reducesMotion: Bool { config.reduceMotion == .always || systemReducesMotion }
+    /// Translucent backgrounds in the chrome are opaque: `reduceTransparency` is `always`, or macOS asks for it.
+    var reducesTransparency: Bool { config.reduceTransparency == .always || systemReducesTransparency }
+
+    private func readSystemAccessibility() {
+        systemReducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        systemReducesTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    }
+
+    /// `NSApp.appearance` for the `appearance` key: nil follows macOS. Pages follow through their web view's effective appearance.
+    private func applyAppearance(_ mode: AppearanceMode) {
+        switch mode {
+        case .system: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -97,6 +132,7 @@ final class AppModel {
         bookmarks.load()
         newTab.load()
         web.apply(config)
+        applyAppearance(config.appearance)
         MainMenu.applyShortcuts(config.shortcuts)
         extensions.prepare(config: config)
 
@@ -310,7 +346,12 @@ final class AppModel {
             }
             updateSampler()
         }
-        if keys.contains(.sites) { applySiteZoom() }
+        if keys.contains(.appearance) { applyAppearance(new.appearance) }
+        if keys.contains(.minimumFontSize) {
+            // A tab's configuration copy shares the WKPreferences object, so this reaches pages already open.
+            for tab in allTabs { tab.webView?.configuration.preferences.minimumFontSize = CGFloat(new.minimumFontSize) }
+        }
+        if keys.contains(.sites) || keys.contains(.defaultZoom) { applySiteZoom() }
         // Scriptlets come from the same list files, so they are rebuilt with the block lists.
         if !keys.isDisjoint(with: [.contentBlocking, .filterLists, .scriptlets, .trustedLists])
             || (keys.contains(.sites) && old.blockingOffHosts != new.blockingOffHosts) {
@@ -368,6 +409,13 @@ final class AppModel {
             case .developerTools: old.developerTools != new.developerTools
             case .httpsOnly: old.httpsOnly != new.httpsOnly
             case .newTabFrequentSites: old.newTabFrequentSites != new.newTabFrequentSites
+            case .appearance: old.appearance != new.appearance
+            case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
+            case .interfaceTextSize: old.interfaceTextSize != new.interfaceTextSize
+            case .defaultZoom: old.defaultZoom != new.defaultZoom
+            case .minimumFontSize: old.minimumFontSize != new.minimumFontSize
+            case .reduceMotion: old.reduceMotion != new.reduceMotion
+            case .reduceTransparency: old.reduceTransparency != new.reduceTransparency
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
             case .extensionToolbar: old.extensionToolbar != new.extensionToolbar
@@ -468,8 +516,10 @@ final class AppModel {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             pendingZoomWrites[key] = nil
-            // Already the zoom config.json gives (Actual Size on a site with none): nothing to write.
-            if (config.sites[key]?.zoom ?? SitePolicy.defaults.zoom) != zoom {
+            // The default zoom needs no entry: remove the site's own, if any. Another zoom is written unless already there.
+            if zoom == config.defaultZoom {
+                if config.sites[key]?.zoom != nil { await writeSiteSetting(.zoom, nil, forKey: key) }
+            } else if config.sites[key]?.zoom != zoom {
                 await writeSiteSetting(.zoom, .number(zoom), forKey: key)
             }
             if pendingZoomWrites[key] == nil { pendingZooms[key] = nil }
@@ -479,8 +529,8 @@ final class AppModel {
     /// `sites` changed: awake ordinary tabs take their site's zoom now (other per-site settings apply at the next
     /// page load). Tabs whose site has a zoom write still pending keep theirs.
     private func applySiteZoom() {
-        for tab in allTabs where !tab.isPrivate {
-            guard let host = tab.webView?.url?.host(), pendingZoomWrites[config.zoomKey(forHost: host)] == nil else { continue }
+        for tab in allTabs {
+            if let host = tab.webView?.url?.host(), pendingZoomWrites[config.zoomKey(forHost: host)] != nil { continue }
             tab.applySiteZoom()
         }
     }

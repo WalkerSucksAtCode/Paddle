@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 built and checked in the app 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a built and checked in the app 2026-10-15, uncommitted; 4b not started.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -48,21 +48,37 @@ Where from: Chrome shortcuts, Firefox top sites, Safari favorites, Brave speed d
 - Done when: tiles are added, edited, reordered and removed, and they survive a relaunch.
 
 ## Wave 4: themes and accessibility
-Where from: Chrome themes, Arc and Zen colors, Firefox and macOS accessibility.
-- [ ] Settings > Appearance pane:
-  - [ ] Paddle's light/dark (System / Light / Dark).
-  - [ ] Accent and tint presets, plus a custom color.
-  - [ ] Tint strength for the tab strip and toolbar.
-  - [ ] A high-contrast selected tab.
-  - [ ] Interface text size.
-  - [ ] Default page zoom.
-  - [ ] Minimum page font size.
-  - [ ] Reduce motion and transparency (follows macOS, with an override).
-- [ ] Theme files in `themes/<name>.json` (tab strip, toolbar, selected tab, accent, new tab background) and a
-  `theme` key in config.json. The built-in themes are measured: text contrast at least 4.5:1, and selected and
-  unselected tabs differ in brightness.
+Where from: Chrome themes, Arc and Zen colors, Firefox and macOS accessibility. Split in two (2026-10-15): the text
+size control alone touches 72 fixed font sizes in 13 chrome files.
+
+### Wave 4a: Appearance pane and accessibility
+- [x] Settings > Appearance pane (`paddle://settings/appearance`), after General; the Tab layout picker moves there.
+- [x] `appearance`: "system" | "light" | "dark" (Paddle's windows; pages' `prefers-color-scheme` follows).
+- [ ] `highContrastTabs` (off): the selected tab gets a stronger fill and edge and a semibold title, in the strip and
+  the sidebar. Measured: selected and unselected tabs differ clearly in brightness in light and dark. (Strip measured
+  against the unselected strip: light fill 1.31 -> 1.86:1, edge 1.64 -> 6.29:1; dark fill 1.44 -> 2.31:1, edge 1.97 ->
+  7.26:1. The sidebar with it on was not checked.)
+- [ ] `interfaceTextSize`: "small" | "default" | "large" | "larger" scales the chrome's text and row heights (tab
+  strip, sidebar, toolbar, bookmarks bar, suggestions, find bar, New Tab page, notices). Nothing clips at "larger".
+  (Checked at "larger" and "small" in the strip, toolbar, sidebar and New Tab page, and after a relaunch. Not scaled
+  yet: the extension toolbar buttons and the ≡ button.)
+- [x] `defaultZoom` (1.0): pages without a site zoom open at it; Actual Size (⌘0) goes to it; a site zoom equal to it
+  is dropped from `sites`.
+- [x] `minimumFontSize` (0, off; 9-24 pt): WebKit's minimum font size, applied to open pages too.
+- [ ] `reduceMotion` and `reduceTransparency`: "system" (follow macOS) | "always". Reduced transparency makes the
+  chrome solid instead of the bar material; reduced motion turns off the chrome's animations. (Built and reviewed in
+  code; neither difference was measurable in the app: the materials sit over flat backgrounds, and the animations are
+  0.15-0.2 s.)
+- Done when: each control applies live to every open window and survives a relaunch.
+
+### Wave 4b: themes and tint
+- [ ] Accent and chrome tint: presets plus a custom `#rrggbb`, and a tint strength for the tab strip and toolbar.
+- [ ] Theme files in `themes/<name>.json` (tab strip, toolbar, selected tab, text, accent, new tab background, for
+  light and dark) and a `theme` key in config.json. Built-in themes, each measured by a PaddleCore test: text
+  contrast at least 4.5:1, and selected and unselected tabs differ in brightness. A broken theme file shows in the
+  config notice and falls back to the default.
 - [ ] A group or window color tint (Arc spaces); optional, after the rest.
-- Done when: each built-in theme passes the contrast measurement, and changing a theme applies live to every window.
+- Done when: each built-in theme passes the contrast test, and changing a theme applies live to every window.
 
 ## Wave 5: developer tools (extends what exists)
 Exists today: Web Inspector (⌥⌘I), right-click > Inspect Element, View Source (⌥⌘U), and the `developerTools` key.

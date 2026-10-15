@@ -67,6 +67,7 @@ final class WebEnvironment {
         c.preferences.isElementFullscreenEnabled = true
         c.preferences.isFraudulentWebsiteWarningEnabled = true
         c.preferences.javaScriptCanOpenWindowsAutomatically = false
+        c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         c.allowsAirPlayForMediaPlayback = true
         // Safari's default ("Stop media with sound"): pages can autoplay muted video, sound waits for a click or key.
@@ -128,6 +129,7 @@ final class WebEnvironment {
         WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: false)
         c.websiteDataStore = dataStore
         c.applicationNameForUserAgent = applicationName
+        c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         Self.enableWebFeatures(c.preferences)
         return c

@@ -42,9 +42,9 @@ public enum ConfigFile {
     /// The default for one entry of an object key, where there is one: an extension not listed is on.
     static func entryDefault(in key: String) -> JSONValue? { key == PaddleConfig.CodingKeys.extensions.rawValue ? .bool(true) : nil }
 
-    /// The default of each field of a `sites` entry (`SitePolicy.defaults`), as the file writes it.
+    /// The default of each field of a `sites` entry (`SitePolicy.defaults`), as the file writes it. Not `zoom`: its
+    /// default is the `defaultZoom` key, so a zoom of 1 can be a real choice.
     static let siteFieldDefaults: [String: JSONValue] = [
-        "zoom": .number(SitePolicy.defaults.zoom),
         "javaScript": .bool(SitePolicy.defaults.javaScript),
         "autoplay": .string(SitePolicy.defaults.autoplay.rawValue),
         "contentBlocking": .bool(SitePolicy.defaults.contentBlocking),

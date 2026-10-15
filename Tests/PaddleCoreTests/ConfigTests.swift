@@ -166,4 +166,42 @@ struct ConfigTests {
         #expect(config.tabLayout == .horizontal)
         #expect(issues.map(\.path) == [["tabLayout"]])
     }
+
+    @Test func appearanceKeysDefaultAndDecode() throws {
+        let d = PaddleConfig()
+        #expect(d.appearance == .system && !d.highContrastTabs && d.interfaceTextSize == .default)
+        #expect(d.defaultZoom == 1 && d.minimumFontSize == 0 && d.reduceMotion == .system && d.reduceTransparency == .system)
+        let json = #"{"appearance": "dark", "highContrastTabs": true, "interfaceTextSize": "larger", "defaultZoom": 1.25, "minimumFontSize": 12, "reduceMotion": "always", "reduceTransparency": "always"}"#
+        let (c, issues) = try PaddleConfig.decodeReportingIssues(Data(json.utf8))
+        #expect(issues.isEmpty)
+        #expect(c.appearance == .dark && c.highContrastTabs && c.interfaceTextSize == .larger)
+        #expect(c.defaultZoom == 1.25 && c.minimumFontSize == 12 && c.reduceMotion == .always && c.reduceTransparency == .always)
+        #expect(try PaddleConfig.decode(c.encoded()) == c)
+        #expect(InterfaceTextSize.allCases.map(\.scale) == [0.9, 1.0, 1.15, 1.3])
+    }
+
+    @Test func appearanceKeysFallBackWhenInvalid() throws {
+        let json = #"{"appearance": "sepia", "interfaceTextSize": "huge", "reduceMotion": "never", "reduceTransparency": 3, "highContrastTabs": "yes", "defaultZoom": "big", "minimumFontSize": -4}"#
+        let (c, issues) = try PaddleConfig.decodeReportingIssues(Data(json.utf8))
+        #expect(c.appearance == .system && c.interfaceTextSize == .default && c.reduceMotion == .system)
+        #expect(c.reduceTransparency == .system && !c.highContrastTabs && c.defaultZoom == 1 && c.minimumFontSize == 0)
+        #expect(Set(issues.map(\.path)) == [["appearance"], ["interfaceTextSize"], ["reduceMotion"], ["reduceTransparency"], ["highContrastTabs"], ["defaultZoom"], ["minimumFontSize"]])
+    }
+
+    @Test func defaultZoomAndMinimumFontSizeAreClamped() throws {
+        #expect(try PaddleConfig.decode(Data(#"{"defaultZoom": 9}"#.utf8)).defaultZoom == 3)
+        #expect(try PaddleConfig.decode(Data(#"{"defaultZoom": 0.1}"#.utf8)).defaultZoom == 0.3)
+        let (small, smallIssues) = try PaddleConfig.decodeReportingIssues(Data(#"{"minimumFontSize": 4}"#.utf8))
+        #expect(small.minimumFontSize == 9 && smallIssues.isEmpty)
+        #expect(try PaddleConfig.decode(Data(#"{"minimumFontSize": 99}"#.utf8)).minimumFontSize == 24)
+        #expect(try PaddleConfig.decode(Data(#"{"minimumFontSize": 0}"#.utf8)).minimumFontSize == 0)
+    }
+
+    @Test func sitesWithoutZoomGetTheDefaultZoom() {
+        var config = PaddleConfig(defaultZoom: 1.25)
+        config.sites = ["a.com": SiteSettings(zoom: 1), "b.com": SiteSettings(javaScript: false)]
+        #expect(config.sitePolicy(forHost: "a.com").zoom == 1)
+        #expect(config.sitePolicy(forHost: "b.com").zoom == 1.25)
+        #expect(config.sitePolicy(forHost: "other.org").zoom == 1.25)
+    }
 }

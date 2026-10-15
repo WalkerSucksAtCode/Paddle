@@ -268,13 +268,13 @@ struct ConfigFileTests {
         #expect(tidy.removed == [
             ["shortcuts", "togglePin"], ["shortcuts", "newTab"],
             ["sites", "a.com", "autoplay"], ["sites", "a.com", "contentBlocking"], ["sites", "a.com", "javaScript"],
-            ["sites", "a.com", "location"], ["sites", "a.com", "zoom"], ["sites", "b.com", "javaScript"],
+            ["sites", "a.com", "location"], ["sites", "b.com", "javaScript"],
         ])
         let after = try JSONSpans.scan(tidy.data).object
         #expect(after["shortcuts"] == .object(["closeTab": "none", "mystery": "none", "bad": "x+"]))
         // The entry stays, empty, until Remove Site; the others keep their non-default fields.
         #expect(after["sites"] == .object([
-            "a.com": .object([:]),
+            "a.com": .object(["zoom": 1]),
             "b.com": .object(["zoom": 1.25, "autoplay": "block", "location": "deny"]),
             "c.com": .object(["zoom": 1.5]),
         ]))

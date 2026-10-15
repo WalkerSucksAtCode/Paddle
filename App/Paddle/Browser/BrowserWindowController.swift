@@ -208,7 +208,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     // The zoom is remembered for the site (`Tab.setZoom`).
     @objc func paddleZoomIn(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom + SitePolicy.zoomStep) } }
     @objc func paddleZoomOut(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom - SitePolicy.zoomStep) } }
-    @objc func paddleActualSize(_ sender: Any?) { tab?.setZoom(1) }
+    /// Actual Size is the default zoom (`defaultZoom`), so it also resets sites that had their own zoom.
+    @objc func paddleActualSize(_ sender: Any?) {
+        guard let tab else { return }
+        tab.setZoom(AppModel.shared.config.defaultZoom)
+    }
 
     /// View > Show Downloads (⌥⌘L): the downloads popover, or the Downloads folder when the list is empty.
     @objc func paddleShowDownloads(_ sender: Any?) {

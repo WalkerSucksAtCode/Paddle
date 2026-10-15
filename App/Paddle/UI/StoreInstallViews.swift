@@ -18,7 +18,7 @@ enum InstallFromLinkPanel {
         )
         panel.title = "Install Extension from Link"
         panel.isReleasedWhenClosed = false
-        panel.contentViewController = NSHostingController(rootView: InstallFromLinkView())
+        panel.contentViewController = NSHostingController(rootView: InstallFromLinkView().environment(\.chromeScale, AppModel.shared.chromeScale))
         window = panel
         if let parent, parent.attachedSheet == nil {
             parent.beginSheet(panel)
@@ -144,7 +144,7 @@ struct StoreInstallBar: View {
                     .accessibilityLabel("Install \(name) in Paddle")
             }
         }
-        .font(.system(size: 11))
+        .chromeFont(size: 11)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)

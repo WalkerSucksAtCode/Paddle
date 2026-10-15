@@ -16,12 +16,13 @@ struct HTTPSOnlyNotice: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "lock.slash")
-                .font(.system(size: 44))
+                .chromeFont(size: 44)
                 .foregroundStyle(.secondary)
             Text("\(host) doesn't offer a secure connection")
-                .font(.title2.weight(.semibold))
+                .chromeFont(size: 17, weight: .semibold)
                 .multilineTextAlignment(.center)
             Text("Paddle's HTTPS-only mode didn't load it over http://, where what you send and see can be read or changed on the way.")
+                .chromeFont(size: 13)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
@@ -30,12 +31,13 @@ struct HTTPSOnlyNotice: View {
                     .keyboardShortcut(.defaultAction)
                 VStack(spacing: 2) {
                     Button("Continue to HTTP", action: continueOnce)
-                    Text("until Paddle quits").font(.caption).foregroundStyle(.secondary)
+                    Text("until Paddle quits").chromeFont(size: 10).foregroundStyle(.secondary)
                 }
                 if !tab.isPrivate {
                     Button("Always Allow HTTP for \(host)") { Task { await alwaysAllow() } }
                 }
             }
+            .chromeFont(size: 13)
             .padding(.top, 6)
         }
         .padding(40)

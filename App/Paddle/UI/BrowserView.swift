@@ -37,7 +37,13 @@ struct BrowserView: View {
                 }
             }
         }
-        .background(.bar)
+        .background {
+            if app.reducesTransparency { Color(nsColor: .windowBackgroundColor) } else { Rectangle().fill(.bar) }
+        }
+        .environment(\.chromeScale, app.chromeScale)
+        .environment(\.chromeHighContrastTabs, app.config.highContrastTabs)
+        .environment(\.chromeReducesMotion, app.reducesMotion)
+        .environment(\.chromeReducesTransparency, app.reducesTransparency)
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: model.windowTitle, initial: true) { _, title in model.controller?.window?.title = title }
         // The switch rebuilds the chrome: hand the keyboard back to the page.
@@ -72,7 +78,7 @@ struct BrowserView: View {
             }
             if let notice = configNotice {
                 Label(notice, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
@@ -81,14 +87,14 @@ struct BrowserView: View {
             if let banner = app.extensions.bannerText {
                 HStack(alignment: .top, spacing: 8) {
                     Label(banner, systemImage: "puzzlepiece.extension")
-                        .font(.system(size: 11))
+                        .chromeFont(size: 11)
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
                         app.extensions.dismissBanner()
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
+                            .chromeFont(size: 9, weight: .bold)
                             .frame(width: 16, height: 16)
                             .contentShape(Rectangle())
                     }
@@ -138,13 +144,13 @@ private struct LinkStatusBubble: View {
         if let link = tab.hoveredLink {
             GeometryReader { geometry in
                 Text(link.absoluteString)
-                    .font(.system(size: 11))
+                    .chromeFont(size: 11)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     // Background before the width cap, so the bubble fits a short address instead of spanning 60 %.
-                    .background(.regularMaterial, in: UnevenRoundedRectangle(topTrailingRadius: 6))
+                    .chromeMaterial(in: UnevenRoundedRectangle(topTrailingRadius: 6))
                     .overlay(UnevenRoundedRectangle(topTrailingRadius: 6).strokeBorder(.separator, lineWidth: 0.5))
                     .frame(maxWidth: geometry.size.width * 0.6, alignment: .leading)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -176,7 +182,7 @@ private struct MemoryButton: View {
                     Text(label)
                 }
             }
-            .font(.system(size: 11).monospacedDigit())
+            .chromeFont(size: 11, monospacedDigit: true)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .frame(height: 24)
@@ -228,7 +234,7 @@ private struct NavigationBar: View {
             }
             if model.isPrivate {
                 Label("Private", systemImage: "eye.slash")
-                    .font(.system(size: 11, weight: .medium))
+                    .chromeFont(size: 11, weight: .medium)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 4)
                     .help("Private window: no history, no saved session, and cookies and site data are forgotten when the last private window closes.")
@@ -261,7 +267,7 @@ private struct NavigationBar: View {
     private var addressField: some View {
         HStack(spacing: 6) {
             Image(systemName: addressIcon)
-                .font(.system(size: 11))
+                .chromeFont(size: 11)
                 .foregroundStyle(.secondary)
                 .frame(width: 14)
                 .accessibilityLabel("Connection")
@@ -270,14 +276,14 @@ private struct NavigationBar: View {
                 .help(securityDescription ?? "")
             TextField("Search or enter address", text: $model.addressText, selection: $addressSelection)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .chromeFont(size: 13)
                 // Clear text, not removed, behind the site name: a click still lands in the field and edits the whole
                 // address. Not opacity 0, which also drops the field from accessibility.
                 .foregroundStyle(siteOnly == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(.clear))
                 .overlay(alignment: .leading) {
                     if let siteOnly {
                         Text(siteOnly)
-                            .font(.system(size: 13))
+                            .chromeFont(size: 13)
                             .lineLimit(1)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
@@ -407,7 +413,7 @@ private struct NavigationBar: View {
                 Rectangle()
                     .fill(Color.accentColor)
                     .frame(width: geometry.size.width * max(0.05, tab.progress), height: 2)
-                    .animation(.easeOut(duration: 0.2), value: tab.progress)
+                    .animation(app.reducesMotion ? nil : .easeOut(duration: 0.2), value: tab.progress)
             }
             .frame(height: 2)
         }
@@ -416,7 +422,7 @@ private struct NavigationBar: View {
     private func iconButton(_ symbol: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
+                .chromeFont(size: 13, weight: .medium)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
@@ -431,6 +437,7 @@ private struct NavigationBar: View {
 
 private struct FindBar: View {
     @Bindable var model: BrowserModel
+    @Environment(\.chromeScale) private var scale
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -444,7 +451,7 @@ private struct FindBar: View {
                 .onSubmit { model.find() }
                 .onExitCommand { model.hideFind() }
             if model.findNoMatch {
-                Text("Not found").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("Not found").chromeFont(size: 11).foregroundStyle(.secondary)
             }
             Button { model.find(backwards: true) } label: { Image(systemName: "chevron.up") }
                 .help("Previous (⇧⌘G)")
@@ -456,8 +463,9 @@ private struct FindBar: View {
             Button("Done") { model.hideFind() }
         }
         .buttonStyle(.borderless)
+        .chromeFont(size: 13)
         .padding(.horizontal, 12)
-        .frame(height: 32)
+        .frame(height: 32 * scale)
         .onAppear { focused = true }
         .onChange(of: model.findFocusRequest) { focused = true }
         .onChange(of: model.findText) { model.find() }
