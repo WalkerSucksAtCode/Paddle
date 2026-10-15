@@ -29,6 +29,7 @@ struct ToolbarMenuButton: NSViewRepresentable {
 
     func updateNSView(_ view: ToolbarMenuNSButton, context: Context) {
         view.model = model
+        view.setScale(context.environment.chromeScale)
     }
 }
 
@@ -39,8 +40,7 @@ final class ToolbarMenuNSButton: NSButton {
         super.init(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
         isBordered = false
         imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: "Menu")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        setScale(1)
         focusRingType = .none
         toolTip = "Menu"
         setAccessibilityLabel("Menu")
@@ -50,6 +50,16 @@ final class ToolbarMenuNSButton: NSButton {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    private var drawnScale: Double?
+
+    /// Settings > Appearance > Text size, applied to the symbol as `chromeFont` applies it to the toolbar's others.
+    func setScale(_ scale: Double) {
+        guard scale != drawnScale else { return }
+        drawnScale = scale
+        image = NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: "Menu")?
+            .withSymbolConfiguration(.init(pointSize: 13 * scale, weight: .medium))
+    }
 
     @objc private func showMenu() {
         guard let model else { return }

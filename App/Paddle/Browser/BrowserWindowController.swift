@@ -32,7 +32,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         model.controller = self
-        window.contentView = NSHostingView(rootView: BrowserView(model: model, app: AppModel.shared))
+        let host = NSHostingView(rootView: BrowserView(model: model, app: AppModel.shared))
+        // The window's size is the user's (with `minSize` above), never the content's: by default the hosting view
+        // makes the SwiftUI minimum a window constraint, and a Settings pane whose minimum height is its whole
+        // content (the Sites pane's wrapped caption, measured at near-zero width) grew the window past the screen.
+        host.sizingOptions = []
+        window.contentView = host
         // The tab strip sits in the title bar, and the window server drags the window from anywhere in the title
         // bar, tabs and their close buttons included, so tab drag-reordering moved the window instead. Server-side
         // dragging is off; empty strip space (`WindowDragArea`) starts window drags itself.

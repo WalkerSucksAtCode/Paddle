@@ -43,6 +43,7 @@ struct ExtensionOverflowButton: NSViewRepresentable {
         button.model = model
         button.tab = tab
         button.extensions = extensions
+        button.setScale(context.environment.chromeScale)
     }
 }
 
@@ -58,14 +59,23 @@ final class ExtensionOverflowNSButton: NSButton {
         super.init(frame: NSRect(x: 0, y: 0, width: 26, height: 26))
         isBordered = false
         imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "Extensions")?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        setScale(1)
         focusRingType = .none
         toolTip = "Extensions"
         setAccessibilityLabel("Extensions")
         identifier = Self.identifier
         target = self
         action = #selector(showMenu)
+    }
+
+    private var drawnScale: Double?
+
+    /// Settings > Appearance > Text size, applied to the symbol as `chromeFont` applies it to the toolbar's others.
+    func setScale(_ scale: Double) {
+        guard scale != drawnScale else { return }
+        drawnScale = scale
+        image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "Extensions")?
+            .withSymbolConfiguration(.init(pointSize: 13 * scale, weight: .medium))
     }
 
     @available(*, unavailable)
@@ -137,7 +147,7 @@ struct ExtensionActionButton: NSViewRepresentable {
     }
 
     func updateNSView(_ button: ExtensionActionNSButton, context: Context) {
-        button.update(ext: ext, tab: tab, generation: generation)
+        button.update(ext: ext, tab: tab, generation: generation, scale: context.environment.chromeScale)
     }
 }
 
@@ -146,13 +156,14 @@ final class ExtensionActionNSButton: NSButton {
         NSUserInterfaceItemIdentifier("extension-action-\(extensionID)")
     }
 
-    /// The 16 x 16 icon the button draws: the action's, else the extension's, else a puzzle piece.
-    static func toolbarIcon(ext: LoadedExtension, action: WKWebExtension.Action?) -> NSImage? {
-        let size = CGSize(width: 16, height: 16)
+    /// The icon the button draws, 16 x 16 at the default text size: the action's, else the extension's, else a puzzle
+    /// piece.
+    static func toolbarIcon(ext: LoadedExtension, action: WKWebExtension.Action?, side: CGFloat = 16) -> NSImage? {
+        let size = CGSize(width: side, height: side)
         // A copy: WebKit may hand back its cached image, whose size shouldn't be changed under it.
         let icon = (action?.icon(for: size) ?? ext.webExtension.icon(for: size))?.copy() as? NSImage
             ?? NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
-        icon?.size = NSSize(width: 16, height: 16)
+        icon?.size = size
         return icon
     }
 
@@ -163,6 +174,7 @@ final class ExtensionActionNSButton: NSButton {
     private weak var drawnAction: WKWebExtension.Action?
     private var drawnGeneration: Int?
     private weak var drawnExtension: LoadedExtension?
+    private var drawnScale: Double?
 
     init(ext: LoadedExtension) {
         self.ext = ext
@@ -187,16 +199,18 @@ final class ExtensionActionNSButton: NSButton {
         ext.context.action(for: tab?.extensionTab)
     }
 
-    func update(ext: LoadedExtension, tab: Tab?, generation: Int) {
+    /// `scale` is Settings > Appearance > Text size, applied to the icon as `chromeFont` applies it to text.
+    func update(ext: LoadedExtension, tab: Tab?, generation: Int, scale: Double) {
         self.ext = ext
         self.tab = tab
         let action = currentAction
-        if drawnGeneration == generation, drawnExtension === ext, drawnAction === action { return }
+        if drawnGeneration == generation, drawnExtension === ext, drawnAction === action, drawnScale == scale { return }
         drawnGeneration = generation
         drawnExtension = ext
         drawnAction = action
+        drawnScale = scale
         identifier = Self.identifier(for: ext.id)
-        image = Self.toolbarIcon(ext: ext, action: action)
+        image = Self.toolbarIcon(ext: ext, action: action, side: 16 * scale)
         isEnabled = action?.isEnabled ?? false
         let rawLabel = action?.label ?? ""
         let label = ExtensionPermissionText.sanitize(rawLabel.isEmpty ? ext.displayName : rawLabel, max: 120)

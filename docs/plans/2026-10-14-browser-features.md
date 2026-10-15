@@ -54,14 +54,15 @@ size control alone touches 72 fixed font sizes in 13 chrome files.
 ### Wave 4a: Appearance pane and accessibility
 - [x] Settings > Appearance pane (`paddle://settings/appearance`), after General; the Tab layout picker moves there.
 - [x] `appearance`: "system" | "light" | "dark" (Paddle's windows; pages' `prefers-color-scheme` follows).
-- [ ] `highContrastTabs` (off): the selected tab gets a stronger fill and edge and a semibold title, in the strip and
+- [x] `highContrastTabs` (off): the selected tab gets a stronger fill and edge and a semibold title, in the strip and
   the sidebar. Measured: selected and unselected tabs differ clearly in brightness in light and dark. (Strip measured
   against the unselected strip: light fill 1.31 -> 1.86:1, edge 1.64 -> 6.29:1; dark fill 1.44 -> 2.31:1, edge 1.97 ->
-  7.26:1. The sidebar with it on was not checked.)
-- [ ] `interfaceTextSize`: "small" | "default" | "large" | "larger" scales the chrome's text and row heights (tab
+  7.26:1. Sidebar, dark, 2026-10-15: fill 1.44 -> 2.77:1, edge 2.77 -> 7.43:1, title semibold.)
+- [x] `interfaceTextSize`: "small" | "default" | "large" | "larger" scales the chrome's text and row heights (tab
   strip, sidebar, toolbar, bookmarks bar, suggestions, find bar, New Tab page, notices). Nothing clips at "larger".
-  (Checked at "larger" and "small" in the strip, toolbar, sidebar and New Tab page, and after a relaunch. Not scaled
-  yet: the extension toolbar buttons and the ≡ button.)
+  (Checked at "larger" and "small" in the strip, toolbar, sidebar and New Tab page, and after a relaunch. The ≡,
+  extensions overflow and extension action icons scale too since 2026-10-15: at "larger" the ≡ measured 12.1 -> 15.9
+  pt wide and an extension icon 15.9 -> 20.4 pt tall.)
 - [x] `defaultZoom` (1.0): pages without a site zoom open at it; Actual Size (⌘0) goes to it; a site zoom equal to it
   is dropped from `sites`.
 - [x] `minimumFontSize` (0, off; 9-24 pt): WebKit's minimum font size, applied to open pages too.
@@ -84,16 +85,18 @@ size control alone touches 72 fixed font sizes in 13 chrome files.
   file's name is the theme's. A missing or bad color is a warning in the config notice and that surface keeps the
   default look; a file that doesn't parse is a warning and the theme falls back to Default. A user theme below the
   contrast rules is still applied, with a warning naming the pair and its ratio. Reload Config re-reads the folder.
-- [ ] `accentColor`: "system", a preset (blue, purple, pink, red, orange, yellow, green, graphite) or `#rrggbb`;
+- [x] `accentColor`: "system", a preset (blue, purple, pink, red, orange, yellow, green, graphite) or `#rrggbb`;
   overrides the theme's accent (progress bar, focus rings, the chrome's controls). (A preset was checked in the app:
-  yellow over Ocean, with black text on the highlighted suggestion. A custom `#rrggbb` only by unit tests.)
+  yellow over Ocean, with black text on the highlighted suggestion. A custom #2e8b57, 2026-10-15: the highlighted
+  suggestion measured (74, 137, 92), with black text.)
 - [x] `chromeTint` ("none", a preset or `#rrggbb`) and `chromeTintStrength` (0-100, default 25): the tint is blended
   over the strip and toolbar colors (the theme's, or today's look). The strength is capped so text stays at least
   4.5:1; Settings says when it was capped. (Yellow at 100 % on the dark default look drew at the computed 26 % cap.)
-- [ ] Settings > Appearance, a Theme section: theme picker (built-ins, then files) and Open Themes Folder; accent and
+- [x] Settings > Appearance, a Theme section: theme picker (built-ins, then files) and Open Themes Folder; accent and
   tint pickers whose entries carry their names (never a swatch alone) plus a custom color well; the strength slider.
-  (Seen in the app, with every theme warning listed. The custom color well, which saves 0.4 s after the color settles,
-  and the "Capped at N %" caption were not exercised.)
+  (Seen in the app, with every theme warning listed. 2026-10-15: #ffff00 at 100 % shows "Capped at 22 % so text
+  stays readable", and the selected tab title measured 5.46:1 and the address text 6.54:1. Not exercised: the custom
+  color well, which saves 0.4 s after the color settles.)
 - [ ] Deferred: a group or window color tint (Arc spaces).
 - Done when: each built-in theme passes the contrast test and measures the same in the running app, a theme or tint
   change applies live to every window, and a broken theme file shows a warning and falls back.
