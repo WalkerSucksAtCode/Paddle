@@ -311,14 +311,15 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     saves to Downloads with the preview kept, and previewing a file's URL downloads it and closes the preview. Not
     checked: swipe. A popup from a preview is selected, which closes the preview, so a sign-in popup loses its
     opener page.)
-  - [ ] Becoming a tab: Open as Tab (`openLinkPreviewAsTab`, ⇧⌘Return) puts the preview's own web view in a new tab
+  - [x] Becoming a tab: Open as Tab (`openLinkPreviewAsTab`, ⇧⌘Return) puts the preview's own web view in a new tab
     after the one underneath and selects it, with no reload (scroll, form input, history kept). Open in Split View
     does the same and splits it with the tab underneath (preview on the right); the button hides when that tab is
     pinned or already split. (Checked with the buttons: the page's load time unchanged and full width; the split
-    861 / 861 with the preview on the right and focused. Fixed on the way: the fading card took the page back.
-    2026-10-15: the button is hidden over a pinned tab and over a split. Open bug: a real ⇧⌘Return with Paddle in
-    front makes the tab but leaves its page out of the window (viewport stays the card's 900 x 619, the pane blank);
-    the same command through the bridge's menu_action, Paddle in the background, works. Mechanism not found yet.)
+    861 / 861 with the preview on the right and focused. 2026-10-15: the button is hidden over a pinned tab and over
+    a split. Fixed then: a real ⇧⌘Return left the page out of the window. The fading card's WebContainer keeps
+    being updated and could take the page after the tab's own in the same pass, then leave with it; the card's
+    WebContainer now attaches the page only while the tab is the preview. Checked: ⇧⌘Return twice, the button and
+    Open in Split View all keep the page, full width and not reloaded.)
   - [x] Closing: Escape (when the page doesn't use it; it reaches Paddle as cancelOperation, not a menu key, so site
     dialogs keep their Escape), the Close button or `closeLinkPreview` (no default key), a click on the darkened
     page, selecting another tab or space, or closing the tab underneath. A closed preview drops its web view and goes

@@ -1,6 +1,6 @@
 # Pre-release pass (2026-10-15)
 
-Status: Waves A, A2 and B done (2026-10-15). Before Wave C: the ⇧⌘Return bug (open), the address suggestions
+Status: Waves A, A2 and B done, and the ⇧⌘Return bug fixed (2026-10-15). Before Wave C: the address suggestions
 follow-up, the extension checks, and Walker's call on Add to New Tab Page; see "Left after Wave B". Before releasing main (a97c4ac) over the installed build 49, which predates
 every wave of `2026-10-14-browser-features.md`.
 
@@ -87,10 +87,11 @@ windows; the space tint cap (unreachable at the fixed 25 %); screen windows 1 an
 tab's link joining, drag out of a group, sidebar drag and middle-click, the ≡ Developer Tools submenu, Split with
 Current Tab and End Split).
 
-- [ ] Open bug: a real ⇧⌘Return (Open Preview as Tab) with Paddle in front leaves the new tab's page out of the
-  window: the viewport stays the card's 900 x 619 and the pane is blank. The header button and the bridge's
-  menu_action (Paddle in the background) both work. Next: log the page container's superview and window at each
-  step of `openPreviewAsTab` and the card's teardown for both paths, then name the mechanism before changing code.
+- [x] Bug: a real ⇧⌘Return (Open Preview as Tab) with Paddle in front left the new tab's page out of the window.
+  Logged both paths: the outgoing card's WebContainer is still updated after the tab's own in the same pass (SwiftUI
+  doesn't rebuild a view on its way out), took the page last, and was torn down holding it; the bridge path only
+  worked because an extra async generation bump re-ran the tab's update afterwards. Fixed: the card's WebContainer
+  attaches the page only while its tab is the preview (`WebContainer.forPreview`); the async bump is gone.
 - [ ] Follow-up: address suggestions open when the field's text changes under focus (a tab switch), not only on
   typing.
 - [ ] Extension checks, with a probe extension: a tab activated in another space, what an extension sees of a

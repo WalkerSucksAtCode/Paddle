@@ -904,11 +904,9 @@ final class BrowserModel {
         insert(tab, after: source, select: true)
         // Already selected, so it stays the focused side.
         if let partner { makeSplit(partner, with: tab) }
-        // The page moves from the preview's card into the tab's WebContainer; as in `Tab.toggleResponsive`, the
-        // outgoing view can update after the incoming one took the container, so the shown one takes it again once
-        // the switch has settled.
+        // The page moves from the preview's card into the tab's WebContainer; the card's never takes it back
+        // (`WebContainer.forPreview`).
         tab.generation += 1
-        DispatchQueue.main.async { [weak tab] in tab?.generation += 1 }
     }
 
     // MARK: - Tab groups

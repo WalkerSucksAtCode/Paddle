@@ -39,15 +39,8 @@ private struct LinkPreviewCard: View {
                     .accessibilityHidden(true)
                 VStack(spacing: 0) {
                     header
-                    // Only while it is still the preview: after Open as Tab the card fades out for 0.15 s, and a
-                    // WebContainer here would take the page back from the tab's own (its updateNSView runs again on
-                    // the generation bump) and leave the window with it.
-                    if preview.isPreview {
-                        WebContainer(tab: preview, generation: preview.generation, takesKeyboard: true)
-                            .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: preview) }
-                    } else {
-                        Color.clear
-                    }
+                    WebContainer(tab: preview, generation: preview.generation, takesKeyboard: true, forPreview: true)
+                        .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: preview) }
                 }
                 .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
