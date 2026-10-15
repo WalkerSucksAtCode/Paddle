@@ -256,6 +256,7 @@ public enum SiteSettingsMapper {
         case .contentBlocking: site.contentBlocking.map { .bool($0) }
         case .location: site.location.map { .string($0.rawValue) }
         case .notifications: site.notifications.map { .string($0.rawValue) }
+        case .httpsOnly: site.httpsOnly.map { .bool($0) }
         }
     }
 }

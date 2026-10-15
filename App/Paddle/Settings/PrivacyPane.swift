@@ -47,6 +47,14 @@ private struct BlockingRows: View {
     private var web: WebEnvironment { AppModel.shared.web }
 
     var body: some View {
+        Toggle("HTTPS-only: load sites over a secure connection", isOn: Binding(
+            get: { model.file.httpsOnly },
+            set: { value in Task { await model.saveKey(.httpsOnly, .bool(value)) } }
+        ))
+        .help("httpsOnly in config.json; sites.<host>.httpsOnly: false exempts one site")
+        .disabled(model.controlsDisabled)
+        SettingsCaption("An http:// address loads over https:// instead. A site that can't be reached securely gets a notice with Continue to HTTP (until Paddle quits) and Always Allow. Local addresses are exempt.")
+
         Toggle("Block ads and trackers", isOn: Binding(
             get: { model.file.contentBlocking },
             set: { value in Task { await model.saveKey(.contentBlocking, .bool(value)) } }

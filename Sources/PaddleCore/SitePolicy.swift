@@ -11,6 +11,8 @@ public struct SitePolicy: Sendable, Equatable {
     public var contentBlocking: Bool
     public var location: SiteSettings.Permission
     public var notifications: SiteSettings.Permission
+    /// False lets the host load over http:// in HTTPS-only mode.
+    public var httpsOnly: Bool
 
     /// Paddle's defaults: 100 %, JavaScript on, media may autoplay muted (Safari's "Stop media with sound"),
     /// blocking on, location and notifications asked once per site per session.
@@ -23,6 +25,7 @@ public struct SitePolicy: Sendable, Equatable {
         contentBlocking = settings.contentBlocking ?? true
         location = settings.location ?? .ask
         notifications = settings.notifications ?? .ask
+        httpsOnly = settings.httpsOnly ?? true
     }
 
     /// The smallest and largest zoom Zoom In / Zoom Out reach, and their step.
@@ -117,7 +120,7 @@ extension PaddleConfig {
 extension SiteSettings {
     /// The field names as config.json writes them.
     public enum Field: String, Sendable, CaseIterable {
-        case zoom, javaScript, autoplay, contentBlocking, location, notifications
+        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly
     }
 
     /// A `sites` entry as it is in the file (`existing`, nil when there is none) with one field set to `value`, or
@@ -139,6 +142,7 @@ extension SiteSettings {
         case .contentBlocking: return .bool(d.contentBlocking)
         case .location: return .string(d.location.rawValue)
         case .notifications: return .string(d.notifications.rawValue)
+        case .httpsOnly: return .bool(d.httpsOnly)
         }
     }
 }

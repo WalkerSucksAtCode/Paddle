@@ -51,6 +51,9 @@ final class AppModel {
         get { isPrivate ? privatePermissions : sessionPermissions }
         set { if isPrivate { privatePermissions = newValue } else { sessionPermissions = newValue } }
     }
+    /// Hosts (normalized, without `www.`) the user let load over http:// from the HTTPS-only notice, until Paddle
+    /// quits. Never written to disk; private windows share it.
+    @ObservationIgnored var httpExceptions: Set<String> = []
     /// Zoom set in private windows, by `sites` key, for this run only: private windows write nothing to config.json.
     @ObservationIgnored var privateZooms: [String: Double] = [:]
     /// Zoom changes waiting to be written to config.json, by `sites` key (`rememberZoom`).
@@ -358,6 +361,7 @@ final class AppModel {
             case .showTabMemory: old.showTabMemory != new.showTabMemory
             case .showFullAddress: old.showFullAddress != new.showFullAddress
             case .developerTools: old.developerTools != new.developerTools
+            case .httpsOnly: old.httpsOnly != new.httpsOnly
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
             case .extensionToolbar: old.extensionToolbar != new.extensionToolbar

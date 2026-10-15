@@ -83,6 +83,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             }
         }
 
+        // HTTPS-only: an http:// main-frame load (not a Cmd-click, which opens a tab that is checked itself) goes to https:// instead; a loop back to http:// is blocked.
+        if isMainFrame, let tab {
+            if handleHTTPSOnly(url, in: tab, navigationAction, webView) { return (.cancel, preferences) }
+            tab.httpsOnlyBlocked = nil
+        }
+
         // An extension page leaving for a web page: WebKit would cancel it silently in this web view, so swap in an
         // ordinary one. On the next runloop turn, since the swap drops this web view and its delegate. Other schemes
         // (about:blank, blob:, file:) stay in this web view under WebKit's rules for the extension's origin.
@@ -102,6 +108,46 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return (applySiteUserAgent(for: host, navigationAction, preferences, in: webView) ? .allow : .cancel, preferences)
         }
         return (.allow, preferences)
+    }
+
+    /// True when the http:// main-frame navigation `url` was handled by HTTPS-only mode: the https:// load started in
+    /// this tab, or the tab marked blocked because the same host sent it back to http:// within 10 s.
+    private func handleHTTPSOnly(_ url: URL, in tab: Tab, _ action: WKNavigationAction, _ webView: WKWebView) -> Bool {
+        guard url.scheme?.lowercased() == "http", let host = url.host(percentEncoded: false) else { return false }
+        let app = AppModel.shared
+        guard let secure = HTTPSOnlyPolicy.upgrade(
+            url, enabled: app.config.httpsOnly,
+            siteAllowsHTTP: !app.config.sitePolicy(forHost: host).httpsOnly,
+            sessionExceptions: app.httpExceptions
+        ) else { return false }
+        let normalized = PaddleConfig.normalizedHost(host)
+        // Sent back to http:// for the same host within 10 s, by a redirect, script or meta refresh (not by the user
+        // typing it): a loop, so stop and show the notice.
+        if let last = tab.lastHTTPSUpgrade, last.host == normalized, Date().timeIntervalSince(last.at) < 10,
+           action.navigationType == .other, !tab.typedNavigationPending {
+            tab.httpsUpgrade = nil
+            tab.lastHTTPSUpgrade = nil
+            tab.httpsOnlyBlocked = url
+        } else {
+            tab.httpsUpgrade = (url, Date())
+            tab.lastHTTPSUpgrade = (normalized, Date())
+            tab.httpsOnlyBlocked = nil
+            var request = action.request
+            request.url = secure
+            DispatchQueue.main.async { [weak webView] in webView?.load(request) }
+        }
+        return true
+    }
+
+    /// Errors that mean the https:// side of an upgraded address isn't usable (no TLS, bad certificate, refused,
+    /// timed out, dropped). A host that doesn't resolve is an ordinary failure.
+    private static func isSecureConnectionProblem(_ error: NSError) -> Bool {
+        guard error.domain == NSURLErrorDomain else { return false }
+        return [
+            NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateUntrusted,
+            NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid,
+            NSURLErrorCannotConnectToHost, NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost,
+        ].contains(error.code)
     }
 
     private static let setAutoplayPolicy = NSSelectorFromString("_setAutoplayPolicy:")
@@ -287,6 +333,22 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         return (.useCredential, URLCredential(user: user.stringValue, password: password.stringValue, persistence: .forSession))
     }
 
+    // MARK: - Link hover
+
+    /// Private WebKit callback for the pointer moving over page content; feeds the status bubble. If WebKit
+    /// stops calling it, there is simply no bubble.
+    @objc(_webView:mouseDidMoveOverElement:withFlags:userInfo:)
+    func _webView(_ webView: WKWebView, mouseDidMoveOverElement hitTestResult: NSObject?, withFlags flags: UInt, userInfo: NSObject?) {
+        var link: URL?
+        if let hitTestResult, hitTestResult.responds(to: NSSelectorFromString("absoluteLinkURL")) {
+            link = hitTestResult.value(forKey: "absoluteLinkURL") as? URL
+        }
+        if link?.scheme?.lowercased() == "javascript" {
+            link = URL(string: "javascript:")
+        }
+        if tab?.hoveredLink != link { tab?.hoveredLink = link }
+    }
+
     // MARK: - History
 
     /// How the pending main-frame navigation started; reloads, back/forward and session restores aren't new visits.
@@ -294,7 +356,13 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// The pending main-frame navigation sends a form post (`Tab.committedPost`).
     private var mainFrameIsPost = false
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        tab?.hoveredLink = nil
+    }
+
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        tab?.hoveredLink = nil
+        tab?.httpsUpgrade = nil
         trackErrorPageItem(webView)
         tab?.committedPost = mainFrameIsPost
         tab?.pageCommitted()
@@ -341,6 +409,17 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
         tab?.typedNavigationPending = false
+        let nsError = error as NSError
+        if let tab, let upgrade = tab.httpsUpgrade,
+           Date().timeIntervalSince(upgrade.at) < 30, Self.isSecureConnectionProblem(nsError),
+           let failing = (nsError.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url,
+           failing.scheme?.lowercased() == "https",
+           PaddleConfig.normalizedHost(failing.host(percentEncoded: false) ?? "")
+               == PaddleConfig.normalizedHost(upgrade.original.host(percentEncoded: false) ?? "") {
+            tab.httpsUpgrade = nil
+            tab.httpsOnlyBlocked = upgrade.original
+            return
+        }
         showErrorPage(webView, error)
     }
 

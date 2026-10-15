@@ -106,6 +106,7 @@ enum MainMenu {
         add(tabs, "togglePin", "Pin Tab", #selector(BrowserWindowController.paddleTogglePin(_:)), "")
         add(tabs, "duplicateTab", "Duplicate Tab", #selector(BrowserWindowController.paddleDuplicateTab(_:)), "")
         add(tabs, "toggleMute", "Mute Tab", #selector(BrowserWindowController.paddleToggleMute(_:)), "m", [.command, .control])
+        add(tabs, "searchTabs", "Search Tabs…", #selector(BrowserWindowController.paddleSearchTabs(_:)), "a", [.command, .shift])
         add(tabs, "sleepBackgroundTabs", "Sleep Background Tabs", #selector(AppDelegate.paddleSleepBackgroundTabs(_:)), "", target: appDelegate)
         tabs.addItem(.separator())
         for n in 1...9 {

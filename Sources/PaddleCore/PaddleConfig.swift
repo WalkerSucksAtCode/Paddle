@@ -66,6 +66,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var showFullAddress: Bool
     /// Right-click > Inspect Element and the Web Inspector.
     public var developerTools: Bool
+    /// Load http:// pages over https:// instead. A site that doesn't answer securely gets a notice with Continue to
+    /// HTTP and Always Allow; local addresses are exempt, and `sites.<host>.httpsOnly: false` exempts one site.
+    public var httpsOnly: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -100,7 +103,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
-        case showTabMemory, showFullAddress, developerTools
+        case showTabMemory, showFullAddress, developerTools, httpsOnly
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -128,6 +131,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         showTabMemory: Bool = true,
         showFullAddress: Bool = false,
         developerTools: Bool = true,
+        httpsOnly: Bool = true,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
         extensionToolbar: [String: ExtensionToolbarPlacement] = [:],
@@ -158,6 +162,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.showTabMemory = showTabMemory
         self.showFullAddress = showFullAddress
         self.developerTools = developerTools
+        self.httpsOnly = httpsOnly
         self.shortcuts = shortcuts
         self.extensions = extensions
         self.extensionToolbar = extensionToolbar
@@ -196,6 +201,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         showTabMemory = c.decodeValue(.showTabMemory, d.showTabMemory, issues)
         showFullAddress = c.decodeValue(.showFullAddress, d.showFullAddress, issues)
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
+        httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
         extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)

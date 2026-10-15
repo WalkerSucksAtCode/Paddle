@@ -242,6 +242,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleTogglePin(_ sender: Any?) { if let tab { model.togglePin(tab) } }
     @objc func paddleDuplicateTab(_ sender: Any?) { if let tab { model.duplicate(tab) } }
     @objc func paddleToggleMute(_ sender: Any?) { if let tab { model.toggleMute(tab) } }
+    @objc func paddleSearchTabs(_ sender: Any?) { model.tabSearchVisible.toggle() }
     @objc func paddleSleepBackgroundTabs(_ sender: Any?) { AppModel.shared.sleepBackgroundTabs() }
 
     @objc func paddleSelectTab(_ sender: Any?) {
@@ -286,6 +287,8 @@ extension BrowserWindowController: NSMenuItemValidation {
             let bookmarked = AppModel.shared.bookmarks.isBookmarked(tab?.url)
             menuItem.title = bookmarked ? "Remove Bookmark" : "Bookmark This Page"
             return tab?.url.map(HistoryStore.isRecordable) ?? false
+        case #selector(paddleFindNext(_:)), #selector(paddleFindPrevious(_:)):
+            return tab?.settingsPane == nil
         case #selector(paddleSelectTab(_:)):
             return menuItem.tag == 9 ? !model.tabs.isEmpty : model.tabs.count >= menuItem.tag
         default:

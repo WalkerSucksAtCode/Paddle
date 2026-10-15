@@ -29,9 +29,14 @@ final class BrowserModel {
     @ObservationIgnored var suggestionsFrame: CGRect = .zero
     /// Incremented to ask the view to focus the address field.
     var focusAddressRequest = 0
+    /// Bumped by Find… on a Settings tab: the Settings search field takes focus and selects its text.
+    var settingsSearchFocusRequest = 0
 
     /// The address-bar dropdown.
     let suggestions = AddressSuggestions()
+
+    /// Search Tabs… (Shift-Cmd-A): the popover on the tab strip.
+    var tabSearchVisible = false
 
     var findVisible = false
     var findText = ""
@@ -116,6 +121,7 @@ final class BrowserModel {
         let previous = selectedTab
         if let previous, previous !== tab {
             previous.lastActive = now
+            previous.hoveredLink = nil
             // Once the user has moved on, closing a popup no longer jumps back to its opener (as in Chrome).
             previous.returnsToOpener = false
         }
@@ -471,6 +477,10 @@ final class BrowserModel {
     // MARK: - Find
 
     func showFind() {
+        if selectedTab?.settingsPane != nil {
+            settingsSearchFocusRequest += 1
+            return
+        }
         findVisible = true
         findFocusRequest += 1
     }

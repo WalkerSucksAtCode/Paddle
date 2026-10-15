@@ -13,11 +13,21 @@ final class Tab: Identifiable {
     let id = UUID()
     var title: String
     var url: URL?
+    /// The link under the pointer, shown in the status bubble. Nil when none.
+    var hoveredLink: URL?
     var isLoading = false
     var progress: Double = 0
     var canGoBack = false
     var canGoForward = false
     var isSecure = false
+    /// Set when HTTPS-only mode refused to load this http:// address: the tab shows Paddle's notice for it instead of
+    /// the page. Cleared by the next navigation.
+    var httpsOnlyBlocked: URL?
+    /// The http:// address of the pending upgraded load, for failure detection; cleared when a page commits.
+    @ObservationIgnored var httpsUpgrade: (original: URL, at: Date)?
+    /// The host last upgraded in this tab and when, for loop detection. Not cleared by a commit: an https:// page
+    /// that sends the tab back to http:// from a script or meta refresh commits first.
+    @ObservationIgnored var lastHTTPSUpgrade: (host: String, at: Date)?
     var isPinned: Bool
     var isAwake = false
     /// Frozen: WebKit has suspended the page (`freeze()`), so it keeps its memory but runs nothing, and `unfreeze()`
@@ -336,6 +346,7 @@ final class Tab: Identifiable {
         if !showsExtensionUnavailable && !awaitingBlockers {
             savedState = webView.backForwardList.currentItem == nil ? nil : webView.interactionState
         }
+        hoveredLink = nil
         showsExtensionUnavailable = false
         awaitingBlockers = false
         loadedUnblocked = false
@@ -417,6 +428,7 @@ final class Tab: Identifiable {
     /// page (either way) swaps the web view, since each needs its own configuration.
     func load(_ url: URL) {
         self.url = url
+        httpsOnlyBlocked = nil
         showsExtensionUnavailable = false
         sourceHTML = nil
         committedErrorPage = false

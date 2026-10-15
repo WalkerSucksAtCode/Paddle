@@ -321,6 +321,7 @@ struct SitesPane: View {
         case .contentBlocking: return entry.contentBlocking != nil
         case .location: return entry.location != nil
         case .notifications: return entry.notifications != nil
+        case .httpsOnly: return entry.httpsOnly != nil
         }
     }
 

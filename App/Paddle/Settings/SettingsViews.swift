@@ -56,7 +56,7 @@ enum SettingsPane: String, CaseIterable {
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
             "filterUpdateDays", "list updates", "scriptlets", "uBlock Origin", "EasyList", "my rules", "user-filters.txt",
-            "history", "historyDays", "clear history", "cookies", "website data", "site storage",
+            "https", "httpsOnly", "secure connection", "http", "history", "historyDays", "clear history", "cookies", "website data", "site storage",
         ]
         case .sites: [
             "site", "zoom", "JavaScript", "autoplay", "location", "notifications", "camera", "microphone", "downloads", "blocking",

@@ -2,7 +2,7 @@ import Foundation
 
 /// Per-site settings from the `sites` key of `config.json`, keyed by host suffix like `siteUserAgents`:
 /// `"sites": {"example.com": {"zoom": 1.25, "javaScript": false, "autoplay": "muted", "contentBlocking": false,
-/// "location": "deny", "notifications": "allow"}}`. Every field is optional; a missing field means Paddle's default for
+/// "location": "deny", "notifications": "allow", "httpsOnly": false}}`. Every field is optional; a missing field means Paddle's default for
 /// that host. User agents stay in `siteUserAgents`.
 public struct SiteSettings: Codable, Sendable, Equatable {
     public enum Autoplay: String, Codable, Sendable, CaseIterable {
@@ -28,6 +28,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     /// What a notification request gets without a prompt. Web Push (notifications while the site is closed) is not
     /// supported.
     public var notifications: Permission?
+    /// False lets this site load over http:// without the HTTPS-only upgrade.
+    public var httpsOnly: Bool?
 
     public init(
         zoom: Double? = nil,
@@ -35,7 +37,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         autoplay: Autoplay? = nil,
         contentBlocking: Bool? = nil,
         location: Permission? = nil,
-        notifications: Permission? = nil
+        notifications: Permission? = nil,
+        httpsOnly: Bool? = nil
     ) {
         self.zoom = zoom
         self.javaScript = javaScript
@@ -43,12 +46,13 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         self.contentBlocking = contentBlocking
         self.location = location
         self.notifications = notifications
+        self.httpsOnly = httpsOnly
     }
 
     /// True when no field is set, so the entry says nothing and can be dropped.
     public var isEmpty: Bool {
         zoom == nil && javaScript == nil && autoplay == nil && contentBlocking == nil && location == nil
-            && notifications == nil
+            && notifications == nil && httpsOnly == nil
     }
 
     /// `other` laid over self: every field `other` sets replaces the one here.
@@ -59,7 +63,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
             autoplay: other.autoplay ?? autoplay,
             contentBlocking: other.contentBlocking ?? contentBlocking,
             location: other.location ?? location,
-            notifications: other.notifications ?? notifications
+            notifications: other.notifications ?? notifications,
+            httpsOnly: other.httpsOnly ?? httpsOnly
         )
     }
 }

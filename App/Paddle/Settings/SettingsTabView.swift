@@ -5,12 +5,14 @@ import SwiftUI
 /// pane. The tab's address is the pane, so the address field and the session follow the sidebar.
 struct SettingsTabView: View {
     let tab: Tab
+    let browser: BrowserModel
     /// Made when the tab shows, not in `init`: SwiftUI rebuilds this struct on each pass of its parent, and each
     /// `SettingsModel()` reads config.json.
     @State private var model: SettingsModel?
     /// Watches config.json while the tab shows; cancelled when it hides.
     @State private var watcher: ConfigWatcher?
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
 
     /// The pane the tab shows (a settings tab always has one).
     private var selected: SettingsPane { tab.settingsPane ?? .general }
@@ -68,6 +70,11 @@ struct SettingsTabView: View {
             TextField("Search settings", text: $search)
                 .textFieldStyle(.plain)
                 .accessibilityLabel("Search settings")
+                .focused($searchFocused)
+                .onChange(of: browser.settingsSearchFocusRequest) {
+                    searchFocused = true
+                    DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+                }
             if !search.isEmpty {
                 Button {
                     search = ""

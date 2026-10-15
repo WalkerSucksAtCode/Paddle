@@ -57,12 +57,14 @@
 		A2709A6C8A004234864B824C /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB45BBE62413E30D184AA5E /* BookmarkStore.swift */; };
 		AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */; };
 		B15050EC419C701DB0C5049D /* Bookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10F08E60740FF045413DAC8 /* Bookmarks.swift */; };
+		B4F21EF508415EEB3C915E08 /* HTTPSOnlyNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */; };
 		BBFDDBB44717A20FCF8E6112 /* BrowserImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA5FEBD20A366AEBD2ED6A5 /* BrowserImport.swift */; };
 		BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */; };
 		BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0FE4D946C5EE2383EBBDC /* TabsMemoryPane.swift */; };
 		CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */; };
 		DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488DDEB21AAB3C480FC2F0F /* AppModel.swift */; };
 		DBA96E6E8A40CCD5B60D2146 /* SettingsModel+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */; };
+		E209289BB56030896D588C07 /* TabSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7085510A84436857BAE04E06 /* TabSearch.swift */; };
 		E6F0DD8E856915E572E3E940 /* SelectorValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */; };
 		E70CDDB3B1D8423F9981F8D3 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */; };
 		F2713F9A8877E5D392A8390E /* GeneralPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */; };
@@ -102,6 +104,7 @@
 		6742A205E6C2867AE660D717 /* AMO */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AMO; path = Resources/AMO; sourceTree = SOURCE_ROOT; };
 		67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowController.swift; sourceTree = "<group>"; };
 		69D00D63F94925290CC4D169 /* SettingsModel+Keys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Keys.swift"; sourceTree = "<group>"; };
+		7085510A84436857BAE04E06 /* TabSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSearch.swift; sourceTree = "<group>"; };
 		74ED21DEB238D504EB6834C7 /* WebInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebInspector.swift; sourceTree = "<group>"; };
 		74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralPane.swift; sourceTree = "<group>"; };
 		7879E7929052FF11CD3E3F68 /* ExtensionsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsPane.swift; sourceTree = "<group>"; };
@@ -132,6 +135,7 @@
 		E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteNotifications.swift; sourceTree = "<group>"; };
 		E20AE5E86BBFB8E7575CB581 /* SettingsModel+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Extensions.swift"; sourceTree = "<group>"; };
 		EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaddleApp.swift; sourceTree = "<group>"; };
+		EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPSOnlyNotice.swift; sourceTree = "<group>"; };
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
 		F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressSuggestions.swift; sourceTree = "<group>"; };
 		FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPrompts.swift; sourceTree = "<group>"; };
@@ -212,7 +216,9 @@
 				3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */,
 				0FA6FEB74A284AD57FB757A0 /* Glyph.swift */,
 				9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */,
+				EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */,
 				363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */,
+				7085510A84436857BAE04E06 /* TabSearch.swift */,
 				42F0C8E8DA7F5F5F5A041EAB /* ToolbarMenu.swift */,
 				42172FC8B6D57C89A373242D /* WebContainer.swift */,
 			);
@@ -418,6 +424,7 @@
 				882FE6995813F4FA7F6583A5 /* FaviconStore.swift in Sources */,
 				F2713F9A8877E5D392A8390E /* GeneralPane.swift in Sources */,
 				42D28E30C000EE2D21CEB1E2 /* Glyph.swift in Sources */,
+				B4F21EF508415EEB3C915E08 /* HTTPSOnlyNotice.swift in Sources */,
 				445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */,
 				2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */,
 				243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */,
@@ -442,6 +449,7 @@
 				AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */,
 				7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */,
 				11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */,
+				E209289BB56030896D588C07 /* TabSearch.swift in Sources */,
 				20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */,
 				BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */,
 				0CF43FCD9929F0D48DC6C8DA /* ToolbarMenu.swift in Sources */,

@@ -50,6 +50,7 @@ public enum ConfigFile {
         "contentBlocking": .bool(SitePolicy.defaults.contentBlocking),
         "location": .string(SitePolicy.defaults.location.rawValue),
         "notifications": .string(SitePolicy.defaults.notifications.rawValue),
+        "httpsOnly": .bool(SitePolicy.defaults.httpsOnly),
     ]
 
     /// `disk` with `changes` applied, where `base` is what the editor read before the user made them.

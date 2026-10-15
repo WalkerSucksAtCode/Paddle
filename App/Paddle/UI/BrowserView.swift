@@ -61,7 +61,7 @@ struct BrowserView: View {
             if let tab = model.selectedTab, let url = tab.url, let link = StoreLink.isStoreDetailPage(url) {
                 StoreInstallBar(link: link, pageTitle: tab.title, model: model)
             }
-            if model.findVisible {
+            if model.findVisible, model.selectedTab?.settingsPane == nil {
                 FindBar(model: model)
             }
             Divider()
@@ -75,12 +75,43 @@ struct BrowserView: View {
     @ViewBuilder
     private var content: some View {
         if let tab = model.selectedTab, tab.settingsPane != nil {
-            SettingsTabView(tab: tab)
+            SettingsTabView(tab: tab, browser: model)
                 .id(tab.id)
+        } else if let tab = model.selectedTab, let blocked = tab.httpsOnlyBlocked {
+            HTTPSOnlyNotice(tab: tab, url: blocked)
+                .id(blocked)
         } else if let tab = model.selectedTab, tab.url != nil {
             WebContainer(tab: tab, generation: tab.generation)
+                .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: tab) }
         } else {
             StartPage()
+        }
+    }
+}
+
+// MARK: - Link status
+
+/// The address of the link under the pointer. A separate view so hovering redraws only this.
+private struct LinkStatusBubble: View {
+    let tab: Tab
+
+    var body: some View {
+        if let link = tab.hoveredLink {
+            GeometryReader { geometry in
+                Text(link.absoluteString)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    // Background before the width cap, so the bubble fits a short address instead of spanning 60 %.
+                    .background(.regularMaterial, in: UnevenRoundedRectangle(topTrailingRadius: 6))
+                    .overlay(UnevenRoundedRectangle(topTrailingRadius: 6).strokeBorder(.separator, lineWidth: 0.5))
+                    .frame(maxWidth: geometry.size.width * 0.6, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }
@@ -105,6 +136,7 @@ private struct TabStrip: View {
 
             HStack(spacing: 0) {
                 Color.clear.frame(width: leadingInset)
+                    .popover(isPresented: $model.tabSearchVisible, arrowEdge: .bottom) { TabSearchView(model: model) }
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
