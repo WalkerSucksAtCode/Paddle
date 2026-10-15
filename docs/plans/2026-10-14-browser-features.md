@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 built and checked in the app 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 built and checked in the app 2026-10-15, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -37,11 +37,14 @@ Where from: Edge, Brave and Firefox vertical tabs; the Arc and Zen sidebar.
 
 ## Wave 3: New Tab page with pinned sites
 Where from: Chrome shortcuts, Firefox top sites, Safari favorites, Brave speed dial.
-- [ ] Pinned-site tiles (favicon and name) on the blank new tab page, saved in a plain file, `newtab.json`.
-  - [ ] Add one with a "+" tile, or from the ≡ menu or a page's right-click menu (Add to New Tab Page).
-  - [ ] Right-click a tile to Edit or Remove it; drag to reorder.
-- [ ] An optional "Frequently visited" row built from history, with a remove button per site.
-- [ ] Keyboard: Tab moves through the tiles and Return opens one; the address field keeps focus at first.
+- [x] Pinned-site tiles (favicon and name) on the blank new tab page, saved in a plain file, `newtab.json`.
+  - [ ] Add one with a "+" tile, or from the ≡ menu or a page's right-click menu (Add to New Tab Page). (The + tile
+    and Bookmarks > Add Page to New Tab Page were checked, and the ≡ menu shows the item. A web page's right-click menu
+    doesn't have it: Paddle has no hook into WebKit's page menu yet.)
+  - [x] Right-click a tile to Edit or Remove it; drag to reorder.
+- [x] An optional "Frequently visited" row built from history, with a remove button per site. (Remove is Don't Show
+  This Site in the tile's right-click menu; each tile opens the site's front page.)
+- [x] Keyboard: Tab moves through the tiles and Return opens one; the address field keeps focus at first.
 - Done when: tiles are added, edited, reordered and removed, and they survive a relaunch.
 
 ## Wave 4: themes and accessibility

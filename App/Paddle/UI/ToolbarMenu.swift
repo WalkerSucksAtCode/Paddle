@@ -71,6 +71,7 @@ final class ToolbarMenuNSButton: NSButton {
         menu.addItem(.separator())
         addCommand("showHistory", title: "History")
         addCommand("showBookmarks", title: "Bookmarks")
+        addCommand("addToNewTabPage")
         addCommand("showDownloads", title: "Downloads")
         menu.addItem(ClosureMenuItem(title: "Extensions") { model.showSettings(pane: .extensions) })
         menu.addItem(.separator())

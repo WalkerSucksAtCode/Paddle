@@ -76,6 +76,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Load http:// pages over https:// instead. A site that doesn't answer securely gets a notice with Continue to
     /// HTTP and Always Allow; local addresses are exempt, and `sites.<host>.httpsOnly: false` exempts one site.
     public var httpsOnly: Bool
+    /// Show a Frequently visited row on the New Tab page, from history (never in private windows).
+    public var newTabFrequentSites: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -110,7 +112,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
-        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly
+        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -140,6 +142,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         tabLayout: TabLayout = .horizontal,
         developerTools: Bool = true,
         httpsOnly: Bool = true,
+        newTabFrequentSites: Bool = true,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
         extensionToolbar: [String: ExtensionToolbarPlacement] = [:],
@@ -172,6 +175,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.tabLayout = tabLayout
         self.developerTools = developerTools
         self.httpsOnly = httpsOnly
+        self.newTabFrequentSites = newTabFrequentSites
         self.shortcuts = shortcuts
         self.extensions = extensions
         self.extensionToolbar = extensionToolbar
@@ -212,6 +216,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         tabLayout = c.decodeValue(.tabLayout, d.tabLayout, issues)
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
         httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
+        newTabFrequentSites = c.decodeValue(.newTabFrequentSites, d.newTabFrequentSites, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
         extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)

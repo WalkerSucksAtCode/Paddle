@@ -11,6 +11,8 @@ import WebKit
 final class FaviconStore {
     /// Loaded icons by site key. Observed, so views redraw when an icon arrives.
     private var images: [String: NSImage] = [:]
+    /// Mean relative luminance (0-1) of each loaded icon's visible pixels, measured once when it loads.
+    @ObservationIgnored private var luminance: [String: Double] = [:]
     @ObservationIgnored private var fetchedAt: [String: Date] = [:]
     @ObservationIgnored private var missing: Set<String> = []
     @ObservationIgnored private var pendingDiskLoads: Set<String> = []
@@ -49,6 +51,13 @@ final class FaviconStore {
             DispatchQueue.main.async { [weak self] in self?.loadFromDisk(key) }
         }
         return nil
+    }
+
+    /// Mean relative luminance (WCAG: 0 black to 1 white) of the visible pixels of `url`'s site icon; nil without an
+    /// icon. Lets a view put a near-black icon on a light plate in dark mode, and a near-white one on a dark plate.
+    func luminance(for url: URL?) -> Double? {
+        guard let url, let key = FaviconPicker.cacheKey(for: url) else { return nil }
+        return luminance[key]
     }
 
     /// For menus, which don't redraw when an icon arrives: a miss reads the disk right away.
@@ -100,7 +109,7 @@ final class FaviconStore {
             log.info("no usable icon for \(key, privacy: .public)")
             return
         }
-        images[key] = image
+        keep(image, for: key)
         missing.remove(key)
         guard AppModel.shared.history != nil || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
         do {
@@ -120,8 +129,44 @@ final class FaviconStore {
             if date.map({ modified >= $0 }) ?? true { try? FileManager.default.removeItem(at: file) }
         }
         images = images.filter { keys.contains($0.key) }
+        luminance = luminance.filter { keys.contains($0.key) }
         fetchedAt = fetchedAt.filter { keys.contains($0.key) }
         missing.removeAll()
+    }
+
+    private func keep(_ image: NSImage, for key: String) {
+        luminance[key] = Self.meanLuminance(image)
+        images[key] = image
+    }
+
+    /// The icon drawn at 16 x 16; the mean of its pixels' relative luminance (linearized sRGB), weighted by opacity.
+    private static func meanLuminance(_ image: NSImage) -> Double? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let side = 16
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+                                          bytesPerRow: side * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard drawn else { return nil }
+        var total = 0.0, weight = 0.0
+        for index in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = Double(pixels[index + 3]) / 255
+            guard alpha > 0.1 else { continue }
+            // Premultiplied: divide by alpha for the color, then weight the pixel's luminance by alpha.
+            func linear(_ byte: UInt8) -> Double {
+                let value = min(1, Double(byte) / 255 / alpha)
+                return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+            }
+            let red = linear(pixels[index]), green = linear(pixels[index + 1]), blue = linear(pixels[index + 2])
+            total += (0.2126 * red + 0.7152 * green + 0.0722 * blue) * alpha
+            weight += alpha
+        }
+        return weight > 0 ? total / weight : nil
     }
 
     private func loadFromDisk(_ key: String) {
@@ -131,7 +176,7 @@ final class FaviconStore {
             missing.insert(key)
             return
         }
-        images[key] = image
+        keep(image, for: key)
         let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
         fetchedAt[key] = modified
     }

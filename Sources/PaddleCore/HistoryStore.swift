@@ -303,6 +303,59 @@ public final class HistoryStore {
             """, [.int(Int64(limit))], Self.entry)
     }
 
+    /// The sites visited most within the last `days` days, for the New Tab page: one entry per host (without
+    /// `www.`), ranked by the sum of its pages' frecency over the visits inside that window. The entry is the
+    /// site's front page (`/` on the scheme, host and port of its best-scoring page), so a sign-in redirect or
+    /// a deep page never stands for the site; its title is the front page's when that was visited in the window,
+    /// otherwise the host. Web pages only; `excludingHosts` (same form) are skipped.
+    public func topSites(limit: Int, days: Int, now: Date, excludingHosts: Set<String>) throws -> [HistoryEntry] {
+        guard limit > 0, days > 0 else { return [] }
+        let since = now.timeIntervalSince1970 - Double(days) * 86_400
+        let pages = try rows("""
+            SELECT p.url, p.title, count(*), sum(v.typed), max(v.date) FROM visits v JOIN pages p ON p.id = v.page_id
+            WHERE v.date >= ? AND v.date <= ? AND (p.url LIKE 'http://%' OR p.url LIKE 'https://%')
+            GROUP BY p.id
+            """, [.double(since), .double(now.timeIntervalSince1970)], Self.entry)
+        var hosts: [String: (score: Double, best: Double, entry: HistoryEntry, frontTitle: String?)] = [:]
+        for page in pages {
+            guard let host = NewTabSites.siteHost(page.url), !excludingHosts.contains(host) else { continue }
+            let score = Frecency.score(visitCount: page.visitCount, typedCount: page.typedCount, lastVisit: page.lastVisit, now: now)
+            var current = hosts[host] ?? (0, -1, page, nil)
+            current.score += score
+            if score > current.best || (score == current.best && page.url < current.entry.url) {
+                current.best = score
+                current.entry = page
+            }
+            if Self.isFrontPage(page.url), !page.title.isEmpty { current.frontTitle = page.title }
+            hosts[host] = current
+        }
+        return hosts
+            .sorted { ($0.value.score, $0.value.entry.lastVisit, $1.value.entry.url) > ($1.value.score, $1.value.entry.lastVisit, $0.value.entry.url) }
+            .prefix(limit)
+            .map { host, site in
+                var entry = site.entry
+                entry.url = Self.frontPage(of: entry.url) ?? entry.url
+                entry.title = site.frontTitle ?? host
+                return entry
+            }
+    }
+
+    private static func isFrontPage(_ address: String) -> Bool {
+        guard let parts = URLComponents(string: address) else { return false }
+        return (parts.path.isEmpty || parts.path == "/") && parts.query == nil
+    }
+
+    /// `/` on the address's scheme, host and port.
+    private static func frontPage(of address: String) -> String? {
+        guard let parts = URLComponents(string: address), let scheme = parts.scheme, let host = parts.host else { return nil }
+        var front = URLComponents()
+        front.scheme = scheme
+        front.host = host
+        front.port = parts.port
+        front.path = "/"
+        return front.string
+    }
+
     /// Number of distinct pages stored (0 if the database cannot be read).
     public var pageCount: Int {
         let counts = (try? rows("SELECT count(*) FROM pages", []) { Int(sqlite3_column_int64($0, 0)) }) ?? []

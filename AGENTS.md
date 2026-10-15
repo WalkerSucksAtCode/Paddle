@@ -14,7 +14,7 @@ Personal macOS web browser built on the system WebKit (`WKWebView`). Goals: reso
 - `project.yml` is the XcodeGen source of truth; `Paddle.xcodeproj` is generated (`xcodegen generate`), do not hand-edit it.
 
 ## User data
-`~/Library/Application Support/Paddle/`: `config.json`, `user.css`, `user-filters.txt`, `userscripts/*.js`, `filters/*.txt` (downloaded lists), `compiled-rules/` (WebKit cache, about 50 MB), `session.json`.
+`~/Library/Application Support/Paddle/`: `config.json`, `user.css`, `user-filters.txt`, `userscripts/*.js`, `filters/*.txt` (downloaded lists), `compiled-rules/` (WebKit cache, about 50 MB), `session.json`, `newtab.json` (pinned New Tab sites and hidden frequent hosts).
 
 ## Commands
 - Core tests: `swift test`

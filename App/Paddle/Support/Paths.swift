@@ -17,6 +17,8 @@ enum Paths {
     static let sessions = support.appending(path: "sessions", directoryHint: .isDirectory)
     static let history = support.appending(path: "history.sqlite")
     static let bookmarks = support.appending(path: "bookmarks.json")
+    /// Pinned New Tab page sites and hidden Frequently visited hosts (`NewTabStore`).
+    static let newTab = support.appending(path: "newtab.json")
     static let favicons = support.appending(path: "favicons", directoryHint: .isDirectory)
     static let compiledRules = support.appending(path: "compiled-rules", directoryHint: .isDirectory)
     /// Unpacked WebExtensions, one folder each.

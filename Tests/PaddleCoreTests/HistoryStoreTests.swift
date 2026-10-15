@@ -24,6 +24,33 @@ struct HistoryStoreTests {
         #expect(try store.countVisits(olderThan: now) == 1)
     }
 
+    @Test func topSitesRanksOneEntryPerHost() throws {
+        let store = try store()
+        for _ in 0..<3 { try store.recordVisit(url: url("https://www.busy.test/home"), title: "Busy Home", typed: false, at: ago(days: 1)) }
+        try store.recordVisit(url: url("https://busy.test/other"), title: "Other", typed: false, at: ago(days: 2))
+        try store.recordVisit(url: url("https://quiet.test/"), title: "Quiet", typed: false, at: ago(days: 2))
+        try store.recordVisit(url: url("https://old.test/"), title: "Old", typed: false, at: ago(days: 40))
+        try store.recordVisit(url: url("https://skip.test/"), title: "Skip", typed: true, at: ago(days: 1))
+        try store.recordVisit(url: url("ftp://files.test/"), title: "Files", typed: true, at: ago(days: 1))
+        let top = try store.topSites(limit: 10, days: 30, now: now, excludingHosts: ["skip.test"])
+        // A site stands for its front page; it carries the front page's title only when that was visited.
+        #expect(top.map(\.title) == ["busy.test", "Quiet"])
+        #expect(top.map(\.url) == ["https://www.busy.test/", "https://quiet.test/"])
+        #expect(try store.topSites(limit: 1, days: 30, now: now, excludingHosts: []).count == 1)
+        #expect(try store.topSites(limit: 10, days: 60, now: now, excludingHosts: ["skip.test"]).count == 3)
+        #expect(try store.topSites(limit: 0, days: 30, now: now, excludingHosts: []).isEmpty)
+    }
+
+    @Test func topSitesKeepThePortAndSkipQueries() throws {
+        let store = try store()
+        try store.recordVisit(url: url("http://127.0.0.1:8765/notify.html"), title: "notify test", typed: false, at: ago(days: 1))
+        try store.recordVisit(url: url("https://accounts.example.test/ServiceLogin?continue=x"), title: "Redirecting", typed: false, at: ago(days: 1))
+        try store.recordVisit(url: url("https://accounts.example.test/?from=mail"), title: "Inbox link", typed: false, at: ago(days: 2))
+        let top = try store.topSites(limit: 10, days: 30, now: now, excludingHosts: [])
+        #expect(Set(top.map(\.url)) == ["http://127.0.0.1:8765/", "https://accounts.example.test/"])
+        #expect(Set(top.map(\.title)) == ["127.0.0.1", "accounts.example.test"])
+    }
+
     @Test func recordUpsertsPageAndCounts() throws {
         let store = try store()
         try store.recordVisit(url: url("https://example.com/a"), title: "Alpha", typed: true, at: ago(days: 2))

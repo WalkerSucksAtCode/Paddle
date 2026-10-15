@@ -32,6 +32,12 @@ struct GeneralPane: View {
                 ))
                 .help("showFullAddress in config.json. Off, the address field shows only the site until you click it.")
                 .disabled(model.controlsDisabled)
+                Toggle("Show frequently visited sites on new tabs", isOn: Binding(
+                    get: { model.file.newTabFrequentSites },
+                    set: { value in Task { await model.saveKey(.newTabFrequentSites, .bool(value)) } }
+                ))
+                .help("newTabFrequentSites in config.json. A Frequently visited row on the New Tab page, from history; never in private windows.")
+                .disabled(model.controlsDisabled)
                 Picker("Tab layout", selection: Binding(
                     get: { model.file.tabLayout },
                     set: { value in Task { await model.saveKey(.tabLayout, .string(value.rawValue)) } }

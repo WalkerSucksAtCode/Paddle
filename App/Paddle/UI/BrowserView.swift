@@ -123,7 +123,7 @@ struct BrowserView: View {
             WebContainer(tab: tab, generation: tab.generation)
                 .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: tab) }
         } else {
-            StartPage()
+            NewTabPage(model: model, app: app)
         }
     }
 }
@@ -465,25 +465,5 @@ private struct FindBar: View {
         .onChange(of: model.findNoMatch) { _, noMatch in
             if noMatch { AccessibilityNotification.Announcement("Not found").post() }
         }
-    }
-}
-
-// MARK: - Start page
-
-private struct StartPage: View {
-    var body: some View {
-        VStack(spacing: 10) {
-            Text("Paddle")
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-            Text("Type an address or search in the bar above.")
-                .foregroundStyle(.secondary)
-            Button("Customize Paddle…") {
-                NSWorkspace.shared.open(Paths.support)
-            }
-            .buttonStyle(.link)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
     }
 }

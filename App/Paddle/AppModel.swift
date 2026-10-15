@@ -23,6 +23,8 @@ final class AppModel {
     let web = WebEnvironment()
     let downloads = DownloadStore()
     let bookmarks = BookmarkStore()
+    /// The New Tab page's pinned sites (newtab.json).
+    let newTab = NewTabStore()
     let favicons = FaviconStore()
     let extensions = ExtensionHost()
     /// Bookmarks > Show/Hide Bookmarks Bar. Window state, so it lives in user defaults rather than config.json.
@@ -93,6 +95,7 @@ final class AppModel {
         if let loaded = readConfig() { config = loaded }
         openHistory()
         bookmarks.load()
+        newTab.load()
         web.apply(config)
         MainMenu.applyShortcuts(config.shortcuts)
         extensions.prepare(config: config)
@@ -135,6 +138,7 @@ final class AppModel {
     func willTerminate() {
         downloads.discardRunning()
         bookmarks.saveNow()
+        newTab.saveNow()
         saveSessionNow()
         isTerminating = true
     }
@@ -363,6 +367,7 @@ final class AppModel {
             case .tabLayout: old.tabLayout != new.tabLayout
             case .developerTools: old.developerTools != new.developerTools
             case .httpsOnly: old.httpsOnly != new.httpsOnly
+            case .newTabFrequentSites: old.newTabFrequentSites != new.newTabFrequentSites
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
             case .extensionToolbar: old.extensionToolbar != new.extensionToolbar
@@ -495,6 +500,7 @@ final class AppModel {
     func reloadConfig(showAlert: Bool = true) async {
         await apply(readConfig() ?? config, reloading: true)
         bookmarks.load()
+        newTab.load()
         guard showAlert else { return }
 
         guard let configError else {

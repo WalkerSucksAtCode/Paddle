@@ -238,6 +238,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         guard let tab, let url = tab.url, HistoryStore.isRecordable(url) else { return }
         AppModel.shared.bookmarks.toggle(url: url, title: tab.title)
     }
+
+    /// Bookmarks > Add Page to New Tab Page: pins the page as a tile, or removes its tile when it is pinned.
+    @objc func paddleToggleNewTabSite(_ sender: Any?) {
+        guard !model.isPrivate, let tab, let url = tab.url, HistoryStore.isRecordable(url) else { return }
+        let store = AppModel.shared.newTab
+        if let id = store.id(forURL: HistoryStore.storedURL(url)) {
+            store.remove(id)
+        } else if !store.add(title: tab.displayTitle, url: HistoryStore.storedURL(url)) {
+            NSSound.beep()
+        }
+    }
     @objc func paddleForward(_ sender: Any?) { webView?.goForward() }
 
     // MARK: - Find
@@ -363,6 +374,11 @@ extension BrowserWindowController: NSMenuItemValidation {
             let bookmarked = AppModel.shared.bookmarks.isBookmarked(tab?.url)
             menuItem.title = bookmarked ? "Remove Bookmark" : "Bookmark This Page"
             return tab?.url.map(HistoryStore.isRecordable) ?? false
+        case #selector(paddleToggleNewTabSite(_:)):
+            guard !model.isPrivate, let url = tab?.url, HistoryStore.isRecordable(url) else { return false }
+            let pinned = AppModel.shared.newTab.contains(url: HistoryStore.storedURL(url))
+            menuItem.title = pinned ? "Remove from New Tab Page" : "Add Page to New Tab Page"
+            return pinned || AppModel.shared.newTab.sites.count < NewTabSites.maxSites
         case #selector(paddleFindNext(_:)), #selector(paddleFindPrevious(_:)),
              #selector(paddleUseSelectionForFind(_:)), #selector(paddleJumpToSelection(_:)):
             return tab?.settingsPane == nil && webView != nil

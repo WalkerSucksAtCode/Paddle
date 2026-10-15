@@ -95,6 +95,7 @@ enum MainMenu {
 
         let bookmarks = submenu(main, "Bookmarks")
         add(bookmarks, "addBookmark", "Bookmark This Page", #selector(BrowserWindowController.paddleToggleBookmark(_:)), "d")
+        add(bookmarks, "addToNewTabPage", "Add Page to New Tab Page", #selector(BrowserWindowController.paddleToggleNewTabSite(_:)), "")
         add(bookmarks, "showBookmarks", "Show Bookmarks", #selector(AppDelegate.paddleShowBookmarks(_:)), "b", [.command, .option], target: appDelegate)
         add(bookmarks, "toggleBookmarksBar", "Hide Bookmarks Bar", #selector(AppDelegate.paddleToggleBookmarksBar(_:)), "b", [.command, .shift], target: appDelegate)
         bookmarks.addItem(.separator())
