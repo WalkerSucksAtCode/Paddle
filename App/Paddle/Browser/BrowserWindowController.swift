@@ -8,6 +8,8 @@ import WebKit
 /// so every action works whether the page or the address field has focus.
 final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     let model: BrowserModel
+    /// Ends address editing on a click outside the field and its suggestions (`endAddressEditing(after:)`).
+    private var clickMonitor: Any?
 
     init(record: WindowRecord?, isPrivate: Bool = false, extensionsAllowed: Bool = true) {
         model = BrowserModel(isPrivate: isPrivate, extensionsAllowed: extensionsAllowed)
@@ -38,6 +40,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil
         )
+        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            self?.endAddressEditing(after: event)
+            return event
+        }
 
         if let record {
             if let frame = record.frame { window.setFrame(NSRectFromString(frame), display: false) }
@@ -91,7 +97,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// A click outside the address field and its suggestions leaves the field, as a click on a web page does by
+    /// taking the focus. Settings and Paddle's other SwiftUI pages don't take the focus, so the field kept it and
+    /// its suggestions stayed open over them until Escape.
+    private func endAddressEditing(after event: NSEvent) {
+        guard let window, event.window === window, model.isEditingAddress, let root = window.contentView else { return }
+        let local = root.convert(event.locationInWindow, from: nil)
+        let point = root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
+        if model.addressFieldFrame.contains(point) { return }
+        if model.suggestions.isVisible, model.suggestionsFrame.contains(point) { return }
+        model.suggestions.dismiss()
+        window.makeFirstResponder(nil)
+    }
+
     func windowWillClose(_ notification: Notification) {
+        if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        clickMonitor = nil
         AppModel.shared.extensions.windowClosing(self)
         for tab in model.tabs { tab.sleep() }
         AppModel.shared.windowClosed(self)

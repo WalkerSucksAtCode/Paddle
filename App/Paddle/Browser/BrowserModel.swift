@@ -23,6 +23,10 @@ final class BrowserModel {
 
     var addressText = ""
     var isEditingAddress = false
+    /// Where the address field and its suggestion list are, in the window's SwiftUI coordinates (top-left
+    /// origin), for `BrowserWindowController`'s click-outside check.
+    @ObservationIgnored var addressFieldFrame: CGRect = .zero
+    @ObservationIgnored var suggestionsFrame: CGRect = .zero
     /// Incremented to ask the view to focus the address field.
     var focusAddressRequest = 0
 
@@ -361,9 +365,14 @@ final class BrowserModel {
         tab.load(pane.url)
         SettingsPane.remembered = pane
         tabURLChanged(tab)
-        // A click in the sidebar means the field isn't being typed in, even if it kept focus: show the new pane's
-        // address rather than leave the old one, which `syncAddress` would while the field has focus.
+        // A click in the sidebar ends address editing, as a click on a page does. The field is left before the new
+        // pane's address goes in: written while it still had focus, the change read as typing and opened the
+        // suggestions over the pane.
         if tab.id == selectedID, let url = tab.url {
+            if isEditingAddress {
+                isEditingAddress = false
+                controller?.window?.makeFirstResponder(nil)
+            }
             suggestions.dismiss()
             addressText = Self.displayString(url)
         }

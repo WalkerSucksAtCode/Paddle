@@ -543,10 +543,12 @@ private struct NavigationBar: View {
         .frame(height: 28)
         // Private windows: a faint indigo field (with the "Private" label beside it, not color alone).
         .background(RoundedRectangle(cornerRadius: 8).fill(model.isPrivate ? Color.indigo.opacity(0.16) : Color.primary.opacity(0.07)))
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.addressFieldFrame = $0 }
         .overlay(alignment: .topLeading) {
             if model.suggestions.isVisible {
                 SuggestionList(suggestions: model.suggestions) { model.open($0) }
                     .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.suggestionsFrame = $0 }
                     .frame(maxWidth: .infinity, alignment: .top)
                     .offset(y: 32)
             }
