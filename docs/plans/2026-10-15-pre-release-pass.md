@@ -1,7 +1,7 @@
 # Pre-release pass (2026-10-15)
 
-Status: Waves A, A2 and B done, and the ⇧⌘Return bug fixed (2026-10-15). Before Wave C: the address suggestions
-follow-up, the extension checks, and Walker's call on Add to New Tab Page; see "Left after Wave B". Before releasing main (a97c4ac) over the installed build 49, which predates
+Status: Waves A, A2 and B done, and every item left after B (2026-10-15) except Walker's call on extensions in a
+preview; then Wave C. Before releasing main (a97c4ac) over the installed build 49, which predates
 every wave of `2026-10-14-browser-features.md`.
 
 Three waves, each about 45 minutes or less, run in this session with no sub-agents: the checks drive one running app
@@ -92,11 +92,16 @@ Current Tab and End Split).
   doesn't rebuild a view on its way out), took the page last, and was torn down holding it; the bridge path only
   worked because an extra async generation bump re-ran the tab's update afterwards. Fixed: the card's WebContainer
   attaches the page only while its tab is the preview (`WebContainer.forPreview`); the async bump is gone.
-- [ ] Follow-up: address suggestions open when the field's text changes under focus (a tab switch), not only on
-  typing.
-- [ ] Extension checks, with a probe extension: a tab activated in another space, what an extension sees of a
-  split, a preview's content scripts.
-- [ ] Walker's call: Add to New Tab Page in a page's right-click menu (about 15 lines now).
+- [x] Follow-up: address suggestions opened when the field's text changed under focus (a tab switch), not only on
+  typing. Fixed: the text Paddle writes into a field being edited is marked and its change isn't taken for typing.
+  Checked: typing still shows suggestions; the earlier repro (type, Escape, a tab switch) shows none.
+- [x] Extension checks, with a probe extension (removed afterwards, with its WebKit state): a tab activated in
+  another space switches space; in a split both pages are visible and only the focused side is the active tab; a
+  preview's content script runs but can't message its background ("Tab not found") until Open as Tab.
+- [ ] Walker's call: extensions in a preview. Keep the preview unknown to extensions (content scripts can't reach
+  their background there), or register it as a tab while it shows (they work; extensions see a short-lived tab).
+- [x] Add to New Tab Page in a page's right-click menu (Walker: build it): after Reload, Add or Remove, greyed out
+  when the New Tab page is full; checked in the app.
 - Not checkable here: swipe back in a preview (computer use can't make trackpad swipes), reduce motion and
   transparency, the bridge with the screen locked.
 

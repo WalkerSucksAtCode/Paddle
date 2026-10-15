@@ -302,7 +302,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     /// Bookmarks > Add Page to New Tab Page: pins the page as a tile, or removes its tile when it is pinned.
     @objc func paddleToggleNewTabSite(_ sender: Any?) {
-        guard !model.isPrivate, let tab, let url = tab.url, HistoryStore.isRecordable(url) else { return }
+        if let tab { Self.toggleNewTabSite(for: tab) }
+    }
+
+    /// Adds `tab`'s page to the New Tab page, or removes it when it is there: Bookmarks > Add Page to New Tab Page,
+    /// and the page's right-click menu (`TabWebDelegate`). Nothing for private windows or pages history doesn't keep.
+    static func toggleNewTabSite(for tab: Tab) {
+        guard !tab.isPrivate, let url = tab.url, HistoryStore.isRecordable(url) else { return }
         let store = AppModel.shared.newTab
         if let id = store.id(forURL: HistoryStore.storedURL(url)) {
             store.remove(id)

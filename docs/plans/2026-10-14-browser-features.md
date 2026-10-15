@@ -42,9 +42,10 @@ Where from: Edge, Brave and Firefox vertical tabs; the Arc and Zen sidebar.
 ## Wave 3: New Tab page with pinned sites
 Where from: Chrome shortcuts, Firefox top sites, Safari favorites, Brave speed dial.
 - [x] Pinned-site tiles (favicon and name) on the blank new tab page, saved in a plain file, `newtab.json`.
-  - [ ] Add one with a "+" tile, or from the ≡ menu or a page's right-click menu (Add to New Tab Page). (The + tile
-    and Bookmarks > Add Page to New Tab Page were checked, and the ≡ menu shows the item. A web page's right-click menu
-    doesn't have it: Paddle has no hook into WebKit's page menu yet.)
+  - [x] Add one with a "+" tile, or from the ≡ menu or a page's right-click menu (Add to New Tab Page). (The + tile
+    and Bookmarks > Add Page to New Tab Page were checked, and the ≡ menu shows the item. The page's right-click menu
+    has it since 2026-10-15, after Reload, through the hook Wave 9 added: checked adding a page and the item turning
+    into Remove from New Tab Page.)
   - [x] Right-click a tile to Edit or Remove it; drag to reorder.
 - [x] An optional "Frequently visited" row built from history, with a remove button per site. (Remove is Don't Show
   This Site in the tile's right-click menu; each tile opens the site's front page.)
@@ -208,8 +209,8 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     two relaunches, Move Tab to Space, Delete Space with its alert and Cancel, ⇧⌘T after it, Search Tabs, and the
     blue tint measured at its 25 % blend. 2026-10-15: a pin and a group inside a second space, through Next/Previous
     Space and a relaunch. A space tint can't reach the cap: it blends at a fixed 25 %, and the worst preset (yellow on
-    the dark default look) keeps the selected title at 5.71:1. Not exercised: an extension activating a tab in
-    another space.)
+    the dark default look) keeps the selected title at 5.71:1. A probe extension's tabs.update on a tab in another
+    space switched the window to that space and selected it.)
 - [ ] Wave 7b, control bridge (Walker, 2026-10-15; before Split view): a local MCP server so Claude sessions can
   read and drive Paddle directly, instead of screenshots and synthetic clicks (which stop when the screen locks, can't
   press Return in the background, and miss menu rows). Off by default.
@@ -258,9 +259,10 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     inside, so it shows on light and dark pages; brightness, not hue). (Checked: clicking the right pane moved the
     bridge's "selected" to it; the dark edge measured 115 against the white page's 255. Not distinguished: the address
     field, since both probe pages share a host.)
-  - [ ] Both sides count as visible: neither sleeps or freezes as a background tab, and both report as visible to
+  - [x] Both sides count as visible: neither sleeps or freezes as a background tab, and both report as visible to
     extensions (the focused one is the active tab). (Checked: both stay awake through Sleep Background Tabs and a
-    relaunch. Not checked: what extensions see.)
+    relaunch; 2026-10-15, with a probe extension: both pages' document.visibilityState is visible, and tabs.query
+    marks only the focused side active.)
   - [x] Divider: a 6 pt gap in the chrome colour with a grip. Drag to resize (each side at least 25 % and 320 pt),
     double-click for 50/50; the ratio is kept per split. Narrower than 640 pt the window shows only the focused side
     until it is wide enough again. (Checked: a drag to 1120 / 602 pt, a double-click back to 861 / 861; a drag hard
@@ -332,7 +334,10 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     session. (Checked: a private window's preview left no history row, normal previews did; the probe's ad script
     blocked in the preview; an open preview absent from session.json and sessions/ after quitting; 2026-10-15: in a
     second profile the preview read that profile's cookie and storage and its page went into that profile's history.
-    Not checked: extensions.)
+    Extensions, with a probe: its content script runs in the preview, but runtime.sendMessage fails there ("Tab not
+    found"), since WebKit delivers messages only from tabs it knows; after Open as Tab it works. So an extension
+    whose content script talks to its background (autofill, for one) doesn't work in a preview. Walker's call:
+    keep this, or register the preview as a tab with extensions while it shows.)
   - [x] Control bridge: `paddle_state` reports each window's preview (URL, title); `window_snapshot` draws it over the
     page; `open_url` gains `"in": "preview"` (refused while `linkPreview` is off); `openLinkPreviewAsTab` and
     `closeLinkPreview` run through `menu_action`. (Checked: all of them; the snapshot draws the backdrop and page but

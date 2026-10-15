@@ -56,6 +56,9 @@ final class BrowserModel {
     var renamingGroupID: UUID?
 
     var addressText = ""
+    /// Text Paddle itself put in the address field while it is being edited (the new tab's address after a tab
+    /// switch): the field's change handler would take it for typing and open the suggestions. Consumed by that change.
+    @ObservationIgnored private var addressWrittenByPaddle: String?
     var isEditingAddress = false
     /// Where the address field and its suggestion list are, in the window's SwiftUI coordinates (top-left
     /// origin), for `BrowserWindowController`'s click-outside check.
@@ -236,7 +239,9 @@ final class BrowserModel {
         if previous !== tab {
             // The field's text belonged to the old tab, typed or not: show this tab's address even while the field
             // keeps focus (⌘L then ⌘T, or closing a tab mid-edit), when `syncAddress` would leave it alone.
-            addressText = tab.url.map(Self.displayString) ?? ""
+            let address = tab.url.map(Self.displayString) ?? ""
+            if isEditingAddress, address != addressText { addressWrittenByPaddle = address }
+            addressText = address
         } else {
             syncAddress()
         }
@@ -1238,6 +1243,10 @@ final class BrowserModel {
     /// The user edited the address text: refresh suggestions and, when they typed at the end, complete a known
     /// host inline (Safari style). Returns the completed text and where the typed part ends, or nil.
     func addressEdited(from old: String, to new: String) -> (text: String, typedEnd: String.Index)? {
+        if let written = addressWrittenByPaddle {
+            addressWrittenByPaddle = nil
+            if new == written { return nil }
+        }
         guard isEditingAddress else { return nil }
         let typed = suggestions.typedText
         suggestions.update(for: new, in: self)

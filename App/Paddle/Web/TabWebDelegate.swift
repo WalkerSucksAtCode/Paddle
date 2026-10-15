@@ -618,23 +618,40 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     // MARK: - Context menu
 
     private static let openLinkInNewWindowItem = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierOpenLinkInNewWindow")
+    private static let reloadItem = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierReload")
 
-    /// Private WebKit callback with the page's context menu before it shows. On an http(s) link it adds "Preview Link"
-    /// after "Open Link in New Window", for the link WebKit hit-tested for this menu (not the last one hovered, which
-    /// differs for a keyboard-opened menu). If WebKit stops calling this, the menu is just WebKit's own.
+    /// Private WebKit callback with the page's context menu before it shows. If WebKit stops calling this, the menu is
+    /// just WebKit's own. Paddle adds:
+    /// - on an http(s) link, "Preview Link" after "Open Link in New Window", for the link WebKit hit-tested for this
+    ///   menu (not the last one hovered, which differs for a keyboard-opened menu);
+    /// - on the page itself (the menu with Reload), "Add Page to New Tab Page" (or Remove) after Reload, for this tab,
+    ///   which in a split may be the side without focus.
     @objc(_webView:getContextMenuFromProposedMenu:forElement:userInfo:completionHandler:)
     func _webView(_ webView: WKWebView, getContextMenuFromProposedMenu menu: NSMenu, forElement element: NSObject, userInfo: NSObject?, completionHandler: @escaping (NSMenu?) -> Void) {
         defer { completionHandler(menu) }
-        guard let tab, !tab.isPreview, AppModel.shared.config.linkPreview,
-              element.responds(to: NSSelectorFromString("hitTestResult")),
-              let hit = element.value(forKey: "hitTestResult") as? NSObject,
-              hit.responds(to: NSSelectorFromString("absoluteLinkURL")),
-              let link = hit.value(forKey: "absoluteLinkURL") as? URL, Self.isWebPage(link),
-              let index = menu.items.firstIndex(where: { $0.identifier == Self.openLinkInNewWindowItem }) else { return }
-        let item = NSMenuItem(title: "Preview Link", action: #selector(previewLink(_:)), keyEquivalent: "")
-        item.target = self
-        item.representedObject = link
-        menu.insertItem(item, at: index + 1)
+        guard let tab, !tab.isPreview else { return }
+        let hit = element.responds(to: NSSelectorFromString("hitTestResult")) ? element.value(forKey: "hitTestResult") as? NSObject : nil
+        let link = hit.flatMap { $0.responds(to: NSSelectorFromString("absoluteLinkURL")) ? $0.value(forKey: "absoluteLinkURL") as? URL : nil }
+        if let link, Self.isWebPage(link), AppModel.shared.config.linkPreview,
+           let index = menu.items.firstIndex(where: { $0.identifier == Self.openLinkInNewWindowItem }) {
+            let item = NSMenuItem(title: "Preview Link", action: #selector(previewLink(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = link
+            menu.insertItem(item, at: index + 1)
+        }
+        if !tab.isPrivate, let url = tab.url, HistoryStore.isRecordable(url),
+           let index = menu.items.firstIndex(where: { $0.identifier == Self.reloadItem }) {
+            let store = AppModel.shared.newTab
+            let pinned = store.contains(url: HistoryStore.storedURL(url))
+            let item = NSMenuItem(title: pinned ? "Remove from New Tab Page" : "Add Page to New Tab Page", action: #selector(toggleNewTabSite(_:)), keyEquivalent: "")
+            item.target = self
+            menu.insertItem(item, at: index + 1)
+        }
+    }
+
+    @objc private func toggleNewTabSite(_ sender: NSMenuItem) {
+        guard let tab else { return }
+        BrowserWindowController.toggleNewTabSite(for: tab)
     }
 
     @objc private func previewLink(_ sender: NSMenuItem) {
@@ -832,5 +849,16 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             Task { await app.writeSiteSetting(field, .string(allowed ? "allow" : "deny"), forKey: key) }
         }
         return allowed
+    }
+}
+
+extension TabWebDelegate: NSMenuItemValidation {
+    /// The page menu's New Tab Page item has the same limit as Bookmarks > Add Page to New Tab Page: a full New Tab
+    /// page greys out Add (Remove stays).
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        guard menuItem.action == #selector(toggleNewTabSite(_:)) else { return true }
+        guard let url = tab?.url else { return false }
+        let store = AppModel.shared.newTab
+        return store.contains(url: HistoryStore.storedURL(url)) || store.sites.count < NewTabSites.maxSites
     }
 }
