@@ -32,6 +32,9 @@ final class BrowserModel {
     var selectedID: UUID?
     /// The active space's tab groups. Each group's tabs are adjacent in `tabs`, and a group with no tabs is removed.
     var groups: [TabGroup] = []
+    /// The active space's split views. Each pairs two adjacent tabs of the same group (or none); `normalizeSplits` ends
+    /// the ones a change breaks.
+    private(set) var splits: [Split] = []
 
     /// The window's spaces in order, the active one included. A window starts with one, "Main".
     private(set) var spaces: [Space] = [Space()]
@@ -44,6 +47,7 @@ final class BrowserModel {
         var tabs: [Tab] = []
         var groups: [TabGroup] = []
         var selectedID: UUID?
+        var splits: [Split] = []
     }
     private var stashes: [String: Stash] = [:]
     /// The tab whose title is being edited in place in the strip.
@@ -56,6 +60,8 @@ final class BrowserModel {
     /// Where the address field and its suggestion list are, in the window's SwiftUI coordinates (top-left
     /// origin), for `BrowserWindowController`'s click-outside check.
     @ObservationIgnored var addressFieldFrame: CGRect = .zero
+    /// The unfocused side of a split in window coordinates (zero when not split or too narrow); a click in it focuses it.
+    @ObservationIgnored var splitUnfocusedFrame: CGRect = .zero
     @ObservationIgnored var suggestionsFrame: CGRect = .zero
     /// Incremented to ask the view to focus the address field.
     var focusAddressRequest = 0
@@ -169,10 +175,12 @@ final class BrowserModel {
     private func place(_ tab: Tab, after anchor: Tab?) {
         if let anchor, let index = tabs.firstIndex(where: { $0 === anchor }) {
             // Like Safari and Firefox: links open right after the tab that opened them.
-            let slot = TabOrder.insertionIndex(
+            var slot = TabOrder.insertionIndex(
                 after: index, isPinned: tab.isPinned, pinnedFlags: tabs.map(\.isPinned),
                 openedFromAnchor: tabs.map { $0.opener === anchor }
             )
+            // A link from the left side of a split lands after the pair, not between its tabs.
+            slot = outsideSplits(slot, in: tabs, moving: tab)
             // A tab opened from a grouped tab lands in its group.
             if let group = TabGroups.groupForInsertion(after: index, slots: groupSlots) { tab.groupID = UUID(uuidString: group) }
             tabs.insert(tab, at: slot)
@@ -180,6 +188,18 @@ final class BrowserModel {
             tabs.append(tab)
         }
         normalizeGroups()
+    }
+
+    /// `index` (an insertion point in `list`) moved out of the middle of any split `tab` isn't part of, to just after it.
+    private func outsideSplits(_ index: Int, in list: [Tab], moving tab: Tab) -> Int {
+        guard split(of: tab) == nil else { return index }
+        var index = index
+        for pair in splits {
+            guard let l = list.firstIndex(where: { $0.id == pair.leftID }), let r = list.firstIndex(where: { $0.id == pair.rightID }),
+                  r == l + 1, index > l, index <= r else { continue }
+            index = r + 1
+        }
+        return index
     }
 
     func select(_ tab: Tab) {
@@ -203,6 +223,11 @@ final class BrowserModel {
         if let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
         tab.lastActive = now
         tab.wake()
+        // The other side of a split is on screen too.
+        if let partner = partner(of: tab) {
+            partner.lastActive = now
+            partner.wake()
+        }
         if previous !== tab { extensionHost?.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
         suggestions.dismiss()
@@ -325,7 +350,7 @@ final class BrowserModel {
     func withdrawExtensions() {
         extensionsAllowed = false
         for tab in allTabs where tab.isAwake { tab.sleep() }
-        selectedTab?.wake()
+        for tab in visibleTabs { tab.wake() }
     }
 
     // MARK: - Sound
@@ -393,7 +418,8 @@ final class BrowserModel {
             others.remove(at: from)
             let boundary = TabOrder.pinBoundary(others.map(\.isPinned))
             let local = index - offset
-            let to = tab.isPinned ? min(max(local, 0), boundary) : min(max(local, boundary), others.count)
+            var to = tab.isPinned ? min(max(local, 0), boundary) : min(max(local, boundary), others.count)
+            to = outsideSplits(to, in: others, moving: tab)
             guard to != from else { return nil }
             others.insert(tab, at: to)
             tabs = others
@@ -406,7 +432,7 @@ final class BrowserModel {
     }
 
     func sleep(_ tab: Tab) {
-        guard tab.id != selectedID else { return }
+        guard !isVisible(tab) else { return }
         tab.sleep()
     }
 
@@ -422,7 +448,13 @@ final class BrowserModel {
         guard tab !== target, tab.isPinned == target.isPinned,
               let from = tabs.firstIndex(where: { $0 === tab }),
               let to = tabs.firstIndex(where: { $0 === target }) else { return false }
-        TabOrder.move(&tabs, from: from, onto: to)
+        // Landing on a side of a split that `tab` isn't in goes to the pair's far edge, so the split stays whole.
+        var dest = to
+        if split(of: tab) == nil, let pair = split(of: target),
+           let l = tabs.firstIndex(where: { $0.id == pair.leftID }), let r = tabs.firstIndex(where: { $0.id == pair.rightID }) {
+            dest = from < to ? max(l, r) : min(l, r)
+        }
+        TabOrder.move(&tabs, from: from, onto: dest)
         tab.groupID = groupID
         normalizeGroups()
         // Never leave the selection hidden in a collapsed group.
@@ -495,16 +527,18 @@ final class BrowserModel {
     /// is reported; for editing a hidden space.
     private func withSpace<T>(_ id: String, _ body: () -> T) -> T {
         if id == activeSpaceID { return body() }
-        let keep = Stash(tabs: tabs, groups: groups, selectedID: selectedID)
+        let keep = Stash(tabs: tabs, groups: groups, selectedID: selectedID, splits: splits)
         let stash = stashes[id] ?? Stash()
         tabs = stash.tabs
         groups = stash.groups
         selectedID = stash.selectedID
+        splits = stash.splits
         let result = body()
-        stashes[id] = Stash(tabs: tabs, groups: groups, selectedID: selectedID)
+        stashes[id] = Stash(tabs: tabs, groups: groups, selectedID: selectedID, splits: splits)
         tabs = keep.tabs
         groups = keep.groups
         selectedID = keep.selectedID
+        splits = keep.splits
         return result
     }
 
@@ -518,10 +552,11 @@ final class BrowserModel {
     private func switchToSpace(_ id: String, selecting chosen: Tab?) {
         guard id != activeSpaceID, spaces.contains(where: { $0.id == id }) else { return }
         let previous = selectedTab
-        stashes[activeSpaceID] = Stash(tabs: tabs, groups: groups, selectedID: selectedID)
+        stashes[activeSpaceID] = Stash(tabs: tabs, groups: groups, selectedID: selectedID, splits: splits)
         let stash = stashes.removeValue(forKey: id) ?? Stash()
         tabs = stash.tabs
         groups = stash.groups
+        splits = stash.splits
         selectedID = nil
         activeSpaceID = id
         renamingTabID = nil
@@ -634,6 +669,7 @@ final class BrowserModel {
         withSpace(record.id) {
             tabs = restored
             groups = record.groups.compactMap(TabGroup.init(record:))
+            splits = Self.splits(from: record.splits, in: restored)
             normalizeGroups()
             if restored.indices.contains(record.selectedIndex) { selectedID = restored[record.selectedIndex].id } else { selectedID = restored.last?.id }
         }
@@ -647,6 +683,161 @@ final class BrowserModel {
             spaces.insert(space, at: min(max(index, 0), spaces.count))
         }
         if tabs.isEmpty { showSpaceWithTabs() }
+    }
+
+    // MARK: - Split view
+
+    /// Two adjacent tabs shown side by side. The selected one is the focused side.
+    struct Split: Identifiable, Equatable {
+        let id = UUID()
+        var leftID: UUID
+        var rightID: UUID
+        /// The left side's share of the width (`SplitRecord.ratioRange`).
+        var ratio = 0.5
+
+        /// The split with its tabs named by `Tab.id`, for the rules in PaddleCore.
+        var record: SplitRecord { SplitRecord(left: leftID.uuidString, right: rightID.uuidString, ratio: ratio) }
+    }
+
+    /// The split `tab` is in; the active space's only.
+    func split(of tab: Tab) -> Split? {
+        splits.first { $0.leftID == tab.id || $0.rightID == tab.id }
+    }
+
+    /// The other tab of `tab`'s split.
+    func partner(of tab: Tab) -> Tab? {
+        guard let split = split(of: tab) else { return nil }
+        let id = split.leftID == tab.id ? split.rightID : split.leftID
+        return tabs.first { $0.id == id }
+    }
+
+    /// The tabs on screen in left-to-right order: the selected tab and its partner, else just the selected one.
+    var visibleTabs: [Tab] {
+        guard let selected = selectedTab else { return [] }
+        guard let split = split(of: selected), let partner = partner(of: selected) else { return [selected] }
+        return split.leftID == selected.id ? [selected, partner] : [partner, selected]
+    }
+
+    func isVisible(_ tab: Tab) -> Bool {
+        visibleTabs.contains { $0 === tab }
+    }
+
+    /// Splits `a` and `b`: `b` moves to just right of `a` (into `a`'s group, or none). Refused for pinned tabs, the same
+    /// tab, or tabs not both in this window's active space. Either tab's earlier split ends.
+    func makeSplit(_ a: Tab, with b: Tab) {
+        guard a !== b, !a.isPinned, !b.isPinned,
+              tabs.contains(where: { $0 === a }), let from = tabs.firstIndex(where: { $0 === b }) else { return }
+        splits.removeAll { $0.leftID == a.id || $0.rightID == a.id || $0.leftID == b.id || $0.rightID == b.id }
+        let before = tabs
+        tabs.remove(at: from)
+        b.groupID = a.groupID
+        let at = tabs.firstIndex { $0 === a } ?? tabs.count
+        tabs.insert(b, at: at + 1)
+        normalizeGroups()
+        splits.append(Split(leftID: a.id, rightID: b.id))
+        a.lastActive = Date()
+        a.wake()
+        b.lastActive = Date()
+        b.wake()
+        if selectedID != a.id && selectedID != b.id { select(a) }
+        reportMoves(from: before)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Ends the split `tab` is in; both tabs stay where they are.
+    func endSplit(of tab: Tab) {
+        guard let split = split(of: tab) else { return }
+        splits.removeAll { $0.id == split.id }
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Tabs > Split View: ends the selected tab's split; else splits it with the next tab in the strip (not pinned, not
+    /// in a split, same group), or with a new New Tab page after it, which is then focused.
+    func toggleSplitView() {
+        guard let current = selectedTab else { return }
+        if split(of: current) != nil {
+            endSplit(of: current)
+            return
+        }
+        guard !current.isPinned, let index = tabs.firstIndex(where: { $0 === current }) else { return }
+        if tabs.indices.contains(index + 1) {
+            let next = tabs[index + 1]
+            if !next.isPinned, next.groupID == current.groupID, split(of: next) == nil {
+                makeSplit(current, with: next)
+                return
+            }
+        }
+        let page = URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+        let fresh = newTab(url: page, select: false, after: current)
+        fresh.opener = nil
+        fresh.groupID = current.groupID
+        makeSplit(current, with: fresh)
+        select(fresh)
+        if page == nil { focusAddress() }
+    }
+
+    /// Tabs > Swap Sides: the two tabs trade places; the focused tab stays focused.
+    func swapSplitSides() {
+        guard let selected = selectedTab, let split = split(of: selected),
+              let l = tabs.firstIndex(where: { $0.id == split.leftID }), tabs.indices.contains(l + 1), tabs[l + 1].id == split.rightID,
+              let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        let before = tabs
+        tabs.swapAt(l, l + 1)
+        splits[at].leftID = split.rightID
+        splits[at].rightID = split.leftID
+        splits[at].ratio = SplitRecord.clamped(1 - split.ratio)
+        reportMoves(from: before)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Tabs > Focus Other Side: selects the partner, which becomes the focused side.
+    func focusOtherSplitSide() {
+        guard let selected = selectedTab, let partner = partner(of: selected) else { return }
+        select(partner)
+    }
+
+    /// Moves the divider: `ratio` is the left side's share, kept within `SplitRecord.ratioRange`.
+    func setSplitRatio(_ ratio: Double, for split: Split) {
+        guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        let clamped = SplitRecord.clamped(ratio)
+        guard splits[at].ratio != clamped else { return }
+        splits[at].ratio = clamped
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Ends the splits the tab order no longer supports (a side closed, moved, pinned, regrouped or separated).
+    private func normalizeSplits() {
+        guard !splits.isEmpty else { return }
+        let kept = SplitRules.normalized(
+            splits: splits.map(\.record),
+            tabs: tabs.map { SplitTab(id: $0.id.uuidString, groupID: $0.groupID?.uuidString, isPinned: $0.isPinned) }
+        )
+        let keptLeft = Set(kept.map(\.left))
+        if kept.count != splits.count { splits = splits.filter { keptLeft.contains($0.leftID.uuidString) } }
+    }
+
+    /// Session restore: the active space's saved splits, for tabs already in `tabs`.
+    func restoreSplits(_ records: [SplitRecord]) {
+        splits = Self.splits(from: records, in: tabs)
+        normalizeSplits()
+    }
+
+    /// Splits named by session id; the ones whose tabs aren't in `tabs` are skipped.
+    private static func splits(from records: [SplitRecord], in tabs: [Tab]) -> [Split] {
+        records.compactMap { record in
+            guard let left = tabs.first(where: { $0.sessionKey == record.left }),
+                  let right = tabs.first(where: { $0.sessionKey == record.right }) else { return nil }
+            return Split(leftID: left.id, rightID: right.id, ratio: record.ratio)
+        }
+    }
+
+    /// The saved form of `splits`, naming tabs by session id. Splits with a tab that isn't saved (View Source) are skipped.
+    private static func records(of splits: [Split], in tabs: [Tab]) -> [SplitRecord] {
+        func key(_ id: UUID) -> String? { tabs.first { $0.id == id && $0.sourceHTML == nil }?.sessionKey }
+        return splits.compactMap { split in
+            guard let left = key(split.leftID), let right = key(split.rightID) else { return nil }
+            return SplitRecord(left: left, right: right, ratio: split.ratio)
+        }
     }
 
     // MARK: - Tab groups
@@ -674,6 +865,7 @@ final class BrowserModel {
         let live = Set(tabs.compactMap(\.groupID))
         if groups.contains(where: { !live.contains($0.id) }) { groups.removeAll { !live.contains($0.id) } }
         if let renaming = renamingGroupID, !groups.contains(where: { $0.id == renaming }) { renamingGroupID = nil }
+        normalizeSplits()
     }
 
     /// Session restore: the saved groups, for tabs that were appended with their `groupID`s.
@@ -864,7 +1056,7 @@ final class BrowserModel {
         tab.returnsToOpener = false
         if let opener = tab.opener, !allTabs.contains(where: { $0 === opener }) { tab.opener = nil }
         let boundary = TabOrder.pinBoundary(tabs.map(\.isPinned))
-        let to = tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), tabs.count)
+        let to = outsideSplits(tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), tabs.count), in: tabs, moving: tab)
         tabs.insert(tab, at: to)
         // The group stays behind unless this window has it (`moveGroupToNewWindow` gives it over afterwards).
         normalizeGroups()
@@ -1045,24 +1237,28 @@ final class BrowserModel {
 
     /// This window for session.json, without View Source tabs. Private windows are never saved (`AppModel`).
     var record: WindowRecord {
-        func saved(_ tabs: [Tab], _ groups: [TabGroup], _ selectedID: UUID?, frame: String? = nil, space: SpaceRecord? = nil, others: [SpaceRecord] = [], spaceIndex: Int? = nil) -> WindowRecord {
+        func saved(_ tabs: [Tab], _ groups: [TabGroup], _ selectedID: UUID?, frame: String? = nil, space: SpaceRecord? = nil, others: [SpaceRecord] = [], spaceIndex: Int? = nil, splits: [SplitRecord] = []) -> WindowRecord {
             WindowRecord.saving(
                 tabs, selected: { $0.id == selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
                 frame: frame, groups: groups.map(\.record),
                 profile: profileID == ProfileStore.defaultID ? nil : profileID, space: space, otherSpaces: others,
-                spaceIndex: spaceIndex
+                spaceIndex: spaceIndex, splits: splits
             )
         }
         var others: [SpaceRecord] = []
         for space in spaces where space.id != activeSpaceID {
             let stash = stashes[space.id] ?? Stash()
             let part = saved(stash.tabs, stash.groups, stash.selectedID)
-            others.append(space.record(tabs: part.tabs, selectedIndex: part.selectedIndex, groups: part.groups))
+            others.append(space.record(
+                tabs: part.tabs, selectedIndex: part.selectedIndex, groups: part.groups,
+                splits: Self.records(of: stash.splits, in: stash.tabs)
+            ))
         }
         return saved(
             tabs, groups, selectedID, frame: controller?.window.map { NSStringFromRect($0.frame) },
             space: activeSpace.record(), others: others,
-            spaceIndex: spaces.count > 1 ? spaces.firstIndex { $0.id == activeSpaceID } : nil
+            spaceIndex: spaces.count > 1 ? spaces.firstIndex { $0.id == activeSpaceID } : nil,
+            splits: Self.records(of: splits, in: tabs)
         )
     }
 }

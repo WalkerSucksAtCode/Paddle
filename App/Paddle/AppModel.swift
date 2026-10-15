@@ -1285,7 +1285,8 @@ final class AppModel {
             // Under memory pressure freeing memory wins over keeping sign-in popups working.
             if !memoryPressure { busy.formUnion(liveOpenerPairs()) }
             let now = Date()
-            let selected = Set(windows.compactMap { $0.model.selectedID })
+            // Both sides of a split view are on screen, so both count as selected.
+            let selected = Set(windows.flatMap { $0.model.visibleTabs.map(\.id) })
             let tabs = allTabs
             // A tab is sampled only when it could be judged: not selected, not playing, and not sharing its process with
             // another tab, whose CPU time would be counted twice. Any sweep that doesn't sample drops every clock, so the

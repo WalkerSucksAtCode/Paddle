@@ -306,11 +306,11 @@ final class ExtensionHost {
         let paired = AppModel.shared.liveOpenerPairs()
         for window in registeredWindows.compactMap(\.value) {
             for tab in window.model.allTabs where tab.isAwake && tab.extensionPageID == nil && !paired.contains(tab.id) {
-                if tab.id == window.model.selectedID {
+                if window.model.isVisible(tab) {
                     tab.sleep()
                     tab.wake()
                     reloaded += 1
-                } else if await !tab.isBusy(), tab.isAwake, tab.id != window.model.selectedID {
+                } else if await !tab.isBusy(), tab.isAwake, !window.model.isVisible(tab) {
                     // Checked again after the await: the user may have selected it meanwhile.
                     tab.sleep()
                     reloaded += 1
@@ -364,14 +364,14 @@ final class ExtensionHost {
     private func resolveDeferredTabs() {
         let tabs = deferredTabs.compactMap(\.value)
         deferredTabs = []
-        for tab in tabs where tab.browser != nil && !tab.isAwake && tab.browser?.selectedID == tab.id {
+        for tab in tabs where tab.browser != nil && !tab.isAwake && tab.browser?.isVisible(tab) == true {
             tab.wake()
         }
         for window in registeredWindows.compactMap(\.value) {
             for tab in window.model.allTabs where tab.showsExtensionUnavailable {
                 guard loaded.contains(where: { $0.owns(tab.url) }) else { continue }
                 tab.sleep()
-                if window.model.selectedID == tab.id { tab.wake() }
+                if window.model.isVisible(tab) { tab.wake() }
             }
         }
     }
@@ -486,7 +486,7 @@ final class ExtensionHost {
             for window in AppModel.shared.windows where window.model.isPrivate {
                 for tab in window.model.allTabs where ext.owns(tab.url) {
                     if tab.isAwake { tab.sleep() }
-                    if tab === window.model.selectedTab { tab.wake() }
+                    if window.model.isVisible(tab) { tab.wake() }
                 }
             }
         }

@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 committed (206ff00). Wave 7b (control bridge) built and checked from a Claude session 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 committed (206ff00). Wave 7b committed (d1c3f40). Wave 8 built and checked in the debug build, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -236,6 +236,36 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     stdio MCP client through `paddle-mcp`, Paddle in the background: all of it, plus file:/javascript: URLs refused,
     document.cookie blocked and a cookie-equal value redacted. Not checked with the screen locked.)
 - [ ] Wave 8, Split view: two tabs side by side in one window, with a draggable divider (Chrome, Arc, Zen, Edge).
+  Specified 2026-10-15:
+  - [x] A split pairs two adjacent tabs of the same space (never pinned; both in the same group or none). Selecting
+    either shows both, left and right of a divider. The selected tab is the focused side: the address field, toolbar,
+    find bar, zoom, Develop menu, Responsive Design Mode and the bridge's "selected" all follow it unchanged; clicking
+    into the other side focuses it. The focused side has a two-tone edge while split (2 pt dark outside, 1 pt light
+    inside, so it shows on light and dark pages; brightness, not hue). (Checked: clicking the right pane moved the
+    bridge's "selected" to it; the dark edge measured 115 against the white page's 255. Not distinguished: the address
+    field, since both probe pages share a host.)
+  - [ ] Both sides count as visible: neither sleeps or freezes as a background tab, and both report as visible to
+    extensions (the focused one is the active tab). (Checked: both stay awake through Sleep Background Tabs and a
+    relaunch. Not checked: what extensions see.)
+  - [ ] Divider: a 6 pt gap in the chrome colour with a grip. Drag to resize (each side at least 25 % and 320 pt),
+    double-click for 50/50; the ratio is kept per split. Narrower than 640 pt the window shows only the focused side
+    until it is wide enough again. (Checked: a drag to 1120 / 602 pt, a double-click back to 861 / 861. Not checked:
+    the minimums and the narrow-window fallback.)
+  - [ ] Making and ending one: Tabs > Split View (`toggleSplitView`, ⌃⌘\): with one tab it splits with the next tab
+    in the strip (or a new New Tab when there is none); in a split it ends the split and keeps the focused tab.
+    A tab's right-click menu: "Split with Current Tab" (pairs it with the selected tab) and "End Split". Tabs > Swap
+    Sides (`swapSplitSides`) and Focus Other Side (`focusOtherSplitSide`, no default key). Closing,
+    pinning, moving to another window or space, or grouping apart one side ends the split. (Checked through the
+    bridge: Split View makes one, Swap Sides swaps pages and strip order and keeps focus, closing one side ends it.
+    Not checked: the right-click items, Focus Other Side, ending by pin, move or group. Swapping moves both web views
+    to new hosts, so each page sees one brief 0 × 0 resize.)
+  - [ ] Strip and sidebar: the two tabs sit together with a split symbol (rectangle.split.2x1) on the pair and a
+    shared bracket underline; both look selected when the split shows, the focused one with the stronger edge.
+    (Checked in the horizontal strip. Not checked: the vertical sidebar.)
+  - [x] Saved in session.json with each space's tabs (pair and ratio); older files have no splits. (Checked: a
+    relaunch keeps the pair with both sides awake; unit tests cover old files and bad entries.)
+  - Done when: a split shows two pages side by side with the divider dragging and resetting, focus moves the address
+    field between sides, both sides stay awake, the split survives a relaunch, and closing one side ends it.
 - [ ] Wave 9, Link preview: ⌥-click shows a link in a floating preview over the page, which can then become a tab
   (Arc Peek, Zen Glance).
 

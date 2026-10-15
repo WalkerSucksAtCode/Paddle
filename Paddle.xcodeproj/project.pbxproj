@@ -96,6 +96,7 @@
 		FDC90932F86D725BD45855F4 /* ControlBridgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F965A2C39359669A792EB86C /* ControlBridgeViews.swift */; };
 		FE6DF0EBFBC6A3FBA6012A89 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8128DC91A624CFEB3A367FD9 /* Space.swift */; };
 		FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42172FC8B6D57C89A373242D /* WebContainer.swift */; };
+		FF9E9EBD94A357A87FF343EE /* SplitPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B9CE107A939CB32C813FD0 /* SplitPanes.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -135,6 +136,7 @@
 		0FF189A4771C73A817501D59 /* ShortcutsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsPane.swift; sourceTree = "<group>"; };
 		11E5FE7EECAC5C0800D39F69 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
 		11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePane.swift; sourceTree = "<group>"; };
+		14B9CE107A939CB32C813FD0 /* SplitPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPanes.swift; sourceTree = "<group>"; };
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
@@ -298,6 +300,7 @@
 				3485769C1E48286709A33E89 /* NewTabPage.swift */,
 				363706E78DC3798367BDF4F7 /* ResponsivePage.swift */,
 				EC4ED3DF4697D613FB8552FB /* SpaceViews.swift */,
+				14B9CE107A939CB32C813FD0 /* SplitPanes.swift */,
 				363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */,
 				E58CA20A0866C0A7A9A100F9 /* TabGroupViews.swift */,
 				7085510A84436857BAE04E06 /* TabSearch.swift */,
@@ -617,6 +620,7 @@
 				0F6E165D6ACF3FF836033255 /* SitesPane.swift in Sources */,
 				FE6DF0EBFBC6A3FBA6012A89 /* Space.swift in Sources */,
 				2C05F8ADBEB03CE596832645 /* SpaceViews.swift in Sources */,
+				FF9E9EBD94A357A87FF343EE /* SplitPanes.swift in Sources */,
 				AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */,
 				7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */,
 				11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */,

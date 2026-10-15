@@ -316,7 +316,7 @@ private struct SidebarTabBehavior: ViewModifier {
     }
 
     private var spokenValue: String {
-        let state = TabButton.spokenState(tab, audio: audio)
+        let state = model.spokenSplit(of: tab, after: TabButton.spokenState(tab, audio: audio))
         guard let group else { return state }
         let name = group.name.isEmpty ? "Unnamed" : group.name
         return state.isEmpty ? "in group \(name)" : "\(state), in group \(name)"
@@ -326,13 +326,13 @@ private struct SidebarTabBehavior: ViewModifier {
 /// The selected tab is brighter than the sidebar in both appearances, with an edge, so it stands out by brightness alone.
 /// With `highContrast` the fill and edge are stronger, still by brightness only.
 /// A theme's selected-tab color replaces the fill; the edge and the washes come from its text color.
-private func sidebarBackground(selected: Bool, hovering: Bool, radius: CGFloat, highContrast: Bool, theme: ResolvedChromeTheme?, selectedFill: Double = 0.14, idleFill: Double = 0, hoverFill: Double = 0.06) -> some View {
+private func sidebarBackground(selected: Bool, focused: Bool = true, hovering: Bool, radius: CGFloat, highContrast: Bool, theme: ResolvedChromeTheme?, selectedFill: Double = 0.14, idleFill: Double = 0, hoverFill: Double = 0.06) -> some View {
     let ink: Color = theme?.text ?? .primary
     return RoundedRectangle(cornerRadius: radius)
         .fill(selected ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.36 : selectedFill)) : ink.opacity(hovering ? hoverFill : idleFill))
         .overlay {
             RoundedRectangle(cornerRadius: radius)
-                .strokeBorder(ink.opacity(selected ? (highContrast ? 0.55 : 0.25) : 0), lineWidth: highContrast ? 1.5 : 1)
+                .strokeBorder(ink.opacity(selected ? (highContrast ? 0.55 : 0.25) * (focused ? 1 : 0.5) : 0), lineWidth: highContrast ? 1.5 : 1)
         }
 }
 
@@ -385,12 +385,19 @@ private struct SidebarTabRow: View {
     @Environment(\.chromeTheme) private var theme
 
     private var isSelected: Bool { model.selectedID == tab.id }
+    private var isShown: Bool { isSelected || model.visibleTabs.contains { $0.id == tab.id } }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
 
     var body: some View {
         HStack(spacing: 8) {
             TabStateIcon(tab: tab, audioBadge: iconsOnly)
             if !iconsOnly {
+                if model.splitSide(of: tab) == .left, let other = model.partner(of: tab) {
+                    Image(systemName: "rectangle.split.2x1")
+                        .chromeFont(size: 10)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Split with \(other.displayTitle)")
+                }
                 if isRenaming {
                     TabRenameField(tab: tab, model: model)
                 } else {
@@ -441,7 +448,7 @@ private struct SidebarTabRow: View {
         .padding(.horizontal, iconsOnly ? 0 : 8)
         .frame(maxWidth: .infinity, alignment: iconsOnly ? .center : .leading)
         .frame(height: 30 * scale)
-        .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 7, highContrast: highContrast, theme: theme))
+        .background(sidebarBackground(selected: isShown, focused: isSelected, hovering: hovering, radius: 7, highContrast: highContrast, theme: theme))
         // A grouped tab carries its group's colour along its leading edge, so the group's extent shows.
         .overlay(alignment: .leading) {
             if let group {
@@ -452,6 +459,7 @@ private struct SidebarTabRow: View {
             }
         }
         .padding(.leading, group != nil && !iconsOnly ? 10 : 0)
+        .splitBracket(model.splitSide(of: tab), vertical: true, ink: theme?.text ?? .primary)
         .modifier(SidebarTabBehavior(
             tab: tab, model: model, group: group, isRenaming: isRenaming, inlineRename: !iconsOnly,
             tooltip: TabButton.tooltip(tab, audio: audio, memory: hoverMemory)

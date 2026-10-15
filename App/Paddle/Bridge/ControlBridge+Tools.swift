@@ -99,18 +99,27 @@ extension ControlBridge {
             }
             let tabs: [JSONValue] = model.spaces.flatMap { space in
                 model.tabs(inSpace: space.id).map { tab -> JSONValue in
-                    [
+                    var entry: [String: JSONValue] = [
                         "id": .string(tab.id.uuidString), "title": .string(tab.displayTitle),
                         "url": .string(tab.url?.absoluteString ?? ""), "pinned": .bool(tab.isPinned),
                         "group": model.anyGroup(of: tab).map { .string($0.name) } ?? .null,
                         "asleep": .bool(tab.isAsleep), "selected": .bool(tab.id == model.selectedID),
                         "space": .string(space.name),
                     ]
+                    if let split = model.split(of: tab), let partner = model.partner(of: tab) {
+                        entry["split"] = [
+                            "partner": .string(partner.id.uuidString),
+                            "side": .string(split.leftID == tab.id ? "left" : "right"),
+                            "focused": .bool(tab.id == model.selectedID),
+                        ]
+                    }
+                    return .object(entry)
                 }
             }
             return [
                 "id": .string(model.id.uuidString), "profile": .string(app.profiles.profile(id: model.profileID).name),
                 "activeSpace": .string(model.activeSpace.name), "spaces": .array(spaces), "tabs": .array(tabs),
+                "visibleTabs": .array(model.visibleTabs.map { .string($0.id.uuidString) }),
             ]
         }
         let state: JSONValue = [
@@ -157,8 +166,9 @@ extension ControlBridge {
         guard let nsWindow = controller.window, let content = nsWindow.contentView else {
             throw BridgeToolError("the window has nothing to draw")
         }
-        // The selected page must be one the bridge may read; Settings and the New Tab page are Paddle's own.
-        if let tab = controller.model.selectedTab, tab.webView != nil {
+        // Every page on screen (both sides of a split) must be one the bridge may read; Settings and the New Tab page
+        // are Paddle's own.
+        for tab in controller.model.visibleTabs where tab.webView != nil {
             _ = try readableWebView(tab)
         }
         let bounds = content.bounds
@@ -166,9 +176,11 @@ extension ControlBridge {
             throw BridgeToolError("the window couldn't be drawn")
         }
         content.cacheDisplay(in: bounds, to: rep)
-        // A web view draws in another process, so its area comes out blank; WebKit's own snapshot goes there.
-        if let webView = controller.model.selectedTab?.webView, webView.window === nsWindow, !webView.isHiddenOrHasHiddenAncestor,
-           let shot = try? await webView.takeSnapshot(configuration: nil) {
+        // A web view draws in another process, so its area comes out blank; WebKit's own snapshot goes there, for each
+        // page on screen. (Paddle's drawing over a page, such as a split's focus ring, is under the snapshot.)
+        for webView in controller.model.visibleTabs.compactMap(\.webView)
+            where webView.window === nsWindow && !webView.isHiddenOrHasHiddenAncestor {
+            guard let shot = try? await webView.takeSnapshot(configuration: nil) else { continue }
             let frame = webView.convert(webView.bounds, to: content)
             let rect = content.isFlipped
                 ? NSRect(x: frame.minX, y: bounds.height - frame.maxY, width: frame.width, height: frame.height)

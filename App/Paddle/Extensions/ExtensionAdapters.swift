@@ -119,7 +119,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         if !tab.isAwake {
             tab.lastActive = Date()
             tab.wake()
-            if browser.selectedID != tab.id { AppModel.shared.sweepSleepingTabs() }
+            if !browser.isVisible(tab) { AppModel.shared.sweepSleepingTabs() }
         }
         // An awake tab reports the new URL through its observer; one still asleep (an extension page waiting for
         // its extension to load) reports it here.

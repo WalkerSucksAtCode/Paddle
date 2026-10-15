@@ -182,6 +182,8 @@ struct TabButton: View {
     @Environment(\.chromeTheme) private var theme
 
     private var isSelected: Bool { model.selectedID == tab.id }
+    /// Shown now: the selected tab, or the other side of its split.
+    private var isShown: Bool { isSelected || model.visibleTabs.contains { $0.id == tab.id } }
     /// From this width (at text size 100 %) every tab shows its close button.
     static let alwaysCloseWidth: CGFloat = 110
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
@@ -190,6 +192,12 @@ struct TabButton: View {
         HStack(spacing: 6) {
             icon
             if !tab.isPinned {
+                if model.splitSide(of: tab) == .left, let other = model.partner(of: tab) {
+                    Image(systemName: "rectangle.split.2x1")
+                        .chromeFont(size: 10)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Split with \(other.displayTitle)")
+                }
                 if isRenaming {
                     TabRenameField(tab: tab, model: model)
                 } else {
@@ -260,10 +268,11 @@ struct TabButton: View {
             // A theme's selected-tab color replaces the fill; the edge and the hover wash come from its text color.
             let ink: Color = theme?.text ?? .primary
             RoundedRectangle(cornerRadius: 7)
-                .fill(isSelected ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.30 : 0.14)) : ink.opacity(hovering ? 0.06 : 0))
+                .fill(isShown ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.30 : 0.14)) : ink.opacity(hovering ? 0.06 : 0))
                 .overlay {
+                    // The other side of a shown split has a weaker edge than the focused one.
                     RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(ink.opacity(isSelected ? (highContrast ? 0.55 : 0.18) : 0), lineWidth: highContrast ? 1.5 : 1)
+                        .strokeBorder(ink.opacity(isShown ? (highContrast ? 0.55 : 0.18) * (isSelected ? 1 : 0.5) : 0), lineWidth: highContrast ? 1.5 : 1)
                 }
         }
         // A grouped tab carries its group's colour along the bottom edge, so the group's extent shows.
@@ -275,6 +284,7 @@ struct TabButton: View {
                     .padding(.horizontal, 3)
             }
         }
+        .splitBracket(model.splitSide(of: tab), vertical: false, ink: theme?.text ?? .primary)
         .contentShape(Rectangle())
         .onTapGesture { model.select(tab) }
         // A middle click closes the tab, as in other browsers.
@@ -370,7 +380,7 @@ struct TabButton: View {
 
     /// The state, plus the group the tab is in.
     private var spokenValue: String {
-        let state = Self.spokenState(tab, audio: audio)
+        let state = model.spokenSplit(of: tab, after: Self.spokenState(tab, audio: audio))
         guard let group else { return state }
         let name = group.name.isEmpty ? "Unnamed" : group.name
         return state.isEmpty ? "in group \(name)" : "\(state), in group \(name)"

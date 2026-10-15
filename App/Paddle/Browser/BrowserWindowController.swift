@@ -42,6 +42,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         )
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             self?.endAddressEditing(after: event)
+            self?.focusSplitSide(after: event)
             return event
         }
 
@@ -65,6 +66,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             let tabs = restoredTabs(record.tabs)
             model.tabs.append(contentsOf: tabs)
             model.restoreGroups(record.groups)
+            model.restoreSplits(record.splits)
             let index = min(max(record.selectedIndex, 0), tabs.count - 1)
             if tabs.indices.contains(index) { model.select(tabs[index]) }
             model.finishRestore(activeSpaceIndex: record.spaceIndex)
@@ -104,6 +106,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                   let webView = self.model.selectedTab?.webView, webView.window === self.window else { return }
             self.window?.makeFirstResponder(webView)
         }
+    }
+
+    /// A click in the unfocused side of a split focuses that side. The click goes on to the page; the selection changes
+    /// on the next turn, so the page has already taken it.
+    private func focusSplitSide(after event: NSEvent) {
+        let frame = model.splitUnfocusedFrame
+        guard frame != .zero, let window, event.window === window, let root = window.contentView else { return }
+        let local = root.convert(event.locationInWindow, from: nil)
+        let point = root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
+        guard frame.contains(point) else { return }
+        DispatchQueue.main.async { [weak self] in self?.model.focusOtherSplitSide() }
     }
 
     /// A click outside the address field and its suggestions leaves the field, as a click on a web page does by
@@ -364,6 +377,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
     @objc func paddleEditSpace(_ sender: Any?) { model.editSpaceRequest += 1 }
 
+    // MARK: - Split view
+
+    @objc func paddleToggleSplitView(_ sender: Any?) { model.toggleSplitView() }
+    @objc func paddleSwapSplitSides(_ sender: Any?) { model.swapSplitSides() }
+    @objc func paddleFocusOtherSplitSide(_ sender: Any?) { model.focusOtherSplitSide() }
+
     @objc func paddleMoveTabToSpace(_ sender: Any?) {
         guard let tab, let id = (sender as? NSMenuItem)?.representedObject as? String else { return }
         model.moveTab(tab, toSpace: id)
@@ -482,6 +501,12 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleNextSpace(_:)), #selector(paddlePreviousSpace(_:)): return model.spaces.count > 1
         case #selector(paddleDeleteSpace(_:)): return model.spaces.count > 1
         case #selector(paddleMoveTabToSpace(_:)): return tab != nil
+        case #selector(paddleToggleSplitView(_:)):
+            let split = tab.map { model.split(of: $0) != nil } ?? false
+            menuItem.title = split ? "End Split View" : "Split View"
+            return split || (tab.map { !$0.isPinned } ?? false)
+        case #selector(paddleSwapSplitSides(_:)), #selector(paddleFocusOtherSplitSide(_:)):
+            return tab.map { model.split(of: $0) != nil } ?? false
         case #selector(paddleSelectTab(_:)):
             return menuItem.tag == 9 ? !model.tabs.isEmpty : model.tabs.count >= menuItem.tag
         default:

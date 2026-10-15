@@ -166,6 +166,10 @@ enum MainMenu {
         SpacesMenuDelegate.shared.moveItem = moveToSpace
         tabs.delegate = SpacesMenuDelegate.shared
         tabs.addItem(.separator())
+        add(tabs, "toggleSplitView", "Split View", #selector(BrowserWindowController.paddleToggleSplitView(_:)), "\\", [.command, .control])
+        add(tabs, "swapSplitSides", "Swap Sides", #selector(BrowserWindowController.paddleSwapSplitSides(_:)), "")
+        add(tabs, "focusOtherSplitSide", "Focus Other Side", #selector(BrowserWindowController.paddleFocusOtherSplitSide(_:)), "")
+        tabs.addItem(.separator())
         add(tabs, "moveTabLeft", "Move Tab Left", #selector(BrowserWindowController.paddleMoveTabLeft(_:)), String(UnicodeScalar(NSPageUpFunctionKey)!), [.control, .shift])
         add(tabs, "moveTabRight", "Move Tab Right", #selector(BrowserWindowController.paddleMoveTabRight(_:)), String(UnicodeScalar(NSPageDownFunctionKey)!), [.control, .shift])
         add(tabs, "toggleMute", "Mute Tab", #selector(BrowserWindowController.paddleToggleMute(_:)), "m", [.command, .control])

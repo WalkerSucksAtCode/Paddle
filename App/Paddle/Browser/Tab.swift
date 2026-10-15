@@ -173,6 +173,9 @@ final class Tab: Identifiable {
         return url == nil ? "New Tab" : (url?.absoluteString ?? "")
     }
 
+    /// The id session.json names this tab by: kept across launches for a restored tab (`TabRecord.id`).
+    var sessionKey: String { sessionID ?? id.uuidString }
+
     var record: TabRecord {
         let state = (showsExtensionUnavailable || awaitingBlockers ? savedState : webView?.interactionState ?? savedState) as? Data
         return TabRecord(
@@ -485,7 +488,7 @@ final class Tab: Identifiable {
     /// visible tab shows a crash page with a Reload button instead of reloading by itself, so a page that crashes as
     /// it loads can't loop; it says why when WebKit does (too much memory or CPU).
     func processTerminated(reason: TerminationReason? = nil) {
-        guard browser?.selectedTab === self, let webView else {
+        guard browser?.isVisible(self) == true, let webView else {
             sleep()
             return
         }
@@ -571,7 +574,7 @@ final class Tab: Identifiable {
 
     /// True once the tab is selected; false if it closes or sleeps first.
     func waitUntilSelected() async -> Bool {
-        if browser?.selectedID == id { return true }
+        if browser?.isVisible(self) == true { return true }
         return await withCheckedContinuation { selectionWaiters.append($0) }
     }
 

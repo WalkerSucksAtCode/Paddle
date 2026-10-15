@@ -146,17 +146,50 @@ struct BrowserView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let tab = model.selectedTab, tab.settingsPane != nil {
+        Group {
+            splitOrSingle
+        }
+        // The page that moved between hosts takes its container back once the switch has settled (as Responsive
+        // Design Mode does), so neither side is left blank when a split starts or ends. On the Group, which outlives
+        // the branch change.
+        .onChange(of: model.visibleTabs.map(\.id)) { old, new in settleSplit(old: old, new: new) }
+    }
+
+    @ViewBuilder
+    private var splitOrSingle: some View {
+        if let selected = model.selectedTab, let split = model.split(of: selected), let partner = model.partner(of: selected) {
+            let selectedIsLeft = split.leftID == selected.id
+            SplitPanes(model: model, split: split, left: selectedIsLeft ? selected : partner, right: selectedIsLeft ? partner : selected,
+                       focused: selected) { tab, focused in
+                pane(tab, focused: focused)
+            }
+        } else {
+            pane(model.selectedTab, focused: true)
+        }
+    }
+
+    private func settleSplit(old: [UUID], new: [UUID]) {
+        guard old.count == 2 || new.count == 2 else { return }
+        DispatchQueue.main.async {
+            for tab in model.visibleTabs { tab.generation += 1 }
+        }
+    }
+
+    /// What one tab shows in the content area (the whole area, or one side of a split). Only the focused side gets
+    /// Responsive Design Mode and takes the keyboard.
+    @ViewBuilder
+    private func pane(_ tab: Tab?, focused: Bool) -> some View {
+        if let tab, tab.settingsPane != nil {
             SettingsTabView(tab: tab, browser: model)
                 .id(tab.id)
-        } else if let tab = model.selectedTab, let blocked = tab.httpsOnlyBlocked {
+        } else if let tab, let blocked = tab.httpsOnlyBlocked {
             HTTPSOnlyNotice(tab: tab, url: blocked)
                 .id(blocked)
-        } else if let tab = model.selectedTab, tab.url != nil {
-            if tab.responsive != nil {
+        } else if let tab, tab.url != nil {
+            if tab.responsive != nil, focused {
                 ResponsivePage(tab: tab)
             } else {
-                WebContainer(tab: tab, generation: tab.generation)
+                WebContainer(tab: tab, generation: tab.generation, takesKeyboard: focused)
                     .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: tab) }
             }
         } else {

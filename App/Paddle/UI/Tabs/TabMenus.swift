@@ -13,7 +13,13 @@ struct TabContextMenu: View {
         Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") { model.toggleMute(tab) }
             .disabled(!Tab.supportsMuting)
         Button("Put Tab to Sleep") { model.sleep(tab) }
-            .disabled(!tab.isAwake || model.selectedID == tab.id)
+            .disabled(!tab.isAwake || model.isVisible(tab))
+        if model.split(of: tab) != nil {
+            Button("End Split") { model.endSplit(of: tab) }
+        } else if let current = model.selectedTab, current !== tab, !tab.isPinned, !current.isPinned,
+                  model.tabs.contains(where: { $0 === tab }) {
+            Button("Split with Current Tab") { model.makeSplit(current, with: tab) }
+        }
         if !tab.isPinned {
             Divider()
             Button("Add Tab to New Group") { model.addToNewGroup(tab) }
