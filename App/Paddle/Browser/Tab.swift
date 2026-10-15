@@ -12,6 +12,10 @@ final class Tab: Identifiable {
 
     let id = UUID()
     var title: String
+    /// The title the user gave the tab (Rename Tab…); shown instead of the page's title while set.
+    var customTitle: String?
+    /// The `TabGroup` this tab is in, in its window's `BrowserModel.groups`.
+    var groupID: UUID?
     var url: URL?
     /// The link under the pointer, shown in the status bubble. Nil when none.
     var hoveredLink: URL?
@@ -132,6 +136,8 @@ final class Tab: Identifiable {
             isPrivate: isPrivate
         )
         sessionID = record.id
+        customTitle = record.customTitle
+        groupID = record.groupID.flatMap(UUID.init(uuidString:))
         if let date = record.lastActive { lastActive = date }
     }
 
@@ -156,6 +162,7 @@ final class Tab: Identifiable {
     var isAsleep: Bool { !isAwake && settingsPane == nil }
 
     var displayTitle: String {
+        if let customTitle, !customTitle.isEmpty { return customTitle }
         if settingsPane != nil { return "Settings" }
         if !title.isEmpty { return title }
         if let host = url?.host() { return host }
@@ -166,7 +173,7 @@ final class Tab: Identifiable {
         let state = (showsExtensionUnavailable || awaitingBlockers ? savedState : webView?.interactionState ?? savedState) as? Data
         return TabRecord(
             url: url?.absoluteString ?? "", title: title, isPinned: isPinned, interactionState: state,
-            id: sessionID ?? id.uuidString, lastActive: lastActive
+            id: sessionID ?? id.uuidString, lastActive: lastActive, customTitle: customTitle, groupID: groupID?.uuidString
         )
     }
 

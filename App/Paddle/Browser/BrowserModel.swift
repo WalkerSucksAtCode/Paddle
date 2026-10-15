@@ -20,6 +20,12 @@ final class BrowserModel {
 
     var tabs: [Tab] = []
     var selectedID: UUID?
+    /// This window's tab groups. Each group's tabs are adjacent in `tabs`, and a group with no tabs is removed.
+    var groups: [TabGroup] = []
+    /// The tab whose title is being edited in place in the strip.
+    var renamingTabID: UUID?
+    /// The group whose label in the strip is a text field.
+    var renamingGroupID: UUID?
 
     var addressText = ""
     var isEditingAddress = false
@@ -104,10 +110,13 @@ final class BrowserModel {
                 after: index, isPinned: tab.isPinned, pinnedFlags: tabs.map(\.isPinned),
                 openedFromAnchor: tabs.map { $0.opener === anchor }
             )
+            // A tab opened from a grouped tab lands in its group.
+            if let group = TabGroups.groupForInsertion(after: index, slots: groupSlots) { tab.groupID = UUID(uuidString: group) }
             tabs.insert(tab, at: slot)
         } else {
             tabs.append(tab)
         }
+        normalizeGroups()
         AppModel.shared.extensions.tabOpened(tab)
         if select {
             self.select(tab)
@@ -129,6 +138,7 @@ final class BrowserModel {
             previous.returnsToOpener = false
         }
         selectedID = tab.id
+        if let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
         tab.lastActive = now
         tab.wake()
         if previous !== tab { AppModel.shared.extensions.tabActivated(tab, previous: previous) }
@@ -157,7 +167,14 @@ final class BrowserModel {
 
     func selectNeighbor(offset: Int) {
         guard let current = selectedTab, let index = tabs.firstIndex(where: { $0 === current }), !tabs.isEmpty else { return }
-        select(tabs[(index + offset + tabs.count) % tabs.count])
+        // Tabs of collapsed groups aren't in the strip, so they are skipped.
+        for step in 1...tabs.count {
+            let candidate = tabs[((index + offset * step) % tabs.count + tabs.count) % tabs.count]
+            if group(of: candidate)?.isCollapsed != true {
+                select(candidate)
+                return
+            }
+        }
     }
 
     // MARK: - Closing
@@ -172,8 +189,10 @@ final class BrowserModel {
             if closedTabs.count > 50 { closedTabs.removeFirst() }
         }
         let wasSelected = tab.id == selectedID
+        if renamingTabID == tab.id { renamingTabID = nil }
         tab.sleep()
         tabs.remove(at: index)
+        normalizeGroups()
         AppModel.shared.extensions.tabClosed(tab, windowIsClosing: tabs.isEmpty)
 
         if tabs.isEmpty {
@@ -185,7 +204,7 @@ final class BrowserModel {
             if returnToOpener ?? tab.returnsToOpener, let opener = tab.opener, tabs.contains(where: { $0 === opener }) {
                 select(opener)
             } else {
-                select(tabs[min(index, tabs.count - 1)])
+                select(nearestVisibleTab(to: min(index, tabs.count - 1)))
             }
         }
         AppModel.shared.sessionChanged()
@@ -270,10 +289,12 @@ final class BrowserModel {
 
     func togglePin(_ tab: Tab) {
         guard let from = tabs.firstIndex(where: { $0 === tab }) else { return }
+        if renamingTabID == tab.id { renamingTabID = nil }
         tab.isPinned.toggle()
         tabs.remove(at: from)
         let to = TabOrder.pinBoundary(tabs.map(\.isPinned))
         tabs.insert(tab, at: to)
+        normalizeGroups()
         let extensions = AppModel.shared.extensions
         extensions.tabChanged(tab, .pinned)
         if to != from { extensions.tabMoved(tab, from: from) }
@@ -291,6 +312,7 @@ final class BrowserModel {
         guard to != from else { return }
         others.insert(tab, at: to)
         tabs = others
+        normalizeGroups()
         AppModel.shared.extensions.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
     }
@@ -304,10 +326,19 @@ final class BrowserModel {
     /// Returns false when the drop is refused, so the drag animates back.
     @discardableResult
     func move(_ tab: Tab, onto target: Tab) -> Bool {
+        // A dragged tab takes the group of the tab it lands on.
+        reorder(tab, onto: target, groupID: target.groupID)
+    }
+
+    private func reorder(_ tab: Tab, onto target: Tab, groupID: UUID?) -> Bool {
         guard tab !== target, tab.isPinned == target.isPinned,
               let from = tabs.firstIndex(where: { $0 === tab }),
               let to = tabs.firstIndex(where: { $0 === target }) else { return false }
         TabOrder.move(&tabs, from: from, onto: to)
+        tab.groupID = groupID
+        normalizeGroups()
+        // Never leave the selection hidden in a collapsed group.
+        if tab.id == selectedID, let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
         AppModel.shared.extensions.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
         return true
@@ -316,14 +347,213 @@ final class BrowserModel {
     /// Whether Move Tab Left/Right (`offset` -1/+1) can move the selected tab: not past either end or across the
     /// pinned/unpinned boundary.
     func canMoveSelectedTab(by offset: Int) -> Bool {
-        guard let tab = selectedTab, let index = tabs.firstIndex(where: { $0 === tab }), tabs.indices.contains(index + offset) else { return false }
-        return tabs[index + offset].isPinned == tab.isPinned
+        guard let tab = selectedTab else { return false }
+        return moveDestination(of: tab, by: offset) != nil
+    }
+
+    /// Where Move Tab Left/Right puts `tab`: the neighbour it lands on and the group it ends up in. An ungrouped tab
+    /// hops over a whole collapsed group instead of joining it; a grouped tab at its group's edge leaves the group
+    /// (hopping a group it meets there).
+    private func moveDestination(of tab: Tab, by offset: Int) -> (target: Tab, groupID: UUID?)? {
+        guard let index = tabs.firstIndex(where: { $0 === tab }), tabs.indices.contains(index + offset) else { return nil }
+        let neighbour = tabs[index + offset]
+        guard neighbour.isPinned == tab.isPinned else { return nil }
+        guard neighbour.groupID != tab.groupID else { return (neighbour, neighbour.groupID) }
+        let neighbourGroup = group(of: neighbour)
+        guard tab.groupID != nil || neighbourGroup?.isCollapsed == true, let neighbourGroup else {
+            // Leaving a group onto an ungrouped tab, or joining an open group.
+            return (neighbour, tab.groupID != nil ? nil : neighbour.groupID)
+        }
+        let members = tabs(in: neighbourGroup)
+        guard let far = offset > 0 ? members.last : members.first else { return nil }
+        return (far, nil)
+    }
+
+    /// The tab nearest `index` that the strip shows (not inside a collapsed group); `tabs[index]` when none is.
+    private func nearestVisibleTab(to index: Int) -> Tab {
+        let visible = tabs.indices.filter { group(of: tabs[$0])?.isCollapsed != true }
+        return visible.min { abs($0 - index) < abs($1 - index) }.map { tabs[$0] } ?? tabs[index]
+    }
+
+    /// Tells extensions about every tab whose index differs from `before`.
+    private func reportMoves(from before: [Tab]) {
+        for (to, tab) in tabs.enumerated() {
+            if let from = before.firstIndex(where: { $0 === tab }), from != to {
+                AppModel.shared.extensions.tabMoved(tab, from: from)
+            }
+        }
     }
 
     /// Moves the selected tab one place left (-1) or right (+1); no wrap-around.
     func moveSelectedTab(by offset: Int) {
-        guard canMoveSelectedTab(by: offset), let tab = selectedTab, let index = tabs.firstIndex(where: { $0 === tab }) else { return }
-        move(tab, onto: tabs[index + offset])
+        guard let tab = selectedTab, let destination = moveDestination(of: tab, by: offset) else { return }
+        reorder(tab, onto: destination.target, groupID: destination.groupID)
+    }
+
+    // MARK: - Tab groups
+
+    private var groupSlots: [TabSlot] { tabs.map { TabSlot(groupID: $0.groupID?.uuidString, isPinned: $0.isPinned) } }
+
+    func group(of tab: Tab) -> TabGroup? {
+        guard let id = tab.groupID else { return nil }
+        return groups.first { $0.id == id }
+    }
+
+    /// The group's tabs in strip order.
+    func tabs(in group: TabGroup) -> [Tab] {
+        tabs.filter { $0.groupID == group.id }
+    }
+
+    /// Makes the rules hold again after tabs changed: pinned tabs and tabs of unknown groups lose their group,
+    /// each group's tabs become adjacent (at the place of its first one), and groups left empty are removed.
+    /// Callers report the change (session, extensions).
+    private func normalizeGroups() {
+        let known = Set(groups.map(\.id))
+        for tab in tabs where tab.isPinned || (tab.groupID.map { !known.contains($0) } ?? false) { tab.groupID = nil }
+        let order = TabGroups.contiguousOrder(groupSlots)
+        if order != Array(tabs.indices) { tabs = order.map { tabs[$0] } }
+        let live = Set(tabs.compactMap(\.groupID))
+        if groups.contains(where: { !live.contains($0.id) }) { groups.removeAll { !live.contains($0.id) } }
+        if let renaming = renamingGroupID, !groups.contains(where: { $0.id == renaming }) { renamingGroupID = nil }
+    }
+
+    /// Session restore: the saved groups, for tabs that were appended with their `groupID`s.
+    func restoreGroups(_ records: [TabGroupRecord]) {
+        groups = records.compactMap(TabGroup.init(record:))
+        normalizeGroups()
+    }
+
+    /// Groups `tabs` (pinned ones are skipped) into a new group, adjacent at the first one's place. Nil when no
+    /// unpinned tab is left. The colour is the first one no other group in this window uses.
+    @discardableResult
+    func createGroup(with members: [Tab], name: String = "", color: TabGroupColor? = nil) -> TabGroup? {
+        let members = tabs.filter { tab in !tab.isPinned && members.contains { $0 === tab } }
+        guard !members.isEmpty else { return nil }
+        let used = Set(groups.map(\.color))
+        let group = TabGroup(name: name, color: color ?? TabGroupColor.allCases.first { !used.contains($0) } ?? .grey)
+        let before = tabs
+        groups.append(group)
+        for tab in members { tab.groupID = group.id }
+        normalizeGroups()
+        reportMoves(from: before)
+        AppModel.shared.sessionChanged()
+        return group
+    }
+
+    /// Add Tab to New Group: groups `tab` alone and opens the new group's name field, as Chrome opens its editor.
+    func addToNewGroup(_ tab: Tab) {
+        if let group = createGroup(with: [tab]) { renamingGroupID = group.id }
+    }
+
+    /// A new tab page right after the group's last tab, inside the group (the group opens if it was collapsed).
+    func newTab(in group: TabGroup) {
+        guard let last = tabs(in: group).last else { return }
+        group.isCollapsed = false
+        let page = URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+        let tab = newTab(url: page, after: last)
+        tab.opener = nil
+        add(tab, to: group)
+        if page == nil { focusAddress() }
+    }
+
+    /// Moves `tab` to the end of the group's tabs.
+    func add(_ tab: Tab, to group: TabGroup) {
+        guard !tab.isPinned, groups.contains(where: { $0 === group }),
+              let from = tabs.firstIndex(where: { $0 === tab }) else { return }
+        let before = tabs
+        tabs.remove(at: from)
+        tab.groupID = group.id
+        tabs.insert(tab, at: tabs.lastIndex { $0.groupID == group.id }.map { $0 + 1 } ?? min(from, tabs.count))
+        if group.isCollapsed, tab.id == selectedID { group.isCollapsed = false }
+        normalizeGroups()
+        reportMoves(from: before)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Takes `tab` out of its group, to just after the group's last tab.
+    func removeFromGroup(_ tab: Tab) {
+        guard let old = group(of: tab), let from = tabs.firstIndex(where: { $0 === tab }) else { return }
+        let before = tabs
+        tabs.remove(at: from)
+        tab.groupID = nil
+        tabs.insert(tab, at: tabs.lastIndex { $0.groupID == old.id }.map { $0 + 1 } ?? from)
+        normalizeGroups()
+        reportMoves(from: before)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Dissolves the group; its tabs stay where they are.
+    func ungroup(_ group: TabGroup) {
+        for tab in tabs(in: group) { tab.groupID = nil }
+        normalizeGroups()
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Closes the group's tabs, one by one into the recently closed list. A window left with no tabs closes.
+    func closeGroup(_ group: TabGroup) {
+        let members = tabs(in: group)
+        // Select a tab that stays first, so closing the selected one doesn't wake neighbours that are about to close too.
+        if members.contains(where: { $0.id == selectedID }), let outside = nearestTab(outside: group, visibleOnly: true) ?? nearestTab(outside: group, visibleOnly: false) { select(outside) }
+        for tab in members { close(tab) }
+    }
+
+    func toggleCollapsed(_ group: TabGroup) {
+        if group.isCollapsed {
+            group.isCollapsed = false
+        } else {
+            // The selected tab would vanish with its group: another visible tab takes the selection, and with none
+            // the group stays open.
+            if selectedTab.map({ $0.groupID == group.id }) == true {
+                guard let other = nearestTab(outside: group, visibleOnly: true) else { return }
+                select(other)
+            }
+            group.isCollapsed = true
+        }
+        AppModel.shared.sessionChanged()
+    }
+
+    /// The tab closest to the selected one that isn't in `group`, optionally only among tabs shown in the strip.
+    private func nearestTab(outside group: TabGroup, visibleOnly: Bool) -> Tab? {
+        guard let selected = tabs.firstIndex(where: { $0.id == selectedID }) else { return nil }
+        let candidates = tabs.indices.filter { index in
+            let tab = tabs[index]
+            return tab.groupID != group.id && !(visibleOnly && self.group(of: tab)?.isCollapsed == true)
+        }
+        return candidates.min { abs($0 - selected) < abs($1 - selected) }.map { tabs[$0] }
+    }
+
+    func renameGroup(_ group: TabGroup, to name: String) {
+        group.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if renamingGroupID == group.id { renamingGroupID = nil }
+        AppModel.shared.sessionChanged()
+    }
+
+    func setColor(_ color: TabGroupColor, of group: TabGroup) {
+        group.color = color
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Moves the group's tabs to a new window, where they form the same group, expanded.
+    func moveGroupToNewWindow(_ group: TabGroup) {
+        let members = tabs(in: group)
+        guard !members.isEmpty else { return }
+        let controller = AppModel.shared.openWindow(moving: members)
+        let moved = TabGroup(id: group.id, name: group.name, color: group.color)
+        controller.model.groups = [moved]
+        for tab in members { tab.groupID = moved.id }
+        controller.model.normalizeGroups()
+        AppModel.shared.sessionChanged()
+    }
+
+    // MARK: - Renaming
+
+    /// Rename Tab…: the user's title for `tab`; empty or nil goes back to the page's title.
+    func rename(_ tab: Tab, to title: String?) {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // The page's own title as a name would stop following navigation: that is no custom name.
+        tab.customTitle = trimmed.isEmpty || trimmed == tab.title ? nil : trimmed
+        if renamingTabID == tab.id { renamingTabID = nil }
+        AppModel.shared.sessionChanged()
     }
 
     // MARK: - Moving between windows (`AppModel.move`)
@@ -334,9 +564,11 @@ final class BrowserModel {
     func detach(_ tab: Tab) -> Int? {
         guard let index = tabs.firstIndex(where: { $0 === tab }) else { return nil }
         let wasSelected = tab.id == selectedID
+        if renamingTabID == tab.id { renamingTabID = nil }
         tabs.remove(at: index)
+        normalizeGroups()
         if wasSelected {
-            if tabs.isEmpty { selectedID = nil } else { select(tabs[min(index, tabs.count - 1)]) }
+            if tabs.isEmpty { selectedID = nil } else { select(nearestVisibleTab(to: min(index, tabs.count - 1))) }
         }
         return index
     }
@@ -349,6 +581,8 @@ final class BrowserModel {
         let boundary = TabOrder.pinBoundary(tabs.map(\.isPinned))
         let to = tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), tabs.count)
         tabs.insert(tab, at: to)
+        // The group stays behind unless this window has it (`moveGroupToNewWindow` gives it over afterwards).
+        normalizeGroups()
     }
 
     // MARK: - Navigation
@@ -527,7 +761,7 @@ final class BrowserModel {
     var record: WindowRecord {
         WindowRecord.saving(
             tabs, selected: { $0.id == self.selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
-            frame: controller?.window.map { NSStringFromRect($0.frame) }
+            frame: controller?.window.map { NSStringFromRect($0.frame) }, groups: groups.map(\.record)
         )
     }
 }

@@ -58,6 +58,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                 tab.browser = model
                 model.tabs.append(tab)
             }
+            model.restoreGroups(record.groups)
             let index = min(max(record.selectedIndex, 0), tabs.count - 1)
             if tabs.indices.contains(index) { model.select(tabs[index]) }
         } else if let front = AppModel.shared.frontWindow?.window {
@@ -92,7 +93,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func focusWebView() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let webView = self.model.selectedTab?.webView, webView.window === self.window else { return }
+            guard let self, self.model.renamingTabID == nil, self.model.renamingGroupID == nil,
+                  let webView = self.model.selectedTab?.webView, webView.window === self.window else { return }
             self.window?.makeFirstResponder(webView)
         }
     }
@@ -288,6 +290,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddlePreviousTab(_ sender: Any?) { model.selectNeighbor(offset: -1) }
     @objc func paddleTogglePin(_ sender: Any?) { if let tab { model.togglePin(tab) } }
     @objc func paddleDuplicateTab(_ sender: Any?) { if let tab { model.duplicate(tab) } }
+    @objc func paddleRenameTab(_ sender: Any?) { if let tab { model.renamingTabID = tab.id } }
+    @objc func paddleAddTabToNewGroup(_ sender: Any?) { if let tab, !tab.isPinned { model.addToNewGroup(tab) } }
+    @objc func paddleRemoveTabFromGroup(_ sender: Any?) { if let tab { model.removeFromGroup(tab) } }
     @objc func paddleMoveTabLeft(_ sender: Any?) { model.moveSelectedTab(by: -1) }
     @objc func paddleMoveTabRight(_ sender: Any?) { model.moveSelectedTab(by: 1) }
     @objc func paddleToggleMute(_ sender: Any?) { if let tab { model.toggleMute(tab) } }
@@ -339,6 +344,9 @@ extension BrowserWindowController: NSMenuItemValidation {
         switch menuItem.action {
         case #selector(paddleBack(_:)): return tab?.canGoBack ?? false
         case #selector(paddleForward(_:)): return tab?.canGoForward ?? false
+        case #selector(paddleRenameTab(_:)): return tab != nil
+        case #selector(paddleAddTabToNewGroup(_:)): return tab.map { !$0.isPinned } ?? false
+        case #selector(paddleRemoveTabFromGroup(_:)): return tab?.groupID != nil
         case #selector(paddleTogglePin(_:)):
             menuItem.title = tab?.isPinned == true ? "Unpin Tab" : "Pin Tab"
             return tab != nil

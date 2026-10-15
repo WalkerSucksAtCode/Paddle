@@ -126,13 +126,42 @@ private struct TabStrip: View {
     private let leadingInset: CGFloat = 78
     private let pinnedWidth: CGFloat = 40
 
+    /// One thing in the strip: a group's label or a tab. The tabs of a collapsed group are left out.
+    private struct StripItem: Identifiable {
+        var group: TabGroup?
+        var tab: Tab?
+        var id: UUID { group?.id ?? tab?.id ?? UUID() }
+    }
+
+    /// The strip in order: a label before each group's first tab, and no tabs of collapsed groups.
+    private var stripItems: [StripItem] {
+        var items: [StripItem] = []
+        var lastGroup: UUID?
+        for tab in model.tabs {
+            if let group = model.group(of: tab) {
+                if group.id != lastGroup { items.append(StripItem(group: group)) }
+                if !group.isCollapsed { items.append(StripItem(tab: tab)) }
+            } else {
+                items.append(StripItem(tab: tab))
+            }
+            lastGroup = tab.groupID
+        }
+        return items
+    }
+
+    private func labelWidth(_ group: TabGroup) -> CGFloat {
+        TabGroupLabel.width(for: group, count: model.tabs(in: group).count, renaming: model.renamingGroupID == group.id)
+    }
+
     var body: some View {
         GeometryReader { geometry in
+            let items = stripItems
             let pinnedCount = CGFloat(model.tabs.filter(\.isPinned).count)
-            let unpinnedCount = CGFloat(model.tabs.count) - pinnedCount
-            let available = geometry.size.width - leadingInset - 44 - pinnedCount * (pinnedWidth + 2)
-            let width = unpinnedCount == 0 ? 0 : min(240, max(110, available / unpinnedCount - 2))
-            let tabsWidth = pinnedCount * pinnedWidth + unpinnedCount * width + 2 * max(0, CGFloat(model.tabs.count) - 1)
+            let shownUnpinned = CGFloat(items.filter { $0.tab.map { !$0.isPinned } ?? false }.count)
+            let labelsWidth = items.reduce(CGFloat(0)) { $0 + ($1.group.map(labelWidth) ?? 0) }
+            let available = geometry.size.width - leadingInset - 44 - pinnedCount * (pinnedWidth + 2) - labelsWidth - 2 * CGFloat(items.filter { $0.tab == nil }.count)
+            let width = shownUnpinned == 0 ? 0 : min(240, max(110, available / shownUnpinned - 2))
+            let tabsWidth = pinnedCount * pinnedWidth + shownUnpinned * width + labelsWidth + 2 * max(0, CGFloat(items.count) - 1)
 
             HStack(spacing: 0) {
                 Color.clear.frame(width: leadingInset)
@@ -140,9 +169,14 @@ private struct TabStrip: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
-                            ForEach(model.tabs) { tab in
-                                TabButton(tab: tab, model: model, width: tab.isPinned ? pinnedWidth : width)
-                                    .accessibilityRotorEntry(id: tab.id, in: rotor)
+                            ForEach(items) { item in
+                                if let group = item.group {
+                                    TabGroupLabel(group: group, model: model)
+                                } else if let tab = item.tab {
+                                    TabButton(tab: tab, model: model, group: model.group(of: tab), isRenaming: model.renamingTabID == tab.id,
+                                              width: tab.isPinned ? pinnedWidth : width)
+                                        .accessibilityRotorEntry(id: tab.id, in: rotor)
+                                }
                             }
                         }
                         .padding(.vertical, 5)
@@ -155,8 +189,8 @@ private struct TabStrip: View {
                     .accessibilityLabel("Tabs")
                     // VoiceOver's rotor lists the tabs with their state ("selected", "asleep", "muted").
                     .accessibilityRotor("Tabs") {
-                        ForEach(model.tabs) { tab in
-                            AccessibilityRotorEntry(Text(TabButton.spokenEntry(tab, selected: model.selectedID == tab.id)), id: tab.id, in: rotor)
+                        ForEach(items.compactMap(\.tab)) { tab in
+                            AccessibilityRotorEntry(Text(TabButton.spokenEntry(tab, selected: model.selectedID == tab.id, group: model.group(of: tab))), id: tab.id, in: rotor)
                         }
                     }
                     // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
@@ -209,14 +243,69 @@ private struct WindowDragArea: NSViewRepresentable {
     func updateNSView(_ view: DragView, context: Context) {}
 }
 
+/// `.draggable` only while the tab is not being renamed, so a drag inside the title field selects text.
+private struct TabDrag: ViewModifier {
+    let id: String
+    let enabled: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.draggable(id) } else { content }
+    }
+}
+
+/// The text field for renaming a tab, in the tab itself or (pinned tabs) in a popover. Return or focus loss keeps
+/// the edited name (the page's title back when it is empty or unchanged from what was shown); Escape cancels.
+private struct TabRenameField: View {
+    let tab: Tab
+    let model: BrowserModel
+    @State private var draft = ""
+    @State private var selection: TextSelection?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("Tab name", text: $draft, selection: $selection)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .focused($focused)
+            .onSubmit { commit() }
+            .onKeyPress(.escape) {
+                model.renamingTabID = nil
+                return .handled
+            }
+            .onChange(of: focused) { _, focused in
+                if !focused { commit() }
+            }
+            .onAppear {
+                draft = tab.displayTitle
+                // Next turn, so the click that started the rename can't take the focus straight back.
+                DispatchQueue.main.async {
+                    focused = true
+                    selection = TextSelection(range: draft.startIndex..<draft.endIndex)
+                }
+            }
+    }
+
+    /// Escape clears `renamingTabID` first, so it never lands here.
+    private func commit() {
+        guard model.renamingTabID == tab.id else { return }
+        if draft != tab.displayTitle { model.rename(tab, to: draft) }
+        model.renamingTabID = nil
+    }
+}
+
 private struct TabButton: View {
     let tab: Tab
     let model: BrowserModel
+    /// The tab's group and whether its title is being edited, read once by the strip so an unrelated change to
+    /// `groups` or `renamingTabID` doesn't redraw every tab.
+    let group: TabGroup?
+    let isRenaming: Bool
     let width: CGFloat
     @State private var hovering = false
     /// The tab's memory when the pointer arrived, for the tooltip. Read in the hover handler rather than in
     /// `body`, so a new sample doesn't redraw every tab button.
     @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
+    @Environment(\.colorScheme) private var scheme
 
     private var isSelected: Bool { model.selectedID == tab.id }
     /// From this width every tab shows its close button.
@@ -227,11 +316,17 @@ private struct TabButton: View {
         HStack(spacing: 6) {
             icon
             if !tab.isPinned {
-                Text(tab.displayTitle)
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
+                if isRenaming {
+                    TabRenameField(tab: tab, model: model)
+                } else {
+                    Text(tab.displayTitle)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
+                        // Alongside the tab's own click, so a single click still selects at once.
+                        .simultaneousGesture(TapGesture(count: 2).onEnded { model.renamingTabID = tab.id })
+                }
                 Spacer(minLength: 0)
                 if audio != .none {
                     Button {
@@ -267,6 +362,15 @@ private struct TabButton: View {
         }
         .padding(.horizontal, tab.isPinned ? 0 : 8)
         .frame(width: width, height: 28)
+        // A pinned tab has no room for a field: its name is edited in a popover.
+        .popover(isPresented: Binding(
+            get: { tab.isPinned && isRenaming },
+            set: { if !$0, model.renamingTabID == tab.id { model.renamingTabID = nil } }
+        ), arrowEdge: .bottom) {
+            TabRenameField(tab: tab, model: model)
+                .padding(8)
+                .frame(width: 220)
+        }
         .background {
             // The selected tab is lighter than the strip in dark mode and darker in light mode, with an edge, so it
             // stands out by brightness alone: the window background colour it used before matched the strip.
@@ -277,6 +381,15 @@ private struct TabButton: View {
                         .strokeBorder(Color.primary.opacity(isSelected ? 0.18 : 0), lineWidth: 1)
                 }
         }
+        // A grouped tab carries its group's colour along the bottom edge, so the group's extent shows.
+        .overlay(alignment: .bottom) {
+            if let group {
+                // 3 pt with a faint edge: the lightest fills (yellow, pink, cyan) alone are under 3:1 against the strip.
+                Rectangle().fill(group.color.fill(scheme)).frame(height: 3)
+                    .overlay(Rectangle().strokeBorder(Color.primary.opacity(0.35), lineWidth: 0.5))
+                    .padding(.horizontal, 3)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { model.select(tab) }
         // A middle click closes the tab, as in other browsers.
@@ -284,14 +397,16 @@ private struct TabButton: View {
         // With keyboard navigation on (System Settings > Keyboard), Tab reaches each tab; Space or Return selects it.
         .focusable(interactions: .activate)
         .onKeyPress(keys: [.space, .return]) { _ in
+            if isRenaming { return .ignored }
             model.select(tab)
             return .handled
         }
         // One element for VoiceOver: the title, its state as the value, and the tab's actions.
-        .accessibilityElement(children: .ignore)
+        // While the title is a text field in the tab, VoiceOver reaches the field instead.
+        .accessibilityElement(children: isRenaming && !tab.isPinned ? .contain : .ignore)
         .accessibilityLabel(tab.displayTitle)
-        .accessibilityValue(Self.spokenState(tab, audio: audio))
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityValue(spokenValue)
+        .accessibilityAddTraits(isRenaming && !tab.isPinned ? [] : isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { model.select(tab) }
         .accessibilityAction(named: "Close Tab") { model.close(tab) }
         .accessibilityAction(named: tab.isPinned ? "Unpin Tab" : "Pin Tab") { model.togglePin(tab) }
@@ -303,7 +418,7 @@ private struct TabButton: View {
             if inside { hoverMemory = tab.memoryBytes.map { ($0, tab.sharesProcess) } }
         }
         .help(tooltip)
-        .draggable(tab.id.uuidString)
+        .modifier(TabDrag(id: tab.id.uuidString, enabled: !isRenaming))
         .dropDestination(for: String.self) { items, _ in
             guard let id = items.first.flatMap(UUID.init(uuidString:)),
                   let dragged = model.tabs.first(where: { $0.id == id }) else { return false }
@@ -311,11 +426,25 @@ private struct TabButton: View {
         }
         .contextMenu {
             Button(tab.isPinned ? "Unpin Tab" : "Pin Tab") { model.togglePin(tab) }
+            Button("Rename Tab…") { model.renamingTabID = tab.id }
             Button("Duplicate Tab") { model.duplicate(tab) }
             Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") { model.toggleMute(tab) }
                 .disabled(!Tab.supportsMuting)
             Button("Put Tab to Sleep") { model.sleep(tab) }
                 .disabled(!tab.isAwake || isSelected)
+            if !tab.isPinned {
+                Divider()
+                Button("Add Tab to New Group") { model.addToNewGroup(tab) }
+                let others = model.groups.filter { $0.id != tab.groupID }
+                if !others.isEmpty {
+                    Menu("Add Tab to Group") {
+                        ForEach(others) { group in
+                            Button(group.name.isEmpty ? "Unnamed (\(group.color.title))" : group.name) { model.add(tab, to: group) }
+                        }
+                    }
+                }
+                if tab.groupID != nil { Button("Remove from Group") { model.removeFromGroup(tab) } }
+            }
             Divider()
             Button("Close Tab") { model.close(tab) }
             Button("Close Other Tabs") { model.closeOthers(tab) }
@@ -371,14 +500,24 @@ private struct TabButton: View {
     }
 
     /// A rotor entry: the title, then "selected" and the state.
-    static func spokenEntry(_ tab: Tab, selected: Bool) -> String {
+    static func spokenEntry(_ tab: Tab, selected: Bool, group: TabGroup? = nil) -> String {
         let audio = AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted)
-        let state = [selected ? "selected" : "", spokenState(tab, audio: audio)].filter { !$0.isEmpty }
+        let grouped = group.map { "in group \($0.name.isEmpty ? "Unnamed" : $0.name)" } ?? ""
+        let state = [selected ? "selected" : "", spokenState(tab, audio: audio), grouped].filter { !$0.isEmpty }
         return ([tab.displayTitle] + state).joined(separator: ", ")
+    }
+
+    /// The state, plus the group the tab is in.
+    private var spokenValue: String {
+        let state = Self.spokenState(tab, audio: audio)
+        guard let group else { return state }
+        let name = group.name.isEmpty ? "Unnamed" : group.name
+        return state.isEmpty ? "in group \(name)" : "\(state), in group \(name)"
     }
 
     private var tooltip: String {
         var lines = [tab.displayTitle]
+        if let custom = tab.customTitle, !custom.isEmpty { lines.append("Page: \(tab.title.isEmpty ? (tab.url?.host() ?? "") : tab.title)") }
         if let url = tab.url { lines.append(url.absoluteString) }
         switch audio {
         case .playing: lines.append("Playing audio")

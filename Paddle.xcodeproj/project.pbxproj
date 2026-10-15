@@ -14,6 +14,7 @@
 		11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796C7AE983E4F84683CFAFB2 /* Tab.swift */; };
 		13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5298F39D453DAE403A0126 /* BrowserModel.swift */; };
 		155D75229E6FB2CCF84341A8 /* Paths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E5FE7EECAC5C0800D39F69 /* Paths.swift */; };
+		1920D017B26AF96178C1FA0B /* TabGroupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E58CA20A0866C0A7A9A100F9 /* TabGroupViews.swift */; };
 		1AB913A91D0FBFC786D5FE27 /* ExtensionPopups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FF180A042514269EA95F84 /* ExtensionPopups.swift */; };
 		20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */; };
 		2179624B092B340F7AE1DC68 /* ExtensionPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */; };
@@ -61,6 +62,7 @@
 		BBFDDBB44717A20FCF8E6112 /* BrowserImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA5FEBD20A366AEBD2ED6A5 /* BrowserImport.swift */; };
 		BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */; };
 		BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0FE4D946C5EE2383EBBDC /* TabsMemoryPane.swift */; };
+		C5855246A4598259AFFA4707 /* TabGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37018AF63521DBC068EE5C08 /* TabGroup.swift */; };
 		CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */; };
 		DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488DDEB21AAB3C480FC2F0F /* AppModel.swift */; };
 		DBA96E6E8A40CCD5B60D2146 /* SettingsModel+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */; };
@@ -90,6 +92,7 @@
 		2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Scriptlets.swift; sourceTree = "<group>"; };
 		352D2127E14005724BE87B4B /* AdvancedPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedPane.swift; sourceTree = "<group>"; };
 		363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreInstallViews.swift; sourceTree = "<group>"; };
+		37018AF63521DBC068EE5C08 /* TabGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroup.swift; sourceTree = "<group>"; };
 		38FF180A042514269EA95F84 /* ExtensionPopups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPopups.swift; sourceTree = "<group>"; };
 		3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionToolbar.swift; sourceTree = "<group>"; };
 		3E7ED48B391F11998BD4520C /* PrivacySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettings.swift; sourceTree = "<group>"; };
@@ -134,6 +137,7 @@
 		E05B63171469865BF8E8104E /* Paddle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paddle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteNotifications.swift; sourceTree = "<group>"; };
 		E20AE5E86BBFB8E7575CB581 /* SettingsModel+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Extensions.swift"; sourceTree = "<group>"; };
+		E58CA20A0866C0A7A9A100F9 /* TabGroupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroupViews.swift; sourceTree = "<group>"; };
 		EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaddleApp.swift; sourceTree = "<group>"; };
 		EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPSOnlyNotice.swift; sourceTree = "<group>"; };
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
@@ -218,6 +222,7 @@
 				9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */,
 				EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */,
 				363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */,
+				E58CA20A0866C0A7A9A100F9 /* TabGroupViews.swift */,
 				7085510A84436857BAE04E06 /* TabSearch.swift */,
 				42F0C8E8DA7F5F5F5A041EAB /* ToolbarMenu.swift */,
 				42172FC8B6D57C89A373242D /* WebContainer.swift */,
@@ -232,6 +237,7 @@
 				EE5298F39D453DAE403A0126 /* BrowserModel.swift */,
 				67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */,
 				796C7AE983E4F84683CFAFB2 /* Tab.swift */,
+				37018AF63521DBC068EE5C08 /* TabGroup.swift */,
 			);
 			path = Browser;
 			sourceTree = "<group>";
@@ -449,6 +455,8 @@
 				AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */,
 				7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */,
 				11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */,
+				C5855246A4598259AFFA4707 /* TabGroup.swift in Sources */,
+				1920D017B26AF96178C1FA0B /* TabGroupViews.swift in Sources */,
 				E209289BB56030896D588C07 /* TabSearch.swift in Sources */,
 				20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */,
 				BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */,

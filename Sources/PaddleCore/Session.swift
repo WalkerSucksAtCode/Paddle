@@ -15,11 +15,24 @@ public struct WindowRecord: Codable, Sendable, Equatable {
     public var selectedIndex: Int
     /// `NSStringFromRect` form of the window frame.
     public var frame: String?
+    /// The window's tab groups; tabs name theirs by `TabRecord.groupID`. Files from before groups have none.
+    public var groups: [TabGroupRecord]
 
-    public init(tabs: [TabRecord], selectedIndex: Int, frame: String? = nil) {
+    public init(tabs: [TabRecord], selectedIndex: Int, frame: String? = nil, groups: [TabGroupRecord] = []) {
         self.tabs = tabs
         self.selectedIndex = selectedIndex
         self.frame = frame
+        self.groups = groups
+    }
+
+    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tabs = try c.decode([TabRecord].self, forKey: .tabs)
+        selectedIndex = try c.decode(Int.self, forKey: .selectedIndex)
+        frame = try c.decodeIfPresent(String.self, forKey: .frame)
+        groups = try c.decodeIfPresent([TabGroupRecord].self, forKey: .groups) ?? []
     }
 }
 
@@ -36,10 +49,14 @@ public struct TabRecord: Codable, Sendable, Equatable {
     public var lastActive: Date?
     /// The tab's state file in sessions/, as `SessionStore.save` wrote it; nil in memory.
     public var stateFile: String?
+    /// The title the user gave the tab (Rename Tab…); it replaces the page's title in the strip.
+    public var customTitle: String?
+    /// The id of the `TabGroupRecord` this tab belongs to.
+    public var groupID: String?
 
     public init(
         url: String, title: String, isPinned: Bool = false, interactionState: Data? = nil, id: String? = nil,
-        lastActive: Date? = nil, stateFile: String? = nil
+        lastActive: Date? = nil, stateFile: String? = nil, customTitle: String? = nil, groupID: String? = nil
     ) {
         self.url = url
         self.title = title
@@ -48,5 +65,7 @@ public struct TabRecord: Codable, Sendable, Equatable {
         self.id = id
         self.lastActive = lastActive
         self.stateFile = stateFile
+        self.customTitle = customTitle
+        self.groupID = groupID
     }
 }

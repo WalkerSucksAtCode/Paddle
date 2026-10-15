@@ -11,9 +11,10 @@ extension SessionRecord {
 
 extension WindowRecord {
     /// A window's record with only the tabs worth restoring (`isSaved`). When the selected tab isn't saved, the
-    /// nearest saved tab before it is selected instead (or the first).
+    /// nearest saved tab before it is selected instead (or the first). Only groups with a saved tab are kept.
     public static func saving<Tab>(
-        _ tabs: [Tab], selected: (Tab) -> Bool, isSaved: (Tab) -> Bool, record: (Tab) -> TabRecord, frame: String?
+        _ tabs: [Tab], selected: (Tab) -> Bool, isSaved: (Tab) -> Bool, record: (Tab) -> TabRecord, frame: String?,
+        groups: [TabGroupRecord] = []
     ) -> WindowRecord {
         var records: [TabRecord] = []
         var selectedIndex = 0
@@ -21,6 +22,9 @@ extension WindowRecord {
             if selected(tab) { selectedIndex = max(records.count - (isSaved(tab) ? 0 : 1), 0) }
             if isSaved(tab) { records.append(record(tab)) }
         }
-        return WindowRecord(tabs: records, selectedIndex: selectedIndex, frame: frame)
+        let used = Set(records.compactMap(\.groupID))
+        return WindowRecord(
+            tabs: records, selectedIndex: selectedIndex, frame: frame, groups: groups.filter { used.contains($0.id) }
+        )
     }
 }
