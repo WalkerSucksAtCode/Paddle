@@ -233,6 +233,17 @@ enum MainMenu {
     static func title(for name: String) -> String? { itemsByName[name]?.title }
     static func menuTitle(for name: String) -> String? { itemsByName[name]?.menu?.title }
 
+    /// A fresh copy of the menu-bar command `name` (action, target, tag and its current shortcut, so a `shortcuts`
+    /// rebinding shows here too), for the toolbar menu. `title` replaces the menu-bar title.
+    static func copyOfItem(_ name: String, title: String? = nil) -> NSMenuItem? {
+        guard let item = itemsByName[name] else { return nil }
+        let copy = NSMenuItem(title: title ?? item.title, action: item.action, keyEquivalent: item.keyEquivalent)
+        copy.keyEquivalentModifierMask = item.keyEquivalentModifierMask
+        copy.target = item.target
+        copy.tag = item.tag
+        return copy
+    }
+
     /// The shortcut an action has without config.json (an empty key: none). Nil for an unknown name.
     static func defaultShortcut(for name: String) -> Shortcut? {
         guard let (key, modifiers) = defaultShortcuts[name] else { return nil }

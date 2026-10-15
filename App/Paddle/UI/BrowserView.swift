@@ -101,6 +101,7 @@ private struct TabStrip: View {
             let unpinnedCount = CGFloat(model.tabs.count) - pinnedCount
             let available = geometry.size.width - leadingInset - 44 - pinnedCount * (pinnedWidth + 2)
             let width = unpinnedCount == 0 ? 0 : min(240, max(110, available / unpinnedCount - 2))
+            let tabsWidth = pinnedCount * pinnedWidth + unpinnedCount * width + 2 * max(0, CGFloat(model.tabs.count) - 1)
 
             HStack(spacing: 0) {
                 Color.clear.frame(width: leadingInset)
@@ -113,11 +114,11 @@ private struct TabStrip: View {
                             }
                         }
                         .padding(.vertical, 5)
-                        // Space after the last tab drags the window too.
-                        .frame(minWidth: max(0, geometry.size.width - leadingInset - 36), alignment: .leading)
                         .background(WindowDragArea())
                     }
                     .scrollBounceBehavior(.basedOnSize)
+                    // The tabs take their own width, so New Tab follows the last tab; the scroll view gets the rest.
+                    .frame(width: min(tabsWidth, max(0, geometry.size.width - leadingInset - 44)))
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Tabs")
                     // VoiceOver's rotor lists the tabs with their state ("selected", "asleep", "muted").
@@ -142,8 +143,10 @@ private struct TabStrip: View {
                 .buttonStyle(.borderless)
                 .help("New Tab")
                 .accessibilityLabel("New Tab")
-                .padding(.trailing, 8)
+                .padding(.leading, 4)
+                Spacer(minLength: 12)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
             .background(WindowDragArea())
         }
     }
@@ -375,7 +378,11 @@ private struct MemoryButton: View {
         } label: {
             HStack(spacing: 4) {
                 Glyph(name: "surf-memory")
-                Text(label)
+                // The widest label, hidden, holds the width: the readout neither truncates nor shifts as it changes.
+                ZStack(alignment: .trailing) {
+                    Text("8888 MB").hidden().accessibilityHidden(true)
+                    Text(label)
+                }
             }
             .font(.system(size: 11).monospacedDigit())
             .foregroundStyle(.secondary)
@@ -422,6 +429,7 @@ private struct NavigationBar: View {
     private var tab: Tab? { model.selectedTab }
 
     var body: some View {
+        let showDownloadsBinding = $showDownloads
         HStack(spacing: 4) {
             iconButton("chevron.left", help: "Back", enabled: tab?.canGoBack == true) { tab?.webView?.goBack() }
             iconButton("chevron.right", help: "Forward", enabled: tab?.canGoForward == true) { tab?.webView?.goForward() }
@@ -437,15 +445,29 @@ private struct NavigationBar: View {
             }
             addressField
                 .padding(.horizontal, 4)
-            if model.extensionsAllowed {
-                ExtensionToolbar(host: app.extensions, tab: tab, isPrivate: model.isPrivate)
+                .frame(minWidth: 140)
+            HStack(spacing: 2) {
+                if model.extensionsAllowed {
+                    ExtensionToolbar(host: app.extensions, tab: tab, isPrivate: model.isPrivate)
+                }
+                if !app.downloads.items.isEmpty {
+                    downloadsButton
+                }
             }
+            .fixedSize()
             if app.config.showTabMemory {
                 MemoryButton(app: app, model: model)
+                    .fixedSize()
+                    .padding(.leading, 4)
             }
-            if !app.downloads.items.isEmpty {
-                downloadsButton
+            ToolbarMenuButton(model: model) {
+                if app.downloads.items.isEmpty {
+                    NSWorkspace.shared.open(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0])
+                } else {
+                    showDownloadsBinding.wrappedValue = true
+                }
             }
+            .frame(width: 28, height: 28)
         }
         .padding(.horizontal, 8)
         .frame(height: 38)
