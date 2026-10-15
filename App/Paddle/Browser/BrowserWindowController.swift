@@ -208,6 +208,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleZoomOut(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom - SitePolicy.zoomStep) } }
     @objc func paddleActualSize(_ sender: Any?) { tab?.setZoom(1) }
 
+    /// View > Show Downloads (⌥⌘L): the downloads popover, or the Downloads folder when the list is empty.
+    @objc func paddleShowDownloads(_ sender: Any?) {
+        if AppModel.shared.downloads.items.isEmpty {
+            NSWorkspace.shared.open(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0])
+        } else {
+            model.downloadsVisible = true
+        }
+    }
+
     @objc func paddleWebInspector(_ sender: Any?) {
         if let webView { WebInspector.show(webView) }
     }
@@ -232,8 +241,46 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     // MARK: - Find
 
     @objc func paddleFind(_ sender: Any?) { model.showFind() }
-    @objc func paddleFindNext(_ sender: Any?) { model.findVisible ? model.find() : model.showFind() }
-    @objc func paddleFindPrevious(_ sender: Any?) { model.findVisible ? model.find(backwards: true) : model.showFind() }
+    /// With text to search for and the bar hidden, opens the bar and searches at once.
+    @objc func paddleFindNext(_ sender: Any?) { findStep(backwards: false) }
+    @objc func paddleFindPrevious(_ sender: Any?) { findStep(backwards: true) }
+
+    private func findStep(backwards: Bool) {
+        if model.findVisible {
+            model.find(backwards: backwards)
+        } else {
+            model.showFind()
+            if !model.findText.isEmpty { model.find(backwards: backwards) }
+        }
+    }
+
+    /// Edit > Use Selection for Find (⌘E): the page's selected text becomes the search text and goes on the find
+    /// pasteboard. Doesn't open the find bar.
+    @objc func paddleUseSelectionForFind(_ sender: Any?) {
+        guard let webView else { return }
+        Task { @MainActor [weak self] in
+            let result = try? await webView.callAsyncJavaScript(
+                "return window.getSelection().toString()", arguments: [:], in: nil, contentWorld: .defaultClient
+            )
+            guard let text = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+            let capped = String(text.prefix(1000))
+            self?.model.findText = capped
+            let pasteboard = NSPasteboard(name: .find)
+            pasteboard.clearContents()
+            pasteboard.setString(capped, forType: .string)
+        }
+    }
+
+    /// Edit > Jump to Selection (⌘J): scrolls the page's selection to the middle of the view.
+    @objc func paddleJumpToSelection(_ sender: Any?) {
+        guard let webView else { return }
+        Task {
+            _ = try? await webView.callAsyncJavaScript(
+                "const s = getSelection(); if (s.rangeCount) { const n = s.getRangeAt(0).startContainer; (n.nodeType === 1 ? n : n.parentElement)?.scrollIntoView({block: \"center\"}) }",
+                arguments: [:], in: nil, contentWorld: .defaultClient
+            )
+        }
+    }
 
     // MARK: - Tabs
 
@@ -241,6 +288,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddlePreviousTab(_ sender: Any?) { model.selectNeighbor(offset: -1) }
     @objc func paddleTogglePin(_ sender: Any?) { if let tab { model.togglePin(tab) } }
     @objc func paddleDuplicateTab(_ sender: Any?) { if let tab { model.duplicate(tab) } }
+    @objc func paddleMoveTabLeft(_ sender: Any?) { model.moveSelectedTab(by: -1) }
+    @objc func paddleMoveTabRight(_ sender: Any?) { model.moveSelectedTab(by: 1) }
     @objc func paddleToggleMute(_ sender: Any?) { if let tab { model.toggleMute(tab) } }
     @objc func paddleSearchTabs(_ sender: Any?) { model.tabSearchVisible.toggle() }
     @objc func paddleSleepBackgroundTabs(_ sender: Any?) { AppModel.shared.sleepBackgroundTabs() }
@@ -251,12 +300,31 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
+/// The mouse's side buttons (3 back, 4 forward) go back and forward on mouse-up, as in Chrome; the trackpad's
+/// two-finger swipe already does (`allowsBackForwardNavigationGestures`). Both the down and the up are swallowed so
+/// the page doesn't react too. Other buttons, middle-click included (the tab strip closes tabs with it), pass through.
+///
 /// Ctrl-Tab is AppKit's keyboard-focus key: a focused web view passes it on to the key view loop, so the
 /// Tabs menu never saw it and focus jumped to the address field instead. Offer it to the menu first, as Safari does.
 ///
 /// Extension commands (manifest `commands`) don't come through here: `ExtensionHost` runs them before dispatch,
 /// before the page sees the key, unless one of Paddle's menu items uses that key.
 final class BrowserWindow: NSWindow {
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .otherMouseDown || event.type == .otherMouseUp, event.buttonNumber == 3 || event.buttonNumber == 4,
+           let controller = windowController as? BrowserWindowController {
+            if event.type == .otherMouseUp {
+                if event.buttonNumber == 3, controller.model.selectedTab?.canGoBack == true {
+                    controller.paddleBack(nil)
+                } else if event.buttonNumber == 4, controller.model.selectedTab?.canGoForward == true {
+                    controller.paddleForward(nil)
+                }
+            }
+            return
+        }
+        super.sendEvent(event)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == 48, event.modifierFlags.contains(.control),
            NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
@@ -287,8 +355,11 @@ extension BrowserWindowController: NSMenuItemValidation {
             let bookmarked = AppModel.shared.bookmarks.isBookmarked(tab?.url)
             menuItem.title = bookmarked ? "Remove Bookmark" : "Bookmark This Page"
             return tab?.url.map(HistoryStore.isRecordable) ?? false
-        case #selector(paddleFindNext(_:)), #selector(paddleFindPrevious(_:)):
-            return tab?.settingsPane == nil
+        case #selector(paddleFindNext(_:)), #selector(paddleFindPrevious(_:)),
+             #selector(paddleUseSelectionForFind(_:)), #selector(paddleJumpToSelection(_:)):
+            return tab?.settingsPane == nil && webView != nil
+        case #selector(paddleMoveTabLeft(_:)): return model.canMoveSelectedTab(by: -1)
+        case #selector(paddleMoveTabRight(_:)): return model.canMoveSelectedTab(by: 1)
         case #selector(paddleSelectTab(_:)):
             return menuItem.tag == 9 ? !model.tabs.isEmpty : model.tabs.count >= menuItem.tag
         default:

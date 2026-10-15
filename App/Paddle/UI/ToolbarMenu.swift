@@ -24,19 +24,16 @@ nonisolated final class ClosureMenuItem: NSMenuItem {
 /// The menu button at the right of the toolbar. Its menu is built each time it opens.
 struct ToolbarMenuButton: NSViewRepresentable {
     let model: BrowserModel
-    let showDownloads: () -> Void
 
     func makeNSView(context: Context) -> ToolbarMenuNSButton { ToolbarMenuNSButton() }
 
     func updateNSView(_ view: ToolbarMenuNSButton, context: Context) {
         view.model = model
-        view.showDownloads = showDownloads
     }
 }
 
 final class ToolbarMenuNSButton: NSButton {
     var model: BrowserModel?
-    var showDownloads: () -> Void = {}
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
@@ -65,7 +62,6 @@ final class ToolbarMenuNSButton: NSButton {
     /// The menu-bar commands, copied so their shortcuts match, with the Downloads and Extensions rows and the zoom row.
     private func makeMenu(model: BrowserModel) -> NSMenu {
         let menu = NSMenu()
-        let showDownloads = self.showDownloads
         func addCommand(_ name: String, title: String? = nil) {
             if let item = MainMenu.copyOfItem(name, title: title) { menu.addItem(item) }
         }
@@ -75,7 +71,7 @@ final class ToolbarMenuNSButton: NSButton {
         menu.addItem(.separator())
         addCommand("showHistory", title: "History")
         addCommand("showBookmarks", title: "Bookmarks")
-        menu.addItem(ClosureMenuItem(title: "Downloads") { showDownloads() })
+        addCommand("showDownloads", title: "Downloads")
         menu.addItem(ClosureMenuItem(title: "Extensions") { model.showSettings(pane: .extensions) })
         menu.addItem(.separator())
         let zoom = NSMenuItem(title: "Zoom", action: nil, keyEquivalent: "")

@@ -38,6 +38,9 @@ final class BrowserModel {
     /// Search Tabs… (Shift-Cmd-A): the popover on the tab strip.
     var tabSearchVisible = false
 
+    /// The toolbar's downloads popover is open (Show Downloads, the toolbar button and the menu button drive it).
+    var downloadsVisible = false
+
     var findVisible = false
     var findText = ""
     var findFocusRequest = 0
@@ -308,6 +311,19 @@ final class BrowserModel {
         AppModel.shared.extensions.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
         return true
+    }
+
+    /// Whether Move Tab Left/Right (`offset` -1/+1) can move the selected tab: not past either end or across the
+    /// pinned/unpinned boundary.
+    func canMoveSelectedTab(by offset: Int) -> Bool {
+        guard let tab = selectedTab, let index = tabs.firstIndex(where: { $0 === tab }), tabs.indices.contains(index + offset) else { return false }
+        return tabs[index + offset].isPinned == tab.isPinned
+    }
+
+    /// Moves the selected tab one place left (-1) or right (+1); no wrap-around.
+    func moveSelectedTab(by offset: Int) {
+        guard canMoveSelectedTab(by: offset), let tab = selectedTab, let index = tabs.firstIndex(where: { $0 === tab }) else { return }
+        move(tab, onto: tabs[index + offset])
     }
 
     // MARK: - Moving between windows (`AppModel.move`)

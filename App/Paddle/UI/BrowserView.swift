@@ -456,12 +456,10 @@ private struct NavigationBar: View {
     @State private var addressSelection: TextSelection?
     /// Set while Paddle itself writes an inline completion, so that edit isn't treated as typing.
     @State private var applyingCompletion = false
-    @State private var showDownloads = false
 
     private var tab: Tab? { model.selectedTab }
 
     var body: some View {
-        let showDownloadsBinding = $showDownloads
         HStack(spacing: 4) {
             iconButton("chevron.left", help: "Back", enabled: tab?.canGoBack == true) { tab?.webView?.goBack() }
             iconButton("chevron.right", help: "Forward", enabled: tab?.canGoForward == true) { tab?.webView?.goForward() }
@@ -492,13 +490,7 @@ private struct NavigationBar: View {
                     .fixedSize()
                     .padding(.leading, 4)
             }
-            ToolbarMenuButton(model: model) {
-                if app.downloads.items.isEmpty {
-                    NSWorkspace.shared.open(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0])
-                } else {
-                    showDownloadsBinding.wrappedValue = true
-                }
-            }
+            ToolbarMenuButton(model: model)
             .frame(width: 28, height: 28)
         }
         .padding(.horizontal, 8)
@@ -634,7 +626,7 @@ private struct NavigationBar: View {
 
     private var downloadsButton: some View {
         Button {
-            showDownloads.toggle()
+            model.downloadsVisible.toggle()
         } label: {
             Glyph(name: "surf-download", size: 16, active: app.downloads.activeCount > 0)
                 .frame(width: 26, height: 26)
@@ -643,7 +635,7 @@ private struct NavigationBar: View {
         .buttonStyle(.borderless)
         .help("Downloads")
         .accessibilityLabel("Downloads")
-        .popover(isPresented: $showDownloads, arrowEdge: .bottom) {
+        .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
             DownloadsView(store: app.downloads)
         }
     }

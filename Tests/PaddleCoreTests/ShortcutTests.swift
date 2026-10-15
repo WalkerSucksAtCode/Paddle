@@ -67,6 +67,16 @@ struct ShortcutTests {
 
     /// `charactersIgnoringModifiers` keeps Shift's effect on punctuation; the stored form is the base key plus
     /// Shift, as MainMenu writes its hidden ⇧⌘[ / ⇧⌘] aliases, so the two spellings compare equal.
+    @Test func pageKeysAndArrowsRoundTrip() {
+        let move = Shortcut.parse("ctrl+shift+pageup")
+        #expect(move == Shortcut(key: "pageup", shift: true, control: true))
+        #expect(move?.displayText == "⌃⇧⇞")
+        #expect(Shortcut.parse("ctrl+shift+pagedown")?.displayText == "⌃⇧⇟")
+        #expect(Shortcut.parse("cmd+option+left")?.displayText == "⌥⌘←")
+        #expect(Shortcut.parse("cmd+option+right")?.displayText == "⌥⌘→")
+        #expect(Shortcut.parse(move!.configText) == move)
+    }
+
     @Test func shiftedPunctuationRecordsTheBaseKey() {
         #expect(Shortcut(key: "{", modifiers: [.command, .shift]) == Shortcut(key: "[", command: true, shift: true))
         #expect(Shortcut(key: "{", modifiers: [.command, .shift])?.configText == "cmd+shift+[")
