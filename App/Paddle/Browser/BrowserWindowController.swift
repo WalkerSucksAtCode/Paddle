@@ -47,20 +47,27 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
         if let record {
             if let frame = record.frame { window.setFrame(NSRectFromString(frame), display: false) }
-            let tabs = record.tabs.map { Tab(record: $0, isPrivate: isPrivate) }
-            // An old-format record has no lastActive; rank earlier tabs as more recent (1 s apart) so the history
-            // cap doesn't favour the end of the strip.
-            let now = Date()
-            for (i, tab) in tabs.enumerated() where record.tabs[i].lastActive == nil {
-                tab.lastActive = now.addingTimeInterval(-Double(i + 1))
+            let isPrivate = isPrivate
+            let model = model
+            func restoredTabs(_ records: [TabRecord]) -> [Tab] {
+                let tabs = records.map { Tab(record: $0, isPrivate: isPrivate) }
+                // An old-format record has no lastActive; rank earlier tabs as more recent (1 s apart) so the history
+                // cap doesn't favour the end of the strip.
+                let now = Date()
+                for (i, tab) in tabs.enumerated() where records[i].lastActive == nil {
+                    tab.lastActive = now.addingTimeInterval(-Double(i + 1))
+                }
+                for tab in tabs { tab.browser = model }
+                return tabs
             }
-            for tab in tabs {
-                tab.browser = model
-                model.tabs.append(tab)
-            }
+            if let space = record.space { model.restoreActiveSpace(space) }
+            for other in record.otherSpaces { model.restoreSpace(other, tabs: restoredTabs(other.tabs)) }
+            let tabs = restoredTabs(record.tabs)
+            model.tabs.append(contentsOf: tabs)
             model.restoreGroups(record.groups)
             let index = min(max(record.selectedIndex, 0), tabs.count - 1)
             if tabs.indices.contains(index) { model.select(tabs[index]) }
+            model.finishRestore(activeSpaceIndex: record.spaceIndex)
         } else if let front = AppModel.shared.frontWindow?.window {
             window.setFrame(front.frame.offsetBy(dx: 24, dy: -24), display: false)
         } else {
@@ -116,7 +123,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
         model.extensionHost?.windowClosing(self)
-        for tab in model.tabs { tab.sleep() }
+        for tab in model.allTabs { tab.sleep() }
         AppModel.shared.windowClosed(self)
     }
 
@@ -343,6 +350,49 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleSearchTabs(_ sender: Any?) { model.tabSearchVisible.toggle() }
     @objc func paddleSleepBackgroundTabs(_ sender: Any?) { AppModel.shared.sleepBackgroundTabs() }
 
+    // MARK: - Spaces
+
+    @objc func paddleSelectSpace(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem, model.spaces.indices.contains(item.tag - 1) else { return }
+        model.switchToSpace(model.spaces[item.tag - 1].id)
+    }
+    @objc func paddleNextSpace(_ sender: Any?) { model.nextSpace(offset: 1) }
+    @objc func paddlePreviousSpace(_ sender: Any?) { model.nextSpace(offset: -1) }
+    @objc func paddleNewSpace(_ sender: Any?) {
+        model.newSpace()
+        model.editSpaceRequest += 1
+    }
+    @objc func paddleEditSpace(_ sender: Any?) { model.editSpaceRequest += 1 }
+
+    @objc func paddleMoveTabToSpace(_ sender: Any?) {
+        guard let tab, let id = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        model.moveTab(tab, toSpace: id)
+    }
+
+    /// Tabs > Delete Space: the active space, after asking when it has tabs.
+    @objc func paddleDeleteSpace(_ sender: Any?) { deleteActiveSpace() }
+
+    /// Confirms, then deletes the active space. `completion` gets whether it was deleted.
+    func deleteActiveSpace(completion: ((Bool) -> Void)? = nil) {
+        guard model.spaces.count > 1 else { completion?(false); return }
+        let space = model.activeSpace
+        let count = model.tabs.count
+        guard count > 0, let window else {
+            model.deleteSpace(space.id)
+            completion?(true)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Delete the space \(space.name)? Its \(count) \(count == 1 ? "tab closes" : "tabs close")."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { completion?(false); return }
+            self?.model.deleteSpace(space.id)
+            completion?(true)
+        }
+    }
+
     @objc func paddleSelectTab(_ sender: Any?) {
         guard let item = sender as? NSMenuItem else { return }
         if item.tag == 9 { model.selectLastTab() } else { model.select(index: item.tag - 1) }
@@ -353,8 +403,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 /// two-finger swipe already does (`allowsBackForwardNavigationGestures`). Both the down and the up are swallowed so
 /// the page doesn't react too. Other buttons, middle-click included (the tab strip closes tabs with it), pass through.
 ///
-/// Ctrl-Tab is AppKit's keyboard-focus key: a focused web view passes it on to the key view loop, so the
-/// Tabs menu never saw it and focus jumped to the address field instead. Offer it to the menu first, as Safari does.
+/// Control shortcuts without Command go to the menu first, as Safari does: a focused web view keeps them otherwise.
+/// Ctrl-Tab is AppKit's keyboard-focus key, which the web view passed on to the key view loop (focus jumped to the
+/// address field), and ⌃1-⌃9 (the spaces) never reached the Tabs menu while a page had focus. A control key no menu
+/// item uses (⌃A in a text field) still reaches the page.
 ///
 /// Extension commands (manifest `commands`) don't come through here: `ExtensionHost` runs them before dispatch,
 /// before the page sees the key, unless one of Paddle's menu items uses that key.
@@ -375,7 +427,8 @@ final class BrowserWindow: NSWindow {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.keyCode == 48, event.modifierFlags.contains(.control),
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.control), !flags.contains(.command),
            NSApp.mainMenu?.performKeyEquivalent(with: event) == true {
             return true
         }
@@ -425,6 +478,10 @@ extension BrowserWindowController: NSMenuItemValidation {
             return tab?.settingsPane == nil && webView != nil
         case #selector(paddleMoveTabLeft(_:)): return model.canMoveSelectedTab(by: -1)
         case #selector(paddleMoveTabRight(_:)): return model.canMoveSelectedTab(by: 1)
+        case #selector(paddleSelectSpace(_:)): return model.spaces.indices.contains(menuItem.tag - 1)
+        case #selector(paddleNextSpace(_:)), #selector(paddlePreviousSpace(_:)): return model.spaces.count > 1
+        case #selector(paddleDeleteSpace(_:)): return model.spaces.count > 1
+        case #selector(paddleMoveTabToSpace(_:)): return tab != nil
         case #selector(paddleSelectTab(_:)):
             return menuItem.tag == 9 ? !model.tabs.isEmpty : model.tabs.count >= menuItem.tag
         default:

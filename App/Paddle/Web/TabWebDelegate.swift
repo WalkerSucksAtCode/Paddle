@@ -95,7 +95,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // By then the tab or its window may have closed; waking it would load the page in a tab nobody owns.
         if isMainFrame, let tab, tab.extensionPageID != nil, Self.isWebPage(url) {
             DispatchQueue.main.async {
-                guard let browser = tab.browser, browser.tabs.contains(where: { $0 === tab }),
+                guard let browser = tab.browser, browser.allTabs.contains(where: { $0 === tab }),
                       let controller = browser.controller, AppModel.shared.windows.contains(where: { $0 === controller })
                 else { return }
                 tab.replaceWebView(loading: url)
@@ -286,7 +286,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         tab?.typedNavigationPending = false
         guard let tab, webView.backForwardList.currentItem == nil, let browser = tab.browser else { return }
         DispatchQueue.main.async {
-            if tab.closesIfOnlyDownload, browser.tabs.count > 1 {
+            if tab.closesIfOnlyDownload, browser.allTabs.count > 1 {
                 browser.close(tab, remember: false)
             } else {
                 tab.url = nil

@@ -45,13 +45,21 @@ struct TabStrip: View {
             let pinnedCount = CGFloat(model.tabs.filter(\.isPinned).count)
             let shownUnpinned = CGFloat(items.filter { $0.tab.map { !$0.isPinned } ?? false }.count)
             let labelsWidth = items.reduce(CGFloat(0)) { $0 + ($1.group.map(labelWidth) ?? 0) }
-            let available = geometry.size.width - leadingInset - 44 - pinnedCount * (pinnedWidth + 2) - labelsWidth - 2 * CGFloat(items.filter { $0.tab == nil }.count)
+            let switcherWidth = model.spaces.count > 1 ? SpaceSwitcher.width * scale + 4 : 0
+            let available = geometry.size.width - leadingInset - switcherWidth - 44 - pinnedCount * (pinnedWidth + 2) - labelsWidth - 2 * CGFloat(items.filter { $0.tab == nil }.count)
             let width = shownUnpinned == 0 ? 0 : min(240 * scale, max(TabButton.alwaysCloseWidth * scale, available / shownUnpinned - 2))
             let tabsWidth = pinnedCount * pinnedWidth + shownUnpinned * width + labelsWidth + 2 * max(0, CGFloat(items.count) - 1)
 
             HStack(spacing: 0) {
-                Color.clear.frame(width: leadingInset)
-                    .tabSearchPopover(model: model)
+                HStack(spacing: 0) {
+                    Color.clear.frame(width: leadingInset)
+                        .tabSearchPopover(model: model)
+                    if model.spaces.count > 1 {
+                        SpaceSwitcher(model: model)
+                            .padding(.trailing, 4)
+                    }
+                }
+                .spaceEditPopover(model: model)
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
@@ -62,15 +70,17 @@ struct TabStrip: View {
                                     TabButton(tab: tab, model: model, group: model.group(of: tab), isRenaming: model.renamingTabID == tab.id,
                                               width: tab.isPinned ? pinnedWidth : width)
                                         .accessibilityRotorEntry(id: tab.id, in: rotor)
+                                        .transition(.opacity)
                                 }
                             }
                         }
                         .padding(.vertical, 5)
+                        .animation(reducesMotion ? nil : .easeOut(duration: 0.12), value: model.activeSpaceID)
                         .background(WindowDragArea())
                     }
                     .scrollBounceBehavior(.basedOnSize)
                     // The tabs take their own width, so New Tab follows the last tab; the scroll view gets the rest.
-                    .frame(width: min(tabsWidth, max(0, geometry.size.width - leadingInset - 44)))
+                    .frame(width: min(tabsWidth, max(0, geometry.size.width - leadingInset - switcherWidth - 44)))
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Tabs")
                     // VoiceOver's rotor lists the tabs with their state ("selected", "asleep", "muted").

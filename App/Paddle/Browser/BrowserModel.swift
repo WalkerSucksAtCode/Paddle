@@ -21,12 +21,28 @@ final class BrowserModel {
         self.isPrivate = isPrivate
         self.profileID = isPrivate ? ProfileStore.defaultID : profile
         self.extensionsAllowed = extensionsAllowed
+        self.activeSpaceID = spaces[0].id
     }
 
+    /// The active space's tabs. The other spaces' are in `stashes`; `allTabs` has every one.
     var tabs: [Tab] = []
     var selectedID: UUID?
-    /// This window's tab groups. Each group's tabs are adjacent in `tabs`, and a group with no tabs is removed.
+    /// The active space's tab groups. Each group's tabs are adjacent in `tabs`, and a group with no tabs is removed.
     var groups: [TabGroup] = []
+
+    /// The window's spaces in order, the active one included. A window starts with one, "Main".
+    private(set) var spaces: [Space] = [Space()]
+    private(set) var activeSpaceID = ""
+    /// Incremented to ask the view to open the Edit Space popover for the active space.
+    var editSpaceRequest = 0
+
+    /// What an inactive space keeps while another is shown.
+    private struct Stash {
+        var tabs: [Tab] = []
+        var groups: [TabGroup] = []
+        var selectedID: UUID?
+    }
+    private var stashes: [String: Stash] = [:]
     /// The tab whose title is being edited in place in the strip.
     var renamingTabID: UUID?
     /// The group whose label in the strip is a text field.
@@ -66,6 +82,24 @@ final class BrowserModel {
     }
 
     var selectedTab: Tab? { tabs.first { $0.id == selectedID } }
+
+    /// Every tab of the window, in space order: the active space's and the stashed ones.
+    var allTabs: [Tab] {
+        spaces.flatMap { $0.id == activeSpaceID ? tabs : (stashes[$0.id]?.tabs ?? []) }
+    }
+
+    /// How many tabs sit in the spaces before `id`: what turns an index within that space into an `allTabs` index,
+    /// the index space extensions see.
+    private func tabOffset(ofSpace id: String) -> Int {
+        var count = 0
+        for space in spaces {
+            if space.id == id { break }
+            count += space.id == activeSpaceID ? tabs.count : (stashes[space.id]?.tabs.count ?? 0)
+        }
+        return count
+    }
+
+    var activeSpace: Space { spaces.first { $0.id == activeSpaceID } ?? spaces[0] }
 
     /// The tab "Current Page" and "Add Current Site" mean: the selected tab when it shows a page with one of
     /// `schemes`, else the most recently active tab that does. The selected one comes first because switching tabs
@@ -109,6 +143,27 @@ final class BrowserModel {
 
     func insert(_ tab: Tab, after anchor: Tab?, select: Bool) {
         tab.browser = self
+        var select = select
+        // A link from a tab of a hidden space lands in that space, behind the scenes.
+        if let anchor, !tabs.contains(where: { $0 === anchor }), let home = stashedSpace(of: anchor) {
+            withSpace(home.id) { place(tab, after: anchor) }
+            select = false
+        } else {
+            place(tab, after: anchor)
+        }
+        extensionHost?.tabOpened(tab)
+        if select {
+            self.select(tab)
+        } else if tab.url != nil {
+            // Background tabs load right away (the user asked for the page); the sweep keeps maxAwakeTabs.
+            tab.wake()
+            AppModel.shared.sweepSleepingTabs()
+        }
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Puts `tab` in the current `tabs`: after `anchor` when it is there, else at the end.
+    private func place(_ tab: Tab, after anchor: Tab?) {
         if let anchor, let index = tabs.firstIndex(where: { $0 === anchor }) {
             // Like Safari and Firefox: links open right after the tab that opened them.
             let slot = TabOrder.insertionIndex(
@@ -122,20 +177,19 @@ final class BrowserModel {
             tabs.append(tab)
         }
         normalizeGroups()
-        extensionHost?.tabOpened(tab)
-        if select {
-            self.select(tab)
-        } else if tab.url != nil {
-            // Background tabs load right away (the user asked for the page); the sweep keeps maxAwakeTabs.
-            tab.wake()
-            AppModel.shared.sweepSleepingTabs()
-        }
-        AppModel.shared.sessionChanged()
     }
 
     func select(_ tab: Tab) {
+        // A tab of another space: show that space first.
+        if !tabs.contains(where: { $0 === tab }), let home = stashedSpace(of: tab) {
+            switchToSpace(home.id, selecting: tab)
+            return
+        }
+        activate(tab, previous: selectedTab)
+    }
+
+    private func activate(_ tab: Tab, previous: Tab?) {
         let now = Date()
-        let previous = selectedTab
         if let previous, previous !== tab {
             previous.lastActive = now
             previous.hoveredLink = nil
@@ -188,21 +242,33 @@ final class BrowserModel {
     ///   - remember: offer the tab in Reopen Closed Tab. Never for private windows or View Source tabs.
     ///   - returnToOpener: select the tab's opener next; by default only for a popup the user hasn't left.
     func close(_ tab: Tab, remember: Bool = true, returnToOpener: Bool? = nil) {
-        guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
-        if remember, !isPrivate, tab.sourceHTML == nil {
-            closedTabs.append(tab.record)
-            if closedTabs.count > 50 { closedTabs.removeFirst() }
+        guard let index = tabs.firstIndex(where: { $0 === tab }) else {
+            // A tab of a hidden space closes there, without changing what is shown.
+            if let home = stashedSpace(of: tab) {
+                if remember { rememberClosed(tab) }
+                tab.sleep()
+                withSpace(home.id) {
+                    tabs.removeAll { $0 === tab }
+                    normalizeGroups()
+                    if selectedID == tab.id { selectedID = tabs.last?.id }
+                }
+                extensionHost?.tabClosed(tab, windowIsClosing: false)
+                AppModel.shared.sessionChanged()
+            }
+            return
         }
+        if remember { rememberClosed(tab) }
         let wasSelected = tab.id == selectedID
         if renamingTabID == tab.id { renamingTabID = nil }
         tab.sleep()
         tabs.remove(at: index)
         normalizeGroups()
-        extensionHost?.tabClosed(tab, windowIsClosing: tabs.isEmpty)
+        extensionHost?.tabClosed(tab, windowIsClosing: allTabs.isEmpty)
 
         if tabs.isEmpty {
             selectedID = nil
-            controller?.close()
+            // The space is empty: show another one that has tabs, or close the window when none has.
+            if !showSpaceWithTabs() { controller?.close() }
             return
         }
         if wasSelected {
@@ -213,6 +279,13 @@ final class BrowserModel {
             }
         }
         AppModel.shared.sessionChanged()
+    }
+
+    /// Offers the tab in Reopen Closed Tab. Never for private windows or View Source tabs.
+    private func rememberClosed(_ tab: Tab) {
+        guard !isPrivate, tab.sourceHTML == nil else { return }
+        closedTabs.append(tab.record)
+        if closedTabs.count > 50 { closedTabs.removeFirst() }
     }
 
     func closeOthers(_ keep: Tab) {
@@ -248,7 +321,7 @@ final class BrowserModel {
     /// tabs when next selected.
     func withdrawExtensions() {
         extensionsAllowed = false
-        for tab in tabs where tab.isAwake { tab.sleep() }
+        for tab in allTabs where tab.isAwake { tab.sleep() }
         selectedTab?.wake()
     }
 
@@ -281,7 +354,7 @@ final class BrowserModel {
             _ = await tab.present(alert)
             return
         }
-        guard tabs.contains(where: { $0 === tab }) else { return }
+        guard allTabs.contains(where: { $0 === tab }) else { return }
         let pageURL = webView.url ?? tab.url
         let sourceTab = Tab(
             sourceHTML: ViewSource.page(source: source, url: pageURL), title: ViewSource.title(for: pageURL), isPrivate: isPrivate
@@ -302,23 +375,30 @@ final class BrowserModel {
         normalizeGroups()
         let extensions = extensionHost
         extensions?.tabChanged(tab, .pinned)
-        if to != from { extensions?.tabMoved(tab, from: from) }
+        if to != from { extensions?.tabMoved(tab, from: from + tabOffset(ofSpace: activeSpaceID)) }
         AppModel.shared.sessionChanged()
     }
 
-    /// An extension asked for a tab at `index` (`tabs.create`, `tabs.move`). Clamped to the tab's side of the
-    /// pinned boundary.
+    /// An extension asked for a tab at `index` (`tabs.create`, `tabs.move`), an index into `allTabs`. The tab moves
+    /// within its own space, clamped to its side of the pinned boundary.
     func place(_ tab: Tab, at index: Int) {
-        guard let from = tabs.firstIndex(where: { $0 === tab }) else { return }
-        var others = tabs
-        others.remove(at: from)
-        let boundary = TabOrder.pinBoundary(others.map(\.isPinned))
-        let to = tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), others.count)
-        guard to != from else { return }
-        others.insert(tab, at: to)
-        tabs = others
-        normalizeGroups()
-        extensionHost?.tabMoved(tab, from: from)
+        let home = stashedSpace(of: tab)?.id ?? activeSpaceID
+        let offset = tabOffset(ofSpace: home)
+        let from: Int? = withSpace(home) {
+            guard let from = tabs.firstIndex(where: { $0 === tab }) else { return nil }
+            var others = tabs
+            others.remove(at: from)
+            let boundary = TabOrder.pinBoundary(others.map(\.isPinned))
+            let local = index - offset
+            let to = tab.isPinned ? min(max(local, 0), boundary) : min(max(local, boundary), others.count)
+            guard to != from else { return nil }
+            others.insert(tab, at: to)
+            tabs = others
+            normalizeGroups()
+            return from
+        }
+        guard let from else { return }
+        extensionHost?.tabMoved(tab, from: from + offset)
         AppModel.shared.sessionChanged()
     }
 
@@ -344,7 +424,7 @@ final class BrowserModel {
         normalizeGroups()
         // Never leave the selection hidden in a collapsed group.
         if tab.id == selectedID, let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
-        extensionHost?.tabMoved(tab, from: from)
+        extensionHost?.tabMoved(tab, from: from + tabOffset(ofSpace: activeSpaceID))
         AppModel.shared.sessionChanged()
         return true
     }
@@ -382,9 +462,10 @@ final class BrowserModel {
 
     /// Tells extensions about every tab whose index differs from `before`.
     private func reportMoves(from before: [Tab]) {
+        let offset = tabOffset(ofSpace: activeSpaceID)
         for (to, tab) in tabs.enumerated() {
             if let from = before.firstIndex(where: { $0 === tab }), from != to {
-                extensionHost?.tabMoved(tab, from: from)
+                extensionHost?.tabMoved(tab, from: from + offset)
             }
         }
     }
@@ -393,6 +474,176 @@ final class BrowserModel {
     func moveSelectedTab(by offset: Int) {
         guard let tab = selectedTab, let destination = moveDestination(of: tab, by: offset) else { return }
         reorder(tab, onto: destination.target, groupID: destination.groupID)
+    }
+
+    // MARK: - Spaces
+
+    /// The hidden space that holds `tab`, nil when it is in the active space or none.
+    private func stashedSpace(of tab: Tab) -> Space? {
+        spaces.first { $0.id != activeSpaceID && stashes[$0.id]?.tabs.contains { $0 === tab } == true }
+    }
+
+    /// The space `tab` is in; the active one for a tab that is in none yet.
+    func space(of tab: Tab) -> Space {
+        stashedSpace(of: tab) ?? activeSpace
+    }
+
+    /// Runs `body` with space `id` as the one in `tabs`, `groups` and `selectedID`, then puts things back. Nothing
+    /// is reported; for editing a hidden space.
+    private func withSpace<T>(_ id: String, _ body: () -> T) -> T {
+        if id == activeSpaceID { return body() }
+        let keep = Stash(tabs: tabs, groups: groups, selectedID: selectedID)
+        let stash = stashes[id] ?? Stash()
+        tabs = stash.tabs
+        groups = stash.groups
+        selectedID = stash.selectedID
+        let result = body()
+        stashes[id] = Stash(tabs: tabs, groups: groups, selectedID: selectedID)
+        tabs = keep.tabs
+        groups = keep.groups
+        selectedID = keep.selectedID
+        return result
+    }
+
+    /// Shows space `id`: the current one's tabs are stashed (they keep their web views per the sleep policy), the
+    /// target's selected tab is shown and focused. `selecting` picks a tab of the target instead. A space with no
+    /// tabs gets a New Tab. No-op for the active space.
+    func switchToSpace(_ id: String) {
+        switchToSpace(id, selecting: nil)
+    }
+
+    private func switchToSpace(_ id: String, selecting chosen: Tab?) {
+        guard id != activeSpaceID, spaces.contains(where: { $0.id == id }) else { return }
+        let previous = selectedTab
+        stashes[activeSpaceID] = Stash(tabs: tabs, groups: groups, selectedID: selectedID)
+        let stash = stashes.removeValue(forKey: id) ?? Stash()
+        tabs = stash.tabs
+        groups = stash.groups
+        selectedID = nil
+        activeSpaceID = id
+        renamingTabID = nil
+        renamingGroupID = nil
+        if let tab = chosen ?? tabs.first(where: { $0.id == stash.selectedID }) ?? tabs.last {
+            activate(tab, previous: previous)
+        } else {
+            previous?.hoveredLink = nil
+            openNewTabPage()
+        }
+        AppModel.shared.sessionChanged()
+    }
+
+    /// The active space has no tabs: shows the nearest space that has some. False when none has.
+    @discardableResult
+    private func showSpaceWithTabs() -> Bool {
+        guard let at = spaces.firstIndex(where: { $0.id == activeSpaceID }) else { return false }
+        let others = spaces.indices.filter { stashes[spaces[$0].id]?.tabs.isEmpty == false }
+        guard let nearest = others.min(by: { abs($0 - at) < abs($1 - at) }) else { return false }
+        switchToSpace(spaces[nearest].id)
+        return true
+    }
+
+    func nextSpace(offset: Int) {
+        guard spaces.count > 1, let at = spaces.firstIndex(where: { $0.id == activeSpaceID }) else { return }
+        switchToSpace(spaces[((at + offset) % spaces.count + spaces.count) % spaces.count].id)
+    }
+
+    /// Adds a space after the others and switches to it; it opens one New Tab. An empty name becomes "Space N".
+    @discardableResult
+    func newSpace(name: String = "", symbol: SpaceSymbol = .star) -> Space {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let space = Space(name: trimmed.isEmpty ? "Space \(spaces.count + 1)" : trimmed, symbol: symbol)
+        spaces.append(space)
+        switchToSpace(space.id)
+        return space
+    }
+
+    /// Removes a space, never the last. Its tabs close into Reopen Closed Tab. The active space first hands the
+    /// window to a neighbour.
+    func deleteSpace(_ id: String) {
+        guard spaces.count > 1, let at = spaces.firstIndex(where: { $0.id == id }) else { return }
+        if id == activeSpaceID { switchToSpace(spaces[at > 0 ? at - 1 : 1].id) }
+        let doomed = stashes.removeValue(forKey: id)?.tabs ?? []
+        spaces.removeAll { $0.id == id }
+        for tab in doomed {
+            rememberClosed(tab)
+            tab.sleep()
+            extensionHost?.tabClosed(tab, windowIsClosing: false)
+        }
+        AppModel.shared.sessionChanged()
+    }
+
+    func renameSpace(_ id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let space = spaces.first(where: { $0.id == id }) else { return }
+        space.name = trimmed
+        AppModel.shared.sessionChanged()
+    }
+
+    func setSymbol(_ symbol: SpaceSymbol, of id: String) {
+        spaces.first { $0.id == id }?.symbol = symbol
+        AppModel.shared.sessionChanged()
+    }
+
+    func setTint(_ tint: ColorPreset?, of id: String) {
+        spaces.first { $0.id == id }?.tint = tint
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Moves `tab` to the end of space `id` (a pinned tab to the end of its pins). It leaves its group, and the
+    /// source space selects a neighbour.
+    func moveTab(_ tab: Tab, toSpace id: String) {
+        let source = space(of: tab)
+        guard source.id != id, spaces.contains(where: { $0.id == id }), allTabs.contains(where: { $0 === tab }) else { return }
+        if renamingTabID == tab.id { renamingTabID = nil }
+        let leave: () -> Void = { [self] in
+            let index = tabs.firstIndex { $0 === tab } ?? 0
+            tabs.removeAll { $0 === tab }
+            tab.groupID = nil
+            normalizeGroups()
+            if selectedID == tab.id { selectedID = tabs.isEmpty ? nil : nearestVisibleTab(to: min(index, tabs.count - 1)).id }
+        }
+        let arrive: () -> Void = { [self] in
+            let to = tab.isPinned ? TabOrder.pinBoundary(tabs.map(\.isPinned)) : tabs.count
+            tabs.insert(tab, at: to)
+            if selectedID == nil { selectedID = tab.id }
+        }
+        let sourceWasActive = source.id == activeSpaceID
+        let wasSelected = sourceWasActive && tab.id == selectedID
+        withSpace(source.id, leave)
+        withSpace(id, arrive)
+        if sourceWasActive {
+            if let next = selectedTab, wasSelected { activate(next, previous: tab) } else if tabs.isEmpty { openNewTabPage() }
+        }
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Session restore: the saved name, symbol and tint of the active space (it keeps `tabs`).
+    func restoreActiveSpace(_ record: SpaceRecord) {
+        let space = Space(record: record)
+        spaces = [space]
+        activeSpaceID = space.id
+    }
+
+    /// Session restore: an inactive space with its tabs (already owned by this window). Duplicate ids are skipped.
+    func restoreSpace(_ record: SpaceRecord, tabs restored: [Tab]) {
+        guard !spaces.contains(where: { $0.id == record.id }) else { return }
+        spaces.append(Space(record: record))
+        withSpace(record.id) {
+            tabs = restored
+            groups = record.groups.compactMap(TabGroup.init(record:))
+            normalizeGroups()
+            if restored.indices.contains(record.selectedIndex) { selectedID = restored[record.selectedIndex].id } else { selectedID = restored.last?.id }
+        }
+    }
+
+    /// Session restore, last step: the active space goes back to its saved place among the others (restore adds it
+    /// first), and an active space that restored empty gives way to one with tabs.
+    func finishRestore(activeSpaceIndex: Int? = nil) {
+        if let index = activeSpaceIndex, let from = spaces.firstIndex(where: { $0.id == activeSpaceID }) {
+            let space = spaces.remove(at: from)
+            spaces.insert(space, at: min(max(index, 0), spaces.count))
+        }
+        if tabs.isEmpty { showSpaceWithTabs() }
     }
 
     // MARK: - Tab groups
@@ -567,15 +818,32 @@ final class BrowserModel {
     /// selection to its neighbour; a window left empty stays open for the caller to close once the tab has arrived.
     /// Returns the tab's old index.
     func detach(_ tab: Tab) -> Int? {
-        guard let index = tabs.firstIndex(where: { $0 === tab }) else { return nil }
+        guard let index = tabs.firstIndex(where: { $0 === tab }) else {
+            guard let home = stashedSpace(of: tab) else { return nil }
+            let offset = tabOffset(ofSpace: home.id)
+            let local = withSpace(home.id) {
+                let local = tabs.firstIndex { $0 === tab } ?? 0
+                tabs.removeAll { $0 === tab }
+                normalizeGroups()
+                if selectedID == tab.id { selectedID = tabs.last?.id }
+                return local
+            }
+            return offset + local
+        }
+        let offset = tabOffset(ofSpace: activeSpaceID)
         let wasSelected = tab.id == selectedID
         if renamingTabID == tab.id { renamingTabID = nil }
         tabs.remove(at: index)
         normalizeGroups()
         if wasSelected {
-            if tabs.isEmpty { selectedID = nil } else { select(nearestVisibleTab(to: min(index, tabs.count - 1))) }
+            if tabs.isEmpty {
+                selectedID = nil
+                showSpaceWithTabs()
+            } else {
+                select(nearestVisibleTab(to: min(index, tabs.count - 1)))
+            }
         }
-        return index
+        return index + offset
     }
 
     /// A tab may only move into a window of the same profile and privacy: its web view carries that profile's cookies.
@@ -591,7 +859,7 @@ final class BrowserModel {
         guard canAccept(tab) else { return false }
         tab.browser = self
         tab.returnsToOpener = false
-        if let opener = tab.opener, !tabs.contains(where: { $0 === opener }) { tab.opener = nil }
+        if let opener = tab.opener, !allTabs.contains(where: { $0 === opener }) { tab.opener = nil }
         let boundary = TabOrder.pinBoundary(tabs.map(\.isPinned))
         let to = tab.isPinned ? min(max(index, 0), boundary) : min(max(index, boundary), tabs.count)
         tabs.insert(tab, at: to)
@@ -623,7 +891,7 @@ final class BrowserModel {
     /// Shows Settings in this window: its settings tab moves to `pane` and is selected, or a new one opens after the
     /// selected tab. A window can hold more than one settings tab (Duplicate Tab); the first one is used.
     func showSettings(pane: SettingsPane) {
-        if let tab = tabs.first(where: { $0.settingsPane != nil }) {
+        if let tab = allTabs.first(where: { $0.settingsPane != nil }) {
             showPane(pane, in: tab)
             select(tab)
         } else {
@@ -688,8 +956,8 @@ final class BrowserModel {
             isEditingAddress = false
             // Leave the field here too, in case the tab is in another window.
             controller?.window?.makeFirstResponder(nil)
-            guard let window = AppModel.shared.windows.first(where: { $0.model.tabs.contains { $0.id == id } }),
-                  let tab = window.model.tabs.first(where: { $0.id == id }) else { return }
+            guard let window = AppModel.shared.windows.first(where: { $0.model.allTabs.contains { $0.id == id } }),
+                  let tab = window.model.allTabs.first(where: { $0.id == id }) else { return }
             syncAddress()
             window.model.select(tab)
             window.window?.makeKeyAndOrderFront(nil)
@@ -774,10 +1042,24 @@ final class BrowserModel {
 
     /// This window for session.json, without View Source tabs. Private windows are never saved (`AppModel`).
     var record: WindowRecord {
-        WindowRecord.saving(
-            tabs, selected: { $0.id == self.selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
-            frame: controller?.window.map { NSStringFromRect($0.frame) }, groups: groups.map(\.record),
-            profile: profileID == ProfileStore.defaultID ? nil : profileID
+        func saved(_ tabs: [Tab], _ groups: [TabGroup], _ selectedID: UUID?, frame: String? = nil, space: SpaceRecord? = nil, others: [SpaceRecord] = [], spaceIndex: Int? = nil) -> WindowRecord {
+            WindowRecord.saving(
+                tabs, selected: { $0.id == selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
+                frame: frame, groups: groups.map(\.record),
+                profile: profileID == ProfileStore.defaultID ? nil : profileID, space: space, otherSpaces: others,
+                spaceIndex: spaceIndex
+            )
+        }
+        var others: [SpaceRecord] = []
+        for space in spaces where space.id != activeSpaceID {
+            let stash = stashes[space.id] ?? Stash()
+            let part = saved(stash.tabs, stash.groups, stash.selectedID)
+            others.append(space.record(tabs: part.tabs, selectedIndex: part.selectedIndex, groups: part.groups))
+        }
+        return saved(
+            tabs, groups, selectedID, frame: controller?.window.map { NSStringFromRect($0.frame) },
+            space: activeSpace.record(), others: others,
+            spaceIndex: spaces.count > 1 ? spaces.firstIndex { $0.id == activeSpaceID } : nil
         )
     }
 }

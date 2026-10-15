@@ -135,6 +135,11 @@ final class AppModel {
     /// background but not a text color is capped with the default look's text, an approximation of what is drawn.
     func effectiveTintStrength(dark: Bool) -> Double {
         guard let tint = tintChoice.color else { return 0 }
+        return effectiveTintStrength(dark: dark, tint: tint)
+    }
+
+    /// The same cap for a given tint color, such as a space's.
+    func effectiveTintStrength(dark: Bool, tint: PaddleCore.RGBColor) -> Double {
         let palette = activeTheme?.palette(dark: dark)
         let text = palette?.text ?? DefaultChromeColors.text(dark: dark)
         let secondary = palette?.secondaryText ?? DefaultChromeColors.secondary(dark: dark)
@@ -846,7 +851,7 @@ final class AppModel {
         target.model.adopt(tab, at: index)
         target.model.extensionHost?.tabMoved(tab, from: from, in: source.controller)
         if select || target.model.selectedID == nil { target.model.select(tab) }
-        if source.tabs.isEmpty { source.controller?.close() }
+        if source.allTabs.isEmpty { source.controller?.close() }
         sessionChanged()
     }
 
@@ -942,7 +947,7 @@ final class AppModel {
         SettingsPane.remembered = chosen
         let profile = frontWindow?.model.profileID ?? ProfileStore.defaultID
         let candidates = ([frontWindow].compactMap { $0 } + windows).filter { $0.model.profileID == profile }
-        let withSettings = candidates.filter { $0.model.tabs.contains { $0.settingsPane != nil } }
+        let withSettings = candidates.filter { $0.model.allTabs.contains { $0.settingsPane != nil } }
         guard let window = withSettings.first(where: { !$0.model.isPrivate }) ?? withSettings.first ?? frontWindow else {
             openWindow(url: chosen.url)
             return
@@ -970,7 +975,8 @@ final class AppModel {
         }
     }
 
-    var allTabs: [Tab] { windows.flatMap { $0.model.tabs } }
+    /// Every tab of every window, hidden spaces included.
+    var allTabs: [Tab] { windows.flatMap { $0.model.allTabs } }
 
     /// `newTabPage` from config.json; nil for about:blank (an empty tab).
     var newTabPageURL: URL? {
@@ -1021,7 +1027,7 @@ final class AppModel {
         do {
             isRestoring = true
             defer { isRestoring = false }
-            for record in session.windows where !record.tabs.isEmpty {
+            for record in session.windows where !record.allTabRecords.isEmpty {
                 let profile = record.profile ?? ProfileStore.defaultID
                 guard profiles.contains(profile) else {
                     if profiles.loadError != nil {

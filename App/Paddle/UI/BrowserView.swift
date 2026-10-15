@@ -31,7 +31,7 @@ struct BrowserView: View {
     private var vertical: Bool { app.config.tabLayout == .vertical }
 
     var body: some View {
-        let theme = ResolvedChromeTheme(app: app, dark: colorScheme == .dark)
+        let theme = ResolvedChromeTheme(app: app, dark: colorScheme == .dark, spaceTint: model.activeSpace.tint)
         Group {
             if vertical {
                 HStack(spacing: 0) {

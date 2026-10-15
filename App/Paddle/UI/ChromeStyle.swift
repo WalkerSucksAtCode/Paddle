@@ -40,10 +40,11 @@ struct ResolvedChromeTheme: Equatable {
     var toolbarTint: Color?
 
     /// Nil when the theme, accent and tint change nothing.
-    init?(app: AppModel, dark: Bool) {
+    /// A window's `spaceTint` replaces the app's tint for that window.
+    init?(app: AppModel, dark: Bool, spaceTint: ColorPreset? = nil) {
         let palette = app.activeTheme?.palette(dark: dark)
-        let tint = app.tintChoice.color
-        let strength = app.effectiveTintStrength(dark: dark)
+        let tint = spaceTint?.color ?? app.tintChoice.color
+        let strength = spaceTint.map { app.effectiveTintStrength(dark: dark, tint: $0.color) } ?? app.effectiveTintStrength(dark: dark)
         func surface(_ base: PaddleCore.RGBColor?) -> (solid: Color?, overlay: Color?) {
             guard let tint, strength > 0 else { return (base.map { Color(rgb: $0) }, nil) }
             guard let base else { return (nil, Color(rgb: tint).opacity(strength)) }

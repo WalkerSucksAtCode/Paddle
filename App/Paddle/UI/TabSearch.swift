@@ -24,8 +24,10 @@ struct TabSearchView: View {
         var result: [TabSearchEntry] = []
         for controller in AppModel.shared.windows where controller.model.isPrivate == model.isPrivate {
             let other = controller.model !== model
-            for tab in controller.model.tabs {
+            let several = controller.model.spaces.count > 1
+            for tab in controller.model.allTabs {
                 var parts = [tab.settingsPane != nil ? "Settings" : (tab.url?.host() ?? "")]
+                if several { parts.append(controller.model.space(of: tab).name) }
                 if other { parts.append("Other window") }
                 if tab.isAsleep { parts.append("Asleep") }
                 result.append(TabSearchEntry(

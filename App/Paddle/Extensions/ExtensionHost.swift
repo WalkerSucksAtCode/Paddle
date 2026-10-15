@@ -283,7 +283,7 @@ final class ExtensionHost {
 
         for window in registeredWindows.compactMap(\.value) {
             controller.didOpenWindow(window.extensionWindow)
-            for tab in window.model.tabs { controller.didOpenTab(tab.extensionTab) }
+            for tab in window.model.allTabs { controller.didOpenTab(tab.extensionTab) }
             if let selected = window.model.selectedTab { controller.didActivateTab(selected.extensionTab) }
         }
         reportedFocus = nil
@@ -305,7 +305,7 @@ final class ExtensionHost {
         var reloaded = 0
         let paired = AppModel.shared.liveOpenerPairs()
         for window in registeredWindows.compactMap(\.value) {
-            for tab in window.model.tabs where tab.isAwake && tab.extensionPageID == nil && !paired.contains(tab.id) {
+            for tab in window.model.allTabs where tab.isAwake && tab.extensionPageID == nil && !paired.contains(tab.id) {
                 if tab.id == window.model.selectedID {
                     tab.sleep()
                     tab.wake()
@@ -368,7 +368,7 @@ final class ExtensionHost {
             tab.wake()
         }
         for window in registeredWindows.compactMap(\.value) {
-            for tab in window.model.tabs where tab.showsExtensionUnavailable {
+            for tab in window.model.allTabs where tab.showsExtensionUnavailable {
                 guard loaded.contains(where: { $0.owns(tab.url) }) else { continue }
                 tab.sleep()
                 if window.model.selectedID == tab.id { tab.wake() }
@@ -484,7 +484,7 @@ final class ExtensionHost {
             log.info("\(ext.name, privacy: .public): private windows \(allowed ? "on" : "off", privacy: .public)")
             guard !allowed else { continue }
             for window in AppModel.shared.windows where window.model.isPrivate {
-                for tab in window.model.tabs where ext.owns(tab.url) {
+                for tab in window.model.allTabs where ext.owns(tab.url) {
                     if tab.isAwake { tab.sleep() }
                     if tab === window.model.selectedTab { tab.wake() }
                 }
@@ -1072,7 +1072,7 @@ final class ExtensionHost {
         popups.close(for: ext.context)
         ext.context.action(for: nil)?.closePopup()
         for window in registeredWindows.compactMap(\.value) {
-            for tab in window.model.tabs where ext.owns(tab.url) {
+            for tab in window.model.allTabs where ext.owns(tab.url) {
                 if closingTabs {
                     window.model.close(tab, remember: false)
                 } else if tab.isAwake {
@@ -1306,7 +1306,7 @@ final class ExtensionHost {
         registeredWindows.append(Weak(window))
         guard let controller else { return }
         controller.didOpenWindow(window.extensionWindow)
-        for tab in window.model.tabs { controller.didOpenTab(tab.extensionTab) }
+        for tab in window.model.allTabs { controller.didOpenTab(tab.extensionTab) }
         if let selected = window.model.selectedTab { controller.didActivateTab(selected.extensionTab) }
         if window.window?.isKeyWindow == true { reportFocus(window) }
     }
@@ -1314,7 +1314,7 @@ final class ExtensionHost {
     func windowClosing(_ window: BrowserWindowController) {
         guard isRegistered(window) else { return }
         if let controller {
-            for tab in window.model.tabs { controller.didCloseTab(tab.extensionTab, windowIsClosing: true) }
+            for tab in window.model.allTabs { controller.didCloseTab(tab.extensionTab, windowIsClosing: true) }
             controller.didCloseWindow(window.extensionWindow)
         }
         if reportedFocus === window { reportedFocus = nil }
@@ -1458,7 +1458,7 @@ final class ExtensionHost {
         guard let url = context.optionsPageURL else { throw PaddleExtensionError.noOptions }
         let app = AppModel.shared
         for window in app.windows where isVisible(window, to: context) {
-            if let tab = window.model.tabs.first(where: { $0.url == url }) {
+            if let tab = window.model.allTabs.first(where: { $0.url == url }) {
                 window.model.select(tab)
                 window.window?.makeKeyAndOrderFront(nil)
                 return

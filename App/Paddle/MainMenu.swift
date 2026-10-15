@@ -148,6 +148,24 @@ enum MainMenu {
         add(tabs, "renameTab", "Rename Tab…", #selector(BrowserWindowController.paddleRenameTab(_:)), "")
         add(tabs, "addTabToNewGroup", "Add Tab to New Group", #selector(BrowserWindowController.paddleAddTabToNewGroup(_:)), "")
         add(tabs, "removeTabFromGroup", "Remove Tab from Group", #selector(BrowserWindowController.paddleRemoveTabFromGroup(_:)), "")
+        tabs.addItem(.separator())
+        for n in 1...9 {
+            let item = add(tabs, "space\(n)", "Space \(n)", #selector(BrowserWindowController.paddleSelectSpace(_:)), "\(n)", [.control])
+            item.tag = n
+            // Shown only while the window has that many spaces (SpacesMenuDelegate); the key stays live meanwhile.
+            item.allowsKeyEquivalentWhenHidden = true
+        }
+        add(tabs, "nextSpace", "Next Space", #selector(BrowserWindowController.paddleNextSpace(_:)), "")
+        add(tabs, "previousSpace", "Previous Space", #selector(BrowserWindowController.paddlePreviousSpace(_:)), "")
+        add(tabs, "newSpace", "New Space", #selector(BrowserWindowController.paddleNewSpace(_:)), "")
+        add(tabs, "editSpace", "Edit Space…", #selector(BrowserWindowController.paddleEditSpace(_:)), "")
+        add(tabs, "deleteSpace", "Delete Space", #selector(BrowserWindowController.paddleDeleteSpace(_:)), "")
+        let moveToSpace = NSMenuItem(title: "Move Tab to Space", action: nil, keyEquivalent: "")
+        moveToSpace.submenu = NSMenu(title: "Move Tab to Space")
+        tabs.addItem(moveToSpace)
+        SpacesMenuDelegate.shared.moveItem = moveToSpace
+        tabs.delegate = SpacesMenuDelegate.shared
+        tabs.addItem(.separator())
         add(tabs, "moveTabLeft", "Move Tab Left", #selector(BrowserWindowController.paddleMoveTabLeft(_:)), String(UnicodeScalar(NSPageUpFunctionKey)!), [.control, .shift])
         add(tabs, "moveTabRight", "Move Tab Right", #selector(BrowserWindowController.paddleMoveTabRight(_:)), String(UnicodeScalar(NSPageDownFunctionKey)!), [.control, .shift])
         add(tabs, "toggleMute", "Mute Tab", #selector(BrowserWindowController.paddleToggleMute(_:)), "m", [.command, .control])
@@ -411,5 +429,35 @@ final class ProfileMenuDelegate: NSObject, NSMenuDelegate {
             entry.image = NSImage(systemSymbolName: profile.symbol.sfSymbol, accessibilityDescription: profile.symbol.displayName)
             submenu.addItem(entry)
         }
+    }
+}
+
+/// Refreshes the Tabs menu's space items from the front window each time the menu opens or a key is tried: Space 1…9
+/// carry their space's name, are hidden past the last one and tick the active one; Move Tab to Space lists the others.
+@MainActor
+final class SpacesMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = SpacesMenuDelegate()
+    var moveItem: NSMenuItem?
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let model = AppModel.shared.frontWindow?.model
+        let spaces = model?.spaces ?? []
+        for item in menu.items where item.action == #selector(BrowserWindowController.paddleSelectSpace(_:)) {
+            let space = spaces.indices.contains(item.tag - 1) ? spaces[item.tag - 1] : nil
+            item.isHidden = space == nil
+            item.title = space?.name ?? "Space \(item.tag)"
+            item.image = space.flatMap { NSImage(systemSymbolName: $0.symbol.sfSymbol, accessibilityDescription: $0.symbol.displayName) }
+            item.state = space?.id == model?.activeSpaceID ? .on : .off
+        }
+        guard let moveItem, let submenu = moveItem.submenu else { return }
+        submenu.removeAllItems()
+        for space in spaces where space.id != model?.activeSpaceID {
+            let entry = NSMenuItem(title: space.name, action: #selector(BrowserWindowController.paddleMoveTabToSpace(_:)), keyEquivalent: "")
+            entry.representedObject = space.id
+            entry.image = NSImage(systemSymbolName: space.symbol.sfSymbol, accessibilityDescription: space.symbol.displayName)
+            submenu.addItem(entry)
+        }
+        moveItem.isHidden = false
+        moveItem.isEnabled = !submenu.items.isEmpty && model?.selectedTab != nil
     }
 }

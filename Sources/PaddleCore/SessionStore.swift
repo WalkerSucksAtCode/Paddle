@@ -43,8 +43,7 @@ public struct SessionStore {
         sessionBytes = data
         var seen = Set<String>()
         for w in session.windows.indices {
-            for t in session.windows[w].tabs.indices {
-                var tab = session.windows[w].tabs[t]
+            session.windows[w].updateTabs { tab in
                 tab.id = tab.id.flatMap(UUID.init(uuidString:))?.uuidString
                 if let id = tab.id, !seen.insert(id).inserted { tab.id = nil }
                 if let name = tab.stateFile, Self.isStateFileName(name),
@@ -53,7 +52,6 @@ public struct SessionStore {
                     stateDigests[name] = SHA256.hash(data: state)
                 }
                 tab.stateFile = nil
-                session.windows[w].tabs[t] = tab
             }
         }
         return session
@@ -67,8 +65,7 @@ public struct SessionStore {
         var onDisk = session
         var referenced = Set<String>()
         for w in onDisk.windows.indices {
-            for t in onDisk.windows[w].tabs.indices {
-                var tab = onDisk.windows[w].tabs[t]
+            try onDisk.windows[w].updateTabs { tab in
                 tab.stateFile = nil
                 if let state = tab.interactionState {
                     var id = tab.id.flatMap(UUID.init(uuidString:))?.uuidString ?? UUID().uuidString
@@ -90,7 +87,6 @@ public struct SessionStore {
                     tab.stateFile = name
                     tab.interactionState = nil
                 }
-                onDisk.windows[w].tabs[t] = tab
             }
         }
 
@@ -131,16 +127,26 @@ extension SessionRecord {
     /// Keeps back/forward state only for the `limit` most recently active tabs that have one, plus every pinned
     /// tab; the others restore by URL only. Ties keep the earlier tab.
     public func cappingStates(to limit: Int) -> SessionRecord {
-        var ranked: [(window: Int, tab: Int, order: Int, date: Date)] = []
+        // `space` -1 is the window's own tabs, else an index into `otherSpaces`.
+        var ranked: [(window: Int, space: Int, tab: Int, order: Int, date: Date)] = []
         for (w, window) in windows.enumerated() {
             for (t, tab) in window.tabs.enumerated() where tab.interactionState != nil && !tab.isPinned {
-                ranked.append((w, t, ranked.count, tab.lastActive ?? .distantPast))
+                ranked.append((w, -1, t, ranked.count, tab.lastActive ?? .distantPast))
+            }
+            for (s, space) in window.otherSpaces.enumerated() {
+                for (t, tab) in space.tabs.enumerated() where tab.interactionState != nil && !tab.isPinned {
+                    ranked.append((w, s, t, ranked.count, tab.lastActive ?? .distantPast))
+                }
             }
         }
         ranked.sort { $0.date != $1.date ? $0.date > $1.date : $0.order < $1.order }
         var capped = self
         for entry in ranked.dropFirst(max(limit, 0)) {
-            capped.windows[entry.window].tabs[entry.tab].interactionState = nil
+            if entry.space < 0 {
+                capped.windows[entry.window].tabs[entry.tab].interactionState = nil
+            } else {
+                capped.windows[entry.window].otherSpaces[entry.space].tabs[entry.tab].interactionState = nil
+            }
         }
         return capped
     }

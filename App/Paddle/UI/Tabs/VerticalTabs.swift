@@ -73,6 +73,9 @@ struct VerticalTabsSidebar: View {
                 .padding(.bottom, 4)
             }
             VStack(spacing: 0) {
+                if model.spaces.count > 1, !collapsed {
+                    SpaceHeaderRow(space: model.activeSpace)
+                }
                 if !pinned.isEmpty {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 44 * scale), spacing: 4)], spacing: 4) {
                         ForEach(pinned) { tab in
@@ -85,7 +88,10 @@ struct VerticalTabsSidebar: View {
                     if !items.isEmpty { Divider().padding(.horizontal, 8) }
                 }
                 list(items)
+                    .id(model.activeSpaceID)
+                    .transition(.opacity)
             }
+            .animation(reducesMotion ? nil : .easeOut(duration: 0.12), value: model.activeSpaceID)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Tabs")
             // VoiceOver's rotor lists the tabs with their state, as the strip's does.
@@ -93,6 +99,10 @@ struct VerticalTabsSidebar: View {
                 ForEach(pinned.map { (tab: $0, group: nil as TabGroup?) } + items.compactMap { if case .tab(let tab, let group) = $0 { (tab: tab, group: group) } else { nil } }, id: \.tab.id) { entry in
                     AccessibilityRotorEntry(Text(TabButton.spokenEntry(entry.tab, selected: model.selectedID == entry.tab.id, group: entry.group)), id: entry.tab.id, in: rotor)
                 }
+            }
+            if model.spaces.count > 1 {
+                Divider().padding(.horizontal, 8)
+                SpaceButtonsRow(model: model, vertical: collapsed)
             }
         }
         .frame(width: collapsed ? SidebarMetrics.collapsedWidth : SidebarMetrics.clamped(storedWidth))
@@ -118,6 +128,7 @@ struct VerticalTabsSidebar: View {
         .frame(height: 38)
         .background(WindowDragArea())
         .tabSearchPopover(model: model)
+        .spaceEditPopover(model: model)
     }
 
     private var collapseButton: some View {

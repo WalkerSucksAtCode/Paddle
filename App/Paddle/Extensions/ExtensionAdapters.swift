@@ -55,7 +55,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func indexInWindow(for context: WKWebExtensionContext) -> Int {
         guard let tab, let browser else { return NSNotFound }
-        return browser.tabs.firstIndex { $0 === tab } ?? NSNotFound
+        return browser.allTabs.firstIndex { $0 === tab } ?? NSNotFound
     }
 
     func parentTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
@@ -198,7 +198,7 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     private var window: NSWindow? { controller?.window }
 
     func tabs(for context: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        controller?.model.tabs.map(\.extensionTab) ?? []
+        controller?.model.allTabs.map(\.extensionTab) ?? []
     }
 
     func activeTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? {

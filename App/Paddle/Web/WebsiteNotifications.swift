@@ -347,7 +347,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         let app = AppModel.shared
         if let origin = userInfo["origin"] as? String, let url = URL(string: origin), let host = Self.host(of: url) {
             let matches = app.windows.flatMap { window in
-                window.model.tabs
+                window.model.allTabs
                     .filter { !$0.isPrivate && $0.url.flatMap(Self.host(of:)) == host }
                     .map { (window: window, tab: $0) }
             }

@@ -51,7 +51,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         let model = target.model
         let parent = (configuration.parentTab as? ExtensionTab)?.tab
         let tab = model.newTab(url: url, select: configuration.shouldBeActive, after: parent)
-        if configuration.index != NSNotFound, configuration.index != model.tabs.firstIndex(where: { $0 === tab }) {
+        if configuration.index != NSNotFound, configuration.index != model.allTabs.firstIndex(where: { $0 === tab }) {
             model.place(tab, at: configuration.index)
         }
         if configuration.shouldBePinned != tab.isPinned { model.togglePin(tab) }

@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b built together (Walker, 2026-10-15) and checked in the app, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 built and checked in the app 2026-10-15, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -173,7 +173,33 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
   prompt names it. Website notifications still work only in the default profile: WebKit serves them for the default
   data store only.)
 - [ ] Wave 7, Spaces: named sets of tabs with their own pinned tabs and color, switched with ⌃1–9 (Arc, Zen, Edge).
-  Built on groups (Wave 1) and the sidebar (Wave 2).
+  Built on groups (Wave 1) and the sidebar (Wave 2). Specified 2026-10-15:
+  - [x] Per window. A space is a name, a symbol from a named list (Home, Work, Study, Code, Music, Games, Shopping,
+    Travel, Reading, Star) and an optional tint (one of the named presets), with its own tabs, pinned tabs, groups
+    and selected tab. A window starts with one space, "Main"; nothing about spaces shows until there is a second.
+  - [x] Model: the window's `tabs`, `groups` and selection stay the active space's, so the strip, sidebar, ⌘1–9,
+    next/previous tab and groups work unchanged; the other spaces are kept beside them, and an `allTabs` list (every
+    space) serves the session, tab sleeping, memory, extensions (which see every tab of the window) and tab search.
+  - [x] Saved in session.json; an older session.json opens as one space. (The active space's place is saved too:
+    restore had put it first, so ⌃1 changed meaning after a relaunch.)
+  - [x] Tabs menu, rebindable: Space 1-9 (⌃1-⌃9, `space1`-`space9`), Next Space and Previous Space (`nextSpace`,
+    `previousSpace`, no default keys), New Space (`newSpace`, starts with a New Tab and switches to it), Edit Space…
+    (`editSpace`: name, symbol, tint), Delete Space (`deleteSpace`: asks when it has tabs, which close into Reopen
+    Closed Tab; never the last space), Move Tab to Space ▸.
+  - [x] Switcher: in the horizontal layout, a button at the start of the tab strip with the space's symbol and name
+    (a menu of spaces, New Space, Edit Space). In the sidebar, the space's symbol and name above its tabs and a row of
+    space buttons at the bottom (each labelled with its name for VoiceOver and on hover; the active one by brightness).
+  - [x] A space's tint tints its window's tab strip and toolbar while it is active (the Wave 4b blend and 4.5:1 cap),
+    on top of the theme. Never the only cue: the name and symbol always show.
+  - [x] Search Tabs (⇧⌘A) covers every space and switches space to show the chosen tab; an extension activating a
+    tab in another space switches too. Links open in the space of the tab they came from; links from other apps in
+    the front window's active space.
+  - Done when: two spaces keep their own tabs, pins and groups through ⌃1/⌃2, the switcher and a relaunch; Move Tab
+    to Space and Delete Space work; Search Tabs finds a tab in the other space; the tint applies and is capped.
+    (Checked: ⌃1/⌃2 with a page focused (control shortcuts now reach the menu first), the Tabs menu, the sidebar row,
+    two relaunches, Move Tab to Space, Delete Space with its alert and Cancel, ⇧⌘T after it, Search Tabs, and the
+    blue tint measured at its 25 % blend. Not exercised: pins and groups inside a second space, Next/Previous Space,
+    an extension activating a tab in another space, and a tint strong enough to be capped.)
 - [ ] Wave 8, Split view: two tabs side by side in one window, with a draggable divider (Chrome, Arc, Zen, Edge).
 - [ ] Wave 9, Link preview: ⌥-click shows a link in a floating preview over the page, which can then become a tab
   (Arc Peek, Zen Glance).

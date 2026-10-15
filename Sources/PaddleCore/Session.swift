@@ -19,16 +19,33 @@ public struct WindowRecord: Codable, Sendable, Equatable {
     public var groups: [TabGroupRecord]
     /// The window's profile id (`ProfilesFile`); nil is the default profile. Files from before profiles have none.
     public var profile: String?
+    /// The active space's id, name, symbol and tint (its tabs are this record's own `tabs`, `groups` and
+    /// `selectedIndex`). Nil in files from before spaces, which open as one space named "Main".
+    public var space: SpaceRecord?
+    /// The inactive spaces, with their tabs, in window order.
+    public var otherSpaces: [SpaceRecord]
+    /// Where the active space sits among all the window's spaces (⌃1 is the first), so a relaunch keeps the order.
+    /// Nil in older files: first.
+    public var spaceIndex: Int?
 
-    public init(tabs: [TabRecord], selectedIndex: Int, frame: String? = nil, groups: [TabGroupRecord] = [], profile: String? = nil) {
+    public init(
+        tabs: [TabRecord], selectedIndex: Int, frame: String? = nil, groups: [TabGroupRecord] = [], profile: String? = nil,
+        space: SpaceRecord? = nil, otherSpaces: [SpaceRecord] = [], spaceIndex: Int? = nil
+    ) {
         self.tabs = tabs
         self.selectedIndex = selectedIndex
         self.frame = frame
         self.groups = groups
         self.profile = profile
+        self.space = space
+        self.otherSpaces = otherSpaces
+        self.spaceIndex = spaceIndex
     }
 
-    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups, profile }
+    /// Every tab of every space.
+    public var allTabRecords: [TabRecord] { tabs + otherSpaces.flatMap(\.tabs) }
+
+    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups, profile, space, otherSpaces, spaceIndex }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -37,6 +54,9 @@ public struct WindowRecord: Codable, Sendable, Equatable {
         frame = try c.decodeIfPresent(String.self, forKey: .frame)
         groups = try c.decodeIfPresent([TabGroupRecord].self, forKey: .groups) ?? []
         profile = (try? c.decodeIfPresent(String.self, forKey: .profile)) ?? nil
+        space = (try? c.decodeIfPresent(SpaceRecord.self, forKey: .space)) ?? nil
+        otherSpaces = ((try? c.decodeIfPresent([LossySpaceItem<SpaceRecord>].self, forKey: .otherSpaces)) ?? nil)?.compactMap(\.value) ?? []
+        spaceIndex = (try? c.decodeIfPresent(Int.self, forKey: .spaceIndex)) ?? nil
     }
 }
 
