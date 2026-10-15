@@ -21,7 +21,8 @@ final class DevelopMenuDelegate: NSObject, NSMenuDelegate {
 
     private func fill(_ menu: NSMenu) {
         menu.removeAllItems()
-        let withBackground = AppModel.shared.extensions.loaded.filter { $0.webExtension.hasBackgroundContent }
+        // The front window's profile: another profile's background pages aren't listed.
+        let withBackground = AppModel.shared.frontExtensions.loaded.filter { $0.webExtension.hasBackgroundContent }
         for ext in withBackground {
             let item = NSMenuItem(title: ext.displayName, action: #selector(inspect(_:)), keyEquivalent: "")
             item.target = self

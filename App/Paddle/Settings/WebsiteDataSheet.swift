@@ -16,7 +16,13 @@ struct WebsiteDataSheet: View {
     @State private var confirmingRemoveSelected = false
     @State private var isRemoving = false
 
-    private var store: WKWebsiteDataStore { AppModel.shared.web.dataStore }
+    /// The profile whose data this lists (the front window's when the sheet opened).
+    private let profile: String
+    private var store: WKWebsiteDataStore { AppModel.shared.web.dataStore(for: profile) }
+
+    init(profile: String = AppModel.shared.frontWindow?.model.profileID ?? ProfileStore.defaultID) {
+        self.profile = profile
+    }
 
     private var shown: [WebsiteDataSite] {
         let all = sites ?? []
@@ -29,7 +35,7 @@ struct WebsiteDataSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Website Data").font(.headline)
-            Text("Cookies, caches and storage sites keep in Paddle. Removing a site's data signs you out of it.")
+            Text("Cookies, caches and storage sites keep in Paddle\(AppModel.shared.profiles.hasSeveral ? " for the profile \u{201C}\(AppModel.shared.profiles.profile(id: profile).name)\u{201D}" : ""). Removing a site's data signs you out of it.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextField("Search", text: $search, prompt: Text("Search sites"))
@@ -146,7 +152,7 @@ struct WebsiteDataSite: Identifiable {
         }
 
         let extensionNames = Dictionary(
-            AppModel.shared.extensions.loaded.flatMap { [($0.id, $0.name), ($0.urlHost, $0.name)] }, uniquingKeysWith: { first, _ in first }
+            AppModel.shared.extensionHosts.flatMap(\.loaded).flatMap { [($0.id, $0.name), ($0.urlHost, $0.name)] }, uniquingKeysWith: { first, _ in first }
         )
         return records.map { record in
             let isExtension = extensionNames[record.displayName] != nil || isExtensionIdentifier(record.displayName)

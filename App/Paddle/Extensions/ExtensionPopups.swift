@@ -160,7 +160,7 @@ final class ExtensionPopupPresenter {
         guard action.presentsPopup else { throw PaddleExtensionError.noPopup }
         // E9: the persona's user agent before the popup page loads. Reading `popupWebView` makes the web view;
         // `popupPopover` below shows that same one.
-        if let agent = AppModel.shared.extensions.userAgent(for: context), let view = action.popupWebView, view.customUserAgent != agent {
+        if let agent = AppModel.shared.extensionHost(owning: context)?.userAgent(for: context), let view = action.popupWebView, view.customUserAgent != agent {
             view.customUserAgent = agent
         }
         guard let popover = action.popupPopover else { throw PaddleExtensionError.noPopup }
@@ -294,7 +294,9 @@ final class ExtensionPopupWebDelegate: NSObject, WKUIDelegate, WKNavigationDeleg
 
     private func openAsTab(_ url: URL) {
         guard let front = AppModel.shared.frontExtensionWindow(for: context) else {
-            AppModel.shared.openWindow(url: url)
+            // A new window in the popup's own profile; none when its extension is gone, rather than another profile's.
+            guard let context, let host = AppModel.shared.extensionHost(owning: context) else { return }
+            AppModel.shared.openWindow(url: url, profile: host.profileID)
             return
         }
         front.model.newTab(url: url, select: true)
@@ -318,7 +320,7 @@ final class ExtensionPopupWebDelegate: NSObject, WKUIDelegate, WKNavigationDeleg
     }
 
     func webViewDidClose(_ webView: WKWebView) {
-        AppModel.shared.extensions.popups.popupRequestedClose(webView)
+        for host in AppModel.shared.extensionHosts { host.popups.popupRequestedClose(webView) }
     }
 }
 
@@ -333,7 +335,7 @@ final class ExtensionPopupCloseProxy: NSObject, WKUIDelegate {
     }
 
     func webViewDidClose(_ webView: WKWebView) {
-        AppModel.shared.extensions.popups.popupRequestedClose(webView)
+        for host in AppModel.shared.extensionHosts { host.popups.popupRequestedClose(webView) }
     }
 
     nonisolated override func responds(to aSelector: Selector!) -> Bool {

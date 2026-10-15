@@ -162,6 +162,15 @@ final class StoreInstaller {
         return outcome
     }
 
+    /// The non-default profile of the browser window an install started from (or the window its sheet is on); nil
+    /// for the default profile, a private window or no browser window.
+    private static func profile(of window: NSWindow?) -> ProfileID? {
+        let browser = (window?.windowController as? BrowserWindowController)
+            ?? (window?.sheetParent?.windowController as? BrowserWindowController)
+        guard let browser, !browser.model.isPrivate, browser.model.profileID != ProfileStore.defaultID else { return nil }
+        return browser.model.profileID
+    }
+
     private func run(_ link: StoreLink, window: NSWindow?) async throws -> Outcome {
         reloadSources()
         if let sourcesError { throw Refusal(sourcesError) }
@@ -232,7 +241,13 @@ final class StoreInstaller {
         // The normal flow takes over: the host scans, loads it and asks for its permissions. A replaced folder that
         // was running is unloaded first so the new files load.
         let reload: Set<String> = replacing ? [folder] : []
-        Task { await AppModel.shared.extensions.reconcile(config: AppModel.shared.config, reloading: reload) }
+        let profile = Self.profile(of: window)
+        Task {
+            // A new extension installed from another profile's window runs only there: on in that profile, off in
+            // the default one (config.json), before the hosts reconcile.
+            if !replacing, let profile { await AppModel.shared.installOnlyInProfile(folder: folder, profile: profile) }
+            await AppModel.shared.reconcileExtensions(reloading: reload)
+        }
         return replacing
             ? .updated(name: name, version: package.version, verified: checked.verified)
             : .installed(name: name, version: package.version, verified: checked.verified)

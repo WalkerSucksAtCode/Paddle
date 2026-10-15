@@ -225,7 +225,7 @@ final class ExtensionActionNSButton: NSButton {
     }
 
     @objc private func clicked() {
-        let host = AppModel.shared.extensions
+        guard let host = ext.host else { return }
         // A click on the button of an open popup closes it, as in Safari and Chrome. The transient popover already
         // started closing on this click's mouse-down, so this also covers a popup that closed a moment ago.
         if host.popups.closeForToggle(ext.context) { return }
@@ -264,12 +264,13 @@ final class ExtensionActionNSButton: NSButton {
     }
 
     @objc private func openOptions() {
-        try? AppModel.shared.extensions.openOptionsPage(for: ext.context)
+        try? ext.host?.openOptionsPage(for: ext.context)
     }
 
     @objc private func askAboutPermissions() {
         let ext = self.ext
-        Task { await AppModel.shared.extensions.askAgain(ext) }
+        guard let host = ext.host else { return }
+        Task { await host.askAgain(ext) }
     }
 }
 

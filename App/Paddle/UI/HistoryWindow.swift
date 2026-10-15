@@ -53,6 +53,16 @@ private struct HistoryView: View {
     @State private var limit = 300
     @State private var selection: Set<Int64> = []
     @State private var pageCount = 0
+    /// The profile whose history to show: the last ordinary browser window that became main. Updated by
+    /// `didBecomeMainNotification`, since the front window itself isn't observable.
+    @State private var profile: ProfileID = Self.frontProfile
+    /// The profile the list was last loaded from; Remove and Open act on it, never on whichever window is in front.
+    @State private var shownProfile: ProfileID = ProfileStore.defaultID
+
+    private static var frontProfile: ProfileID {
+        let front = AppModel.shared.frontWindow
+        return front.map { $0.model.isPrivate ? ProfileStore.defaultID : $0.model.profileID } ?? ProfileStore.defaultID
+    }
 
     private struct Day: Identifiable {
         var id: Date
@@ -63,13 +73,19 @@ private struct HistoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
+                if app.profiles.hasSeveral {
+                    let shown = app.profiles.profile(id: shownProfile)
+                    Label(shown.name, systemImage: shown.symbol.sfSymbol)
+                        .foregroundStyle(.secondary)
+                        .help("The history of the profile \(shown.name), from its last window in front.")
+                }
                 TextField("Search History", text: $query)
                     .textFieldStyle(.roundedBorder)
-                Button("Clear History…") { ClearHistoryPrompt.run(for: NSApp.keyWindow) }
+                Button("Clear History…") { ClearHistoryPrompt.run(for: NSApp.keyWindow, profile: shownProfile) }
             }
             .padding(10)
             Divider()
-            if app.history == nil {
+            if app.history(for: shownProfile) == nil {
                 ContentUnavailableView("History is off", systemImage: "clock", description: Text("historyDays is 0 in config.json."))
                     .frame(maxHeight: .infinity)
             } else if visits.isEmpty {
@@ -87,7 +103,13 @@ private struct HistoryView: View {
                 .padding(.vertical, 5)
         }
         .frame(minWidth: 420, minHeight: 300)
-        .task(id: "\(query)|\(limit)|\(app.historyGeneration)") { reload() }
+        .task(id: "\(query)|\(limit)|\(app.historyGeneration)|\(profile)") { reload() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeMainNotification)) { note in
+            // Private windows have no history: the list stays on the profile it shows.
+            guard let browser = (note.object as? NSWindow)?.windowController as? BrowserWindowController,
+                  !browser.model.isPrivate else { return }
+            profile = browser.model.profileID
+        }
     }
 
     private var list: some View {
@@ -153,7 +175,8 @@ private struct HistoryView: View {
     }
 
     private func reload() {
-        guard let history = app.history else {
+        shownProfile = profile
+        guard let history = app.history(for: profile) else {
             visits = []
             pageCount = 0
             return
@@ -168,9 +191,25 @@ private struct HistoryView: View {
 
     private func open(_ ids: Set<Int64>, newTab: Bool) {
         let urls = urls(ids)
-        for (index, url) in urls.enumerated() {
-            AppModel.shared.openInFrontWindow(url, newTab: newTab || index > 0)
+        guard !urls.isEmpty else { return }
+        // Only in a window of the profile the visits belong to, so they are never recorded in another profile.
+        let app = AppModel.shared
+        let front = app.frontWindow
+        let target = front.flatMap { !$0.model.isPrivate && $0.model.profileID == shownProfile ? $0 : nil }
+            ?? app.windows.last { !$0.model.isPrivate && $0.model.profileID == shownProfile }
+        guard let target else {
+            let window = app.openWindow(url: urls[0], profile: shownProfile)
+            for url in urls.dropFirst() { window.model.newTab(url: url, select: false) }
+            return
         }
+        for (index, url) in urls.enumerated() {
+            if newTab || index > 0 {
+                target.model.newTab(url: url, select: false)
+            } else {
+                target.model.go(to: url, typed: false)
+            }
+        }
+        target.window?.makeKeyAndOrderFront(nil)
     }
 
     private func copy(_ ids: Set<Int64>) {
@@ -180,7 +219,7 @@ private struct HistoryView: View {
 
     private func delete(_ ids: Set<Int64>) {
         for url in Set(visits.filter { ids.contains($0.id) }.map(\.url)) {
-            AppModel.shared.removeFromHistory(url)
+            AppModel.shared.removeFromHistory(url, profile: shownProfile)
         }
         selection = []
     }
@@ -195,10 +234,16 @@ enum ClearHistoryPrompt {
         ("all history", { nil }),
     ]
 
-    static func run(for window: NSWindow?) {
+    /// `profile` nil: the front window's.
+    static func run(for window: NSWindow?, profile: ProfileID? = nil) {
+        let profile = profile ?? AppModel.shared.frontWindow?.model.profileID ?? ProfileStore.defaultID
+        let profiles = AppModel.shared.profiles
         let alert = NSAlert()
         alert.messageText = "Clear History"
         alert.informativeText = "Removes the pages you visited from Paddle's history and forgets recently closed tabs. Cookies, logins and open tabs stay."
+        if profiles.hasSeveral {
+            alert.informativeText += " Only the profile \u{201C}\(profiles.profile(id: profile).name)\u{201D} is cleared; other profiles keep their history."
+        }
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 220, height: 26), pullsDown: false)
         popup.addItems(withTitles: choices.map(\.title))
         popup.selectItem(at: 1)
@@ -207,7 +252,7 @@ enum ClearHistoryPrompt {
         alert.addButton(withTitle: "Cancel")
         let finish: (NSApplication.ModalResponse) -> Void = { response in
             guard response == .alertFirstButtonReturn else { return }
-            AppModel.shared.clearHistory(since: choices[popup.indexOfSelectedItem].since())
+            AppModel.shared.clearHistory(since: choices[popup.indexOfSelectedItem].since(), profile: profile)
         }
         if let window {
             alert.beginSheetModal(for: window, completionHandler: finish)
@@ -227,7 +272,7 @@ final class HistoryMenuDelegate: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         menu.items.filter { $0.tag == Self.recentTag }.forEach(menu.removeItem)
         guard let anchor = menu.items.firstIndex(where: { $0.identifier?.rawValue == "showHistory" }),
-              let pages = try? AppModel.shared.history?.recentPages(limit: Self.recentCount), !pages.isEmpty else { return }
+              let pages = try? AppModel.shared.history(for: AppModel.shared.frontWindow?.model.profileID ?? ProfileStore.defaultID)?.recentPages(limit: Self.recentCount), !pages.isEmpty else { return }
         var index = anchor + 1
         let separator = NSMenuItem.separator()
         separator.tag = Self.recentTag

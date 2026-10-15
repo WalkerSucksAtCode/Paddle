@@ -14,7 +14,7 @@ extension WindowRecord {
     /// nearest saved tab before it is selected instead (or the first). Only groups with a saved tab are kept.
     public static func saving<Tab>(
         _ tabs: [Tab], selected: (Tab) -> Bool, isSaved: (Tab) -> Bool, record: (Tab) -> TabRecord, frame: String?,
-        groups: [TabGroupRecord] = []
+        groups: [TabGroupRecord] = [], profile: String? = nil
     ) -> WindowRecord {
         var records: [TabRecord] = []
         var selectedIndex = 0
@@ -24,7 +24,7 @@ extension WindowRecord {
         }
         let used = Set(records.compactMap(\.groupID))
         return WindowRecord(
-            tabs: records, selectedIndex: selectedIndex, frame: frame, groups: groups.filter { used.contains($0.id) }
+            tabs: records, selectedIndex: selectedIndex, frame: frame, groups: groups.filter { used.contains($0.id) }, profile: profile
         )
     }
 }

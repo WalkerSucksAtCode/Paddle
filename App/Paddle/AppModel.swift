@@ -28,14 +28,20 @@ final class AppModel {
     /// The built-in themes and the files in themes/.
     let themes = ThemeStore()
     let favicons = FaviconStore()
+    /// The default profile's extension host (private windows use it too). Other profiles' hosts are made on first
+    /// use (`extensions(for:)`).
     let extensions = ExtensionHost()
+    /// The other profiles' extension hosts by profile id (`extensions(for:)`).
+    @ObservationIgnored var profileExtensionHosts: [ProfileID: ExtensionHost] = [:]
     /// Bookmarks > Show/Hide Bookmarks Bar. Window state, so it lives in user defaults rather than config.json.
     var showBookmarksBar = UserDefaults.standard.object(forKey: "showBookmarksBar") as? Bool ?? true {
         didSet { UserDefaults.standard.set(showBookmarksBar, forKey: "showBookmarksBar") }
     }
-    /// Browsing history (history.sqlite); nil when historyDays is 0 or the database can't be opened.
-    @ObservationIgnored private(set) var history: HistoryStore?
-    /// Bumped whenever history changes, so an open History window refreshes.
+    /// The profiles (profiles.json).
+    let profiles = ProfileStore()
+    /// Browsing history, one database per profile, opened on first use (`history(for:)`).
+    @ObservationIgnored private var histories: [ProfileID: HistoryStore] = [:]
+    /// Bumped whenever any profile's history changes, so an open History window refreshes.
     private(set) var historyGeneration = 0
     /// Footprint of everything Paddle runs: tab, extension and worker WebContent processes, GPU and Networking,
     /// and the app itself (`memoryBreakdown.total`).
@@ -43,17 +49,18 @@ final class AppModel {
     /// The same memory split into the Activity popover's rows.
     private(set) var memoryBreakdown = ProcessBreakdown()
 
-    /// Answers to permission prompts (camera, microphone, location, downloads) for this run only, by site and
-    /// kind. Settings lists them under "This session" (`forgetSessionAnswers`).
-    var sessionPermissions = SessionPermissions()
+    /// Answers to permission prompts (camera, microphone, location, notifications, downloads) for this run only, by
+    /// profile, then site and kind, so an answer given in one profile never carries to another. Settings lists a
+    /// profile's under "This session" (`forgetSessionAnswers`).
+    var sessionPermissions: [ProfileID: SessionPermissions] = [:]
     /// The same for private windows, kept apart so an answer given in one kind of window doesn't carry to the
     /// other. Not listed in Settings, and dropped when the last private window closes.
     @ObservationIgnored var privatePermissions = SessionPermissions()
 
-    /// `sessionPermissions`, or `privatePermissions` for a private window's tab.
-    subscript(permissionsFor isPrivate: Bool) -> SessionPermissions {
-        get { isPrivate ? privatePermissions : sessionPermissions }
-        set { if isPrivate { privatePermissions = newValue } else { sessionPermissions = newValue } }
+    /// `profile`'s `sessionPermissions`, or `privatePermissions` for a private window's tab.
+    subscript(permissionsFor isPrivate: Bool, profile profile: ProfileID) -> SessionPermissions {
+        get { isPrivate ? privatePermissions : sessionPermissions[profile] ?? SessionPermissions() }
+        set { if isPrivate { privatePermissions = newValue } else { sessionPermissions[profile] = newValue } }
     }
     /// Hosts (normalized, without `www.`) the user let load over http:// from the HTTPS-only notice, until Paddle
     /// quits. Never written to disk; private windows share it.
@@ -179,6 +186,7 @@ final class AppModel {
         let launched = ContinuousClock.now
         Paths.ensure()
         if let loaded = readConfig() { config = loaded }
+        profiles.load()
         openHistory()
         bookmarks.load()
         newTab.load()
@@ -386,7 +394,7 @@ final class AppModel {
         if keys.contains(.developerTools) {
             // Remote inspection follows at once; the context-menu item needs a new page (its configuration).
             for tab in allTabs { tab.webView?.isInspectable = new.developerTools }
-            for ext in extensions.loaded { ext.context.isInspectable = new.developerTools }
+            for ext in extensionHosts.flatMap(\.loaded) { ext.context.isInspectable = new.developerTools }
             MainMenu.setDevelopMenu(visible: new.developerTools)
         }
         if keys.contains(.showTabMemory) {
@@ -417,6 +425,10 @@ final class AppModel {
         }
         // A changed `extensionCompat` entry reloads that extension (`reconcile` compares each one's reload key).
         if !keys.isDisjoint(with: [.extensions, .extensionsInPrivate, .extensionCompat]) { await extensions.reconcile(config: new) }
+        // Other profiles take `extensions` from profiles.json, but `extensionCompat` applies to them too.
+        if keys.contains(.extensionCompat) {
+            for host in profileExtensionHosts.values { await host.reconcile(config: new) }
+        }
         if !keys.isDisjoint(with: [.extensionsInPrivate, .extensionCompat]) {
             extensions.applyPrivateAccess(config: new)
             // No extension may run in private windows any more, so private windows already open drop extensions. An
@@ -595,8 +607,8 @@ final class AppModel {
 
     /// Settings' "This session: Forget": the next camera, microphone, location or download request from `host`
     /// asks again.
-    func forgetSessionAnswers(forHost host: String) {
-        sessionPermissions.forget(host: host)
+    func forgetSessionAnswers(forHost host: String, profile: ProfileID) {
+        sessionPermissions[profile]?.forget(host: host)
     }
 
     /// Paddle > Reload Config: re-reads config.json, user.css, userscripts/, block lists, extension folders and
@@ -612,6 +624,10 @@ final class AppModel {
         await apply(readConfig() ?? config, reloading: true)
         bookmarks.load()
         newTab.load()
+        profiles.load()
+        profilesReloaded()
+        // A hand edit of a profile's `extensions` in profiles.json.
+        for host in profileExtensionHosts.values { await host.reconcile(config: config) }
         guard showAlert else { return }
 
         guard let configError else {
@@ -636,7 +652,7 @@ final class AppModel {
     /// Extensions > Reload Extensions: unloads every extension and loads the folder again, edited files included.
     /// No alert: an extension that fails shows in the window's banner and the Extensions menu's status lines.
     func reloadExtensions() async {
-        await extensions.reloadAll(config: config)
+        for host in extensionHosts { await host.reloadAll(config: config) }
         log.info("extensions reloaded: \(self.extensions.statusLines.joined(separator: " | "), privacy: .public)")
         AccessibilityNotification.Announcement("Extensions reloaded").post()
     }
@@ -666,31 +682,60 @@ final class AppModel {
 
     // MARK: - History
 
-    /// Opens history.sqlite and drops visits older than `historyDays`. With historyDays 0 nothing is recorded
-    /// (the file is left as it is; Clear History still empties it).
+    /// History is being recorded: historyDays is above 0.
+    var historyEnabled: Bool { config.historyDays > 0 }
+
+    /// Where a profile's history database is.
+    func historyPath(for profile: ProfileID) -> URL {
+        profile == ProfileStore.defaultID ? Paths.history : Paths.profileHistory(profile)
+    }
+
+    /// A profile's history, opened on first use and pruned to `historyDays` as it opens. Nil when historyDays is 0
+    /// or the database can't be opened.
+    func history(for profile: ProfileID) -> HistoryStore? {
+        // A stale id (a profile removed from profiles.json) never creates profiles/<id>/history.sqlite again.
+        guard historyEnabled, profile == ProfileStore.defaultID || profiles.contains(profile) else { return nil }
+        if let store = histories[profile] { return store }
+        do {
+            let url = historyPath(for: profile)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let store = try HistoryStore(path: url.path)
+            histories[profile] = store
+            prune(store)
+            return store
+        } catch {
+            log.error("history unavailable: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Drops a profile's open history database (the profile was deleted, or its file is about to be).
+    func forgetHistoryStore(profile: ProfileID) {
+        histories[profile] = nil
+    }
+
+    /// At launch and when historyDays changes: with historyDays 0 nothing is recorded (the files are left as they
+    /// are; Clear History still empties them); else the default profile's history opens and every open one is pruned.
     private func openHistory() {
         defer { historyGeneration += 1 }
-        guard config.historyDays > 0 else {
-            history = nil
+        guard historyEnabled else {
+            histories = [:]
             return
         }
-        if history == nil {
-            do {
-                history = try HistoryStore(path: Paths.history.path)
-            } catch {
-                log.error("history unavailable: \(error.localizedDescription, privacy: .public)")
-                return
-            }
-        }
+        _ = history(for: ProfileStore.defaultID)
         pruneHistory()
     }
 
     @ObservationIgnored private var lastHistoryPrune = Date.distantPast
 
-    /// Retention: drops visits older than `historyDays`. Runs at launch, on Reload Config and daily from the sweep timer.
+    /// Retention: drops visits older than `historyDays` from every open history. Runs at launch, on Reload Config
+    /// and daily from the sweep timer.
     private func pruneHistory() {
-        guard let history else { return }
         lastHistoryPrune = Date()
+        histories.values.forEach(prune)
+    }
+
+    private func prune(_ history: HistoryStore) {
         do {
             try history.prune(olderThan: Date().addingTimeInterval(-Double(config.historyDays) * 86_400))
         } catch {
@@ -698,8 +743,8 @@ final class AppModel {
         }
     }
 
-    func recordVisit(_ url: URL, title: String, typed: Bool) {
-        guard let history, HistoryStore.isRecordable(url) else { return }
+    func recordVisit(_ url: URL, title: String, typed: Bool, profile: ProfileID) {
+        guard HistoryStore.isRecordable(url), let history = history(for: profile) else { return }
         do {
             try history.recordVisit(url: url, title: title, typed: typed, at: Date())
             historyGeneration += 1
@@ -712,8 +757,8 @@ final class AppModel {
     /// here and those older than `historyDays`. Nil when history is off. Runs in batches with a yield between, so
     /// a large history doesn't freeze the windows; the first batch that fails stops it (the earlier ones stay, and a
     /// second import skips them).
-    func importHistory(_ visits: [ImportedVisit]) async throws -> HistoryImportSummary? {
-        guard let history else { return nil }
+    func importHistory(_ visits: [ImportedVisit], profile: ProfileID) async throws -> HistoryImportSummary? {
+        guard let history = history(for: profile) else { return nil }
         defer { historyGeneration += 1 }
         let cutoff = Date().addingTimeInterval(-Double(config.historyDays) * 86_400)
         var total = HistoryImportSummary()
@@ -724,14 +769,14 @@ final class AppModel {
         return total
     }
 
-    func updateHistoryTitle(_ url: URL, _ title: String) {
-        guard let history, !title.isEmpty, HistoryStore.isRecordable(url) else { return }
+    func updateHistoryTitle(_ url: URL, _ title: String, profile: ProfileID) {
+        guard !title.isEmpty, HistoryStore.isRecordable(url), let history = history(for: profile) else { return }
         try? history.updateTitle(url: url, title: title)
         historyGeneration += 1
     }
 
-    func removeFromHistory(_ url: String) {
-        guard let history else { return }
+    func removeFromHistory(_ url: String, profile: ProfileID) {
+        guard let history = history(for: profile) else { return }
         try? history.remove(url: url)
         historyGeneration += 1
     }
@@ -753,20 +798,22 @@ final class AppModel {
 
     /// Clears visits since `date`, or everything when nil, plus recently closed tabs. Works with history turned
     /// off too: the file from before is cleared, or deleted when clearing everything.
-    func clearHistory(since date: Date?) {
+    /// Only `profile`'s history and recently closed tabs; other profiles keep theirs.
+    func clearHistory(since date: Date?, profile: ProfileID) {
         defer { historyGeneration += 1 }
-        windows.forEach { $0.model.forgetClosedTabs() }
+        windows.filter { $0.model.profileID == profile }.forEach { $0.model.forgetClosedTabs() }
         saveSessionNow()
         favicons.forget(since: date, keeping: bookmarks.siteKeys)
         do {
-            if let history {
+            let path = historyPath(for: profile).path
+            if let history = history(for: profile) {
                 if let date { try history.removeVisits(since: date) } else { try history.removeAll() }
-            } else if FileManager.default.fileExists(atPath: Paths.history.path) {
+            } else if FileManager.default.fileExists(atPath: path) {
                 if let date {
-                    try HistoryStore(path: Paths.history.path).removeVisits(since: date)
+                    try HistoryStore(path: path).removeVisits(since: date)
                 } else {
                     for suffix in ["", "-wal", "-shm"] {
-                        try? FileManager.default.removeItem(atPath: Paths.history.path + suffix)
+                        try? FileManager.default.removeItem(atPath: path + suffix)
                     }
                 }
             }
@@ -791,9 +838,13 @@ final class AppModel {
             if select { source.select(tab) }
             return
         }
+        guard target.model.canAccept(tab) else {
+            log.info("tab move refused: different profile or privacy")
+            return
+        }
         guard let from = source.detach(tab) else { return }
         target.model.adopt(tab, at: index)
-        extensions.tabMoved(tab, from: from, in: source.controller)
+        target.model.extensionHost?.tabMoved(tab, from: from, in: source.controller)
         if select || target.model.selectedID == nil { target.model.select(tab) }
         if source.tabs.isEmpty { source.controller?.close() }
         sessionChanged()
@@ -804,15 +855,22 @@ final class AppModel {
     /// may run in private windows (`anyExtensionInPrivate`), decided here, when it opens.
     /// `moving`: tabs taken from other windows to fill it (`windows.create` with tab ids), instead of a new tab.
     @discardableResult
-    func openWindow(record: WindowRecord? = nil, url: URL? = nil, isPrivate: Bool = false, moving: [Tab] = []) -> BrowserWindowController {
+    func openWindow(
+        record: WindowRecord? = nil, url: URL? = nil, isPrivate: Bool = false, profile: ProfileID = ProfileStore.defaultID,
+        moving: [Tab] = []
+    ) -> BrowserWindowController {
+        // Tabs being moved keep their window's profile; an unknown profile is the default one. Private windows ignore it.
+        let wanted = moving.first.map { $0.profileID } ?? profile
         let controller = BrowserWindowController(
-            record: isPrivate ? nil : record, isPrivate: isPrivate, extensionsAllowed: !isPrivate || config.anyExtensionInPrivate
+            record: isPrivate ? nil : record, isPrivate: isPrivate, extensionsAllowed: !isPrivate || config.anyExtensionInPrivate,
+            profile: profiles.contains(wanted) ? wanted : ProfileStore.defaultID
         )
         windows.append(controller)
-        if controller.model.extensionsAllowed { extensions.windowOpened(controller) }
+        if controller.model.extensionsAllowed { extensions(for: controller.model.profileID)?.windowOpened(controller) }
         if record == nil {
-            if !moving.isEmpty {
-                for (index, tab) in moving.enumerated() { move(tab, to: controller, at: index) }
+            let movable = moving.filter { controller.model.canAccept($0) }
+            if !movable.isEmpty {
+                for (index, tab) in movable.enumerated() { move(tab, to: controller, at: index) }
             } else if let url {
                 controller.model.newTab(url: url)
             } else {
@@ -823,6 +881,13 @@ final class AppModel {
         }
         controller.showWindow(nil)
         return controller
+    }
+
+    /// Closes every window of a profile (it is being deleted); their tabs go to sleep, which drops the web views.
+    func closeWindows(inProfile profile: ProfileID) {
+        for controller in windows where controller.model.profileID == profile && !controller.model.isPrivate {
+            controller.close()
+        }
     }
 
     func windowClosed(_ controller: BrowserWindowController) {
@@ -851,26 +916,32 @@ final class AppModel {
     /// The front window the extension `context` may see and open things in: the front browser window when the
     /// extension host shows it to `context`, else the frontmost one it does. Private windows `context` isn't allowed
     /// in are skipped (`ExtensionHost.isVisible`); a nil context sees every window the host carries.
+    /// The extension's own profile decides: another profile's windows are never visible to it.
     func frontExtensionWindow(for context: WKWebExtensionContext?) -> BrowserWindowController? {
-        if let front = frontWindow, extensions.isVisible(front, to: context) { return front }
-        return NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first { self.extensions.isVisible($0, to: context) }
-            ?? windows.last { extensions.isVisible($0, to: context) }
+        guard let host = context.map(extensionHost(owning:)) ?? frontExtensions else { return nil }
+        if let front = frontWindow, host.isVisible(front, to: context) { return front }
+        return NSApp.orderedWindows.lazy.compactMap { $0.windowController as? BrowserWindowController }.first { host.isVisible($0, to: context) }
+            ?? windows.last { host.isVisible($0, to: context) }
     }
 
     /// The browser window the user is in is one the extension `context` can't see: a private window it isn't allowed
     /// in. Its actions and commands started from the menu then do nothing rather than act on a window behind it.
     func frontWindowIsHidden(from context: WKWebExtensionContext?) -> Bool {
         guard let front = frontWindow else { return false }
-        return !extensions.isVisible(front, to: context)
+        guard let host = context.map(extensionHost(owning:)) ?? frontExtensions else { return true }
+        return !host.isVisible(front, to: context)
     }
 
-    /// Opens Settings as a tab (Paddle > Settings…, ⌘, and typed settings addresses): a window that already has a
-    /// settings tab shows it, a normal window first and the front one preferred; else the front window opens one
-    /// after its selected tab. `pane` nil opens the pane shown last.
+    /// Opens Settings as a tab (Paddle > Settings…, ⌘, and typed settings addresses): a window of the front window's
+    /// profile that already has a settings tab shows it, a normal window first and the front one preferred; else the
+    /// front window opens one after its selected tab. Only the same profile: Settings' Extensions, Sites and session
+    /// answers are the profile's, so a Work window must not land on a Personal window's Settings. `pane` nil opens the
+    /// pane shown last.
     func showSettings(pane: SettingsPane? = nil) {
         let chosen = pane ?? SettingsPane.remembered
         SettingsPane.remembered = chosen
-        let candidates = [frontWindow].compactMap { $0 } + windows
+        let profile = frontWindow?.model.profileID ?? ProfileStore.defaultID
+        let candidates = ([frontWindow].compactMap { $0 } + windows).filter { $0.model.profileID == profile }
         let withSettings = candidates.filter { $0.model.tabs.contains { $0.settingsPane != nil } }
         guard let window = withSettings.first(where: { !$0.model.isPrivate }) ?? withSettings.first ?? frontWindow else {
             openWindow(url: chosen.url)
@@ -908,6 +979,37 @@ final class AppModel {
 
     // MARK: - Session
 
+    /// Saved windows whose profile restoreSession couldn't check because profiles.json was unreadable. Written back
+    /// by every save, and opened once Reload Config reads the file (`profilesReloaded`).
+    @ObservationIgnored private var heldWindowRecords: [WindowRecord] = []
+
+    /// After Reload Config re-reads profiles.json: windows held at launch open if their profile is listed (and are
+    /// dropped if it isn't), and windows of a profile no longer listed close, with its extension host and history
+    /// database, so nothing keeps using its data under another profile's name. Its files stay on disk.
+    private func profilesReloaded() {
+        guard profiles.loadError == nil else { return }
+        let held = heldWindowRecords
+        heldWindowRecords = []
+        for record in held {
+            let profile = record.profile ?? ProfileStore.defaultID
+            if profiles.contains(profile) {
+                openWindow(record: record, profile: profile)
+            } else {
+                log.error("session window dropped: its profile no longer exists")
+            }
+        }
+        let removed = Set(windows.filter { !$0.model.isPrivate && !profiles.contains($0.model.profileID) }.map(\.model.profileID))
+            .union(profileExtensionHosts.keys.filter { !profiles.contains($0) })
+        for profile in removed {
+            log.notice("a profile was removed from profiles.json: its windows close")
+            closeWindows(inProfile: profile)
+            dropExtensions(profile: profile)
+            forgetHistoryStore(profile: profile)
+            sessionPermissions[profile] = nil
+        }
+        if !held.isEmpty { sessionChanged() }
+    }
+
     private func restoreSession() {
         defer { didRestore = true }
         guard let session = sessionStore.load() else {
@@ -920,7 +1022,19 @@ final class AppModel {
             isRestoring = true
             defer { isRestoring = false }
             for record in session.windows where !record.tabs.isEmpty {
-                openWindow(record: record)
+                let profile = record.profile ?? ProfileStore.defaultID
+                guard profiles.contains(profile) else {
+                    if profiles.loadError != nil {
+                        // profiles.json can't be read, so the profile may well exist: keep the window as it was
+                        // saved, unopened (never in another profile's data store), until the file is fixed.
+                        log.error("session window kept unopened: profiles.json can't be read")
+                        heldWindowRecords.append(record)
+                    } else {
+                        log.error("session window dropped: its profile no longer exists")
+                    }
+                    continue
+                }
+                openWindow(record: record, profile: profile)
             }
         }
         // A session.json from before sessions/ existed is rewritten in the new form by the next save.
@@ -950,8 +1064,10 @@ final class AppModel {
         saveWork = nil
         unsavedSince = nil
         guard didRestore, !isTerminating else { return }
-        let session = SessionRecord.saving(windows, isPrivate: \.model.isPrivate, record: \.model.record)
+        var session = SessionRecord.saving(windows, isPrivate: \.model.isPrivate, record: \.model.record)
             .cappingStates(to: config.sessionHistoryTabs)
+        // Windows of profiles Paddle couldn't read at launch are written back unchanged.
+        session.windows += heldWindowRecords
         do {
             let result = try sessionStore.save(session)
             if result.wroteSession || !result.statesWritten.isEmpty || !result.statesDeleted.isEmpty {
@@ -1054,8 +1170,10 @@ final class AppModel {
         for tab in tabs {
             if let webView = tab.webView { owners[ObjectIdentifier(webView)] = .tab(tab.id) }
         }
-        for ext in extensions.loaded {
-            if let background = extensions.backgroundWebView(of: ext) { owners[ObjectIdentifier(background)] = .extensionView }
+        for host in extensionHosts {
+            for ext in host.loaded {
+                if let background = host.backgroundWebView(of: ext) { owners[ObjectIdentifier(background)] = .extensionView }
+            }
         }
 
         // Helpers outside WebKit's list (AutoFill, audio): a fresh process scan whenever a readout is open.

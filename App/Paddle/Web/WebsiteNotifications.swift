@@ -209,7 +209,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func permissionAnswers() -> [String: Bool] {
         let app = AppModel.shared
         var answers: [String: Bool] = [:]
-        for answer in app.sessionPermissions.all where answer.kind == .notifications {
+        for answer in app[permissionsFor: false, profile: ProfileStore.defaultID].all where answer.kind == .notifications {
             guard let url = URL(string: answer.site), let origin = Self.origin(of: url) else { continue }
             answers[origin] = answer.allowed
         }
@@ -266,7 +266,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         case .deny: return false
         case .ask:
             let port = url.port ?? (scheme == "https" ? 443 : 80)
-            return app.sessionPermissions.answer(site: "\(scheme)://\(host):\(port)", kind: .notifications) == true
+            return app[permissionsFor: false, profile: ProfileStore.defaultID].answer(site: "\(scheme)://\(host):\(port)", kind: .notifications) == true
         }
     }
 

@@ -3,12 +3,13 @@ import SwiftUI
 /// Settings' panes, in sidebar order. Settings is a tab of a browser window (`SettingsTabView`), addressed as
 /// `paddle://settings/<rawValue>`.
 enum SettingsPane: String, CaseIterable {
-    case general, appearance, tabsMemory, privacy, sites, extensions, shortcuts, advanced
+    case general, appearance, profiles, tabsMemory, privacy, sites, extensions, shortcuts, advanced
 
     var title: String {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
+        case .profiles: "Profiles"
         case .tabsMemory: "Tabs & Memory"
         case .privacy: "Privacy & Blocking"
         case .sites: "Sites"
@@ -22,6 +23,7 @@ enum SettingsPane: String, CaseIterable {
         switch self {
         case .general: "gearshape"
         case .appearance: "paintbrush"
+        case .profiles: "person.2"
         case .tabsMemory: "memorychip"
         case .privacy: "hand.raised"
         case .sites: "globe"
@@ -56,6 +58,10 @@ enum SettingsPane: String, CaseIterable {
             "highContrastTabs", "themes", "color", "colour", "accent", "accent color", "tint", "chrome tint", "tint strength", "palette",
             "open themes folder", "theme", "accentColor", "chromeTint", "chromeTintStrength", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
             "reduceTransparency", "default zoom", "minimum font size", "reduce motion", "reduce transparency",
+        ]
+        case .profiles: [
+            "profile", "profiles", "work", "personal", "container", "containers", "accounts", "separate cookies", "logins",
+            "new window in profile", "symbol",
         ]
         case .tabsMemory: [
             "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",
@@ -117,6 +123,7 @@ struct SettingsPaneView: View {
         switch pane {
         case .general: GeneralPane(model: model)
         case .appearance: AppearancePane(model: model)
+        case .profiles: ProfilesPane(model: model)
         case .tabsMemory: TabsMemoryPane(model: model)
         case .privacy: PrivacyPane(model: model)
         case .sites: SitesPane(model: model)

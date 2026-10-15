@@ -68,7 +68,7 @@ struct NewTabPage: View {
     }
 
     private func refreshFrequent() {
-        frequent = showsFrequent ? app.newTab.frequentSites(limit: 8) : []
+        frequent = showsFrequent ? app.newTab.frequentSites(limit: 8, profile: model.profileID) : []
     }
 }
 

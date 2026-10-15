@@ -12,16 +12,26 @@ enum PrivacySettings {
         ("uBlock filters – Unbreak", "https://ublockorigin.github.io/uAssets/filters/unbreak.txt"),
     ]
 
-    /// Visits that keeping `days` of history deletes (`AppModel.pruneHistory` uses the same cutoff), or nil when
-    /// history.sqlite can't be read. `days` 0 deletes nothing: history stops recording and the file is kept.
+    /// Visits that keeping `days` of history deletes (`AppModel.pruneHistory` uses the same cutoff) across every
+    /// profile, or nil when a history.sqlite can't be read. `days` 0 deletes nothing: history stops recording and
+    /// the files are kept.
     static func visitsDeleted(keepingDays days: Int, now: Date = Date()) -> Int? {
         guard days > 0 else { return 0 }
         let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
-        if let history = AppModel.shared.history { return try? history.countVisits(olderThan: cutoff) }
-        // History is off right now: turning it back on prunes the file as it opens, so count in it too.
-        guard FileManager.default.fileExists(atPath: Paths.history.path) else { return 0 }
-        guard let store = try? HistoryStore(path: Paths.history.path) else { return nil }
-        return try? store.countVisits(olderThan: cutoff)
+        var total = 0
+        for profile in AppModel.shared.profiles.all {
+            if let history = AppModel.shared.history(for: profile.id) {
+                guard let count = try? history.countVisits(olderThan: cutoff) else { return nil }
+                total += count
+                continue
+            }
+            // History is off right now: turning it back on prunes the file as it opens, so count in it too.
+            let path = AppModel.shared.historyPath(for: profile.id).path
+            guard FileManager.default.fileExists(atPath: path) else { continue }
+            guard let store = try? HistoryStore(path: path), let count = try? store.countVisits(olderThan: cutoff) else { return nil }
+            total += count
+        }
+        return total
     }
 
     /// The `.txt` files in `filters/` that none of `lists` downloads to, sorted by name. A file an old list name

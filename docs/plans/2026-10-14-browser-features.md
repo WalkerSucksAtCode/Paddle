@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 built and checked in the app 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b built together (Walker, 2026-10-15) and checked in the app, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -132,7 +132,46 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
 
 ## Waves 6-9: chosen extras (Walker, 2026-10-14)
 - [ ] Wave 6, Profiles: separate cookies and logins per profile, for example Work and Personal (Safari profiles,
-  Firefox containers). Each profile has its own `WKWebsiteDataStore(forIdentifier:)`, history and session.
+  Firefox containers). Split in two (2026-10-15); `WKWebsiteDataStore(forIdentifier:)`, `remove(forIdentifier:)` and
+  `fetchAllDataStoreIdentifiers` were probed on macOS 27.
+
+### Wave 6a: profiles with their own data
+- [x] `profiles.json`: the profiles, each an id, a name and a symbol from a named list (Person, Work, Home, School,
+  Tools, Games, Shopping, Health, Star, Leaf), never a color alone. The default profile ("Personal", renamable, not
+  deletable) keeps today's data store, history and windows, so nothing moves on upgrade.
+- [x] Data: each other profile gets `WKWebsiteDataStore(forIdentifier:)` (cookies, logins, storage, cache) and its
+  own `profiles/<id>/history.sqlite`. Everything history feeds follows the window's profile: address suggestions, the
+  History window, Clear History, the New Tab page's Frequently visited. Shared: bookmarks, New Tab pinned sites,
+  config.json, block lists, favicons, downloads. Private windows stay as they are (one throwaway store).
+  (Checked: a cookie and localStorage set in Work were absent in Personal; each profile's history.sqlite held only
+  its own visit; Work's New Tab page showed only Work's frequent site. Suggestions, the History window and Clear
+  History per profile were not exercised.)
+- [x] Windows: a window belongs to one profile, saved in session.json (`profile` on the window) and restored into it.
+  With more than one profile the toolbar shows the window's profile (symbol and name). File > New Window opens in the
+  front window's profile; File > New Window in Profile ▸ lists them. A tab never moves between windows of different
+  profiles (drops are refused; Move Group to New Window keeps the profile). (Checked: badge, relaunch back into the
+  profile. The New Window in Profile submenu and tab moves between profiles were not exercised.)
+- [x] Settings > Profiles: add (name and symbol), rename, change symbol, open a window, delete. (Checked all but
+  changing the symbol. Deleting removed WebsiteDataStore/<id>, WebExtensions/<id> and profiles/<id>/.) Settings now
+  reuses an open Settings tab only in a window of the same profile: before, a Work window landed on Personal's. Deleting asks first,
+  closes the profile's windows, removes its data store and its profiles/<id>/ folder.
+- Done when: a cookie set in one profile is absent in another, history stays separate, windows come back in their
+  profile after a relaunch, and deleting a profile removes its data from disk.
+
+### Wave 6b: extensions per profile (built together with 6a, Walker 2026-10-15)
+- [x] One extension host per profile: its own `WKWebExtensionController` (`Configuration(identifier:)` with the
+  profile's id; the default profile keeps `.default()`), whose extension pages use that profile's data store, so an
+  extension's storage and logins are separate per profile (a password manager signs in per profile).
+- [x] Which extensions run: the default profile as today (`extensions` in config.json); another profile starts with
+  none and turns them on in Settings > Extensions, saved in profiles.json. The Settings pane, the Extensions menu and
+  the toolbar show the front window's profile.
+- [x] Shared, owned in one place: installed folders, updates, store installs and their sources. Per profile:
+  permission decisions and extension storage. Private windows use the default profile's extensions, as today.
+- Done when: an extension turned on in two profiles keeps separate storage (signed in in one, not the other), and an
+  extension on only in Personal doesn't run in Work. (Checked with a test extension counting page loads in
+  chrome.storage: Personal counted on while Work started from 1; off in Work it didn't run. Each profile's install
+  prompt names it. Website notifications still work only in the default profile: WebKit serves them for the default
+  data store only.)
 - [ ] Wave 7, Spaces: named sets of tabs with their own pinned tabs and color, switched with ⌃1–9 (Arc, Zen, Edge).
   Built on groups (Wave 1) and the sidebar (Wave 2).
 - [ ] Wave 8, Split view: two tabs side by side in one window, with a draggable divider (Chrome, Arc, Zen, Edge).

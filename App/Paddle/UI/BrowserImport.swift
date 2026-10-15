@@ -152,7 +152,7 @@ final class BrowserImportModel {
             case .success(let list):
                 // Installed from this store, or the same extension from another store (Proton Pass from
                 // addons.mozilla.org listed again from the Chrome Web Store): matched by name.
-                let names = Set(AppModel.shared.extensions.loaded.map { $0.displayName.lowercased() })
+                let names = Set(AppModel.shared.frontExtensions.loaded.map { $0.displayName.lowercased() })
                 self.installedExtensions = Set(list.compactMap { item in
                     guard let link = item.link else { return nil }
                     let sameName = names.contains(ExtensionPermissionText.sanitize(item.name).lowercased())
@@ -266,7 +266,8 @@ final class BrowserImportModel {
         func problem(_ text: String) -> ImportReportSection {
             ImportReportSection(title: title, lines: [ImportReportLine(kind: .problem, title: text)])
         }
-        guard app.history != nil else {
+        let profile = app.frontWindow?.model.profileID ?? ProfileStore.defaultID
+        guard app.history(for: profile) != nil else {
             return problem("History is turned off (historyDays is 0 in config.json), so nothing was imported.")
         }
 
@@ -281,7 +282,7 @@ final class BrowserImportModel {
 
         let summary: HistoryImportSummary
         do {
-            guard let result = try await app.importHistory(read.visits) else {
+            guard let result = try await app.importHistory(read.visits, profile: profile) else {
                 return problem("History is turned off (historyDays is 0 in config.json), so nothing was imported.")
             }
             summary = result
@@ -360,7 +361,8 @@ final class BrowserImportModel {
             return ImportReportSection(title: title, lines: [ImportReportLine(kind: .problem, title: error.localizedDescription)])
         }
         // Each record becomes a new normal window; its tabs stay asleep until shown. The import doesn't write session.json; the normal session save picks the windows up.
-        for record in read.windows { _ = AppModel.shared.openWindow(record: record) }
+        let profile = AppModel.shared.frontWindow?.model.profileID ?? ProfileStore.defaultID
+        for record in read.windows { _ = AppModel.shared.openWindow(record: record, profile: profile) }
         let windows = read.windows.count
         var lines = [ImportReportLine(
             kind: read.tabs > 0 ? .done : .unchanged,

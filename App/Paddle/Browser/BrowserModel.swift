@@ -13,8 +13,13 @@ final class BrowserModel {
     /// the window opened, until that is turned off.
     private(set) var extensionsAllowed: Bool
 
-    init(isPrivate: Bool = false, extensionsAllowed: Bool = true) {
+    /// The window's profile (`ProfileStore`): its data store, history and extensions. Private windows are always the
+    /// default profile's id; they ignore it.
+    let profileID: String
+
+    init(isPrivate: Bool = false, extensionsAllowed: Bool = true, profile: String = ProfileStore.defaultID) {
         self.isPrivate = isPrivate
+        self.profileID = isPrivate ? ProfileStore.defaultID : profile
         self.extensionsAllowed = extensionsAllowed
     }
 
@@ -117,7 +122,7 @@ final class BrowserModel {
             tabs.append(tab)
         }
         normalizeGroups()
-        AppModel.shared.extensions.tabOpened(tab)
+        extensionHost?.tabOpened(tab)
         if select {
             self.select(tab)
         } else if tab.url != nil {
@@ -141,7 +146,7 @@ final class BrowserModel {
         if let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
         tab.lastActive = now
         tab.wake()
-        if previous !== tab { AppModel.shared.extensions.tabActivated(tab, previous: previous) }
+        if previous !== tab { extensionHost?.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
         suggestions.dismiss()
         if previous !== tab {
@@ -193,7 +198,7 @@ final class BrowserModel {
         tab.sleep()
         tabs.remove(at: index)
         normalizeGroups()
-        AppModel.shared.extensions.tabClosed(tab, windowIsClosing: tabs.isEmpty)
+        extensionHost?.tabClosed(tab, windowIsClosing: tabs.isEmpty)
 
         if tabs.isEmpty {
             selectedID = nil
@@ -295,9 +300,9 @@ final class BrowserModel {
         let to = TabOrder.pinBoundary(tabs.map(\.isPinned))
         tabs.insert(tab, at: to)
         normalizeGroups()
-        let extensions = AppModel.shared.extensions
-        extensions.tabChanged(tab, .pinned)
-        if to != from { extensions.tabMoved(tab, from: from) }
+        let extensions = extensionHost
+        extensions?.tabChanged(tab, .pinned)
+        if to != from { extensions?.tabMoved(tab, from: from) }
         AppModel.shared.sessionChanged()
     }
 
@@ -313,7 +318,7 @@ final class BrowserModel {
         others.insert(tab, at: to)
         tabs = others
         normalizeGroups()
-        AppModel.shared.extensions.tabMoved(tab, from: from)
+        extensionHost?.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
     }
 
@@ -339,7 +344,7 @@ final class BrowserModel {
         normalizeGroups()
         // Never leave the selection hidden in a collapsed group.
         if tab.id == selectedID, let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
-        AppModel.shared.extensions.tabMoved(tab, from: from)
+        extensionHost?.tabMoved(tab, from: from)
         AppModel.shared.sessionChanged()
         return true
     }
@@ -379,7 +384,7 @@ final class BrowserModel {
     private func reportMoves(from before: [Tab]) {
         for (to, tab) in tabs.enumerated() {
             if let from = before.firstIndex(where: { $0 === tab }), from != to {
-                AppModel.shared.extensions.tabMoved(tab, from: from)
+                extensionHost?.tabMoved(tab, from: from)
             }
         }
     }
@@ -537,7 +542,7 @@ final class BrowserModel {
     func moveGroupToNewWindow(_ group: TabGroup) {
         let members = tabs(in: group)
         guard !members.isEmpty else { return }
-        let controller = AppModel.shared.openWindow(moving: members)
+        let controller = AppModel.shared.openWindow(isPrivate: isPrivate, profile: profileID, moving: members)
         let moved = TabGroup(id: group.id, name: group.name, color: group.color)
         controller.model.groups = [moved]
         for tab in members { tab.groupID = moved.id }
@@ -573,8 +578,17 @@ final class BrowserModel {
         return index
     }
 
+    /// A tab may only move into a window of the same profile and privacy: its web view carries that profile's cookies.
+    /// A tab not in any window yet has no profile and fits where its privacy does.
+    func canAccept(_ tab: Tab) -> Bool {
+        tab.isPrivate == isPrivate && (tab.browser.map { $0.profileID == profileID } ?? true)
+    }
+
     /// Puts a tab from another window at `index`, clamped to its side of the pinned boundary. Not selected.
-    func adopt(_ tab: Tab, at index: Int) {
+    /// Refused (false) when `canAccept` says no.
+    @discardableResult
+    func adopt(_ tab: Tab, at index: Int) -> Bool {
+        guard canAccept(tab) else { return false }
         tab.browser = self
         tab.returnsToOpener = false
         if let opener = tab.opener, !tabs.contains(where: { $0 === opener }) { tab.opener = nil }
@@ -583,6 +597,7 @@ final class BrowserModel {
         tabs.insert(tab, at: to)
         // The group stays behind unless this window has it (`moveGroupToNewWindow` gives it over afterwards).
         normalizeGroups()
+        return true
     }
 
     // MARK: - Navigation
@@ -707,7 +722,7 @@ final class BrowserModel {
 
     func tabURLChanged(_ tab: Tab) {
         if tab.id == selectedID { syncAddress() }
-        AppModel.shared.extensions.tabChanged(tab, .URL)
+        extensionHost?.tabChanged(tab, .URL)
         AppModel.shared.sessionChanged()
     }
 
@@ -761,7 +776,8 @@ final class BrowserModel {
     var record: WindowRecord {
         WindowRecord.saving(
             tabs, selected: { $0.id == self.selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
-            frame: controller?.window.map { NSStringFromRect($0.frame) }, groups: groups.map(\.record)
+            frame: controller?.window.map { NSStringFromRect($0.frame) }, groups: groups.map(\.record),
+            profile: profileID == ProfileStore.defaultID ? nil : profileID
         )
     }
 }

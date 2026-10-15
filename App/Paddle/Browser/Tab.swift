@@ -152,6 +152,8 @@ final class Tab: Identifiable {
     /// Whether this tab's web views may carry the extension controller: its window's setting, fixed when the
     /// window opened (private windows only when any extension may run in private windows, `anyExtensionInPrivate`).
     var extensionsAllowed: Bool { browser?.extensionsAllowed ?? !isPrivate }
+    /// The profile of the window this tab is in (the default profile for a tab not in a window yet).
+    var profileID: String { browser?.profileID ?? ProfileStore.defaultID }
 
     /// The Settings pane this tab shows (`paddle://settings/<pane>`; bare `paddle://settings` is General). Nil for
     /// every other tab. A settings tab has no web view: it never wakes or sleeps, and SwiftUI draws it (`SettingsTabView`).
@@ -195,11 +197,12 @@ final class Tab: Identifiable {
         }
         // Settings is drawn by SwiftUI and loads nothing, so it never gets a web view.
         if settingsPane != nil { return nil }
-        let host = AppModel.shared.extensions
+        // This tab's profile's extensions only (private windows: the default profile's).
+        let host = AppModel.shared.extensions(for: profileID)
         let configuration: WKWebViewConfiguration
         // A saved page of an extension whose persona changed (webkit-extension:// to moz-extension://) moves to its
         // new address; its old back/forward list points at the old one, so it starts fresh.
-        if let current = url, let moved = host.currentURL(forStale: current) {
+        if let current = url, let moved = host?.currentURL(forStale: current) {
             url = moved
             savedState = nil
         }
@@ -207,6 +210,7 @@ final class Tab: Identifiable {
         if let url, pageID != nil {
             // A private window without extensions shows no extension page (it would run outside the private store), and
             // neither does a private window for an extension that isn't allowed in private windows (`allowsPrivatePage`).
+            guard let host else { return showExtensionUnavailable() }
             guard extensionsAllowed, !isPrivate || host.allowsPrivatePage(url) else { return showExtensionUnavailable(inPrivateWindow: true) }
             guard let pageConfiguration = host.pageConfiguration(for: url) else {
                 if host.deferWake(self) { return nil }
@@ -322,7 +326,7 @@ final class Tab: Identifiable {
         self.extensionPageID = extensionPageID
         // An extension page sends its extension's persona user agent; a web view for web pages is a fresh one
         // (leaving the extension's origin swaps views), so the agent never follows a tab out of it.
-        if let extensionPageID, let agent = AppModel.shared.extensions.userAgent(forPageHost: extensionPageID) {
+        if let extensionPageID, let agent = AppModel.shared.existingExtensions(for: profileID)?.userAgent(forPageHost: extensionPageID) {
             webView.customUserAgent = agent
         }
         // Remote inspection (Safari's Develop menu) follows `developerTools`, extension pages included.
@@ -664,11 +668,11 @@ final class Tab: Identifiable {
         observations = [
             watch(\.title) { tab, webView in
                 tab.title = webView.title ?? ""
-                AppModel.shared.extensions.tabChanged(tab, .title)
+                AppModel.shared.existingExtensions(for: tab.profileID)?.tabChanged(tab, .title)
                 // One write per real title change of the recorded page.
                 guard let url = tab.historyURL, webView.url == url, !tab.title.isEmpty, tab.title != tab.historyTitle else { return }
                 tab.historyTitle = tab.title
-                AppModel.shared.updateHistoryTitle(url, tab.title)
+                AppModel.shared.updateHistoryTitle(url, tab.title, profile: tab.profileID)
             },
             watch(\.url) { tab, webView in
                 // The error page's about:blank must not replace the extension URL it stands in for.
@@ -678,7 +682,7 @@ final class Tab: Identifiable {
             },
             watch(\.isLoading) { tab, webView in
                 tab.isLoading = webView.isLoading
-                AppModel.shared.extensions.tabChanged(tab, .loading)
+                AppModel.shared.existingExtensions(for: tab.profileID)?.tabChanged(tab, .loading)
             },
             watch(\.estimatedProgress) { tab, webView in tab.progress = webView.estimatedProgress },
             watch(\.canGoBack) { tab, webView in tab.canGoBack = webView.canGoBack },
@@ -696,7 +700,7 @@ final class Tab: Identifiable {
     /// The configuration for this tab's ordinary pages: the private data store in a private window,
     /// and the extension controller only where extensions are allowed.
     private func makeWebConfiguration() -> WKWebViewConfiguration {
-        AppModel.shared.web.makeConfiguration(isPrivate: isPrivate, extensions: extensionsAllowed)
+        AppModel.shared.web.makeConfiguration(isPrivate: isPrivate, extensions: extensionsAllowed, profile: profileID)
     }
 }
 

@@ -13,14 +13,32 @@ final class WebEnvironment {
 
     @ObservationIgnored let contentController = WKUserContentController()
     @ObservationIgnored let dataStore = WKWebsiteDataStore.default()
+    /// The other profiles' persistent stores, made on first use (`dataStore(for:)`).
+    @ObservationIgnored private var profileStores: [String: WKWebsiteDataStore] = [:]
     @ObservationIgnored private(set) var config = PaddleConfig()
     @ObservationIgnored private var installedRuleLists: [String: WKContentRuleList] = [:]
     @ObservationIgnored private lazy var ruleStore: WKContentRuleListStore =
         WKContentRuleListStore(url: Paths.compiledRules) ?? .default()
-    /// Set by `ExtensionHost` once at least one extension is allowed to run; every web view made after that carries
-    /// it (popups copy the configuration, so they inherit it too). nil costs nothing: WebKit's extension machinery
-    /// is never started.
-    @ObservationIgnored var extensionController: WKWebExtensionController?
+    /// The default profile's extension controller, set by its `ExtensionHost` once at least one extension is allowed
+    /// to run; every web view made after that carries it (popups copy the configuration, so they inherit it too). nil
+    /// costs nothing: WebKit's extension machinery is never started. Private windows use this one.
+    @ObservationIgnored private var extensionController: WKWebExtensionController?
+    /// The other profiles' controllers, set the same way by their hosts.
+    @ObservationIgnored private var profileExtensionControllers: [String: WKWebExtensionController] = [:]
+
+    /// The controller a normal window of `profile` carries; nil while that profile runs no extension.
+    func extensionController(for profile: String) -> WKWebExtensionController? {
+        profile == ProfileStore.defaultID ? extensionController : profileExtensionControllers[profile]
+    }
+
+    /// Called by a profile's `ExtensionHost` when it makes its controller, and with nil when the profile is deleted.
+    func setExtensionController(_ controller: WKWebExtensionController?, for profile: String) {
+        if profile == ProfileStore.defaultID {
+            extensionController = controller
+        } else {
+            profileExtensionControllers[profile] = controller
+        }
+    }
 
     /// One line per block list for the Content Blocking status item, e.g. "easylist: 61,204 rules", then one for
     /// the lists' scriptlets.
@@ -47,10 +65,41 @@ final class WebEnvironment {
     /// last one closes (`endPrivateSession`), so the next private window starts with no cookies or storage.
     @ObservationIgnored private var privateDataStore: WKWebsiteDataStore?
 
+    /// The persistent store of a profile: the default profile keeps `dataStore` (so nothing moves on upgrade), every
+    /// other one gets its own `WKWebsiteDataStore(forIdentifier:)` named by its id (cookies, logins, storage, cache).
+    /// An id that isn't a UUID falls back to the default store only for the default profile's sake; callers pass ids
+    /// from `ProfileStore`, which has only UUIDs.
+    func dataStore(for profile: String) -> WKWebsiteDataStore {
+        guard profile != ProfileStore.defaultID, let uuid = UUID(uuidString: profile) else { return dataStore }
+        if let store = profileStores[profile] { return store }
+        let store = WKWebsiteDataStore(forIdentifier: uuid)
+        profileStores[profile] = store
+        return store
+    }
+
+    /// Deletes a deleted profile's data store from disk, after its windows (and so web views) are gone. Retries once
+    /// because WebKit refuses while a web view still holds the store. False when it still failed.
+    func removeDataStore(for profile: String) async -> Bool {
+        guard profile != ProfileStore.defaultID, let uuid = UUID(uuidString: profile) else { return false }
+        profileStores[profile] = nil
+        for attempt in 0..<3 {
+            do {
+                try await WKWebsiteDataStore.remove(forIdentifier: uuid)
+                return true
+            } catch {
+                log.error("data store removal failed (attempt \(attempt + 1)): \(error.localizedDescription, privacy: .public)")
+                try? await Task.sleep(for: .milliseconds(400))
+            }
+        }
+        return false
+    }
+
     /// Web views of private windows get the private store and, unless `extensions` (the window carries extensions,
     /// see `BrowserModel.extensionsAllowed`), no extension controller. Content blockers, user CSS and userscripts are
     /// the same as everywhere.
-    func makeConfiguration(isPrivate: Bool, extensions: Bool) -> WKWebViewConfiguration {
+    /// `profile` picks the persistent store and the extension controller of a normal window; private windows ignore
+    /// it and carry the default profile's controller.
+    func makeConfiguration(isPrivate: Bool, extensions: Bool, profile: String = ProfileStore.defaultID) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
         // This configuration's process pool gets the page notification provider (WebsiteNotifications). KVC, not
         // `processPool`: that property is deprecated.
@@ -61,7 +110,7 @@ final class WebEnvironment {
             privateDataStore = store
             c.websiteDataStore = store
         } else {
-            c.websiteDataStore = dataStore
+            c.websiteDataStore = dataStore(for: profile)
         }
         c.applicationNameForUserAgent = applicationName
         c.preferences.isElementFullscreenEnabled = true
@@ -73,7 +122,7 @@ final class WebEnvironment {
         // Safari's default ("Stop media with sound"): pages can autoplay muted video, sound waits for a click or key.
         // WebKit's own macOS default lets pages start sound on their own.
         c.mediaTypesRequiringUserActionForPlayback = .audio
-        c.webExtensionController = extensions ? extensionController : nil
+        c.webExtensionController = extensions ? extensionController(for: isPrivate ? ProfileStore.defaultID : profile) : nil
         Self.enableWebFeatures(c.preferences)
         return c
     }
@@ -83,8 +132,8 @@ final class WebEnvironment {
     /// so this clears the whole domain (`www.` and other subdomains). Returns how many records it removed; a private
     /// store that no window has made yet has none.
     @discardableResult
-    func clearData(forHost host: String, isPrivate: Bool = false) async -> Int {
-        guard let store = isPrivate ? privateDataStore : dataStore else { return 0 }
+    func clearData(forHost host: String, isPrivate: Bool = false, profile: String = ProfileStore.defaultID) async -> Int {
+        guard let store = isPrivate ? privateDataStore : dataStore(for: profile) else { return 0 }
         let types = WKWebsiteDataStore.allWebsiteDataTypes()
         let records = await store.dataRecords(ofTypes: types).filter { SitePolicy.dataRecord($0.displayName, covers: host) }
         guard !records.isEmpty else { return 0 }
@@ -124,10 +173,10 @@ final class WebEnvironment {
     /// The configuration extension pages (popups, options pages, backgrounds) derive from: the browsing data store,
     /// the user agent and developer extras, and nothing else. No shared content controller, so user.css, userscripts
     /// and block lists never reach extension pages.
-    func makeExtensionPageBaseConfiguration() -> WKWebViewConfiguration {
+    func makeExtensionPageBaseConfiguration(profile: String = ProfileStore.defaultID) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
         WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: false)
-        c.websiteDataStore = dataStore
+        c.websiteDataStore = dataStore(for: profile)
         c.applicationNameForUserAgent = applicationName
         c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")

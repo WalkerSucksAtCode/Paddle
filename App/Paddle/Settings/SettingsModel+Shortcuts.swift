@@ -78,11 +78,13 @@ extension SettingsModel {
         result.fileWarnings = shortcutIssues(proposed)
             .filter { $0.path == ["shortcuts", name] && $0.severity == .warning }
             .map(\.message)
-        for ext in AppModel.shared.extensions.loaded {
+        // Every profile's extensions: one running in two profiles is listed once.
+        for ext in AppModel.shared.extensionHosts.flatMap(\.loaded) {
             for command in ext.context.commands {
                 guard let key = command.activationKey,
                       Shortcut(key: key, modifiers: Shortcut.Modifiers(command.modifierFlags)) == shortcut else { continue }
-                result.extensionCommands.append("\(ext.displayName): \(ExtensionPermissionText.sanitize(command.title))")
+                let line = "\(ext.displayName): \(ExtensionPermissionText.sanitize(command.title))"
+                if !result.extensionCommands.contains(line) { result.extensionCommands.append(line) }
             }
         }
         return result

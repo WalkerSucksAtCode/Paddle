@@ -6,7 +6,9 @@ import SwiftUI
 /// and the `extensions` load switch). Each row's Details disclosure, collapsed by default and remembered per folder for
 /// this session only, holds the folder, memory, answers, the `extensionCompat` `private` switch for private windows,
 /// compatibility notes and the folder actions. Also `extensionsInPrivate`, and the folder and reload actions. Memory is
-/// measured every 5 s only while the pane is shown.
+/// measured every 5 s only while the pane is shown. It shows the profile of the window it is in: the default profile's switches
+/// are config.json's, another profile's are its own in profiles.json, and the private-window switches appear only for
+/// the default profile, whose extensions private windows run.
 struct ExtensionsPane: View {
     let model: SettingsModel
     @State private var memory = ExtensionMemory()
@@ -15,13 +17,29 @@ struct ExtensionsPane: View {
     /// Folders whose Details disclosure is open. Not persisted.
     @State private var expanded: Set<String> = []
 
-    private var host: ExtensionHost { AppModel.shared.extensions }
+    /// The profile of the window this Settings tab is in.
+    private var profileID: ProfileID { model.profileID }
+    private var isDefaultProfile: Bool { profileID == ProfileStore.defaultID }
+    private var host: ExtensionHost { AppModel.shared.extensions(for: profileID) ?? AppModel.shared.extensions }
 
     var body: some View {
         // Read so the list redraws when a load, reconcile or reload finishes.
         let _ = host.statusLines
         let summaries = host.folderSummaries
+        let profiles = AppModel.shared.profiles
         SettingsForm {
+            if profiles.hasSeveral {
+                let profile = profiles.profile(id: profileID)
+                Section {
+                    Label("Extensions in \(profile.name)", systemImage: profile.symbol.sfSymbol)
+                        .font(.headline)
+                    Text(isDefaultProfile
+                        ? "These switches apply to this profile only. Another profile starts with no extensions; open Settings from one of its windows to choose them. Each profile keeps its own extension data, sign-ins and permission answers."
+                        : "These switches apply to this profile only and are saved in profiles.json. Each profile keeps its own extension data, sign-ins and permission answers. Private windows use the extensions of \(profiles.profile(id: ProfileStore.defaultID).name).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             if summaries.isEmpty {
                 Section("Extensions") {
                     Text("No extensions. Put each unpacked extension in its own folder in the extensions folder, then Reload Extensions.")
@@ -39,6 +57,7 @@ struct ExtensionsPane: View {
                     }
                 }
             }
+            if isDefaultProfile {
             Section {
                 Toggle("Allow extensions in private windows", isOn: Binding(
                     get: { model.file.extensionsInPrivate },
@@ -50,6 +69,7 @@ struct ExtensionsPane: View {
                     .foregroundStyle(.secondary)
             }
             .disabled(model.controlsDisabled)
+            }
             Section {
                 LabeledContent("Extension pages' memory") {
                     Text(memory.total > 0 ? ProcessMemory.format(memory.total) : "None open now")
@@ -58,12 +78,10 @@ struct ExtensionsPane: View {
                 HStack {
                     Button("Open Extensions Folder") { NSWorkspace.shared.open(Paths.extensions) }
                     Button("Reload Extensions") {
-                        run("") {
-                            await host.reloadAll(config: AppModel.shared.config)
-                            AccessibilityNotification.Announcement("Extensions reloaded").post()
-                        }
+                        // Every profile's, and announced.
+                        run("") { await AppModel.shared.reloadExtensions() }
                     }
-                    .help("Unloads every extension and loads the folder again, edited files included.")
+                    .help("Unloads every extension, in every profile, and loads the folder again, edited files included.")
                     .disabled(!busy.isEmpty)
                     if !busy.isEmpty {
                         ProgressView().controlSize(.small).accessibilityLabel("Working")
@@ -81,7 +99,7 @@ struct ExtensionsPane: View {
 
     /// The always-visible line: icon, name, "Version X · status" and the load switch on the right.
     @ViewBuilder private func row(_ summary: ExtensionFolderSummary) -> some View {
-        let enabled = model.file.isExtensionEnabled(summary.folder)
+        let enabled = isEnabled(summary.folder)
         let state = status(summary, enabled: enabled)
         HStack(spacing: 10) {
             icon(summary)
@@ -99,19 +117,21 @@ struct ExtensionsPane: View {
             Spacer(minLength: 8)
             Toggle("Load \(summary.displayName)", isOn: Binding(
                 get: { enabled },
-                set: { on in run(summary.folder) { await model.setExtension(summary.folder, enabled: on) } }
+                set: { [profileID] on in run(summary.folder) { await model.setExtension(summary.folder, enabled: on, profile: profileID) } }
             ))
             .labelsHidden()
             .toggleStyle(.switch)
             .accessibilityLabel("Load \(summary.displayName)")
-            .help("extensions.\(summary.folder) in config.json: false turns it off; on removes the entry.")
+            .help(isDefaultProfile
+                ? "extensions.\(summary.folder) in config.json: false turns it off; on removes the entry."
+                : "This profile's extensions in profiles.json: on runs it in this profile only.")
             .disabled(model.controlsDisabled || busy.contains(summary.folder))
         }
     }
 
     /// Everything else for one folder, shown under its Details disclosure.
     @ViewBuilder private func details(_ summary: ExtensionFolderSummary) -> some View {
-        let enabled = model.file.isExtensionEnabled(summary.folder)
+        let enabled = isEnabled(summary.folder)
         LabeledContent("Folder") { Text(summary.folder) }
 
         if summary.isLoaded {
@@ -130,12 +150,14 @@ struct ExtensionsPane: View {
             .multilineTextAlignment(.trailing)
         }
 
-        Toggle("Allow in private windows", isOn: Binding(
-            get: { model.file.extensionAllowedInPrivate(folder: summary.folder) },
-            set: { on in run(summary.folder) { await model.setExtensionInPrivate(summary.folder, on) } }
-        ))
-        .help("extensionCompat.\(summary.folder).private in config.json; unset follows extensionsInPrivate")
-        .disabled(model.controlsDisabled || busy.contains(summary.folder))
+        if isDefaultProfile {
+            Toggle("Allow in private windows", isOn: Binding(
+                get: { model.file.extensionAllowedInPrivate(folder: summary.folder) },
+                set: { on in run(summary.folder) { await model.setExtensionInPrivate(summary.folder, on) } }
+            ))
+            .help("extensionCompat.\(summary.folder).private in config.json; unset follows extensionsInPrivate")
+            .disabled(model.controlsDisabled || busy.contains(summary.folder))
+        }
 
         Picker("Toolbar button", selection: Binding(
             get: { model.file.toolbarPlacement(folder: summary.folder) },
@@ -190,6 +212,11 @@ struct ExtensionsPane: View {
                 .frame(width: size.width, height: size.height)
                 .accessibilityHidden(true)
         }
+    }
+
+    /// Whether the folder runs in this pane's profile (config.json for the default profile, profiles.json otherwise).
+    private func isEnabled(_ folder: String) -> Bool {
+        host.isEnabled(folder, config: model.file)
     }
 
     /// The status line as an icon plus words, never colour alone.

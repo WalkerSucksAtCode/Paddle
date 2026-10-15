@@ -50,6 +50,8 @@ final class LoadedExtension: Identifiable {
     /// Bumped when WebKit reports a change to this extension's action as the toolbar shows it; only its own
     /// buttons redraw.
     var actionGeneration = 0
+    /// The host (of one profile) that runs it.
+    @ObservationIgnored weak var host: ExtensionHost?
 
     init(name: String, setup: ExtensionHost.CompatSetup, entry: ExtensionEntry, manifest: ExtensionManifest, webExtension: WKWebExtension,
          context: WKWebExtensionContext, requested: (permissions: Set<String>, hosts: Set<String>), problems: [String]) {
@@ -85,12 +87,18 @@ final class LoadedExtension: Identifiable {
     var version: String { ExtensionPermissionText.sanitize(webExtension.displayVersion ?? webExtension.version ?? "", max: 24) }
 }
 
-/// Runs WebExtensions from `extensions/` on WebKit's own extension support: scanning, permission decisions,
-/// the shared `WKWebExtensionController`, and the window and tab bookkeeping WebKit needs. The controller exists
+/// Runs WebExtensions from `extensions/` for one profile on WebKit's own extension support: permission decisions,
+/// the profile's `WKWebExtensionController`, and the window and tab bookkeeping WebKit needs. Each profile has its own
+/// host (`AppModel.extensions(for:)`), so an extension's storage, sign-ins, answers, popups and background pages are
+/// that profile's alone; the folders, updates, overlays and salt are shared (`ExtensionShared`). The controller exists
 /// only once some extension is allowed to run; an empty folder starts none of WebKit's extension machinery.
 @Observable
 final class ExtensionHost {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
+
+    /// The profile this host runs extensions for. Private windows use the default profile's host.
+    let profileID: ProfileID
+    var isDefaultProfile: Bool { profileID == ProfileStore.defaultID }
 
     /// Running extensions, sorted by folder name.
     private(set) var loaded: [LoadedExtension] = []
@@ -109,9 +117,6 @@ final class ExtensionHost {
     @ObservationIgnored private var decisions = ExtensionDecisions()
     /// The permissions file is unreadable: nothing loads and the file is never overwritten.
     @ObservationIgnored private var decisionsError: String?
-    @ObservationIgnored private var salt = ""
-    @ObservationIgnored private var entries: [ExtensionEntry] = []
-    @ObservationIgnored private var scanProblems: [String: String] = [:]
     /// Folder name to status text, from the last load, reconcile or reload.
     @ObservationIgnored private var status: [String: String] = [:]
     /// Folder name to the compat overlay it was loaded from (none: loaded from its own folder).
@@ -137,8 +142,6 @@ final class ExtensionHost {
     @ObservationIgnored private var lastUserAction: [String: Date] = [:]
     /// Context id of the extension whose popup was shown last; it counts as acting on it while it stays open.
     @ObservationIgnored private var popupContextID: String?
-    /// Serializes every alert, one at a time.
-    @ObservationIgnored private var promptQueue: Task<Void, Never>?
     /// Loads, reconciles, reloads and Ask Again run one at a time, their prompts included. Overlapping runs would
     /// prompt twice for one folder, load it twice, and end each other's deferral of extension-page tabs.
     @ObservationIgnored private var operationQueue: Task<Void, Never>?
@@ -146,26 +149,33 @@ final class ExtensionHost {
     /// a repeat. `reportedNoFocus`: nil (no window) was the last report.
     @ObservationIgnored private weak var reportedFocus: BrowserWindowController?
     @ObservationIgnored private var reportedNoFocus = false
-    @ObservationIgnored private var permissionObservers: [any NSObjectProtocol] = []
-    /// Runs extension commands before the page sees the key.
-    @ObservationIgnored private var keyMonitor: Any?
     /// Extensions (context ids) whose toolbar buttons redraw on the next run-loop turn.
     @ObservationIgnored private var pendingActionRedraws: Set<String> = []
     /// Native messaging for `ExtensionCompat.busID`.
     @ObservationIgnored let bus = CompatBus()
-    /// `extension-installs.json`, read (or seeded from the permissions file) once the permissions file is readable.
-    @ObservationIgnored private var installs: ExtensionInstalls?
     /// Folders whose background failed to load with the v2 prelude this session; they run from their own folder
     /// until Reload Extensions or relaunch (E24).
     @ObservationIgnored private var compatOff: Set<String> = []
     /// Folder name to its `errorsDidUpdateNotification` observer, while it runs the v2 prelude.
     @ObservationIgnored private var backgroundObservers: [String: any NSObjectProtocol] = [:]
-    /// A pending rewrite of an overlay folder (the install reason cleared), by folder; the next remake waits for it.
-    @ObservationIgnored private var overlayWrites: [String: Task<Void, Never>] = [:]
-    /// `registerCustomURLScheme` ran (once per process, before any context gets a base URL with those schemes).
-    @ObservationIgnored private static var schemesRegistered = false
+    /// The profile was deleted: nothing loads again and no controller is made.
+    @ObservationIgnored private var isShutDown = false
 
     private var web: WebEnvironment { AppModel.shared.web }
+    private var shared: ExtensionShared { .shared }
+    private var salt: String { shared.salt }
+    private var entries: [ExtensionEntry] { shared.entries }
+    private var scanProblems: [String: String] { shared.scanProblems }
+    private var installs: ExtensionInstalls? { shared.installs }
+    /// This profile's answers: `extension-permissions.json` for the default profile, `profiles/<id>/` for the others.
+    private var decisionsURL: URL {
+        isDefaultProfile ? Paths.extensionPermissions : Paths.profileFolder(profileID).appending(path: "extension-permissions.json")
+    }
+
+    init(profile: ProfileID = ProfileStore.defaultID) {
+        profileID = profile
+        controllerDelegate.host = self
+    }
 
     // MARK: - Startup
 
@@ -173,15 +183,11 @@ final class ExtensionHost {
     /// was already allowed to run; otherwise it waits for the first prompt (or never comes to exist).
     func prepare(config: PaddleConfig) {
         #if DEBUG
-        controllerDelegate.verifySelectors()
+        if isDefaultProfile { controllerDelegate.verifySelectors() }
         #endif
-        registerSchemes()
-        salt = loadOrCreateSalt()
+        shared.prepare()
         readDecisions()
-        rescan()
-        observePermissionChanges()
-        installKeyMonitor()
-        let allowed = entries.filter { config.isExtensionEnabled($0.name) && decisionsAllowRunning($0) }
+        let allowed = entries.filter { isEnabled($0.name, config: config) && decisionsAllowRunning($0) }
         if allowed.isEmpty {
             log.info("extensions: none enabled, controller not created")
         } else {
@@ -189,15 +195,18 @@ final class ExtensionHost {
         }
     }
 
-    /// `chrome-extension` and `moz-extension` for the personas. WebKit throws (NSInternalInconsistencyException) when a
-    /// context gets a base URL with an unregistered scheme, so this runs before any context exists.
-    private func registerSchemes() {
-        guard !Self.schemesRegistered else { return }
-        Self.schemesRegistered = true
-        for scheme in [ExtensionIdentity.chromeScheme, ExtensionIdentity.firefoxScheme] {
-            WKWebExtension.MatchPattern.registerCustomURLScheme(scheme)
-        }
-        log.info("extension schemes registered: \(ExtensionIdentity.chromeScheme, privacy: .public), \(ExtensionIdentity.firefoxScheme, privacy: .public)")
+    /// Whether `folder` runs in this profile: config.json `extensions` (folders not listed are on) for the default
+    /// profile, the profile's own list in profiles.json (folders not listed are off) for the others.
+    func isEnabled(_ folder: String, config: PaddleConfig) -> Bool {
+        isDefaultProfile ? config.isExtensionEnabled(folder) : AppModel.shared.profiles.profile(id: profileID).extensions[folder] == true
+    }
+
+    /// Why a folder that is turned off doesn't run, for its status line.
+    private var offStatus: String { isDefaultProfile ? "off in config.json" : "off in this profile" }
+
+    /// This profile has an answer on record for `folder` (and its permissions file is readable).
+    func hasAnswers(for folder: String) -> Bool {
+        decisionsError == nil && decisions.byFolder[folder] != nil
     }
 
     /// An entry whose record says the user allowed something.
@@ -206,29 +215,14 @@ final class ExtensionHost {
         return !snapshot.isFullyDeclined
     }
 
-    private func loadOrCreateSalt() -> String {
-        if let existing = try? String(contentsOf: Paths.extensionSalt, encoding: .utf8) {
-            let trimmed = existing.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count == 32, trimmed.allSatisfy({ $0.isHexDigit }) { return trimmed.lowercased() }
-            log.error("extension-id-salt is not 32 hex characters; making a new one (extension ids change)")
-        }
-        let salt = ExtensionIdentity.makeSalt()
-        do {
-            try Data(salt.utf8).write(to: Paths.extensionSalt, options: .atomic)
-        } catch {
-            log.error("extension-id-salt could not be written: \(error.localizedDescription, privacy: .public)")
-        }
-        return salt
-    }
-
     private func readDecisions() {
-        guard FileManager.default.fileExists(atPath: Paths.extensionPermissions.path) else {
+        guard FileManager.default.fileExists(atPath: decisionsURL.path) else {
             decisions = ExtensionDecisions()
             decisionsError = nil
             return
         }
         do {
-            decisions = try ExtensionDecisions.decode(Data(contentsOf: Paths.extensionPermissions))
+            decisions = try ExtensionDecisions.decode(Data(contentsOf: decisionsURL))
             decisionsError = nil
         } catch {
             decisions = ExtensionDecisions()
@@ -238,47 +232,26 @@ final class ExtensionHost {
     }
 
     private func writeDecisions() {
-        guard decisionsError == nil else { return }
+        guard decisionsError == nil, !isShutDown else { return }
         do {
-            try decisions.encoded().write(to: Paths.extensionPermissions, options: .atomic)
+            if !isDefaultProfile {
+                try FileManager.default.createDirectory(at: Paths.profileFolder(profileID), withIntermediateDirectories: true)
+            }
+            try decisions.encoded().write(to: decisionsURL, options: .atomic)
         } catch {
             log.error("extension-permissions.json could not be written: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    /// Reads `extension-installs.json`, or makes it from the permissions file when it doesn't exist yet (every
-    /// folder with a record counts as already installed). Waits while the permissions file is unreadable.
+    /// The shared first-run records, seeded from this profile's answers if they don't exist yet. Waits while the
+    /// permissions file is unreadable.
     private func ensureInstalls() {
-        guard installs == nil, decisionsError == nil else { return }
-        if let data = try? Data(contentsOf: Paths.extensionInstalls) {
-            do {
-                installs = try ExtensionInstalls.decode(data)
-                return
-            } catch {
-                log.error("extension-installs.json unreadable (\(error.localizedDescription, privacy: .public)); remade from the permissions file")
-            }
-        }
-        installs = ExtensionInstalls.seeded(folders: decisions.byFolder.keys, now: Date())
-        writeInstalls()
-        log.info("extension-installs.json created: \(self.installs?.firstSeen.count ?? 0, privacy: .public) folders already installed")
-    }
-
-    private func writeInstalls() {
-        guard let installs else { return }
-        do {
-            try installs.encoded().write(to: Paths.extensionInstalls, options: .atomic)
-        } catch {
-            log.error("extension-installs.json could not be written: \(error.localizedDescription, privacy: .public)")
-        }
+        guard decisionsError == nil else { return }
+        shared.ensureInstalls(seed: decisions.byFolder.keys)
     }
 
     private func rescan() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let result = ExtensionScan.scan(Paths.extensions, forbiddenRoots: [home, Paths.support])
-        entries = result.entries
-        scanProblems = result.problems
-        StoreInstaller.shared.reloadSources()
-        for (name, problem) in scanProblems { log.notice("\(name, privacy: .public): \(problem, privacy: .public)") }
+        shared.rescan()
     }
 
     // MARK: - Controller
@@ -288,15 +261,25 @@ final class ExtensionHost {
     /// must follow.
     @discardableResult
     private func ensureController() -> Bool {
-        guard controller == nil else { return false }
-        let configuration = WKWebExtensionController.Configuration.default()
-        configuration.webViewConfiguration = web.makeExtensionPageBaseConfiguration()
-        configuration.defaultWebsiteDataStore = web.dataStore
+        guard controller == nil, !isShutDown else { return false }
+        // The default profile keeps WebKit's default configuration, so the extension storage it always had stays;
+        // another profile's storage is filed under its own id.
+        let configuration: WKWebExtensionController.Configuration
+        if isDefaultProfile {
+            configuration = .default()
+        } else if let uuid = UUID(uuidString: profileID) {
+            configuration = WKWebExtensionController.Configuration(identifier: uuid)
+        } else {
+            log.error("extension controller not created: the profile id is not a UUID")
+            return false
+        }
+        configuration.webViewConfiguration = web.makeExtensionPageBaseConfiguration(profile: profileID)
+        configuration.defaultWebsiteDataStore = web.dataStore(for: profileID)
         let controller = WKWebExtensionController(configuration: configuration)
         controller.delegate = controllerDelegate
         self.controller = controller
-        web.extensionController = controller
-        log.info("extension controller created")
+        web.setExtensionController(controller, for: profileID)
+        log.info("extension controller created (\(self.isDefaultProfile ? "default profile" : "another profile", privacy: .public))")
 
         for window in registeredWindows.compactMap(\.value) {
             controller.didOpenWindow(window.extensionWindow)
@@ -442,7 +425,7 @@ final class ExtensionHost {
 
             for ext in loaded {
                 let entry = entries.first { $0.name == ext.name }
-                if entry == nil || entry?.root != ext.entry.root || !config.isExtensionEnabled(ext.name) {
+                if entry == nil || entry?.root != ext.entry.root || !isEnabled(ext.name, config: config) {
                     unload(ext, closingTabs: true)  // removed or turned off: its pages close
                     continue
                 }
@@ -490,7 +473,9 @@ final class ExtensionHost {
     /// Sets each running extension's private-window access (`extensionAllowedInPrivate`) on its context, live: no
     /// reload. An extension turned off also leaves the private windows already open: its pages there sleep, and a
     /// selected one wakes again into the unavailable page (`Tab.wake` checks `allowsPrivatePage`).
+    /// Only the default profile's host: private windows run its extensions.
     func applyPrivateAccess(config: PaddleConfig) {
+        guard isDefaultProfile else { return }
         for ext in loaded {
             let allowed = config.extensionAllowedInPrivate(folder: ext.name)
             guard allowed != ext.context.hasAccessToPrivateData else { continue }
@@ -553,7 +538,7 @@ final class ExtensionHost {
     func askAgain(folder: String) async {
         await enqueue { [self] in
             let config = AppModel.shared.config
-            guard decisionsError == nil, config.isExtensionEnabled(folder) else { return }
+            guard decisionsError == nil, isEnabled(folder, config: config) else { return }
             let current = loaded.first { $0.name == folder }
             guard let entry = current?.entry ?? entries.first(where: { $0.name == folder }) else { return }
             loadInProgress = true
@@ -657,8 +642,8 @@ final class ExtensionHost {
         ensureInstalls()
 
         for entry in entries {
-            guard config.isExtensionEnabled(entry.name) else {
-                status[entry.name] = "off in config.json"
+            guard isEnabled(entry.name, config: config) else {
+                status[entry.name] = offStatus
                 continue
             }
             if let decisionsError {
@@ -762,8 +747,9 @@ final class ExtensionHost {
         context.baseURL = identity.baseURL
         context.isInspectable = config.developerTools
         context.inspectionName = "\(displayName) — Paddle"
-        // Private windows the extension may see: its `private` setting, else `extensionsInPrivate`. Kept live by `applyPrivateAccess`.
-        context.hasAccessToPrivateData = config.extensionAllowedInPrivate(folder: entry.name)
+        // Private windows the extension may see: its `private` setting, else `extensionsInPrivate`. Kept live by
+        // `applyPrivateAccess`. Private windows run the default profile's extensions, so another profile's never do.
+        context.hasAccessToPrivateData = isDefaultProfile && config.extensionAllowedInPrivate(folder: entry.name)
 
         if let snapshot = decisions.byFolder[entry.name] {
             var granted: [WKWebExtension.Permission: Date] = [:]
@@ -815,6 +801,7 @@ final class ExtensionHost {
             name: entry.name, setup: setup, entry: entry, manifest: manifest, webExtension: webExtension,
             context: context, requested: requested, problems: problems
         )
+        ext.host = self
         loaded.append(ext)
         loaded.sort { $0.name < $1.name }
         status[entry.name] = loadedStatus(ext)
@@ -833,7 +820,7 @@ final class ExtensionHost {
     /// some, and never while a loaded context still uses that id.
     private func moveStorage(for folder: String, setup: CompatSetup, manifestKey: String?) {
         let current = setup.identity.runtimeID
-        let root = Paths.webExtensionStorage
+        let root = Paths.webExtensionStorage(profile: profileID)
         let fm = FileManager.default
         guard !fm.fileExists(atPath: root.appending(path: current).path) else { return }
         let keyID = manifestKey.flatMap(ExtensionIdentity.chromeID(manifestKey:))
@@ -931,7 +918,7 @@ final class ExtensionHost {
     /// where it loads from.
     private func prepareOverlay(for entry: ExtensionEntry, setup: CompatSetup) async -> (root: URL, problem: String?) {
         // One writer per overlay folder: a pending install-reason rewrite finishes before the folder is remade.
-        if let pending = overlayWrites.removeValue(forKey: entry.name) { await pending.value }
+        if let pending = shared.overlayWrites.removeValue(forKey: entry.name) { await pending.value }
         overlays[entry.name] = nil
         let overlaysFolder = Paths.extensionOverlays
         if setup.compatOff {
@@ -943,9 +930,11 @@ final class ExtensionHost {
         let source = entry.root
         let name = entry.name
         let plan = setup.plan ?? CompatPlan(persona: .native, runtimeID: setup.identity.runtimeID)
-        let made = await Task.detached(priority: .userInitiated) {
-            Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: plan) }
-        }.value
+        let made = await shared.overlayWork(name) {
+            await Task.detached(priority: .userInitiated) {
+                Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: plan) }
+            }.value
+        }
         switch made {
         case .success(nil):
             return (entry.root, nil)
@@ -981,17 +970,19 @@ final class ExtensionHost {
                 log.notice("\(name, privacy: .public): first background run didn't finish; install reason kept for next time")
                 return
             }
-            if self.installs?.markSeen(folder: name, now: Date()) == true { self.writeInstalls() }
-            let result = await Task.detached(priority: .utility) {
-                Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: cleared) }
-            }.value
+            self.shared.markSeen(folder: name)
+            let result = await self.shared.overlayWork(name) {
+                await Task.detached(priority: .utility) {
+                    Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: cleared) }
+                }.value
+            }
             if case .failure(let error) = result {
                 log.error("\(name, privacy: .public): prelude not rewritten after install: \(error.localizedDescription, privacy: .public)")
             } else {
                 log.info("\(name, privacy: .public): install reason cleared from the prelude")
             }
         }
-        overlayWrites[name] = write
+        shared.overlayWrites[name] = write
     }
 
     /// Returns when `loadBackgroundContent` completes or after `timeout`, whichever is first (E24: a failing
@@ -1025,8 +1016,8 @@ final class ExtensionHost {
         if let old = backgroundObservers.removeValue(forKey: name) { NotificationCenter.default.removeObserver(old) }
         backgroundObservers[name] = NotificationCenter.default.addObserver(
             forName: WKWebExtensionContext.errorsDidUpdateNotification, object: ext.context, queue: .main
-        ) { _ in
-            MainActor.assumeIsolated { AppModel.shared.extensions.checkBackgroundFailure(name) }
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkBackgroundFailure(name) }
         }
         checkBackgroundFailure(name)
         // The user agent goes on the background page's web view once WebKit has made it (polled for 10 s; the
@@ -1067,19 +1058,11 @@ final class ExtensionHost {
         overlays[name]?.runsPrelude == true && ExtensionCompat.isHarmlessError(error)
     }
 
-    /// Overlays of folders that are gone from `extensions/` are deleted; the rest are checked against their source
-    /// when their extension loads again.
+    /// Overlays of folders that are gone from `extensions/` are deleted (`ExtensionShared.pruneOverlays`). Only the
+    /// default profile's host does it, so the shared files have one writer.
     private func pruneOverlays() {
-        // An unreadable or missing extensions/ folder (an unmounted volume, a permissions problem) looks empty: keep
-        // the overlays and the first-seen records rather than treat every extension as removed.
-        guard FileManager.default.isReadableFile(atPath: Paths.extensions.path) else {
-            log.error("extensions/ unreadable; overlays and first-seen records kept")
-            return
-        }
-        let folders = Set(entries.map(\.name)).union(scanProblems.keys)
-        ExtensionOverlay.prune(in: Paths.extensionOverlays, keeping: Set(entries.map(\.name)))
-        if installs?.prune(keeping: folders) == true { writeInstalls() }
-        StoreInstaller.shared.pruneSources(keeping: folders)
+        guard isDefaultProfile else { return }
+        shared.pruneOverlays()
     }
 
     /// Unloads one extension. Its open pages close (removed or turned off) or sleep until it is back (reload).
@@ -1126,7 +1109,8 @@ final class ExtensionHost {
         let answer = ExtensionPrompts.install(
             name: displayName, icon: item.webExtension.icon(for: CGSize(width: 64, height: 64)), lines: lines,
             notice: ExtensionBlocking(manifest: item.manifest).notice,
-            folder: entry.name, isUpgrade: existing.map { !$0.isFullyDeclined } ?? false
+            folder: entry.name, isUpgrade: existing.map { !$0.isFullyDeclined } ?? false,
+            profile: AppModel.shared.profiles.hasSeveral ? AppModel.shared.profiles.profile(id: profileID).name : nil
         )
 
         var snapshot = existing ?? ExtensionSnapshot(name: displayName, version: version, decided: Date())
@@ -1294,41 +1278,9 @@ final class ExtensionHost {
         return ([], [])
     }
 
-    /// Runs `body` after every alert queued before it.
+    /// Runs `body` after every alert queued before it, from this profile or another (`ExtensionShared.serialized`).
     private func serialized<T: Sendable>(_ body: @escaping @MainActor () async -> T) async -> T {
-        let previous = promptQueue
-        let task = Task<T, Never> { @MainActor in
-            await previous?.value
-            return await body()
-        }
-        promptQueue = Task { _ = await task.value }
-        return await task.value
-    }
-
-    /// WebKit posts these when a grant or denial is added or removed, including `permissions.remove()` from the
-    /// extension itself and the delegate prompts' results; each one persists the context's current state.
-    private func observePermissionChanges() {
-        guard permissionObservers.isEmpty else { return }
-        let names: [Notification.Name] = [
-            WKWebExtensionContext.permissionsWereGrantedNotification,
-            WKWebExtensionContext.permissionsWereDeniedNotification,
-            WKWebExtensionContext.grantedPermissionsWereRemovedNotification,
-            WKWebExtensionContext.deniedPermissionsWereRemovedNotification,
-            WKWebExtensionContext.permissionMatchPatternsWereGrantedNotification,
-            WKWebExtensionContext.permissionMatchPatternsWereDeniedNotification,
-            WKWebExtensionContext.grantedPermissionMatchPatternsWereRemovedNotification,
-            WKWebExtensionContext.deniedPermissionMatchPatternsWereRemovedNotification,
-        ]
-        for name in names {
-            permissionObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
-                // Delivered on the main queue (`queue: .main`), so the context is used on its actor.
-                nonisolated(unsafe) let object = note.object
-                MainActor.assumeIsolated {
-                    guard let context = object as? WKWebExtensionContext else { return }
-                    AppModel.shared.extensions.saveSnapshot(for: context)
-                }
-            })
-        }
+        await shared.serialized(body)
     }
 
     /// Writes the context's permission state (WebKit's own patterns, not coarsened) to the permissions file.
@@ -1462,19 +1414,9 @@ final class ExtensionHost {
 
     /// Extension commands run before the page and the window see the key, as in Chrome, so a page that handles
     /// the same key (Google Docs and ⌘⇧L) can't swallow them. A key one of Paddle's menu items uses is left to
-    /// the menu. Only in browser windows, and not while a sheet is up. An extension's command doesn't run in a
-    /// private window it isn't allowed in.
-    private func installKeyMonitor() {
-        guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Local monitors run on the main thread, inside the app's event dispatch.
-            nonisolated(unsafe) let keyEvent = event
-            let handled = MainActor.assumeIsolated { AppModel.shared.extensions.performCommandBeforeDispatch(keyEvent) }
-            return handled ? nil : event
-        }
-    }
-
-    private func performCommandBeforeDispatch(_ event: NSEvent) -> Bool {
+    /// the menu. Only in browser windows of this profile, and not while a sheet is up. An extension's command doesn't
+    /// run in a private window it isn't allowed in. Called by `ExtensionShared`'s key monitor for the key window's host.
+    func performCommandBeforeDispatch(_ event: NSEvent) -> Bool {
         guard controller != nil, !loaded.isEmpty, let window = event.window as? BrowserWindow,
               window.isKeyWindow, window.attachedSheet == nil,
               let browser = window.windowController as? BrowserWindowController, isRegistered(browser) else { return false }
@@ -1523,7 +1465,7 @@ final class ExtensionHost {
             }
         }
         guard let front = app.frontExtensionWindow(for: context) else {
-            app.openWindow(url: url)
+            app.openWindow(url: url, profile: profileID)
             return
         }
         front.model.newTab(url: url, select: true)
@@ -1542,6 +1484,19 @@ final class ExtensionHost {
             log.info("\(ext.name, privacy: .public): background page user agent set (\(ext.persona.rawValue, privacy: .public))")
         }
         return view
+    }
+
+    /// The profile is being deleted (its windows are closed): every extension unloads and the controller is let go,
+    /// so nothing of the profile's extensions keeps running or holds its data store. Nothing loads again.
+    func shutDown() {
+        isShutDown = true
+        for ext in loaded { unload(ext, closingTabs: false) }
+        deferredTabs = []
+        registeredWindows = []
+        controller?.delegate = nil
+        controller = nil
+        web.setExtensionController(nil, for: profileID)
+        log.info("extension host of a deleted profile shut down")
     }
 
     /// The window banner's close button. The lines stay in the Extensions menu.

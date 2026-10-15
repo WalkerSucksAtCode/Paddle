@@ -18,6 +18,14 @@ enum Paths {
     /// Each saved tab's back/forward state, `<tab id>.state`, named from session.json (`SessionStore`).
     static let sessions = support.appending(path: "sessions", directoryHint: .isDirectory)
     static let history = support.appending(path: "history.sqlite")
+    /// The profiles (`ProfileStore`).
+    static let profilesFile = support.appending(path: "profiles.json")
+    /// Everything Paddle itself keeps for a non-default profile, deleted with the profile.
+    static func profileFolder(_ id: String) -> URL {
+        support.appending(path: "profiles", directoryHint: .isDirectory).appending(path: id, directoryHint: .isDirectory)
+    }
+    /// A non-default profile's browsing history; the default profile's is `history`.
+    static func profileHistory(_ id: String) -> URL { profileFolder(id).appending(path: "history.sqlite") }
     static let bookmarks = support.appending(path: "bookmarks.json")
     /// Pinned New Tab page sites and hidden Frequently visited hosts (`NewTabStore`).
     static let newTab = support.appending(path: "newtab.json")
@@ -40,6 +48,15 @@ enum Paths {
     /// extension's id changes (`ExtensionHost.moveStorage`); WebKit owns what is inside.
     static let webExtensionStorage = FileManager.default.homeDirectoryForCurrentUser
         .appending(path: "Library/WebKit/\(Bundle.main.bundleIdentifier ?? "com.walker.Paddle")/WebExtensions/Default", directoryHint: .isDirectory)
+    /// The same for a profile: `webExtensionStorage` for the default one; another profile's controller files its
+    /// extensions' storage next to it under the profile's id (matched without regard to case, as WebKit writes it).
+    static func webExtensionStorage(profile: String) -> URL {
+        guard profile != ProfilesFile.defaultID else { return webExtensionStorage }
+        let parent = webExtensionStorage.deletingLastPathComponent()
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+        let name = names.first { $0.caseInsensitiveCompare(profile) == .orderedSame } ?? profile.lowercased()
+        return parent.appending(path: name, directoryHint: .isDirectory)
+    }
 
     /// Creates the folder layout and starter files on first launch. Never overwrites existing files.
     static func ensure() {

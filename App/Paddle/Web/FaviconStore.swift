@@ -111,7 +111,7 @@ final class FaviconStore {
         }
         keep(image, for: key)
         missing.remove(key)
-        guard AppModel.shared.history != nil || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
+        guard AppModel.shared.historyEnabled || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
         do {
             try FileManager.default.createDirectory(at: Paths.favicons, withIntermediateDirectories: true)
             try png.write(to: Paths.favicons.appending(path: FaviconPicker.fileName(forKey: key)), options: .atomic)

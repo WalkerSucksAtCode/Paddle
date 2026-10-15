@@ -10,7 +10,8 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     static let shared = ExtensionsMenuDelegate()
     private static let tag = 7_003
 
-    private var host: ExtensionHost { AppModel.shared.extensions }
+    /// The front window's profile: its extensions are the ones listed.
+    private var host: ExtensionHost { AppModel.shared.frontExtensions }
     private var isOpen = false
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -114,7 +115,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     @objc private func performCommand(_ sender: Any?) {
-        guard let choice = (sender as? NSMenuItem)?.representedObject as? CommandChoice,
+        guard let choice = (sender as? NSMenuItem)?.representedObject as? CommandChoice, let host = choice.ext.host,
               host.loaded.contains(where: { $0 === choice.ext }), !AppModel.shared.frontWindowIsHidden(from: choice.ext.context) else { return }
         host.performCommand(choice.command, of: choice.ext)
     }
@@ -128,29 +129,29 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
 
     private func ext(_ sender: Any?) -> LoadedExtension? {
         guard let ext = (sender as? NSMenuItem)?.representedObject as? LoadedExtension else { return nil }
-        // The item may outlive a reload; only an extension still running is acted on.
-        return host.loaded.first { $0 === ext }
+        // The item may outlive a reload; only an extension still running is acted on, by its own profile's host.
+        return ext.host?.loaded.first { $0 === ext }
     }
 
     @objc private func performAction(_ sender: Any?) {
-        guard let ext = ext(sender), !AppModel.shared.frontWindowIsHidden(from: ext.context) else { return }
+        guard let ext = ext(sender), let host = ext.host, !AppModel.shared.frontWindowIsHidden(from: ext.context) else { return }
         host.performAction(ext, in: AppModel.shared.frontExtensionWindow(for: ext.context)?.model.selectedTab)
     }
 
     @objc private func openOptions(_ sender: Any?) {
         guard let ext = ext(sender) else { return }
-        try? host.openOptionsPage(for: ext.context)
+        try? ext.host?.openOptionsPage(for: ext.context)
     }
 
     @objc private func askAgain(_ sender: Any?) {
-        guard let ext = ext(sender) else { return }
+        guard let ext = ext(sender), let host = ext.host else { return }
         Task { await host.askAgain(ext) }
     }
 
     /// Sites the extension asked about with no tab and no click (answered "no" without an alert): tick the ones it
     /// may access. Most asked-about first.
     @objc private func reviewAutoDenied(_ sender: Any?) {
-        guard let ext = ext(sender), let sites = host.autoDenied[ext.name]?.sites, !sites.isEmpty else { return }
+        guard let ext = ext(sender), let host = ext.host, let sites = host.autoDenied[ext.name]?.sites, !sites.isEmpty else { return }
         let ordered = sites.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
         let boxes = ordered.map { site, count in
             NSButton(checkboxWithTitle: "\(ExtensionPermissionText.sanitize(site, max: 80)) (\(count))", target: nil, action: nil)
@@ -182,7 +183,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     }
 
     @objc private func inspectBackground(_ sender: Any?) {
-        guard let ext = ext(sender), let background = host.backgroundWebView(of: ext) else { return }
+        guard let ext = ext(sender), let background = ext.host?.backgroundWebView(of: ext) else { return }
         WebInspector.show(background)
     }
 

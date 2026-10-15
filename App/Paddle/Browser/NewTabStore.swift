@@ -74,9 +74,9 @@ final class NewTabStore {
     }
 
     /// The most visited sites of the last 30 days that aren't pinned or hidden: one page per host. Empty when
-    /// history is off.
-    func frequentSites(limit: Int = 8) -> [HistoryEntry] {
-        guard let history = AppModel.shared.history else { return [] }
+    /// history is off. Read from `profile`'s history.
+    func frequentSites(limit: Int = 8, profile: String = ProfileStore.defaultID) -> [HistoryEntry] {
+        guard let history = AppModel.shared.history(for: profile) else { return [] }
         let pinned = data.sites.compactMap { NewTabSites.siteHost($0.url) }
         let excluded = Set(pinned).union(data.hiddenFrequent)
         return (try? history.topSites(limit: limit, days: 30, now: Date(), excludingHosts: excluded)) ?? []

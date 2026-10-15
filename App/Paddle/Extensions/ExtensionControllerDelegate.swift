@@ -4,18 +4,21 @@ import PaddleCore
 import WebKit
 
 /// Answers WebKit's questions about windows and tabs, opens what extensions ask to open, and routes permission
-/// prompts to the host. Every protocol method is optional, so a misnamed one compiles and is silently never
+/// prompts to the host. One per profile's host: an extension sees only that profile's windows, and what it opens
+/// opens in that profile. Every protocol method is optional, so a misnamed one compiles and is silently never
 /// called: `verifySelectors()` checks the ObjC selectors in DEBUG builds.
 final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDelegate {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
 
     private var app: AppModel { AppModel.shared }
-    private var host: ExtensionHost { AppModel.shared.extensions }
+    /// The host that owns this delegate's controller; nil once a deleted profile's host is gone.
+    weak var host: ExtensionHost?
 
     // MARK: - Windows and tabs
 
     /// Front window first, then the others in screen order. Only the windows this extension may see.
     func webExtensionController(_ controller: WKWebExtensionController, openWindowsFor extensionContext: WKWebExtensionContext) -> [any WKWebExtensionWindow] {
+        guard let host else { return [] }
         var ordered: [BrowserWindowController] = []
         if let front = app.frontWindow { ordered.append(front) }
         for window in NSApp.orderedWindows {
@@ -37,11 +40,12 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         openNewTabUsing configuration: WKWebExtension.TabConfiguration,
         for extensionContext: WKWebExtensionContext
     ) async throws -> (any WKWebExtensionTab)? {
+        guard let host else { throw PaddleExtensionError.noWindow }
         if let url = configuration.url { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
         let url = configuration.url ?? app.newTabPageURL
         let target = (configuration.window as? ExtensionWindow)?.controller ?? app.frontExtensionWindow(for: extensionContext)
         guard let target else {
-            let window = app.openWindow(url: url)
+            let window = app.openWindow(url: url, profile: host.profileID)
             return window.model.selectedTab?.extensionTab
         }
         let model = target.model
@@ -59,7 +63,9 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         openNewWindowUsing configuration: WKWebExtension.WindowConfiguration,
         for extensionContext: WKWebExtensionContext
     ) async throws -> (any WKWebExtensionWindow)? {
-        guard !configuration.shouldBePrivate || extensionContext.hasAccessToPrivateData else { throw PaddleExtensionError.privateNotAllowed }
+        guard let host else { throw PaddleExtensionError.noWindow }
+        // Private windows run the default profile's extensions only.
+        guard !configuration.shouldBePrivate || (host.isDefaultProfile && extensionContext.hasAccessToPrivateData) else { throw PaddleExtensionError.privateNotAllowed }
         // `tabId`: those tabs move into the new window. WebKit only looks the tabs up, so their kind is checked here.
         let moving = configuration.tabs.compactMap { ($0 as? ExtensionTab)?.tab }
         guard moving.count == configuration.tabs.count else { throw PaddleExtensionError.tabNotFound }
@@ -67,7 +73,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         let urls = configuration.tabURLs
         for url in urls { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
         let window = moving.isEmpty
-            ? app.openWindow(url: urls.first ?? app.newTabPageURL, isPrivate: configuration.shouldBePrivate)
+            ? app.openWindow(url: urls.first ?? app.newTabPageURL, isPrivate: configuration.shouldBePrivate, profile: host.profileID)
             : app.openWindow(isPrivate: configuration.shouldBePrivate, moving: moving)
         for url in moving.isEmpty ? Array(urls.dropFirst()) : urls { window.model.newTab(url: url, select: false) }
         let frame = configuration.frame
@@ -78,7 +84,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     }
 
     func webExtensionController(_ controller: WKWebExtensionController, openOptionsPageFor extensionContext: WKWebExtensionContext) async throws {
-        try host.openOptionsPage(for: extensionContext)
+        try host?.openOptionsPage(for: extensionContext)
     }
 
     /// `tabs.move`, within a window or into another. Private WebKit API (in macOS 27's WebKit); without it WebKit
@@ -111,6 +117,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         in tab: (any WKWebExtensionTab)?,
         for extensionContext: WKWebExtensionContext
     ) async -> (Set<WKWebExtension.Permission>, Date?) {
+        guard let host else { return ([], nil) }
         let granted = await host.promptAtRuntime(
             permissions: Set(permissions.map(\.rawValue)), hosts: [], in: tab as? ExtensionTab, for: extensionContext
         )
@@ -124,7 +131,8 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         for extensionContext: WKWebExtensionContext
     ) async -> (Set<URL>, Date?) {
         // `tabs.query` and CORS failures come with no tab; the host answers those without an alert.
-        (await host.promptForURLs(urls, in: tab as? ExtensionTab, for: extensionContext), nil)
+        guard let host else { return ([], nil) }
+        return (await host.promptForURLs(urls, in: tab as? ExtensionTab, for: extensionContext), nil)
     }
 
     func webExtensionController(
@@ -133,6 +141,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         in tab: (any WKWebExtensionTab)?,
         for extensionContext: WKWebExtensionContext
     ) async -> (Set<WKWebExtension.MatchPattern>, Date?) {
+        guard let host else { return ([], nil) }
         let byString = Dictionary(matchPatterns.map { ($0.string, $0) }, uniquingKeysWith: { first, _ in first })
         let allSites = Set(matchPatterns.filter { $0.matchesAllHosts || $0.matchesAllURLs }.map(\.string))
         let granted = await host.promptAtRuntime(
@@ -144,11 +153,12 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     // MARK: - Actions
 
     func webExtensionController(_ controller: WKWebExtensionController, didUpdate action: WKWebExtension.Action, forExtensionContext context: WKWebExtensionContext) {
-        host.actionUpdated(action, for: context)
+        host?.actionUpdated(action, for: context)
     }
 
     /// A click on the button, or the extension's `action.openPopup()`: WebKit's popover at the toolbar button.
     func webExtensionController(_ controller: WKWebExtensionController, presentActionPopup action: WKWebExtension.Action, for context: WKWebExtensionContext) async throws {
+        guard let host else { throw PaddleExtensionError.noWindow }
         do {
             try host.popups.present(action, for: context)
             host.noteUserAction(on: context, showingPopup: true)
@@ -168,7 +178,8 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         toApplicationWithIdentifier applicationIdentifier: String?,
         for extensionContext: WKWebExtensionContext
     ) async throws -> Any? {
-        try await host.bus.handle(
+        guard let host else { throw PaddleExtensionError.noWindow }
+        return try await host.bus.handle(
             message, applicationID: applicationIdentifier, context: extensionContext,
             extension: host.loaded.first { $0.context === extensionContext }
         )
@@ -176,6 +187,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
 
     /// The same id check on the port path, from `port.applicationIdentifier` (nil is refused).
     func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort, for extensionContext: WKWebExtensionContext) async throws {
+        guard let host else { throw PaddleExtensionError.noWindow }
         try host.bus.connect(port, context: extensionContext, extension: host.loaded.first { $0.context === extensionContext })
     }
 

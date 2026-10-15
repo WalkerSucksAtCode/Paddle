@@ -107,14 +107,14 @@ struct BrowserView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
             }
-            if let banner = app.extensions.bannerText {
+            if let host = model.extensionHost, let banner = host.bannerText {
                 HStack(alignment: .top, spacing: 8) {
                     Label(banner, systemImage: "puzzlepiece.extension")
                         .chromeFont(size: 11)
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Button {
-                        app.extensions.dismissBanner()
+                        host.dismissBanner()
                     } label: {
                         Image(systemName: "xmark")
                             .chromeFont(size: 9, weight: .bold)
@@ -271,12 +271,20 @@ private struct NavigationBar: View {
                     .padding(.leading, 4)
                     .help("Private window: no history, no saved session, and cookies and site data are forgotten when the last private window closes.")
             }
+            if !model.isPrivate, app.profiles.hasSeveral {
+                let profile = app.profiles.profile(id: model.profileID)
+                Label(profile.name, systemImage: profile.symbol.sfSymbol)
+                    .chromeFont(size: 11, weight: .medium)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+                    .help("Profile: \(profile.name)")
+            }
             addressField
                 .padding(.horizontal, 4)
                 .frame(minWidth: 140)
             HStack(spacing: 2) {
-                if model.extensionsAllowed {
-                    ExtensionToolbar(host: app.extensions, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
+                if model.extensionsAllowed, let host = model.extensionHost {
+                    ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
                 if !app.downloads.items.isEmpty {
                     downloadsButton

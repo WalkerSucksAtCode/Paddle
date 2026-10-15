@@ -62,6 +62,10 @@ final class SettingsModel {
     /// bytes the previous one wrote instead of conflicting with Paddle's own write.
     @ObservationIgnored private var writeTail: Task<Void, Never>?
 
+    /// The profile of the window this Settings tab is in: the Extensions pane's switches and the Sites pane's
+    /// session answers and Clear Data act on it (`SettingsTabView` sets it).
+    var profileID: ProfileID = ProfileStore.defaultID
+
     init() {
         file = AppModel.shared.config
         refresh(force: true)

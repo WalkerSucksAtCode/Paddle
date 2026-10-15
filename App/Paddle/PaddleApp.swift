@@ -62,12 +62,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Extensions see the front browser window as focused while Paddle is active, and no window otherwise.
     func applicationDidBecomeActive(_ notification: Notification) {
         guard runningCopy == nil else { return }
-        AppModel.shared.extensions.windowFocused(AppModel.shared.frontWindow)
+        let front = AppModel.shared.frontWindow
+        for host in AppModel.shared.extensionHosts { host.windowFocused(front) }
     }
 
     func applicationDidResignActive(_ notification: Notification) {
         guard runningCopy == nil else { return }
-        AppModel.shared.extensions.windowFocused(nil)
+        for host in AppModel.shared.extensionHosts { host.windowFocused(nil) }
     }
 
     /// Quitting stops running downloads (Paddle doesn't resume them), so ask first.
@@ -116,14 +117,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return true
     }
 
-    @objc func paddleNewWindow(_ sender: Any?) { AppModel.shared.openWindow() }
+    /// The profile of the window the user was last in; the default profile with none open.
+    private var frontProfile: ProfileID {
+        AppModel.shared.frontWindow.map { $0.model.profileID } ?? ProfileStore.defaultID
+    }
+
+    @objc func paddleNewWindow(_ sender: Any?) { AppModel.shared.openWindow(profile: frontProfile) }
+
+    /// An item of File > New Window in Profile.
+    @objc func paddleNewWindowInProfile(_ sender: Any?) {
+        guard let id = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        AppModel.shared.openWindow(profile: id)
+    }
 
     @objc func paddleNewPrivateWindow(_ sender: Any?) { AppModel.shared.openWindow(isPrivate: true) }
 
     /// Reached only when no browser window is key: open a window instead of a tab.
-    @objc func paddleNewTab(_ sender: Any?) { AppModel.shared.openWindow() }
+    @objc func paddleNewTab(_ sender: Any?) { AppModel.shared.openWindow(profile: frontProfile) }
 
-    @objc func paddleOpenLocation(_ sender: Any?) { AppModel.shared.openWindow().model.focusAddress() }
+    @objc func paddleOpenLocation(_ sender: Any?) { AppModel.shared.openWindow(profile: frontProfile).model.focusAddress() }
 
     @objc func paddleShowSettings(_ sender: Any?) { AppModel.shared.showSettings() }
 

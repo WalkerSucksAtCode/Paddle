@@ -11,8 +11,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     /// Ends address editing on a click outside the field and its suggestions (`endAddressEditing(after:)`).
     private var clickMonitor: Any?
 
-    init(record: WindowRecord?, isPrivate: Bool = false, extensionsAllowed: Bool = true) {
-        model = BrowserModel(isPrivate: isPrivate, extensionsAllowed: extensionsAllowed)
+    init(record: WindowRecord?, isPrivate: Bool = false, extensionsAllowed: Bool = true, profile: String = ProfileStore.defaultID) {
+        model = BrowserModel(isPrivate: isPrivate, extensionsAllowed: extensionsAllowed, profile: profile)
         let window = BrowserWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 860),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -115,14 +115,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
-        AppModel.shared.extensions.windowClosing(self)
+        model.extensionHost?.windowClosing(self)
         for tab in model.tabs { tab.sleep() }
         AppModel.shared.windowClosed(self)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
         model.selectedTab?.lastActive = Date()
-        AppModel.shared.extensions.windowFocused(self)
+        model.extensionHost?.windowFocused(self)
     }
 
     /// This window as WebKit's extension API sees it.
@@ -244,7 +244,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     /// Empties the memory, disk and fetch caches of this window's data store (the private store in a private window).
     /// Cookies, storage and history stay.
     @objc func paddleEmptyCaches(_ sender: Any?) {
-        let store = webView?.configuration.websiteDataStore ?? (model.isPrivate ? nil : AppModel.shared.web.dataStore)
+        let store = webView?.configuration.websiteDataStore ?? (model.isPrivate ? nil : AppModel.shared.web.dataStore(for: model.profileID))
         guard let store else { return }
         let types: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeFetchCache]
         Task { await store.removeData(ofTypes: types, modifiedSince: .distantPast) }

@@ -40,6 +40,12 @@ enum MainMenu {
         let file = submenu(main, "File")
         add(file, "newTab", "New Tab", #selector(BrowserWindowController.paddleNewTab(_:)), "t")
         add(file, "newWindow", "New Window", #selector(AppDelegate.paddleNewWindow(_:)), "n", target: appDelegate)
+        let profileItem = NSMenuItem(title: "New Window in Profile", action: nil, keyEquivalent: "")
+        profileItem.submenu = NSMenu(title: "New Window in Profile")
+        profileItem.isHidden = true
+        file.addItem(profileItem)
+        ProfileMenuDelegate.shared.item = profileItem
+        file.delegate = ProfileMenuDelegate.shared
         add(file, "newPrivateWindow", "New Private Window", #selector(AppDelegate.paddleNewPrivateWindow(_:)), "n", [.command, .shift], target: appDelegate)
         add(file, "openLocation", "Open Location…", #selector(BrowserWindowController.paddleOpenLocation(_:)), "l")
         file.addItem(.separator())
@@ -383,6 +389,27 @@ enum MainMenu {
         menu.addItem(item)
         if let name = itemsByName.first(where: { $0.value.action == action && $0.value.menu === menu })?.key {
             aliases[name, default: []].append((key, modifiers))
+        }
+    }
+}
+
+/// Fills File > New Window in Profile each time File opens: one item per profile, hidden while there is only one.
+@MainActor
+final class ProfileMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = ProfileMenuDelegate()
+    var item: NSMenuItem?
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard let item, let submenu = item.submenu else { return }
+        let profiles = AppModel.shared.profiles
+        item.isHidden = !profiles.hasSeveral
+        submenu.removeAllItems()
+        for profile in profiles.all {
+            let entry = NSMenuItem(title: profile.name, action: #selector(AppDelegate.paddleNewWindowInProfile(_:)), keyEquivalent: "")
+            entry.target = NSApp.delegate
+            entry.representedObject = profile.id
+            entry.image = NSImage(systemSymbolName: profile.symbol.sfSymbol, accessibilityDescription: profile.symbol.displayName)
+            submenu.addItem(entry)
         }
     }
 }

@@ -10,14 +10,15 @@ struct ActivityView: View {
     let browser: BrowserModel
     @Environment(\.chromeScale) private var scale
 
-    private func isListed(_ tab: Tab) -> Bool { !tab.isPrivate || tab.browser === browser }
+    /// Tabs of another profile are not listed either: their titles belong to that profile's windows.
+    private func isListed(_ tab: Tab) -> Bool { tab.browser === browser || (!tab.isPrivate && tab.profileID == browser.profileID) }
 
     /// A Settings tab uses no memory and has no sleep state, so it isn't listed or counted.
     private var tabs: [Tab] {
         app.allTabs.filter { $0.settingsPane == nil && isListed($0) }.sorted { ($0.memoryBytes ?? 0) > ($1.memoryBytes ?? 0) }
     }
 
-    private var hiddenPrivateTabs: [Tab] { app.allTabs.filter { $0.settingsPane == nil && !isListed($0) } }
+    private var hiddenPrivateTabs: [Tab] { app.allTabs.filter { $0.settingsPane == nil && $0.isPrivate && !isListed($0) } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

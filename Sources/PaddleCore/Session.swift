@@ -17,15 +17,18 @@ public struct WindowRecord: Codable, Sendable, Equatable {
     public var frame: String?
     /// The window's tab groups; tabs name theirs by `TabRecord.groupID`. Files from before groups have none.
     public var groups: [TabGroupRecord]
+    /// The window's profile id (`ProfilesFile`); nil is the default profile. Files from before profiles have none.
+    public var profile: String?
 
-    public init(tabs: [TabRecord], selectedIndex: Int, frame: String? = nil, groups: [TabGroupRecord] = []) {
+    public init(tabs: [TabRecord], selectedIndex: Int, frame: String? = nil, groups: [TabGroupRecord] = [], profile: String? = nil) {
         self.tabs = tabs
         self.selectedIndex = selectedIndex
         self.frame = frame
         self.groups = groups
+        self.profile = profile
     }
 
-    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups }
+    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups, profile }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -33,6 +36,7 @@ public struct WindowRecord: Codable, Sendable, Equatable {
         selectedIndex = try c.decode(Int.self, forKey: .selectedIndex)
         frame = try c.decodeIfPresent(String.self, forKey: .frame)
         groups = try c.decodeIfPresent([TabGroupRecord].self, forKey: .groups) ?? []
+        profile = (try? c.decodeIfPresent(String.self, forKey: .profile)) ?? nil
     }
 }
 

@@ -255,16 +255,17 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func allowsDownloads(from site: String, filename: String) async -> Bool {
         let app = AppModel.shared
         let isPrivate = tab?.isPrivate ?? true
-        if let answer = app[permissionsFor: isPrivate].answer(site: site, kind: .downloads) { return answer }
+        let profile = tab?.profileID ?? ProfileStore.defaultID
+        if let answer = app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: .downloads) { return answer }
         let alert = NSAlert()
         alert.messageText = "Allow downloads from \(site)?"
         alert.informativeText = "A frame from \(site) on this page wants to download “\(filename)”."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
-        let response = await present(alert) { app[permissionsFor: isPrivate].answer(site: site, kind: .downloads) == nil }
-        if response == .abort { return app[permissionsFor: isPrivate].answer(site: site, kind: .downloads) ?? false }
+        let response = await present(alert) { app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: .downloads) == nil }
+        if response == .abort { return app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: .downloads) ?? false }
         let allow = response == .alertFirstButtonReturn
-        app[permissionsFor: isPrivate].record(allow, site: site, kinds: [.downloads])
+        app[permissionsFor: isPrivate, profile: profile].record(allow, site: site, kinds: [.downloads])
         return allow
     }
 
@@ -385,7 +386,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func recordInHistory(_ url: URL, _ webView: WKWebView, typed: Bool) {
         guard let tab, !tab.isPrivate else { return }
         let title = webView.title ?? ""
-        AppModel.shared.recordVisit(url, title: title, typed: typed)
+        AppModel.shared.recordVisit(url, title: title, typed: typed, profile: tab.profileID)
         tab.historyURL = url
         tab.historyTitle = title
     }
@@ -660,17 +661,18 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let site = Self.site(of: origin)
         let app = AppModel.shared
         let isPrivate = tab?.isPrivate ?? true
-        if app[permissionsFor: isPrivate].allows(site: site, kinds: devices) { return .grant }
+        let profile = tab?.profileID ?? ProfileStore.defaultID
+        if app[permissionsFor: isPrivate, profile: profile].allows(site: site, kinds: devices) { return .grant }
 
         let alert = NSAlert()
         alert.messageText = "Allow \(origin.host) to use your \(devices.map(\.rawValue).joined(separator: " and "))?"
         alert.informativeText = "If you allow, Paddle won’t ask again for this site until it quits."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
-        let response = await present(alert) { !app[permissionsFor: isPrivate].allows(site: site, kinds: devices) }
-        if response == .abort { return app[permissionsFor: isPrivate].allows(site: site, kinds: devices) ? .grant : .deny }
+        let response = await present(alert) { !app[permissionsFor: isPrivate, profile: profile].allows(site: site, kinds: devices) }
+        if response == .abort { return app[permissionsFor: isPrivate, profile: profile].allows(site: site, kinds: devices) ? .grant : .deny }
         let allowed = response == .alertFirstButtonReturn
-        if allowed { app[permissionsFor: isPrivate].record(true, site: site, kinds: devices) }
+        if allowed { app[permissionsFor: isPrivate, profile: profile].record(true, site: site, kinds: devices) }
         return allowed ? .grant : .deny
     }
 
@@ -749,7 +751,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let host = origin.host
         let site = Self.site(of: origin)
         let isPrivate = tab?.isPrivate ?? true
-        if let answer = app[permissionsFor: isPrivate].answer(site: site, kind: kind) { return answer }
+        let profile = tab?.profileID ?? ProfileStore.defaultID
+        if let answer = app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: kind) { return answer }
 
         let alert = NSAlert()
         alert.messageText = question
@@ -761,10 +764,10 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             alert.suppressionButton?.title = "Remember for \(host)"
             alert.suppressionButton?.state = .off
         }
-        let response = await present(alert) { app[permissionsFor: isPrivate].answer(site: site, kind: kind) == nil }
-        if response == .abort { return app[permissionsFor: isPrivate].answer(site: site, kind: kind) == true }
+        let response = await present(alert) { app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: kind) == nil }
+        if response == .abort { return app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: kind) == true }
         let allowed = response == .alertFirstButtonReturn
-        app[permissionsFor: isPrivate].record(allowed, site: site, kinds: [kind])
+        app[permissionsFor: isPrivate, profile: profile].record(allowed, site: site, kinds: [kind])
         if alert.showsSuppressionButton, alert.suppressionButton?.state == .on {
             let key = app.config.siteKey(forHost: host)
             Task { await app.writeSiteSetting(field, .string(allowed ? "allow" : "deny"), forKey: key) }

@@ -148,12 +148,12 @@ extension SettingsModel {
     /// Clear Data: every kind of website data WebKit keeps for `key`'s domain in the ordinary store
     /// (`WebEnvironment.clearData`). Returns how many records went.
     func clearSiteData(_ key: String) async -> Int {
-        await AppModel.shared.web.clearData(forHost: key)
+        await AppModel.shared.web.clearData(forHost: key, profile: profileID)
     }
 
-    /// "This session": camera, microphone, location and download answers, grouped by host.
+    /// "This session": this profile's camera, microphone, location and download answers, grouped by host.
     var sessionAnswers: [(host: String, answers: [SessionPermissions.Answer])] {
-        let all = AppModel.shared.sessionPermissions.all
+        let all = AppModel.shared[permissionsFor: false, profile: profileID].all
         var hosts: [String] = []
         for answer in all where !hosts.contains(answer.host) { hosts.append(answer.host) }
         return hosts.map { host in (host, all.filter { $0.host == host }) }
@@ -161,7 +161,7 @@ extension SettingsModel {
 
     /// Forget: the host's next camera, microphone, location, notification or download request asks again.
     func forgetSessionAnswers(_ host: String) {
-        AppModel.shared.forgetSessionAnswers(forHost: host)
+        AppModel.shared.forgetSessionAnswers(forHost: host, profile: profileID)
     }
 
     /// `field` of `policy` as config.json writes it.

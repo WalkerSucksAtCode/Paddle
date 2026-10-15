@@ -101,6 +101,7 @@ struct SettingsTabView: View {
     /// the tab may have been away while it changed.
     private func start() {
         let current = model ?? SettingsModel()
+        current.profileID = browser.profileID
         model = current
         current.refresh()
         watcher = ConfigWatcher { current.refresh() }

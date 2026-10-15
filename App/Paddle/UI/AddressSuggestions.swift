@@ -139,11 +139,11 @@ final class AddressSuggestions {
     }
 
     /// Open tabs, bookmarks and history. History is only read here, private windows included. A private window's
-    /// tabs are offered only in that window.
+    /// tabs are offered only in that window, and a profile's tabs and history only in that profile's windows.
     private static func candidatePages(for query: String, excluding current: Tab?, in browser: BrowserModel) -> [SuggestionSource] {
         let app = AppModel.shared
         var pages: [SuggestionSource] = app.allTabs.compactMap { tab in
-            guard tab !== current, !tab.isPrivate || tab.browser === browser,
+            guard tab !== current, tab.browser === browser || (!tab.isPrivate && tab.profileID == browser.profileID),
                   let url = tab.url, HistoryStore.isRecordable(url) else { return nil }
             return SuggestionSource(kind: .openTab(tab.id), title: tab.displayTitle, url: url.absoluteString)
         }
@@ -151,7 +151,7 @@ final class AddressSuggestions {
             bookmark.url.map { SuggestionSource(kind: .bookmark, title: bookmark.title, url: $0) }
         }
         let now = Date()
-        if let entries = try? app.history?.search(query, limit: 30, now: now) {
+        if let entries = try? app.history(for: browser.profileID)?.search(query, limit: 30, now: now) {
             pages += entries.map {
                 SuggestionSource(
                     kind: .history, title: $0.title, url: $0.url,

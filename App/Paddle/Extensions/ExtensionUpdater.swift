@@ -191,7 +191,7 @@ final class ExtensionUpdater {
         } catch {
             return "not updated: the manifests can't be compared (\(error.localizedDescription))"
         }
-        guard let asks = AppModel.shared.extensions.updateAsks(folder: folder, name: name, requested: requested, added: added) else {
+        guard let asks = AppModel.shared.extensionUpdateAsks(folder: folder, name: name, requested: requested, added: added) else {
             return "not updated: extension-permissions.json is unreadable"
         }
 
@@ -230,10 +230,10 @@ final class ExtensionUpdater {
         }
         log.info("extension update \(folder, privacy: .public): version \(version, privacy: .public), verified \(checked.verified, privacy: .public)")
         if grants {
-            AppModel.shared.extensions.recordUpdateAllowed(folder: folder, name: name, version: version, requested: requested, asks: asks)
+            AppModel.shared.recordExtensionUpdateAllowed(folder: folder, name: name, version: version, requested: requested, asks: asks)
         }
         let host = AppModel.shared
-        Task { await host.extensions.reconcile(config: host.config, reloading: [folder]) }
+        Task { await host.reconcileExtensions(reloading: [folder]) }
         return "updated to \(version)"
     }
 
