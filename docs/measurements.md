@@ -1,0 +1,91 @@
+# Measurements
+
+Memory baselines, one section per measured release, newest first. Compare a new build against the latest section
+with the same method; the regression threshold is 10 % or 50 MB per scenario, whichever is larger.
+
+## 2026-10-15: main (263b85a) against build 49, Safari, Chrome and Firefox
+
+Machine: Mac16,7 (M4 Pro, 48 GB), macOS 27.0.1 (26A434).
+
+Browsers:
+
+| Browser | Version | Setup |
+|---|---|---|
+| Paddle main | 0.1.0, commit 263b85a, Release build run from `build/ReleaseDerivedData.noindex` | Walker's config with extensions and the control bridge off; content blocking on, as shipped |
+| Paddle build 49 | 0.1.0 (49), the installed app, commit 8ef8350 | Same config |
+| Safari | 27.0.1 (22625.1.29.11.28) | A separate profile, "Measure", with no extensions |
+| Chrome | 155.0.8059.82 | A throwaway profile with no extensions; first-run screens off; window 1280 x 900 |
+| Firefox | 158.0 (build 20261007201254) | A throwaway profile with no extensions; first-run screens off; a separate instance (`-no-remote`) |
+
+No browser had extensions, so these numbers don't answer how Paddle compares with Chrome or Firefox as people
+actually run them, with extensions.
+
+### Results
+
+Memory is in MB (MiB): the median over runs, with the range in brackets.
+
+| Browser | Idle | Loaded (8 sites) | Loaded - Idle | Processes, idle / loaded (page processes) |
+|---|---|---|---|---|
+| Paddle main | 64 (62-66) | 587 (578-593) | 523 | 2-3 / 11 (0 / 8) |
+| Paddle build 49 | 60 (60-61) | 589 (584-612) | 529 | 2 / 11 (0 / 8) |
+| Safari | 306 (one run) | 845 (793-854) | 540 | 10 / 18 (4 / 12) |
+| Chrome | 367 (364-369) | 846 (843-847) | 479 | 8 / 19 (4 / 14) |
+| Firefox | 839 (837-842) | 1659 (1610-1678) | 819 | 11 / 20 (9 / 18) |
+
+Paddle only, with the 8 sites restored from a saved session (only the selected tab awake): main 208 (207-210),
+build 49 200 (194-206).
+
+- **Regression gate: passed.** Main against build 49 is +4 MB idle, -2 MB loaded and +8 MB restored, all far
+  inside the threshold.
+- **Against the others:** with the 8 sites loaded, Paddle used about 31 % less memory than Chrome or Safari and about
+  65 % less than Firefox.
+- **Where the gap comes from:** almost all of it is the base cost. Idle, Paddle is 64 MB against 306-839 MB. The
+  8 sites themselves cost Paddle 523 MB, more than Chrome's 479 MB (Chrome has no content blocker here and Paddle's
+  is on) and less than Safari's 540 MB or Firefox's 819 MB.
+- **Safari after closing tabs:** 45 seconds after the 8 tabs closed, Safari still held 625-704 MB, with 9 page
+  processes alive (fresh idle: 306 MB, 4). It keeps closed tabs' processes for a while. The other browsers weren't
+  measured after closing tabs.
+
+Per-run values (MB), for comparing later runs:
+
+| Browser | Idle | Loaded | Restored |
+|---|---|---|---|
+| Paddle main | 66, 62 | 593, 578, 587 | 207, 210 |
+| Paddle build 49 | 61, 60 | 589, 584, 612 | 206, 194 |
+| Safari | 306 (fresh); 625, 681, 704 (after closing tabs) | 793, 845, 854 | - |
+| Chrome | 364, 369 | 846, 847, 843 | - |
+| Firefox | 837, 842 | 1659, 1610, 1678 | - |
+
+### Method
+
+- One browser ran at a time, launched in the background; nothing else heavy ran meanwhile (no builds).
+- Each reading was taken 75 seconds after launch (80 for Chrome and Firefox) with `footprint -f bytes`. It is the sum
+  of each counted process's phys_footprint, so memory shared between a browser's processes is counted in each of them.
+  footprint's de-duplicated total is 0-23 MB lower.
+- Scenarios:
+  - Idle: one window with one empty tab. For Chrome and Firefox that was `about:blank`; for Paddle, a new tab; for
+    Safari, the profile's Start Page.
+  - Loaded: the 8 sites as tabs, all awake.
+  - Restored: Paddle only. The 8 sites came from a written `session.json`.
+- Sites: Wikipedia's WebKit article, github.com/WebKit/WebKit, MDN's HTML page, BBC News, Hacker News, apple.com,
+  Wikipedia's list of web browsers, and a local static page. None of them plays video or sound.
+- Runs:
+  - Each Paddle build, Chrome and Firefox: Idle twice, Loaded three times, each a fresh launch.
+  - Each Paddle build: Restored twice.
+  - Chrome and Firefox: one warm-up run each, not counted. Chrome updated itself from 155.0.8059.39 to .82 during its
+    warm-up.
+  - Safari: one session in the Measure window. Idle once, then three rounds of adding the 8 sites as tabs (by
+    AppleScript), reading, closing them and reading again.
+- Which processes count:
+  - Paddle: the app and every WebKit WebContent, Networking and GPU process that appeared after its launch.
+  - Chrome and Firefox: the main process and all its descendants.
+  - Safari: the app, plus the processes macOS holds Safari responsible for (`responsibility_get_pid_responsible_for_pid`),
+    restricted to `com.apple.WebKit.*` and `com.apple.Safari.*`. Safari's other windows share these processes and
+    can't be separated. A window from Safari's "Personal" profile, showing its Start Page, was open throughout, so
+    Safari's idle and loaded figures include it; Loaded - Idle doesn't.
+- Not counted for any browser: system services the browser caused (Metal shader compiler, ImageIO, video decoders,
+  audio helpers, Quick Look, the open panel). For Safari, the only browser where they were recorded, they came to
+  140-164 MB. Also not counted: Safari's launchd agents (`com.apple.Safari.History`, `SafariNotificationAgent`).
+- Paddle's first idle run of main counted an extra 5 MB Networking process. It appeared after launch, but it may
+  belong to another app.
+- Window sizes weren't equalized: Paddle and Safari used their default windows, and Chrome used 1280 x 900.

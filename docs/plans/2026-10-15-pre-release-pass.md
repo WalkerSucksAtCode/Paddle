@@ -1,6 +1,6 @@
 # Pre-release pass (2026-10-15)
 
-Status: Waves A, A2 and B done, and every item left after B (2026-10-15); next, Wave C. Before releasing main (a97c4ac) over the installed build 49, which predates
+Status: Waves A, A2, B and C done, and every item left after B (2026-10-15). Wave C passed: no memory regression; results in `docs/measurements.md`. Before releasing main (a97c4ac) over the installed build 49, which predates
 every wave of `2026-10-14-browser-features.md`.
 
 Three waves, each about 45 minutes or less, run in this session with no sub-agents: the checks drive one running app
@@ -105,24 +105,45 @@ Current Tab and End Split).
 - Not checkable here: swipe back in a preview (computer use can't make trackpad swipes), reduce motion and
   transparency, the bridge with the screen locked.
 
-## Wave C: memory, main against build 49 (about 35 min; Paddle unavailable meanwhile)
+## Wave C: memory, against build 49, Safari, Chrome and Firefox (about 60 min; Paddle unavailable meanwhile)
 
-- Builds: A is the installed build 49; B is a Release build of main at `build/ReleaseDerivedData.noindex`, run from
-  there and not installed. Nothing else heavy runs meanwhile (no builds, renders or model checks), and the
-  installed Paddle stays quit.
-- Same data for both: a fresh measurement config and session, written before each run (build 49 ignores newer
-  keys); the real data is restored afterwards.
-- Scenarios, each measured after loads finish and 60 s of settling:
-  1. Idle: one window, one New Tab page.
-  2. Restored: 8 tabs from the session, only the selected one awake.
-  3. Loaded: the same 8 sites opened from another app (`open -a`), all awake (under the default `maxAwakeTabs` of
-     10).
+Two questions (Walker, 2026-10-15): did this release make Paddle heavier than build 49 (the regression gate), and is
+Paddle lighter than the browsers it replaces (the resource-light claim)? Nothing was ever logged, so both are
+measured now and the results go in `docs/measurements.md` as the baseline for later releases.
+
+- Browsers, one running at a time (heavy jobs never overlap; no builds meanwhile):
+  - Paddle B: a Release build of main at `build/ReleaseDerivedData.noindex`, run from there, not installed.
+  - Paddle A: the installed build 49.
+  - Safari 27.0.1 in a separate Safari profile, "Measure" (no extensions, its own cookies), which Walker creates
+    once: Safari can't be driven by clicks from here.
+  - Chrome 155 and Firefox 158 with throwaway profiles in the scratchpad (no extensions, first-run screens off),
+    launched in the background as separate instances; Walker's own Firefox is left running and isn't counted.
+- Paddle runs use Walker's config with extensions off and the bridge off (content blocking stays on, as Paddle
+  ships), and a measurement session written before each run; his data is backed up first and restored with `cmp`.
+- Scenarios, measured 75 s after launch (loads done, then settled):
+  1. Idle: one window, one empty tab.
+  2. Loaded: the 8 sites as tabs, all awake.
+  3. Paddle only, A against B: the 8 sites restored from the session, only the selected one awake.
   Sites: Wikipedia (WebKit article), GitHub (WebKit repo), MDN (HTML), BBC News, Hacker News, apple.com, a long
   Wikipedia list page, and the local probe page. No video sites, so nothing plays sound.
-- Metric: `footprint` phys_footprint (checked: readable without sudo) for Paddle itself and for every WebContent,
-  Networking and GPU process that wasn't running before launch, plus the WebContent count.
-- Runs: A, B, A, B, A, B per scenario, reported as the median and range per build. Threshold, for Walker to adjust:
-  B within 10 % or 50 MB of A, whichever is larger; any scenario over it gets its cause found before release.
-- Wave C ends with: the table in chat, the comparison noted in this file, and a release recommendation.
+- Metric: `footprint` phys_footprint summed over the browser's processes, plus the count of page processes.
+  Paddle and Safari: the app and every WebKit process (WebContent, Networking, GPU) that appeared after its
+  launch. Chrome and Firefox: the main process and all its descendants. The cost of the 8 sites (Loaded minus Idle)
+  is reported too: it is the fairest number for Safari if other Safari windows are open, since those can't be
+  told apart by process.
+- Runs: Idle twice and Loaded three times per browser, Restored twice for A and B; medians and ranges.
+- Regression threshold, for Walker to adjust: B within 10 % or 50 MB of A, whichever is larger, per scenario; over
+  it, the cause is found before release. The browser comparison has no pass/fail: it is what the README may claim.
+- Wave C ends with: `docs/measurements.md` (date, machine, versions, method, table), the table in chat, and a
+  release recommendation.
+
+- [x] Wave C (2026-10-15; `docs/measurements.md`). Regression gate passed: main against build 49 is +4 MB idle,
+  -2 MB loaded, +8 MB restored. With the 8 sites loaded, Paddle (587 MB) used about 31 % less than Chrome (846) and
+  Safari (845), and 65 % less than Firefox (1659). Nearly all of that is the base cost (64 MB idle against 306-839);
+  the 8 sites cost Paddle 523 MB against Chrome's 479. Changes to the plan as run: Safari's processes were attributed
+  by macOS's responsible-process lookup instead of "new since a snapshot", so other apps' WebKit processes weren't
+  counted, and system services were left out for every browser. Every browser ran without extensions. Walker
+  (2026-10-15): he cares more about Chrome and Firefox with extensions than about Safari, but wants no extra batch
+  in this pass.
 
 Not in this pass: the release itself (Walker's go after Wave C), and the features the roadmap left unchosen.
