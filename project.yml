@@ -56,8 +56,28 @@ targets:
     dependencies:
       - package: PaddlePackage
         product: PaddleCore
+      # The control bridge's stdio relay, copied to Contents/Helpers and signed with the app.
+      - target: paddle-mcp
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
     scheme:
       testTargets: []
+
+  paddle-mcp:
+    type: tool
+    platform: macOS
+    sources:
+      - path: App/PaddleMCP
+    settings:
+      base:
+        PRODUCT_NAME: paddle-mcp
+        PRODUCT_BUNDLE_IDENTIFIER: com.walker.Paddle.mcp
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        SKIP_INSTALL: YES
+        CODE_SIGN_IDENTITY[sdk=macosx*]: Apple Development
 
 schemes:
   Paddle:

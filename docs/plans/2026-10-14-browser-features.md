@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 built and checked in the app 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 committed (206ff00). Wave 7b (control bridge) built and checked from a Claude session 2026-10-15, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -200,6 +200,41 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     two relaunches, Move Tab to Space, Delete Space with its alert and Cancel, ⇧⌘T after it, Search Tabs, and the
     blue tint measured at its 25 % blend. Not exercised: pins and groups inside a second space, Next/Previous Space,
     an extension activating a tab in another space, and a tint strong enough to be capped.)
+- [ ] Wave 7b, control bridge (Walker, 2026-10-15; before Split view): a local MCP server so Claude sessions can
+  read and drive Paddle directly, instead of screenshots and synthetic clicks (which stop when the screen locks, can't
+  press Return in the background, and miss menu rows). Off by default.
+  - [x] Transport: Paddle listens on a Unix socket in its support folder's own `bridge/` folder (0700; the socket
+    0600; the support folder's mode is left alone), never a TCP port, so no
+    web page can reach it (no localhost/DNS-rebinding surface). A small `paddle-mcp` helper inside the app
+    (Contents/Helpers, signed with it) speaks MCP over stdio and relays to the socket. Setup is one command, shown
+    with a Copy button in Settings: `claude mcp add paddle -- /Applications/Paddle.app/Contents/Helpers/paddle-mcp`.
+    MCP itself (initialize, tools/list, tools/call, ping) is hand-written in PaddleCore and unit-tested; no new
+    dependency.
+  - [x] Switch: `controlBridge` (false) in config.json and Settings > Advanced. On: the socket opens; off: it closes
+    and connected clients are dropped. While a client is connected the toolbar shows "Claude connected" (text and
+    symbol, not color), clickable to disconnect. (Checked: off by default, on and off live through Reload Config,
+    the label in a window snapshot. Not clicked: Disconnect, and the Settings section was not looked at.)
+  - [x] Read tools: `paddle_state` (windows with profile and spaces, tabs with id, title, URL, pinned, group, asleep,
+    selected; app build; config warnings), `page_text` (a tab's visible text), `page_snapshot` (a tab's PNG through
+    WebKit's own snapshot: no Screen Recording permission, works in the background or with the screen locked),
+    `window_snapshot` (the window's own drawing, best effort), `read_config`, `logs` (Paddle's own log entries since a
+    time, read in-process, which `log show` from a shell can't).
+  - [x] Act tools: `open_url`, `select_tab`, `close_tab`, `reload_tab`, `wait_for_load`, `menu_action` (any menu
+    command by its action name, with the menu's own validation: covers spaces, profiles, vertical tabs, Develop),
+    `set_config` (through the same conflict-checked writer as Settings), and `run_js` (in an isolated content world,
+    not the page's, returning JSON; http(s) pages only). menu_action refuses quit, the clipboard and file
+    commands; set_config refuses controlBridge, the extension and search keys.
+  - [ ] Limits: private windows are invisible to the bridge (not listed, not reachable). No tool reads cookies,
+    passwords, the keychain, downloads or files outside Paddle's support folder. Page text and script results are
+    labelled as untrusted page content in tool results. Every call is logged; Settings shows the last 50.
+    (Build review 2026-10-15: `run_js` can't meet "no cookies or passwords" with a JS guard alone; a script reaches
+    what page scripts can. Walker's call: `run_js` sits behind its own switch, `controlBridgeScripts` (Allow page
+    scripts), off by default and changeable only in Settings or config.json; it keeps the guard and the redaction.)
+  - Done when: from a Claude Code session, with Paddle in the background and the screen locked, the tools list
+    tabs, snapshot a page, read its text, run a menu command and a config change, and read Paddle's logs; with the
+    switch off there is no socket; `lsof` shows Paddle on no TCP port; private windows never appear. (Checked with a
+    stdio MCP client through `paddle-mcp`, Paddle in the background: all of it, plus file:/javascript: URLs refused,
+    document.cookie blocked and a cookie-equal value redacted. Not checked with the screen locked.)
 - [ ] Wave 8, Split view: two tabs side by side in one window, with a draggable divider (Chrome, Arc, Zen, Edge).
 - [ ] Wave 9, Link preview: ⌥-click shows a link in a floating preview over the page, which can then become a tab
   (Arc Peek, Zen Glance).

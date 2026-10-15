@@ -88,6 +88,8 @@ enum SettingsPane: String, CaseIterable {
         case .advanced: [
             "developer", "developerTools", "user agent", "userAgentSuffix", "config.json", "problems", "unknown keys",
             "tidy", "user.css", "userscripts", "reveal in finder",
+            "bridge", "control bridge", "controlBridge", "controlBridgeScripts", "page scripts", "run_js", "mcp", "claude",
+            "automation", "control",
         ]
         }
     }

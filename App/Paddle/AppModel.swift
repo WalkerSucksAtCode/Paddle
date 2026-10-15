@@ -218,6 +218,7 @@ final class AppModel {
         log.info("startup: \(self.windows.count, privacy: .public) windows open \(elapsed, privacy: .public) after start")
 
         startMonitoring()
+        ControlBridge.shared.update(enabled: config.controlBridge)
 
         // Windows are on screen; extensions find them through the registered windows. Session-restored extension
         // pages wait for this (deferred wake).
@@ -238,6 +239,7 @@ final class AppModel {
     }
 
     func willTerminate() {
+        ControlBridge.shared.stop()
         downloads.discardRunning()
         bookmarks.saveNow()
         newTab.saveNow()
@@ -396,6 +398,7 @@ final class AppModel {
         web.apply(new)
         if keys.contains(.historyDays) { openHistory() }
         if keys.contains(.shortcuts) { MainMenu.applyShortcuts(new.shortcuts) }
+        if keys.contains(.controlBridge) { ControlBridge.shared.update(enabled: new.controlBridge) }
         if keys.contains(.developerTools) {
             // Remote inspection follows at once; the context-menu item needs a new page (its configuration).
             for tab in allTabs { tab.webView?.isInspectable = new.developerTools }
@@ -491,6 +494,8 @@ final class AppModel {
             case .minimumFontSize: old.minimumFontSize != new.minimumFontSize
             case .reduceMotion: old.reduceMotion != new.reduceMotion
             case .reduceTransparency: old.reduceTransparency != new.reduceTransparency
+            case .controlBridge: old.controlBridge != new.controlBridge
+            case .controlBridgeScripts: old.controlBridgeScripts != new.controlBridgeScripts
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
             case .extensionToolbar: old.extensionToolbar != new.extensionToolbar

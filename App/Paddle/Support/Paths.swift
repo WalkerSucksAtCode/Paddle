@@ -7,6 +7,16 @@ enum Paths {
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appending(path: "Paddle", directoryHint: .isDirectory)
 
+    /// The control bridge's Unix socket (`ControlBridge`), present only while `controlBridge` is on. A socket path
+    /// must fit `sun_path` (104 bytes); a long home folder falls back to `<temp dir>/paddle-<uid>/control.sock`
+    /// (the parent is made 0700). `paddle-mcp` repeats this rule in `App/PaddleMCP/main.swift`.
+    static let controlSocket: URL = {
+        // Its own folder, so making the socket's parent owner-only (0700) never touches the support folder itself.
+        let inSupport = support.appending(path: "bridge", directoryHint: .isDirectory).appending(path: "control.sock")
+        if inSupport.path.utf8.count < 104 { return inSupport }
+        return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appending(path: "paddle-\(getuid())", directoryHint: .isDirectory).appending(path: "control.sock")
+    }()
     static let config = support.appending(path: "config.json")
     static let userCSS = support.appending(path: "user.css")
     static let userScripts = support.appending(path: "userscripts", directoryHint: .isDirectory)

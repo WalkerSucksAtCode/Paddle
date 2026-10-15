@@ -17,6 +17,9 @@ final class BrowserModel {
     /// default profile's id; they ignore it.
     let profileID: String
 
+    /// The window's id for the control bridge (`ControlBridge`); new each launch.
+    let id = UUID()
+
     init(isPrivate: Bool = false, extensionsAllowed: Bool = true, profile: String = ProfileStore.defaultID) {
         self.isPrivate = isPrivate
         self.profileID = isPrivate ? ProfileStore.defaultID : profile
@@ -1061,5 +1064,20 @@ final class BrowserModel {
             space: activeSpace.record(), others: others,
             spaceIndex: spaces.count > 1 ? spaces.firstIndex { $0.id == activeSpaceID } : nil
         )
+    }
+}
+
+// MARK: - Control bridge
+
+extension BrowserModel {
+    /// Space `id`'s tabs in strip order, for a hidden space too.
+    func tabs(inSpace id: String) -> [Tab] {
+        id == activeSpaceID ? tabs : stashes[id]?.tabs ?? []
+    }
+
+    /// The group `tab` is in, whichever space holds it.
+    func anyGroup(of tab: Tab) -> TabGroup? {
+        guard let id = tab.groupID else { return nil }
+        return (groups + stashes.values.flatMap(\.groups)).first { $0.id == id }
     }
 }

@@ -117,7 +117,13 @@ grep -q "^Authority=Developer ID Application: .*($TEAM_ID)" <<<"$SIGN_INFO" \
 grep -q "^TeamIdentifier=$TEAM_ID" <<<"$SIGN_INFO" || fail verify "TeamIdentifier is not $TEAM_ID"
 grep -Eq '^CodeDirectory .*flags=.*runtime' <<<"$SIGN_INFO" || fail verify "hardened runtime flag missing"
 grep -q '^Timestamp=' <<<"$SIGN_INFO" || fail verify "no secure timestamp (OTHER_CODE_SIGN_FLAGS=--timestamp)"
-pass verify "Developer ID, hardened runtime, timestamped"
+HELPER="$APP/Contents/Helpers/paddle-mcp"
+[[ -x "$HELPER" ]] || fail verify "paddle-mcp helper missing at $HELPER"
+HELPER_INFO="$(codesign -dv --verbose=4 "$HELPER" 2>&1)"
+grep -q "^Authority=Developer ID Application: .*($TEAM_ID)" <<<"$HELPER_INFO" || fail verify "paddle-mcp is not Developer ID signed for team $TEAM_ID"
+grep -Eq '^CodeDirectory .*flags=.*runtime' <<<"$HELPER_INFO" || fail verify "paddle-mcp lacks the hardened runtime flag"
+grep -q '^Timestamp=' <<<"$HELPER_INFO" || fail verify "paddle-mcp has no secure timestamp"
+pass verify "Developer ID, hardened runtime, timestamped (app and paddle-mcp)"
 
 # ---- entitlements --------------------------------------------------------------------------------
 step entitlements

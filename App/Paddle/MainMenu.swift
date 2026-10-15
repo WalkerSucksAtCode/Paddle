@@ -307,6 +307,8 @@ enum MainMenu {
 
     /// The command's menu title as it reads now, and the menu it is in.
     static func title(for name: String) -> String? { itemsByName[name]?.title }
+    /// The menu item for an action name (the control bridge's `menu_action`).
+    static func item(named name: String) -> NSMenuItem? { itemsByName[name] }
     static func menuTitle(for name: String) -> String? { itemsByName[name]?.menu?.title }
 
     /// A fresh copy of the menu-bar command `name` (action, target, tag and its current shortcut, so a `shortcuts`

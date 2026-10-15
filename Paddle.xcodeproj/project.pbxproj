@@ -68,6 +68,7 @@
 		A136EA310CE39E5B3601C8CA /* PaddleCore in Frameworks */ = {isa = PBXBuildFile; productRef = BD5C9C757A3417F27389B736 /* PaddleCore */; };
 		A2709A6C8A004234864B824C /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB45BBE62413E30D184AA5E /* BookmarkStore.swift */; };
 		A8A2BBA04239338337B0BF50 /* NewTabPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3485769C1E48286709A33E89 /* NewTabPage.swift */; };
+		AA1C532B2F2AFD7C39F1E0EA /* BridgeSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */; };
 		AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */; };
 		B15050EC419C701DB0C5049D /* Bookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10F08E60740FF045413DAC8 /* Bookmarks.swift */; };
 		B25B2C45BEC0C154C343CBB2 /* ExtensionHosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C9552622F181311228E602 /* ExtensionHosts.swift */; };
@@ -76,21 +77,50 @@
 		BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */; };
 		BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D0FE4D946C5EE2383EBBDC /* TabsMemoryPane.swift */; };
 		C0C5FE889892AFC3C059A05B /* VerticalTabs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91D871296CDB0946EFB78E2D /* VerticalTabs.swift */; };
+		C547D3204E002F6937F678B4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95CE29B04855CC44145361B8 /* main.swift */; };
 		C5855246A4598259AFFA4707 /* TabGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37018AF63521DBC068EE5C08 /* TabGroup.swift */; };
 		CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */; };
 		DA1FCADBAB0B44818AFB9F84 /* NewTabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A5BBA0BDC54F65E89FA044 /* NewTabStore.swift */; };
 		DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488DDEB21AAB3C480FC2F0F /* AppModel.swift */; };
 		DBA96E6E8A40CCD5B60D2146 /* SettingsModel+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */; };
+		DFFF5C379772C15BCEDA71B3 /* ControlBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED225DB33CB74BED30E47DCE /* ControlBridge.swift */; };
 		E209289BB56030896D588C07 /* TabSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7085510A84436857BAE04E06 /* TabSearch.swift */; };
 		E6F0DD8E856915E572E3E940 /* SelectorValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */; };
 		E70CDDB3B1D8423F9981F8D3 /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */; };
+		EF3C0DABF28486A964C570EC /* paddle-mcp in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 24907D6E3DCB49AB1779D634 /* paddle-mcp */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		EF4AD755490F05EA8D0518B3 /* WindowChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AA4E6D2C4A45F579B5857E2 /* WindowChrome.swift */; };
 		F2713F9A8877E5D392A8390E /* GeneralPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */; };
+		F543A346BC3E6D4FC839F68C /* ControlBridge+Tools.swift in Sources */ = {isa = PBXBuildFile; fileRef = F09575E91B2DFAA356C42768 /* ControlBridge+Tools.swift */; };
 		F5BFE827260C731264C4F715 /* WebInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74ED21DEB238D504EB6834C7 /* WebInspector.swift */; };
 		F99206FE17D134F5D7D59D28 /* SettingsBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4AC197DD8EEDFE2EE7ECA58 /* SettingsBanner.swift */; };
+		FDC90932F86D725BD45855F4 /* ControlBridgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F965A2C39359669A792EB86C /* ControlBridgeViews.swift */; };
 		FE6DF0EBFBC6A3FBA6012A89 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8128DC91A624CFEB3A367FD9 /* Space.swift */; };
 		FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42172FC8B6D57C89A373242D /* WebContainer.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C81512DE50CA3EAAFB5398A8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4BD3DE7F1FCB748C8D7B5255 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C3E47425AA99EA69D155A24D;
+			remoteInfo = "paddle-mcp";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		855654AE40957B19E5E087C7 /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				EF3C0DABF28486A964C570EC /* paddle-mcp in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		003C7BF64845D3C48DC73855 /* ExtensionHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionHost.swift; sourceTree = "<group>"; };
@@ -108,6 +138,7 @@
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
+		24907D6E3DCB49AB1779D634 /* paddle-mcp */ = {isa = PBXFileReference; includeInIndex = 0; path = "paddle-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
 		25922B0DB334CF68223037F6 /* SettingsTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabView.swift; sourceTree = "<group>"; };
 		25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEnvironment.swift; sourceTree = "<group>"; };
 		2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Scriptlets.swift; sourceTree = "<group>"; };
@@ -152,6 +183,7 @@
 		91D871296CDB0946EFB78E2D /* VerticalTabs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerticalTabs.swift; sourceTree = "<group>"; };
 		91F6090B48E416A87BCCC699 /* ShortcutRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRecorder.swift; sourceTree = "<group>"; };
 		952BF713553853D7D819E091 /* ActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityView.swift; sourceTree = "<group>"; };
+		95CE29B04855CC44145361B8 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		9876CA38653BAEDD29A0EE0E /* ProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStore.swift; sourceTree = "<group>"; };
 		9881BDAB3248D8FEB481C88A /* BrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserView.swift; sourceTree = "<group>"; };
 		98C6A2F4AFE93544F200F0A2 /* ExtensionsMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsMenu.swift; sourceTree = "<group>"; };
@@ -174,8 +206,12 @@
 		EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaddleApp.swift; sourceTree = "<group>"; };
 		EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPSOnlyNotice.swift; sourceTree = "<group>"; };
 		EC4ED3DF4697D613FB8552FB /* SpaceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceViews.swift; sourceTree = "<group>"; };
+		ED225DB33CB74BED30E47DCE /* ControlBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlBridge.swift; sourceTree = "<group>"; };
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
+		F09575E91B2DFAA356C42768 /* ControlBridge+Tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControlBridge+Tools.swift"; sourceTree = "<group>"; };
+		F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeSocketServer.swift; sourceTree = "<group>"; };
 		F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressSuggestions.swift; sourceTree = "<group>"; };
+		F965A2C39359669A792EB86C /* ControlBridgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlBridgeViews.swift; sourceTree = "<group>"; };
 		FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPrompts.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -295,6 +331,7 @@
 				482A1E734550D576E90F7F71 /* Assets.xcassets */,
 				8E3E212F72DAF671F028B0F4 /* MainMenu.swift */,
 				EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */,
+				F29B99C0A2DD199E120C4572 /* Bridge */,
 				5CFB9E3FDD7366BDD5A56707 /* Browser */,
 				68C9583F2D34B8D6A9BCA0BB /* Extensions */,
 				2368F304D4206AAFD565B6E9 /* Settings */,
@@ -326,6 +363,7 @@
 		88DF677DEB01B39B88C589E0 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				24907D6E3DCB49AB1779D634 /* paddle-mcp */,
 				E05B63171469865BF8E8104E /* Paddle.app */,
 			);
 			name = Products;
@@ -335,6 +373,7 @@
 			isa = PBXGroup;
 			children = (
 				62C65D5FFDCE8D96C837513C /* Paddle */,
+				AE043A7594FEDFFD1130BD52 /* PaddleMCP */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -345,6 +384,14 @@
 				CD82DDC1093768507B67A449 /* CompatBus.swift */,
 			);
 			path = Compat;
+			sourceTree = "<group>";
+		};
+		AE043A7594FEDFFD1130BD52 /* PaddleMCP */ = {
+			isa = PBXGroup;
+			children = (
+				95CE29B04855CC44145361B8 /* main.swift */,
+			);
+			path = PaddleMCP;
 			sourceTree = "<group>";
 		};
 		B75F03E7D414FBFB7E1ECEA9 /* Tabs */ = {
@@ -385,6 +432,17 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
+		F29B99C0A2DD199E120C4572 /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */,
+				ED225DB33CB74BED30E47DCE /* ControlBridge.swift */,
+				F09575E91B2DFAA356C42768 /* ControlBridge+Tools.swift */,
+				F965A2C39359669A792EB86C /* ControlBridgeViews.swift */,
+			);
+			path = Bridge;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -395,10 +453,12 @@
 				76A41CEB417F9394A9EC0EC6 /* Sources */,
 				C562DB45D147DB44D2FD3D3F /* Resources */,
 				E435D2DA003D7901E39FAB71 /* Frameworks */,
+				855654AE40957B19E5E087C7 /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				FCD0DBC7C0A766891B2EF870 /* PBXTargetDependency */,
 			);
 			name = Paddle;
 			packageProductDependencies = (
@@ -407,6 +467,23 @@
 			productName = Paddle;
 			productReference = E05B63171469865BF8E8104E /* Paddle.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C3E47425AA99EA69D155A24D /* paddle-mcp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 387808D99552C7A12CE9B29D /* Build configuration list for PBXNativeTarget "paddle-mcp" */;
+			buildPhases = (
+				1CE8737BCF72BE16A096DFC7 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "paddle-mcp";
+			packageProductDependencies = (
+			);
+			productName = "paddle-mcp";
+			productReference = 24907D6E3DCB49AB1779D634 /* paddle-mcp */;
+			productType = "com.apple.product-type.tool";
 		};
 /* End PBXNativeTarget section */
 
@@ -418,6 +495,10 @@
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					212A3C2757FF9631D94A4C90 = {
+						DevelopmentTeam = VB3UP263YT;
+						ProvisioningStyle = Automatic;
+					};
+					C3E47425AA99EA69D155A24D = {
 						DevelopmentTeam = VB3UP263YT;
 						ProvisioningStyle = Automatic;
 					};
@@ -441,6 +522,7 @@
 			projectRoot = "";
 			targets = (
 				212A3C2757FF9631D94A4C90 /* Paddle */,
+				C3E47425AA99EA69D155A24D /* paddle-mcp */,
 			);
 		};
 /* End PBXProject section */
@@ -459,6 +541,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		1CE8737BCF72BE16A096DFC7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C547D3204E002F6937F678B4 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		76A41CEB417F9394A9EC0EC6 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -470,6 +560,7 @@
 				638AF4B5750CBD54AA798836 /* AppearancePane.swift in Sources */,
 				A2709A6C8A004234864B824C /* BookmarkStore.swift in Sources */,
 				B15050EC419C701DB0C5049D /* Bookmarks.swift in Sources */,
+				AA1C532B2F2AFD7C39F1E0EA /* BridgeSocketServer.swift in Sources */,
 				BBFDDBB44717A20FCF8E6112 /* BrowserImport.swift in Sources */,
 				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
 				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
@@ -477,6 +568,9 @@
 				919F620EBA3AFF98602BB16D /* ChromeStyle.swift in Sources */,
 				2DC2C4B0EB7337CCBBADE0A1 /* CompatBus.swift in Sources */,
 				45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */,
+				F543A346BC3E6D4FC839F68C /* ControlBridge+Tools.swift in Sources */,
+				DFFF5C379772C15BCEDA71B3 /* ControlBridge.swift in Sources */,
+				FDC90932F86D725BD45855F4 /* ControlBridgeViews.swift in Sources */,
 				5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */,
 				06198660153E4061D10AD760 /* DevelopMenu.swift in Sources */,
 				5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */,
@@ -547,7 +641,32 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		FCD0DBC7C0A766891B2EF870 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C3E47425AA99EA69D155A24D /* paddle-mcp */;
+			targetProxy = C81512DE50CA3EAAFB5398A8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		1C36D8EA1D10BB43422C2183 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.walker.Paddle.mcp;
+				PRODUCT_NAME = "paddle-mcp";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+			};
+			name = Debug;
+		};
 		BF70992D55BABDAFE7D5366C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -650,6 +769,23 @@
 			};
 			name = Release;
 		};
+		E73999EB5B8E1448C865B72F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.walker.Paddle.mcp;
+				PRODUCT_NAME = "paddle-mcp";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+			};
+			name = Release;
+		};
 		F32BD9C72E25204CFF30938F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -727,6 +863,15 @@
 			buildConfigurations = (
 				F32BD9C72E25204CFF30938F /* Debug */,
 				C874765190ACD65515B81766 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		387808D99552C7A12CE9B29D /* Build configuration list for PBXNativeTarget "paddle-mcp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1C36D8EA1D10BB43422C2183 /* Debug */,
+				E73999EB5B8E1448C865B72F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

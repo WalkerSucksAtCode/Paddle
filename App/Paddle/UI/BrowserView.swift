@@ -279,6 +279,7 @@ private struct NavigationBar: View {
                     .padding(.leading, 4)
                     .help("Profile: \(profile.name)")
             }
+            BridgeIndicator()
             addressField
                 .padding(.horizontal, 4)
                 .frame(minWidth: 140)

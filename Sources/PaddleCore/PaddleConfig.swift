@@ -119,6 +119,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var reduceMotion: AccessibilityPreference
     /// Same for transparency and blur.
     public var reduceTransparency: AccessibilityPreference
+    /// Lets Claude sessions read and drive Paddle through a local MCP server on an owner-only socket. Off by default.
+    public var controlBridge: Bool
+    /// The bridge's `run_js` (scripts in pages). Off by default, separately from `controlBridge`: a script reaches what
+    /// the page's own scripts can, typed passwords included.
+    public var controlBridgeScripts: Bool
     /// Right-click > Inspect Element and the Web Inspector.
     public var developerTools: Bool
     /// Load http:// pages over https:// instead. A site that doesn't answer securely gets a notice with Continue to
@@ -162,6 +167,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites
         case appearance, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
+        case controlBridge, controlBridgeScripts
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -203,6 +209,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         minimumFontSize: Double = 0,
         reduceMotion: AccessibilityPreference = .system,
         reduceTransparency: AccessibilityPreference = .system,
+        controlBridge: Bool = false,
+        controlBridgeScripts: Bool = false,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
         extensionToolbar: [String: ExtensionToolbarPlacement] = [:],
@@ -247,6 +255,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.minimumFontSize = PaddleConfig.normalizedMinimumFontSize(minimumFontSize)
         self.reduceMotion = reduceMotion
         self.reduceTransparency = reduceTransparency
+        self.controlBridge = controlBridge
+        self.controlBridgeScripts = controlBridgeScripts
         self.shortcuts = shortcuts
         self.extensions = extensions
         self.extensionToolbar = extensionToolbar
@@ -311,6 +321,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         minimumFontSize = PaddleConfig.normalizedMinimumFontSize(fontSize)
         reduceMotion = c.decodeValue(.reduceMotion, d.reduceMotion, issues)
         reduceTransparency = c.decodeValue(.reduceTransparency, d.reduceTransparency, issues)
+        controlBridge = c.decodeValue(.controlBridge, d.controlBridge, issues)
+        controlBridgeScripts = c.decodeValue(.controlBridgeScripts, d.controlBridgeScripts, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
         extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)

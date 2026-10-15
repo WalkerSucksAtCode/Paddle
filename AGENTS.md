@@ -9,12 +9,14 @@ Personal macOS web browser built on the system WebKit (`WKWebView`). Goals: reso
   - `AppModel.swift`: config, windows, session save/restore, memory sampling, tab sleeping, memory-pressure handling.
   - `Browser/`: `Tab` (owns or drops its `WKWebView`), `BrowserModel` (one window's tabs), `BrowserWindowController` (menu actions via the responder chain).
   - `Web/`: shared WebKit configuration and block lists (`WebEnvironment`), per-tab WebKit delegate, downloads.
+  - `Bridge/`: the control bridge: the owner-only Unix socket server (`BridgeSocketServer`), the MCP tools (`ControlBridge+Tools`), the toolbar indicator and Settings section.
   - `UI/`: SwiftUI tab strip, toolbar, find bar, activity and downloads popovers.
   - `MainMenu.swift`: menu bar; every item has an action name that `config.json` `shortcuts` can rebind.
+- `App/PaddleMCP/main.swift`: `paddle-mcp`, the Foundation-only stdio-to-socket relay for the control bridge, embedded at `Contents/Helpers`. MCP itself is `Sources/PaddleCore/MCP.swift`.
 - `project.yml` is the XcodeGen source of truth; `Paddle.xcodeproj` is generated (`xcodegen generate`), do not hand-edit it.
 
 ## User data
-`~/Library/Application Support/Paddle/`: `config.json`, `user.css`, `user-filters.txt`, `userscripts/*.js`, `themes/*.json` (chrome color themes), `filters/*.txt` (downloaded lists), `compiled-rules/` (WebKit cache, about 50 MB), `session.json`, `newtab.json` (pinned New Tab sites and hidden frequent hosts), `profiles.json` (profiles; the default keeps `history.sqlite`), `profiles/<id>/history.sqlite` (other profiles' history; their cookies and storage live in WebKit's data store named by the id), `profiles/<id>/extension-permissions.json` (other profiles' extension answers; their extension storage is WebKit's, under `~/Library/WebKit/com.walker.Paddle/WebExtensions/<id>`).
+`~/Library/Application Support/Paddle/`: `config.json`, `user.css`, `user-filters.txt`, `userscripts/*.js`, `themes/*.json` (chrome color themes), `filters/*.txt` (downloaded lists), `compiled-rules/` (WebKit cache, about 50 MB), `session.json`, `bridge/control.sock` (control bridge socket in its own owner-only folder, only while `controlBridge` is on), `newtab.json` (pinned New Tab sites and hidden frequent hosts), `profiles.json` (profiles; the default keeps `history.sqlite`), `profiles/<id>/history.sqlite` (other profiles' history; their cookies and storage live in WebKit's data store named by the id), `profiles/<id>/extension-permissions.json` (other profiles' extension answers; their extension storage is WebKit's, under `~/Library/WebKit/com.walker.Paddle/WebExtensions/<id>`).
 
 ## Commands
 - Core tests: `swift test`
