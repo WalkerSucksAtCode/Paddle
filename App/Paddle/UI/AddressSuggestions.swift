@@ -222,16 +222,19 @@ private struct SuggestionRow: View {
     let row: Suggestion
     let highlighted: Bool
     @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeTheme) private var theme
+    /// Text on the highlighted row: white on the system accent, else black or white by contrast with the accent in use.
+    private var onAccent: Color { theme?.onAccent ?? .white }
 
     var body: some View {
         HStack(spacing: 8) {
             Group {
                 if let url = row.url.flatMap(URL.init(string:)), row.kind != .url {
-                    FaviconView(url: url, fallback: icon, size: 14, fallbackStyle: highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                    FaviconView(url: url, fallback: icon, size: 14, fallbackStyle: highlighted ? AnyShapeStyle(onAccent) : AnyShapeStyle(.secondary))
                 } else {
                     Image(systemName: icon)
                         .chromeFont(size: 12)
-                        .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(highlighted ? AnyShapeStyle(onAccent) : AnyShapeStyle(.secondary))
                 }
             }
             .frame(width: 16 * scale)
@@ -243,20 +246,20 @@ private struct SuggestionRow: View {
                     Text(row.detail)
                         .chromeFont(size: 11)
                         .lineLimit(1)
-                        .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(highlighted ? AnyShapeStyle(onAccent.opacity(0.85)) : AnyShapeStyle(.secondary))
                 }
             }
             Spacer(minLength: 8)
             if case .openTab = row.kind {
                 Text("Switch to Tab")
                     .chromeFont(size: 11)
-                    .foregroundStyle(highlighted ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(highlighted ? AnyShapeStyle(onAccent.opacity(0.85)) : AnyShapeStyle(.secondary))
             }
         }
-        .foregroundStyle(highlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+        .foregroundStyle(highlighted ? AnyShapeStyle(onAccent) : AnyShapeStyle(.primary))
         .padding(.horizontal, 8)
         .frame(height: (row.detail.isEmpty ? 28 : 36) * scale)
-        .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.clear)))
+        .background(RoundedRectangle(cornerRadius: 6).fill(highlighted ? AnyShapeStyle(theme?.accent ?? Color.accentColor) : AnyShapeStyle(Color.clear)))
     }
 
     private var icon: String {

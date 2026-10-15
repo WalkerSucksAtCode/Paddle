@@ -130,6 +130,6 @@ struct TabSearchView: View {
 extension View {
     /// Attaches the Search Tabs popover to this view: the strip's leading inset, or the sidebar's top row.
     func tabSearchPopover(model: BrowserModel) -> some View {
-        popover(isPresented: Bindable(model).tabSearchVisible, arrowEdge: .bottom) { TabSearchView(model: model) }
+        popover(isPresented: Bindable(model).tabSearchVisible, arrowEdge: .bottom) { TabSearchView(model: model).systemText() }
     }
 }

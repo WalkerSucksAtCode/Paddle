@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		068B1FFAF8EA401C986A45F2 /* ThemeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD607686048CC6FC424BAA6 /* ThemeStore.swift */; };
 		078157F3D8E0845D5FC7959B /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 952BF713553853D7D819E091 /* ActivityView.swift */; };
 		0CF43FCD9929F0D48DC6C8DA /* ToolbarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F0C8E8DA7F5F5F5A041EAB /* ToolbarMenu.swift */; };
 		0F6E165D6ACF3FF836033255 /* SitesPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AB8511862F229DB168B109 /* SitesPane.swift */; };
@@ -115,6 +116,7 @@
 		482A1E734550D576E90F7F71 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectorValidator.swift; sourceTree = "<group>"; };
 		52C91606DA827F7C24613219 /* ExtensionControllerDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionControllerDelegate.swift; sourceTree = "<group>"; };
+		5DD607686048CC6FC424BAA6 /* ThemeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeStore.swift; sourceTree = "<group>"; };
 		60BD3A551575242DFC25D1CC /* ChromeStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeStyle.swift; sourceTree = "<group>"; };
 		622C488303FD517D47056F39 /* StoreInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreInstaller.swift; sourceTree = "<group>"; };
 		6742A205E6C2867AE660D717 /* AMO */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AMO; path = Resources/AMO; sourceTree = SOURCE_ROOT; };
@@ -243,6 +245,7 @@
 				363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */,
 				E58CA20A0866C0A7A9A100F9 /* TabGroupViews.swift */,
 				7085510A84436857BAE04E06 /* TabSearch.swift */,
+				5DD607686048CC6FC424BAA6 /* ThemeStore.swift */,
 				42F0C8E8DA7F5F5F5A041EAB /* ToolbarMenu.swift */,
 				42172FC8B6D57C89A373242D /* WebContainer.swift */,
 				B75F03E7D414FBFB7E1ECEA9 /* Tabs */,
@@ -498,6 +501,7 @@
 				42740581FC010E6931D6CAF0 /* TabStrip.swift in Sources */,
 				20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */,
 				BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */,
+				068B1FFAF8EA401C986A45F2 /* ThemeStore.swift in Sources */,
 				0CF43FCD9929F0D48DC6C8DA /* ToolbarMenu.swift in Sources */,
 				C0C5FE889892AFC3C059A05B /* VerticalTabs.swift in Sources */,
 				FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */,

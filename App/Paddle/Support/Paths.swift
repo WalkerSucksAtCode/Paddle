@@ -10,6 +10,8 @@ enum Paths {
     static let config = support.appending(path: "config.json")
     static let userCSS = support.appending(path: "user.css")
     static let userScripts = support.appending(path: "userscripts", directoryHint: .isDirectory)
+    /// Chrome color themes, `<name>.json` (`ThemeStore`).
+    static let themes = support.appending(path: "themes", directoryHint: .isDirectory)
     static let filters = support.appending(path: "filters", directoryHint: .isDirectory)
     static let userFilters = support.appending(path: "user-filters.txt")
     static let session = support.appending(path: "session.json")

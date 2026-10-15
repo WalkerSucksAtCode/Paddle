@@ -1,10 +1,14 @@
 import PaddleCore
+import AppKit
 import SwiftUI
 
 /// Settings > Appearance: light or dark, tab layout, the size of Paddle's own text, page zoom and minimum font size,
 /// and the accessibility options.
 struct AppearancePane: View {
     let model: SettingsModel
+    @Environment(\.colorScheme) private var colorScheme
+    /// The tint strength while the slider is dragged; saved when the drag ends.
+    @State private var strengthDraft: Double?
 
     /// Default zoom choices (percent); a value set by hand is added to them.
     private static let zoomLevels = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]
@@ -13,6 +17,7 @@ struct AppearancePane: View {
 
     var body: some View {
         SettingsForm {
+            themeSection
             Section("Windows") {
                 Picker("Appearance", selection: Binding(
                     get: { model.file.appearance },
@@ -70,6 +75,108 @@ struct AppearancePane: View {
         }
     }
 
+    // MARK: - Theme
+
+    private var themeSection: some View {
+        let app = AppModel.shared
+        return Section("Theme") {
+            Picker("Theme", selection: Binding(
+                get: { model.file.theme },
+                set: { value in Task { await model.saveKey(.theme, .string(value)) } }
+            )) {
+                Text("Default").tag("default")
+                ForEach(app.themes.available) { Text($0.name).tag($0.id) }
+                if model.file.theme != "default", !app.themes.available.contains(where: { $0.id == model.file.theme }) {
+                    Text("\(model.file.theme) (not found)").tag(model.file.theme)
+                }
+            }
+            .help("theme in config.json. Default keeps today's look; the others set the colors of the tab strip, toolbar, selected tab, text and New Tab page.")
+            Button("Open Themes Folder") {
+                try? FileManager.default.createDirectory(at: Paths.themes, withIntermediateDirectories: true)
+                NSWorkspace.shared.open(Paths.themes)
+            }
+            .help("themes/ in the config folder. A theme is themes/<name>.json with light and dark colors; see the README.")
+            // Every theme problem, not only the first one the notice under the toolbar names.
+            ForEach(app.themeWarnings, id: \.self) { warning in
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            colorPicker(
+                "Accent", key: .accentColor, value: model.file.accentColor, automatic: ("system", "System"),
+                help: "accentColor in config.json. Overrides the theme's accent: progress bar, focus rings and the chrome's controls."
+            )
+            colorPicker(
+                "Tint", key: .chromeTint, value: model.file.chromeTint, automatic: ("none", "None"),
+                help: "chromeTint in config.json. A color blended over the tab strip and toolbar."
+            )
+            let tintOff = ColorChoice(configValue: model.file.chromeTint, automaticValue: "none").map { $0 == .automatic } ?? true
+            HStack {
+                Slider(
+                    value: Binding(
+                        get: { strengthDraft ?? model.file.chromeTintStrength },
+                        set: { strengthDraft = $0.rounded() }
+                    ),
+                    in: 0...100,
+                    onEditingChanged: { editing in
+                        guard !editing, let value = strengthDraft else { return }
+                        Task {
+                            await model.saveKey(.chromeTintStrength, .number(value))
+                            strengthDraft = nil
+                        }
+                    }
+                ) { Text("Tint strength") }
+                Text("\(Int(strengthDraft ?? model.file.chromeTintStrength)) %").monospacedDigit().frame(width: 48, alignment: .trailing)
+            }
+            .disabled(tintOff)
+            .help("chromeTintStrength in config.json, 0 to 100. How much of the tint is blended in.")
+            let capped = Int((app.effectiveTintStrength(dark: colorScheme == .dark) * 100).rounded())
+            if !tintOff, capped < Int(model.file.chromeTintStrength.rounded()) {
+                Text("Capped at \(capped) % so text stays readable.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .disabled(model.controlsDisabled)
+    }
+
+    /// A picker of "automatic", the eight preset names and Custom, with a color well for Custom.
+    private func colorPicker(
+        _ title: String, key: PaddleConfig.CodingKeys, value: String, automatic: (value: String, label: String), help: String
+    ) -> some View {
+        let choice = ColorChoice(configValue: value, automaticValue: automatic.value) ?? .automatic
+        let tag: String = switch choice {
+        case .automatic: "automatic"
+        case .preset(let preset): preset.rawValue
+        case .custom: "custom"
+        }
+        return HStack {
+            Picker(title, selection: Binding(
+                get: { tag },
+                set: { new in
+                    let next: ColorChoice
+                    if new == "automatic" {
+                        next = .automatic
+                    } else if let preset = ColorPreset(rawValue: new) {
+                        next = .preset(preset)
+                    } else {
+                        next = .custom(choice.color ?? ColorPreset.blue.color)
+                    }
+                    Task { await model.saveKey(key, .string(next.configValue(automaticValue: automatic.value))) }
+                }
+            )) {
+                Text(automatic.label).tag("automatic")
+                ForEach(ColorPreset.allCases, id: \.self) { Text($0.displayName).tag($0.rawValue) }
+                Text("Custom").tag("custom")
+            }
+            if case .custom(let color) = choice {
+                CustomColorWell(title: title, saved: color) { hex in
+                    Task { await model.saveKey(key, .string(hex)) }
+                }
+            }
+        }
+        .help(help)
+    }
+
     private var zoomPicker: some View {
         let current = Int((model.file.defaultZoom * 100).rounded())
         let levels = Self.zoomLevels.contains(current) ? Self.zoomLevels : (Self.zoomLevels + [current]).sorted()
@@ -92,5 +199,33 @@ struct AppearancePane: View {
             ForEach(sizes, id: \.self) { Text($0 == 0 ? "Off" : "\($0) pt").tag($0) }
         }
         .help("minimumFontSize in config.json. Pages never show text smaller than this; Off leaves the page's sizes alone.")
+    }
+}
+
+/// The color well for a Custom accent or tint. Dragging in the color panel sends a change for every step, so the
+/// well shows a draft and writes config.json once the color has held for 0.4 s.
+private struct CustomColorWell: View {
+    let title: String
+    let saved: PaddleCore.RGBColor
+    let save: (String) -> Void
+    @State private var draft: PaddleCore.RGBColor?
+
+    var body: some View {
+        let shown = draft ?? saved
+        ColorPicker(title, selection: Binding(
+            get: { Color(.sRGB, red: shown.red, green: shown.green, blue: shown.blue) },
+            set: { new in
+                guard let c = NSColor(new).usingColorSpace(.sRGB) else { return }
+                draft = PaddleCore.RGBColor(red: c.redComponent, green: c.greenComponent, blue: c.blueComponent)
+            }
+        ), supportsOpacity: false)
+        .labelsHidden()
+        Text(shown.hex).monospaced().foregroundStyle(.secondary)
+            .task(id: draft) {
+                guard let draft, draft != saved else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                save(draft.hex.lowercased())
+            }
     }
 }

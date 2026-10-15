@@ -100,6 +100,15 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var appearance: AppearanceMode
     /// Draw the selected tab with a stronger outline and contrast (differs in brightness, not hue).
     public var highContrastTabs: Bool
+    /// `default` (today's look), a built-in theme id (graphite, ocean, forest, dusk, sand, high-contrast) or the base
+    /// name of a `themes/<name>.json` file.
+    public var theme: String
+    /// `system`, a preset name or `#rrggbb`: overrides the theme's accent.
+    public var accentColor: String
+    /// `none`, a preset name or `#rrggbb`: blended over the tab strip and toolbar.
+    public var chromeTint: String
+    /// How much of `chromeTint` is blended in, 0...100 (capped further so text stays readable).
+    public var chromeTintStrength: Double
     /// Size of Paddle's own text: tabs, toolbar, bars.
     public var interfaceTextSize: InterfaceTextSize
     /// Zoom of a page whose site has no `sites.<host>.zoom`, as a factor (1 is 100 %); clamped to 0.3...3.
@@ -152,7 +161,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites
-        case appearance, highContrastTabs, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
+        case appearance, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -185,6 +194,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabFrequentSites: Bool = true,
         appearance: AppearanceMode = .system,
         highContrastTabs: Bool = false,
+        theme: String = "default",
+        accentColor: String = "system",
+        chromeTint: String = "none",
+        chromeTintStrength: Double = 25,
         interfaceTextSize: InterfaceTextSize = .default,
         defaultZoom: Double = 1,
         minimumFontSize: Double = 0,
@@ -225,6 +238,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.newTabFrequentSites = newTabFrequentSites
         self.appearance = appearance
         self.highContrastTabs = highContrastTabs
+        self.theme = theme
+        self.accentColor = accentColor
+        self.chromeTint = chromeTint
+        self.chromeTintStrength = PaddleConfig.normalizedTintStrength(chromeTintStrength)
         self.interfaceTextSize = interfaceTextSize
         self.defaultZoom = SitePolicy.normalizedZoom(defaultZoom)
         self.minimumFontSize = PaddleConfig.normalizedMinimumFontSize(minimumFontSize)
@@ -273,6 +290,16 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabFrequentSites = c.decodeValue(.newTabFrequentSites, d.newTabFrequentSites, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
+        theme = c.decodeValue(.theme, d.theme, issues)
+        accentColor = c.decodeColor(.accentColor, d.accentColor, automatic: "system", issues)
+        chromeTint = c.decodeColor(.chromeTint, d.chromeTint, automatic: "none", issues)
+        let tintStrength: Double = c.decodeValue(.chromeTintStrength, d.chromeTintStrength, issues)
+        if !tintStrength.isFinite {
+            issues?.issues.append(ConfigIssue(
+                key: .chromeTintStrength, path: ["chromeTintStrength"], severity: .warning,
+                message: "Expected a number from 0 to 100. Paddle uses the default, 25, until this is fixed."))
+        }
+        chromeTintStrength = PaddleConfig.normalizedTintStrength(tintStrength.isFinite ? tintStrength : d.chromeTintStrength)
         interfaceTextSize = c.decodeValue(.interfaceTextSize, d.interfaceTextSize, issues)
         defaultZoom = SitePolicy.normalizedZoom(c.decodeValue(.defaultZoom, d.defaultZoom, issues))
         let fontSize: Double = c.decodeValue(.minimumFontSize, d.minimumFontSize, issues)
@@ -339,6 +366,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return try encoder.encode(self)
+    }
+
+    /// `strength` kept in 0...100; 25 for a non-number.
+    static func normalizedTintStrength(_ strength: Double) -> Double {
+        strength.isFinite ? min(max(strength, 0), 100) : 25
     }
 
     /// `size` as `minimumFontSize` keeps it: 0 (off) for a negative or non-number, 9...24 otherwise (a value between 0 and 9 becomes 9).
@@ -420,6 +452,17 @@ private struct Lenient<Value: Decodable>: Decodable {
 
 /// Each `config.json` key decodes on its own. A missing or `null` value gives the default with no issue.
 private extension KeyedDecodingContainer where Key == PaddleConfig.CodingKeys {
+    /// A color setting: a string that is `automatic`, a preset name or `#rrggbb`. Anything else gives `fallback`
+    /// with a warning.
+    func decodeColor(_ key: Key, _ fallback: String, automatic: String, _ issues: ConfigIssueCollector?) -> String {
+        let value: String = decodeValue(key, fallback, issues)
+        guard ColorChoice(configValue: value, automaticValue: automatic) == nil else { return value }
+        issues?.issues.append(ConfigIssue(
+            key: key, path: [key.stringValue], severity: .warning,
+            message: "\"\(value)\" isn't \"\(automatic)\", a color name or #rrggbb. Paddle uses the default, \"\(fallback)\", until this is fixed."))
+        return fallback
+    }
+
     /// A plain value. A wrong type gives `fallback` with an issue at `[key]`.
     func decodeValue<T: Codable>(_ key: Key, _ fallback: T, _ issues: ConfigIssueCollector?) -> T {
         do {

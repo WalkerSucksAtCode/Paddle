@@ -10,6 +10,7 @@ struct NewTabPage: View {
     @State private var frequent: [HistoryEntry] = []
     @State private var adding = false
     @Environment(\.chromeScale) private var scale
+    @Environment(\.chromeTheme) private var theme
 
     private var showsFrequent: Bool { app.config.newTabFrequentSites && !model.isPrivate }
 
@@ -58,7 +59,8 @@ struct NewTabPage: View {
             .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(theme?.newTabBackground ?? Color(nsColor: .textBackgroundColor))
+        .chromeText(enabled: theme?.newTabBackground != nil)
         .onAppear(perform: refreshFrequent)
         .onChange(of: app.newTab.sites) { refreshFrequent() }
         .onChange(of: app.newTab.hiddenFrequent) { refreshFrequent() }
@@ -196,7 +198,7 @@ private struct PinnedTile: View {
                 Button("Remove") { app.newTab.remove(site.id) }
             }
             .popover(isPresented: $editing, arrowEdge: .bottom) {
-                SiteForm(app: app, editing: site) { editing = false }
+                SiteForm(app: app, editing: site) { editing = false }.systemText()
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(title), \(host)")
@@ -287,7 +289,7 @@ private struct AddTile: View {
             return true
         }
         .popover(isPresented: $adding, arrowEdge: .bottom) {
-            SiteForm(app: app, editing: nil) { adding = false }
+            SiteForm(app: app, editing: nil) { adding = false }.systemText()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Add site")

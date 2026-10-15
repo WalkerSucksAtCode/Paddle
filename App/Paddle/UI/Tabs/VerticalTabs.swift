@@ -294,6 +294,7 @@ private struct SidebarTabBehavior: ViewModifier {
                 set: { if !$0, model.renamingTabID == tab.id { model.renamingTabID = nil } }
             ), arrowEdge: .trailing) {
                 TabRenameField(tab: tab, model: model)
+                    .systemText()
                     .padding(8)
                     .frame(width: 220)
             }
@@ -313,12 +314,14 @@ private struct SidebarTabBehavior: ViewModifier {
 
 /// The selected tab is brighter than the sidebar in both appearances, with an edge, so it stands out by brightness alone.
 /// With `highContrast` the fill and edge are stronger, still by brightness only.
-private func sidebarBackground(selected: Bool, hovering: Bool, radius: CGFloat, highContrast: Bool, selectedFill: Double = 0.14, idleFill: Double = 0, hoverFill: Double = 0.06) -> some View {
-    RoundedRectangle(cornerRadius: radius)
-        .fill(Color.primary.opacity(selected ? (highContrast ? 0.36 : selectedFill) : hovering ? hoverFill : idleFill))
+/// A theme's selected-tab color replaces the fill; the edge and the washes come from its text color.
+private func sidebarBackground(selected: Bool, hovering: Bool, radius: CGFloat, highContrast: Bool, theme: ResolvedChromeTheme?, selectedFill: Double = 0.14, idleFill: Double = 0, hoverFill: Double = 0.06) -> some View {
+    let ink: Color = theme?.text ?? .primary
+    return RoundedRectangle(cornerRadius: radius)
+        .fill(selected ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.36 : selectedFill)) : ink.opacity(hovering ? hoverFill : idleFill))
         .overlay {
             RoundedRectangle(cornerRadius: radius)
-                .strokeBorder(Color.primary.opacity(selected ? (highContrast ? 0.55 : 0.25) : 0), lineWidth: highContrast ? 1.5 : 1)
+                .strokeBorder(ink.opacity(selected ? (highContrast ? 0.55 : 0.25) : 0), lineWidth: highContrast ? 1.5 : 1)
         }
 }
 
@@ -334,6 +337,7 @@ private struct PinnedTile: View {
     @State private var hoverMemory: (bytes: UInt64, shared: Bool)?
     @Environment(\.chromeScale) private var scale
     @Environment(\.chromeHighContrastTabs) private var highContrast
+    @Environment(\.chromeTheme) private var theme
 
     private var isSelected: Bool { model.selectedID == tab.id }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
@@ -341,7 +345,7 @@ private struct PinnedTile: View {
     var body: some View {
         TabStateIcon(tab: tab, size: 16, audioBadge: true)
             .frame(width: 44 * scale, height: 36 * scale)
-            .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 8, highContrast: highContrast, selectedFill: 0.20, idleFill: 0.05, hoverFill: 0.10))
+            .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 8, highContrast: highContrast, theme: theme, selectedFill: 0.20, idleFill: 0.05, hoverFill: 0.10))
             .modifier(SidebarTabBehavior(
                 tab: tab, model: model, group: nil, isRenaming: isRenaming, inlineRename: false,
                 tooltip: TabButton.tooltip(tab, audio: audio, memory: hoverMemory)
@@ -367,6 +371,7 @@ private struct SidebarTabRow: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.chromeScale) private var scale
     @Environment(\.chromeHighContrastTabs) private var highContrast
+    @Environment(\.chromeTheme) private var theme
 
     private var isSelected: Bool { model.selectedID == tab.id }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
@@ -425,7 +430,7 @@ private struct SidebarTabRow: View {
         .padding(.horizontal, iconsOnly ? 0 : 8)
         .frame(maxWidth: .infinity, alignment: iconsOnly ? .center : .leading)
         .frame(height: 30 * scale)
-        .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 7, highContrast: highContrast))
+        .background(sidebarBackground(selected: isSelected, hovering: hovering, radius: 7, highContrast: highContrast, theme: theme))
         // A grouped tab carries its group's colour along its leading edge, so the group's extent shows.
         .overlay(alignment: .leading) {
             if let group {
@@ -475,6 +480,7 @@ private struct SidebarGroupHeader: View {
                         set: { if !$0, model.renamingGroupID == group.id { model.renamingGroupID = nil } }
                     ), arrowEdge: .trailing) {
                         GroupNameField(group: group, model: model)
+                            .systemText()
                             .padding(8)
                             .frame(width: 200)
                     }

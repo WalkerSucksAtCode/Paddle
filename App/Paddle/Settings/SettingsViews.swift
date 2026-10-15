@@ -53,7 +53,8 @@ enum SettingsPane: String, CaseIterable {
         case .appearance: [
             "appearance", "theme", "dark mode", "light mode", "text size", "font size", "zoom", "contrast", "high contrast",
             "motion", "transparency", "accessibility", "tab layout", "vertical tabs", "sidebar", "tabLayout",
-            "highContrastTabs", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
+            "highContrastTabs", "themes", "color", "colour", "accent", "accent color", "tint", "chrome tint", "tint strength", "palette",
+            "open themes folder", "theme", "accentColor", "chromeTint", "chromeTintStrength", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
             "reduceTransparency", "default zoom", "minimum font size", "reduce motion", "reduce transparency",
         ]
         case .tabsMemory: [

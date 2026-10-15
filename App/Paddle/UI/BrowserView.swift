@@ -17,15 +17,26 @@ struct BrowserView: View {
         return "config.json: \(app.configWarningPhrase) (\(paths)\(more)). Settings > Advanced lists them."
     }
 
+    /// The strip under the config notice for themes: the first problem, and how many more.
+    private var themeNotice: String? {
+        let warnings = app.themeWarnings
+        guard let first = warnings.first else { return nil }
+        let more = warnings.count > 1 ? " (\(warnings.count - 1) more problems)" : ""
+        return "Theme: \(first)\(more). Settings > Appearance lists them."
+    }
+
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(SidebarMetrics.collapsedKey) private var sidebarCollapsed = false
     @State private var fullScreen = false
     private var vertical: Bool { app.config.tabLayout == .vertical }
 
     var body: some View {
+        let theme = ResolvedChromeTheme(app: app, dark: colorScheme == .dark)
         Group {
             if vertical {
                 HStack(spacing: 0) {
                     VerticalTabsSidebar(model: model, fullScreen: fullScreen)
+                        .chromeSurface(.tabStrip)
                     Divider()
                     page
                 }
@@ -33,6 +44,7 @@ struct BrowserView: View {
                 VStack(spacing: 0) {
                     TabStrip(model: model)
                         .frame(height: 38)
+                        .chromeSurface(.tabStrip)
                     page
                 }
             }
@@ -44,6 +56,8 @@ struct BrowserView: View {
         .environment(\.chromeHighContrastTabs, app.config.highContrastTabs)
         .environment(\.chromeReducesMotion, app.reducesMotion)
         .environment(\.chromeReducesTransparency, app.reducesTransparency)
+        .environment(\.chromeTheme, theme)
+        .tint(theme?.accent)
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: model.windowTitle, initial: true) { _, title in model.controller?.window?.title = title }
         // The switch rebuilds the chrome: hand the keyboard back to the page.
@@ -67,6 +81,7 @@ struct BrowserView: View {
     @ViewBuilder
     private var page: some View {
         VStack(spacing: 0) {
+            VStack(spacing: 0) {
             NavigationBar(model: model, app: app)
                 // A collapsed sidebar is narrower than the traffic lights, which overhang into this row.
                 .padding(.leading, vertical && sidebarCollapsed && !fullScreen ? SidebarMetrics.trafficLightInset - SidebarMetrics.collapsedWidth : 0)
@@ -78,6 +93,14 @@ struct BrowserView: View {
             }
             if let notice = configNotice {
                 Label(notice, systemImage: "exclamationmark.triangle")
+                    .chromeFont(size: 11)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+            }
+            if let notice = themeNotice {
+                Label(notice, systemImage: "paintpalette")
                     .chromeFont(size: 11)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -112,6 +135,10 @@ struct BrowserView: View {
             if model.findVisible, model.selectedTab?.settingsPane == nil {
                 FindBar(model: model)
             }
+            }
+            // The suggestion dropdown hangs below this block, over the page.
+            .chromeSurface(.toolbar)
+            .zIndex(1)
             Divider()
             content
         }
@@ -194,7 +221,7 @@ private struct MemoryButton: View {
         .accessibilityValue(spokenLabel)
         .accessibilityHint("Shows memory and activity details.")
         .popover(isPresented: $showActivity, arrowEdge: .bottom) {
-            ActivityView(app: app, browser: model)
+            ActivityView(app: app, browser: model).systemText()
         }
     }
 
@@ -219,6 +246,7 @@ private struct NavigationBar: View {
     @Bindable var model: BrowserModel
     let app: AppModel
     @FocusState private var addressFocused: Bool
+    @Environment(\.chromeTheme) private var theme
     @State private var addressSelection: TextSelection?
     /// Set while Paddle itself writes an inline completion, so that edit isn't treated as typing.
     @State private var applyingCompletion = false
@@ -337,6 +365,7 @@ private struct NavigationBar: View {
         .overlay(alignment: .topLeading) {
             if model.suggestions.isVisible {
                 SuggestionList(suggestions: model.suggestions) { model.open($0) }
+                    .systemText()
                     .fixedSize(horizontal: false, vertical: true)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.suggestionsFrame = $0 }
                     .frame(maxWidth: .infinity, alignment: .top)
@@ -402,7 +431,7 @@ private struct NavigationBar: View {
         .help("Downloads")
         .accessibilityLabel("Downloads")
         .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
-            DownloadsView(store: app.downloads)
+            DownloadsView(store: app.downloads).systemText()
         }
     }
 
@@ -411,7 +440,7 @@ private struct NavigationBar: View {
         if let tab, tab.isLoading {
             GeometryReader { geometry in
                 Rectangle()
-                    .fill(Color.accentColor)
+                    .fill(theme?.accent ?? Color.accentColor)
                     .frame(width: geometry.size.width * max(0.05, tab.progress), height: 2)
                     .animation(app.reducesMotion ? nil : .easeOut(duration: 0.2), value: tab.progress)
             }

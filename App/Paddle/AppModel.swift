@@ -25,6 +25,8 @@ final class AppModel {
     let bookmarks = BookmarkStore()
     /// The New Tab page's pinned sites (newtab.json).
     let newTab = NewTabStore()
+    /// The built-in themes and the files in themes/.
+    let themes = ThemeStore()
     let favicons = FaviconStore()
     let extensions = ExtensionHost()
     /// Bookmarks > Show/Hide Bookmarks Bar. Window state, so it lives in user defaults rather than config.json.
@@ -108,6 +110,55 @@ final class AppModel {
     /// Translucent backgrounds in the chrome are opaque: `reduceTransparency` is `always`, or macOS asks for it.
     var reducesTransparency: Bool { config.reduceTransparency == .always || systemReducesTransparency }
 
+    // MARK: - Themes
+
+    /// The theme `theme` names, or nil for Default (and for an id that isn't there).
+    var activeTheme: ChromeTheme? {
+        config.theme == "default" ? nil : themes.theme(id: config.theme)
+    }
+    /// The accent override (`accentColor`); automatic follows the theme, then the system.
+    var accentChoice: ColorChoice { ColorChoice(configValue: config.accentColor, automaticValue: "system") ?? .automatic }
+    /// The tint over the strip and toolbar (`chromeTint`).
+    var tintChoice: ColorChoice { ColorChoice(configValue: config.chromeTint, automaticValue: "none") ?? .automatic }
+    /// `chromeTintStrength` as 0...1, before any cap.
+    var tintStrength: Double { config.chromeTintStrength / 100 }
+
+    /// The tint strength actually used in light or dark: `tintStrength`, lowered until the text of the theme (or the
+    /// default look) stays readable on both the tab strip and the toolbar. 0 when there is no tint. A theme that sets a
+    /// background but not a text color is capped with the default look's text, an approximation of what is drawn.
+    func effectiveTintStrength(dark: Bool) -> Double {
+        guard let tint = tintChoice.color else { return 0 }
+        let palette = activeTheme?.palette(dark: dark)
+        let text = palette?.text ?? DefaultChromeColors.text(dark: dark)
+        let secondary = palette?.secondaryText ?? DefaultChromeColors.secondary(dark: dark)
+        let bases = [palette?.tabStrip, palette?.toolbar].map { $0 ?? DefaultChromeColors.base(dark: dark) }
+        return bases.map {
+            ThemeContrast.maxTintStrength(base: $0, tint: tint, text: text, secondaryText: secondary, requested: tintStrength)
+        }.min() ?? tintStrength
+    }
+
+    /// Problems with themes, for the config notice: unreadable or misnamed files, bad colors, contrast rules the
+    /// active user theme breaks, and a `theme` that names nothing.
+    var themeWarnings: [String] {
+        var found = themes.warnings
+        let id = config.theme
+        if id != "default" {
+            if let theme = themes.theme(id: id) {
+                if !theme.isBuiltIn {
+                    for (mode, palette) in [("light", theme.light), ("dark", theme.dark)] {
+                        guard let palette else { continue }
+                        for issue in ThemeContrast.issues(palette, highContrast: theme.isHighContrast) {
+                            found.append("themes/\(id).json: \(mode) \(issue)")
+                        }
+                    }
+                }
+            } else if !themes.unreadableIDs.contains(id) {
+                found.append("theme \"\(id)\" not found; using Default")
+            }
+        }
+        return found
+    }
+
     private func readSystemAccessibility() {
         systemReducesMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         systemReducesTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
@@ -131,6 +182,7 @@ final class AppModel {
         openHistory()
         bookmarks.load()
         newTab.load()
+        themes.load()
         web.apply(config)
         applyAppearance(config.appearance)
         MainMenu.applyShortcuts(config.shortcuts)
@@ -411,6 +463,10 @@ final class AppModel {
             case .newTabFrequentSites: old.newTabFrequentSites != new.newTabFrequentSites
             case .appearance: old.appearance != new.appearance
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
+            case .theme: old.theme != new.theme
+            case .accentColor: old.accentColor != new.accentColor
+            case .chromeTint: old.chromeTint != new.chromeTint
+            case .chromeTintStrength: old.chromeTintStrength != new.chromeTintStrength
             case .interfaceTextSize: old.interfaceTextSize != new.interfaceTextSize
             case .defaultZoom: old.defaultZoom != new.defaultZoom
             case .minimumFontSize: old.minimumFontSize != new.minimumFontSize
@@ -548,6 +604,9 @@ final class AppModel {
     /// in the Activity popover and the Extensions menu, so it never waits for a click. Settings' Apply Now runs the
     /// same path without the announcement.
     func reloadConfig(showAlert: Bool = true) async {
+        // Themes first: applying every key can take seconds (block lists), and meanwhile the notice would call a
+        // newly added theme file missing.
+        themes.load()
         await apply(readConfig() ?? config, reloading: true)
         bookmarks.load()
         newTab.load()

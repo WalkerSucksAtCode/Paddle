@@ -169,6 +169,7 @@ struct TabButton: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.chromeScale) private var scale
     @Environment(\.chromeHighContrastTabs) private var highContrast
+    @Environment(\.chromeTheme) private var theme
 
     private var isSelected: Bool { model.selectedID == tab.id }
     /// From this width (at text size 100 %) every tab shows its close button.
@@ -234,6 +235,7 @@ struct TabButton: View {
             set: { if !$0, model.renamingTabID == tab.id { model.renamingTabID = nil } }
         ), arrowEdge: .bottom) {
             TabRenameField(tab: tab, model: model)
+                .systemText()
                 .padding(8)
                 .frame(width: 220)
         }
@@ -245,11 +247,13 @@ struct TabButton: View {
         .background {
             // The selected tab is lighter than the strip in dark mode and darker in light mode, with an edge, so it
             // stands out by brightness alone: the window background colour it used before matched the strip.
+            // A theme's selected-tab color replaces the fill; the edge and the hover wash come from its text color.
+            let ink: Color = theme?.text ?? .primary
             RoundedRectangle(cornerRadius: 7)
-                .fill(Color.primary.opacity(isSelected ? (highContrast ? 0.30 : 0.14) : hovering ? 0.06 : 0))
+                .fill(isSelected ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.30 : 0.14)) : ink.opacity(hovering ? 0.06 : 0))
                 .overlay {
                     RoundedRectangle(cornerRadius: 7)
-                        .strokeBorder(Color.primary.opacity(isSelected ? (highContrast ? 0.55 : 0.18) : 0), lineWidth: highContrast ? 1.5 : 1)
+                        .strokeBorder(ink.opacity(isSelected ? (highContrast ? 0.55 : 0.18) : 0), lineWidth: highContrast ? 1.5 : 1)
                 }
         }
         // A grouped tab carries its group's colour along the bottom edge, so the group's extent shows.
