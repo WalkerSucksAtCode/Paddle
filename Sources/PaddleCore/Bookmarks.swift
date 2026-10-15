@@ -358,7 +358,7 @@ public enum NetscapeBookmarks {
     private static let barTitles: Set<String> = [
         "favorites", "favourites", "bookmarks bar", "bookmarks toolbar", "favorites bar", "favourites bar",
     ]
-    private static let skippedSchemes = ["javascript:", "place:", "about:", "data:"]
+    static let skippedSchemes = ["javascript:", "place:", "about:", "data:"]
 
     /// Parses the bookmark HTML Safari, Firefox and Chrome export.
     ///

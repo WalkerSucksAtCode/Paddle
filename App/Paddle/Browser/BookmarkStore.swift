@@ -120,9 +120,21 @@ final class BookmarkStore {
         let text = try String(contentsOf: file, encoding: .utf8)
         let imported = NetscapeBookmarks.parse(text)
         guard !imported.allBookmarks.isEmpty else { throw Failure.nothingFound }
+        return merge(imported, folderTitle: "Imported " + Date().formatted(date: .abbreviated, time: .omitted))
+    }
+
+    /// Import from Browser: merges a tree read straight from another browser (one Undo) and returns how many
+    /// bookmarks were added. Items already in Paddle are skipped.
+    func importTree(_ imported: BookmarkTree, folderTitle: String) throws -> Int {
+        if diskChanged { load() }
+        if let loadError { throw Failure.unreadable(loadError) }
+        guard !imported.allBookmarks.isEmpty else { throw Failure.nothingFound }
+        return merge(imported, folderTitle: folderTitle)
+    }
+
+    private func merge(_ imported: BookmarkTree, folderTitle: String) -> Int {
         let before = tree.allBookmarks.count
-        let folder = "Imported " + Date().formatted(date: .abbreviated, time: .omitted)
-        update("Import Bookmarks") { $0.merge(imported, folderTitle: folder) }
+        update("Import Bookmarks") { $0.merge(imported, folderTitle: folderTitle) }
         return tree.allBookmarks.count - before
     }
 

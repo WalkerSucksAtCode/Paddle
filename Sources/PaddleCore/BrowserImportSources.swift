@@ -44,6 +44,15 @@ public struct ImportSource: Sendable, Equatable, Identifiable {
     /// that macOS refuses says so (`BrowserImportError.accessDenied`).
     public var hasHistory: Bool
     public var hasSettings: Bool
+    /// Chrome `Bookmarks` (JSON), Firefox `places.sqlite`, Safari `Bookmarks.plist`; nil for the Full Disk Access placeholder.
+    public var bookmarksFile: URL?
+    public var hasBookmarks: Bool
+    /// The profile keeps a last session (Chrome `Sessions/`, Firefox `sessionstore*.jsonlz4`).
+    public var hasOpenTabs: Bool
+    /// Per-site zoom and permissions are on disk (Chrome `Preferences`, Firefox `permissions.sqlite` / `content-prefs.sqlite`).
+    public var hasSiteSettings: Bool
+    /// The profile lists installed extensions (Chrome `Secure Preferences`, Firefox `extensions.json`).
+    public var hasExtensions: Bool
     /// macOS refuses Paddle the browser's folder, so its profiles can't be listed. The source stands for the whole
     /// browser: `profileName` is empty, nothing is offered, and `directory`, `historyFile` and `settingsFile` are the
     /// browser's base folder (nothing is read from it).
@@ -55,7 +64,9 @@ public struct ImportSource: Sendable, Equatable, Identifiable {
 
     public init(
         browser: Browser, profileName: String, directory: URL, historyFile: URL, settingsFile: URL,
-        searchFile: URL? = nil, hasHistory: Bool, hasSettings: Bool, needsFullDiskAccess: Bool = false
+        searchFile: URL? = nil, hasHistory: Bool, hasSettings: Bool, needsFullDiskAccess: Bool = false,
+        bookmarksFile: URL? = nil, hasBookmarks: Bool = false, hasOpenTabs: Bool = false,
+        hasSiteSettings: Bool = false, hasExtensions: Bool = false
     ) {
         self.browser = browser
         self.profileName = profileName
@@ -66,6 +77,11 @@ public struct ImportSource: Sendable, Equatable, Identifiable {
         self.hasHistory = hasHistory
         self.hasSettings = hasSettings
         self.needsFullDiskAccess = needsFullDiskAccess
+        self.bookmarksFile = bookmarksFile
+        self.hasBookmarks = hasBookmarks
+        self.hasOpenTabs = hasOpenTabs
+        self.hasSiteSettings = hasSiteSettings
+        self.hasExtensions = hasExtensions
     }
 }
 
@@ -122,7 +138,9 @@ public enum BrowserImport {
             directory: home.appending(path: "Library/Safari", directoryHint: .isDirectory),
             historyFile: home.appending(path: "Library/Safari/History.db"),
             settingsFile: home.appending(path: "Library/Containers/com.apple.Safari/Data/Library/Preferences/com.apple.Safari.plist"),
-            hasHistory: true, hasSettings: true
+            hasHistory: true, hasSettings: true,
+            // Like the history, none of these can be checked without Full Disk Access.
+            bookmarksFile: home.appending(path: "Library/Safari/Bookmarks.plist"), hasBookmarks: true
         )
     }
 
@@ -165,10 +183,17 @@ public enum BrowserImport {
             let preferences = directory.appending(path: "Preferences")
             let hasHistory = fm.fileExists(atPath: history.path)
             let hasSettings = fm.fileExists(atPath: preferences.path)
-            guard hasHistory || hasSettings else { return nil }
+            let bookmarks = directory.appending(path: "Bookmarks")
+            let hasBookmarks = fm.fileExists(atPath: bookmarks.path)
+            var isFolder: ObjCBool = false
+            let hasOpenTabs = fm.fileExists(atPath: directory.appending(path: "Sessions").path, isDirectory: &isFolder) && isFolder.boolValue
+            let hasExtensions = fm.fileExists(atPath: directory.appending(path: "Secure Preferences").path)
+            guard hasHistory || hasSettings || hasBookmarks || hasOpenTabs || hasExtensions else { return nil }
             return ImportSource(
                 browser: browser, profileName: names[folder] ?? folder, directory: directory,
-                historyFile: history, settingsFile: preferences, hasHistory: hasHistory, hasSettings: hasSettings
+                historyFile: history, settingsFile: preferences, hasHistory: hasHistory, hasSettings: hasSettings,
+                bookmarksFile: bookmarks, hasBookmarks: hasBookmarks, hasOpenTabs: hasOpenTabs,
+                hasSiteSettings: hasSettings, hasExtensions: hasExtensions
             )
         }
         .sorted { lhs, rhs in
@@ -215,10 +240,17 @@ public enum BrowserImport {
             let search = directory.appending(path: "search.json.mozlz4")
             let hasHistory = fm.fileExists(atPath: history.path)
             let hasSettings = fm.fileExists(atPath: prefs.path) || fm.fileExists(atPath: search.path)
-            guard hasHistory || hasSettings else { return nil }
+            func exists(_ name: String) -> Bool { fm.fileExists(atPath: directory.appending(path: name).path) }
+            let hasOpenTabs = exists("sessionstore.jsonlz4") || exists("sessionstore-backups/recovery.jsonlz4")
+                || exists("sessionstore-backups/previous.jsonlz4")
+            let hasSiteSettings = exists("permissions.sqlite") || exists("content-prefs.sqlite")
+            let hasExtensions = exists("extensions.json")
+            guard hasHistory || hasSettings || hasOpenTabs || hasSiteSettings || hasExtensions else { return nil }
             let source = ImportSource(
                 browser: .firefox, profileName: section["Name"] ?? directory.lastPathComponent, directory: directory,
-                historyFile: history, settingsFile: prefs, searchFile: search, hasHistory: hasHistory, hasSettings: hasSettings
+                historyFile: history, settingsFile: prefs, searchFile: search, hasHistory: hasHistory, hasSettings: hasSettings,
+                bookmarksFile: history, hasBookmarks: hasHistory, hasOpenTabs: hasOpenTabs,
+                hasSiteSettings: hasSiteSettings, hasExtensions: hasExtensions
             )
             return (source, section["Default"] == "1")
         }

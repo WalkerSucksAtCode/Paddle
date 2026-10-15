@@ -73,68 +73,19 @@ public enum BrowserHistoryReader {
         temporaryRoot: URL = FileManager.default.temporaryDirectory
     ) throws -> HistoryReadResult {
         guard limit > 0 else { return HistoryReadResult() }
-        let fm = FileManager.default
-        let folder = temporaryRoot.appending(path: "PaddleImport-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        defer { try? fm.removeItem(at: folder) }
-
-        let copy = folder.appending(path: "history.sqlite")
-        try copyDatabase(from: database, to: copy, browser: browser, fm)
-        return try query(copy, browser.family, limit: limit, since: since, now: now)
-    }
-
-    // MARK: - Copy
-
-    /// Copies the database and whichever of its `-wal` and `-shm` siblings exist, under the names SQLite pairs
-    /// them by.
-    private static func copyDatabase(from source: URL, to copy: URL, browser: ImportSource.Browser, _ fm: FileManager) throws {
-        for suffix in ["", "-wal", "-shm"] {
-            let from = URL(filePath: source.path + suffix)
-            let to = URL(filePath: copy.path + suffix)
-            do {
-                try fm.copyItem(at: from, to: to)
-            } catch {
-                if suffix.isEmpty || !isMissing(error) { throw translate(error, browser: browser, file: source.lastPathComponent) }
-            }
+        return try ImportSQLite.withCopy(of: database, browser: browser, what: "history database", temporaryRoot: temporaryRoot) { db in
+            try query(db, browser.family, limit: limit, since: since, now: now)
         }
     }
 
     /// EPERM and EACCES anywhere in the error chain: macOS refusing a protected folder, or plain file permissions.
-    static func isPermissionDenied(_ error: any Error) -> Bool {
-        let ns = error as NSError
-        if ns.domain == NSPOSIXErrorDomain, ns.code == Int(EPERM) || ns.code == Int(EACCES) { return true }
-        if ns.domain == NSCocoaErrorDomain, ns.code == NSFileReadNoPermissionError { return true }
-        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? any Error { return isPermissionDenied(underlying) }
-        return false
-    }
-
-    private static func isMissing(_ error: any Error) -> Bool {
-        let ns = error as NSError
-        if ns.domain == NSPOSIXErrorDomain, ns.code == Int(ENOENT) { return true }
-        if ns.domain == NSCocoaErrorDomain, ns.code == NSFileReadNoSuchFileError || ns.code == NSFileNoSuchFileError { return true }
-        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? any Error { return isMissing(underlying) }
-        return false
-    }
-
-    private static func translate(_ error: any Error, browser: ImportSource.Browser, file: String) -> BrowserImportError {
-        if isPermissionDenied(error) { return .accessDenied(browser) }
-        if isMissing(error) { return .missing("\(browser.displayName)'s \(file)") }
-        return .unreadable("\(browser.displayName)'s \(file) couldn't be copied: \(error.localizedDescription)")
-    }
+    static func isPermissionDenied(_ error: any Error) -> Bool { ImportSQLite.isPermissionDenied(error) }
 
     // MARK: - Query
 
     private static func query(
-        _ database: URL, _ family: ImportSource.Family, limit: Int, since: Date?, now: Date
+        _ db: OpaquePointer, _ family: ImportSource.Family, limit: Int, since: Date?, now: Date
     ) throws -> HistoryReadResult {
-        var handle: OpaquePointer?
-        let rc = sqlite3_open_v2(database.path, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
-        defer { sqlite3_close_v2(handle) }
-        guard rc == SQLITE_OK, let db = handle else {
-            throw BrowserImportError.unreadable("The history database couldn't be opened (SQLite error \(rc)).")
-        }
-        sqlite3_busy_timeout(db, 2_000)
-
         let spec: Spec
         let lowerBound: Bind
         switch family {
@@ -158,13 +109,13 @@ public enum BrowserHistoryReader {
         let isWeb = "(u.url LIKE 'http://%' OR u.url LIKE 'https://%')"
         var result = HistoryReadResult()
         do {
-            let notWeb = try run(db, "SELECT count(*) FROM \(spec.from) WHERE \(spec.time) >= ? AND NOT \(isWeb)", [lowerBound]) {
-                Int(sqlite3_column_int64($0, 0))
+            let notWeb = try ImportSQLite.run(db, "SELECT count(*) FROM \(spec.from) WHERE \(spec.time) >= ? AND NOT \(isWeb)", [lowerBound]) {
+                Int(ImportSQLite.int($0, 0))
             }
             result.skippedNotWeb = notWeb.first ?? 0
 
             // One row past the cap tells whether anything was left out.
-            let rows = try run(db, """
+            let rows = try ImportSQLite.run(db, """
                 SELECT \(spec.url), \(spec.title), \(spec.time), \(spec.typed) FROM \(spec.from)
                 WHERE \(spec.time) >= ? AND \(isWeb) ORDER BY \(spec.time) DESC LIMIT ?
                 """, [lowerBound, .int(Int64(limit) + 1)]) { stmt -> (String, String, Date, Bool) in
@@ -173,7 +124,7 @@ public enum BrowserHistoryReader {
                 case .firefox: BrowserEpoch.firefox(microseconds: sqlite3_column_int64(stmt, 2))
                 case .safari: BrowserEpoch.safari(seconds: sqlite3_column_double(stmt, 2))
                 }
-                return (text(stmt, 0), text(stmt, 1), date, sqlite3_column_int64(stmt, 3) != 0)
+                return (ImportSQLite.text(stmt, 0), ImportSQLite.text(stmt, 1), date, sqlite3_column_int64(stmt, 3) != 0)
             }
             result.truncated = rows.count > limit
             let earliest = Date(timeIntervalSince1970: 631_152_000) // 1 Jan 1990
@@ -189,7 +140,7 @@ public enum BrowserHistoryReader {
                 }
                 result.visits.append(ImportedVisit(url: url, title: title, date: date, typed: typed))
             }
-        } catch let error as SQLiteFailure {
+        } catch let error as ImportSQLite.Failure {
             throw BrowserImportError.unreadable("This doesn't look like a readable history database (\(error.message)).")
         }
         return result
@@ -203,40 +154,5 @@ public enum BrowserHistoryReader {
         var typed: String
     }
 
-    private enum Bind {
-        case int(Int64)
-        case double(Double)
-    }
-
-    private struct SQLiteFailure: Error {
-        var message: String
-    }
-
-    private static func text(_ stmt: OpaquePointer, _ column: Int32) -> String {
-        sqlite3_column_text(stmt, column).map { String(cString: $0) } ?? ""
-    }
-
-    private static func run<T>(_ db: OpaquePointer, _ sql: String, _ binds: [Bind], _ map: (OpaquePointer) -> T) throws -> [T] {
-        var handle: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &handle, nil) == SQLITE_OK, let stmt = handle else {
-            let message = String(cString: sqlite3_errmsg(db))
-            sqlite3_finalize(handle)
-            throw SQLiteFailure(message: message)
-        }
-        defer { sqlite3_finalize(stmt) }
-        for (offset, bind) in binds.enumerated() {
-            switch bind {
-            case .int(let value): sqlite3_bind_int64(stmt, Int32(offset + 1), value)
-            case .double(let value): sqlite3_bind_double(stmt, Int32(offset + 1), value)
-            }
-        }
-        var rows: [T] = []
-        var rc = sqlite3_step(stmt)
-        while rc == SQLITE_ROW {
-            rows.append(map(stmt))
-            rc = sqlite3_step(stmt)
-        }
-        guard rc == SQLITE_DONE else { throw SQLiteFailure(message: String(cString: sqlite3_errmsg(db))) }
-        return rows
-    }
+    private typealias Bind = ImportSQLite.Bind
 }

@@ -139,6 +139,46 @@ struct BrowserDiscoveryTests {
         #expect(chrome[0].settingsFile.lastPathComponent == "Preferences")
     }
 
+    @Test func flagsBookmarksSessionsAndExtensionsOnChromiumProfiles() throws {
+        let fixture = try ImportFixture()
+        let base = "Library/Application Support/Google/Chrome"
+        _ = try fixture.write("{}", to: "\(base)/Default/Preferences")
+        _ = try fixture.write("{}", to: "\(base)/Default/Bookmarks")
+        _ = try fixture.write("{}", to: "\(base)/Default/Secure Preferences")
+        try FileManager.default.createDirectory(at: fixture.path("\(base)/Default/Sessions/x"), withIntermediateDirectories: true)
+        // A profile with only a bookmarks file still counts; one with a Sessions *file* has no open tabs.
+        _ = try fixture.write("{}", to: "\(base)/Profile 1/Bookmarks")
+        _ = try fixture.write("x", to: "\(base)/Profile 2/Sessions")
+        let chrome = BrowserImport.discoverSources(home: fixture.home).filter { $0.browser == .chrome }
+        #expect(chrome.map(\.directory.lastPathComponent) == ["Default", "Profile 1"])
+        let first = chrome[0]
+        #expect(first.hasBookmarks && first.hasOpenTabs && first.hasSiteSettings && first.hasExtensions)
+        #expect(first.bookmarksFile?.lastPathComponent == "Bookmarks")
+        let second = chrome[1]
+        #expect(second.hasBookmarks && !second.hasOpenTabs && !second.hasSiteSettings && !second.hasExtensions)
+    }
+
+    @Test func flagsFirefoxSessionsSiteSettingsAndExtensions() throws {
+        let fixture = try ImportFixture()
+        let base = "Library/Application Support/Firefox"
+        _ = try fixture.firefoxHistory(at: "\(base)/Profiles/a.default/places.sqlite")
+        _ = try fixture.write("x", to: "\(base)/Profiles/a.default/sessionstore-backups/previous.jsonlz4")
+        _ = try fixture.write("x", to: "\(base)/Profiles/a.default/content-prefs.sqlite")
+        _ = try fixture.write("{}", to: "\(base)/Profiles/a.default/extensions.json")
+        _ = try fixture.write("x", to: "\(base)/Profiles/b.other/permissions.sqlite")
+        _ = try fixture.write("[Profile0]\nName=a\nIsRelative=1\nPath=Profiles/a.default\n\n[Profile1]\nName=b\nIsRelative=1\nPath=Profiles/b.other\n", to: "\(base)/profiles.ini")
+        let firefox = BrowserImport.discoverSources(home: fixture.home).filter { $0.browser == .firefox }
+        #expect(firefox.map(\.profileName) == ["a", "b"])
+        let a = firefox[0]
+        #expect(a.hasBookmarks && a.hasOpenTabs && a.hasSiteSettings && a.hasExtensions)
+        #expect(a.bookmarksFile == a.historyFile)
+        let b = firefox[1]
+        #expect(!b.hasBookmarks && !b.hasOpenTabs && b.hasSiteSettings && !b.hasExtensions)
+        let safari = try #require(BrowserImport.discoverSources(home: fixture.home).first)
+        #expect(safari.hasBookmarks && !safari.hasOpenTabs && !safari.hasSiteSettings && !safari.hasExtensions)
+        #expect(safari.bookmarksFile?.lastPathComponent == "Bookmarks.plist")
+    }
+
     @Test func findsTheOtherChromiumFamilyBrowsersByTheirOwnFolders() throws {
         let fixture = try ImportFixture()
         _ = try fixture.chromeHistory(at: "Library/Application Support/BraveSoftware/Brave-Browser/Default/History")
