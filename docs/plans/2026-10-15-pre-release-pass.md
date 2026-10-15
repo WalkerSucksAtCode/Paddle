@@ -1,6 +1,7 @@
 # Pre-release pass (2026-10-15)
 
-Status: Wave A done (the bug, 4a and 4b); its other background checks moved to Wave A2, awaiting Walker's go. Before releasing main (a97c4ac) over the installed build 49, which predates
+Status: Waves A and A2 done (A2 left the Wave 6 and 7b items and the extension checks to Wave B); Wave B awaits
+Walker's go. Before releasing main (a97c4ac) over the installed build 49, which predates
 every wave of `2026-10-14-browser-features.md`.
 
 Three waves, each about 45 minutes or less, run in this session with no sub-agents: the checks drive one running app
@@ -30,7 +31,12 @@ scenario over the threshold explained.
   the window width staying put through three Reload Configs.
 - [x] Wave 4a and 4b checks (done 2026-10-15; notes in the roadmap): high contrast in the sidebar, the toolbar icons
   now following text size, a custom accent, the tint cap.
-- [ ] Wave A2, the remaining background checks (no screen), about 40 min:
+- [x] Wave A2 (done 2026-10-15; notes in the roadmap): Wave 7 pins and groups in a second space and Next/Previous
+  Space; Wave 8 Focus Other Side, ending by pin, move and group, the sidebar pair, the minimums and the narrow
+  fallback; Wave 9 the Settings toggle, over a split, the progress line, Copy Link, a popup, downloads, the hidden
+  split button, closing by tab and space switch. Fixed: switching layout during a split left both panes blank.
+  Moved to Wave B: everything below not marked done.
+- Wave A2's list as planned:
   - (done) Wave 4a: `highContrastTabs` in the sidebar (measure fill and edge contrast against the unselected rows, as was
     done for the strip). `interfaceTextSize` leaves the extension toolbar buttons and the ≡ button unscaled: a
     known gap, so fix it if small, or mark it.
@@ -52,6 +58,12 @@ scenario over the threshold explained.
   switch under a focused field), not only on typing; a click elsewhere closes them. Small; for Wave B.
 
 ## Wave B: screen checks and small fixes (about 30 min)
+
+- [ ] Carried from A2, no screen: Wave 6's New Window in Profile, and suggestions, the History window and Clear
+  History in a second profile, plus a preview there; Wave 7b's Settings section, Disconnect, and private windows
+  invisible to every tool; a space tint strong enough to be capped; the extension checks (a tab activated in another
+  space, what an extension sees of a split, a preview's content scripts), with a small probe extension whose content
+  script writes what the background script sees into the page.
 
 - [ ] Screen window 1 (about 3 min): the tab group label's right-click (Rename, Ungroup, Close Group, Move Group to
   New Window); a link ⌘-clicked from a grouped tab joining the group; dragging a tab out of a group; the sidebar's

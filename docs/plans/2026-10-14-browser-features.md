@@ -201,8 +201,9 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     to Space and Delete Space work; Search Tabs finds a tab in the other space; the tint applies and is capped.
     (Checked: ⌃1/⌃2 with a page focused (control shortcuts now reach the menu first), the Tabs menu, the sidebar row,
     two relaunches, Move Tab to Space, Delete Space with its alert and Cancel, ⇧⌘T after it, Search Tabs, and the
-    blue tint measured at its 25 % blend. Not exercised: pins and groups inside a second space, Next/Previous Space,
-    an extension activating a tab in another space, and a tint strong enough to be capped.)
+    blue tint measured at its 25 % blend. 2026-10-15: a pin and a group inside a second space, through Next/Previous
+    Space and a relaunch. Not exercised: an extension activating a tab in another space, and a space tint strong
+    enough to be capped.)
 - [ ] Wave 7b, control bridge (Walker, 2026-10-15; before Split view): a local MCP server so Claude sessions can
   read and drive Paddle directly, instead of screenshots and synthetic clicks (which stop when the screen locks, can't
   press Return in the background, and miss menu rows). Off by default.
@@ -250,21 +251,25 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
   - [ ] Both sides count as visible: neither sleeps or freezes as a background tab, and both report as visible to
     extensions (the focused one is the active tab). (Checked: both stay awake through Sleep Background Tabs and a
     relaunch. Not checked: what extensions see.)
-  - [ ] Divider: a 6 pt gap in the chrome colour with a grip. Drag to resize (each side at least 25 % and 320 pt),
+  - [x] Divider: a 6 pt gap in the chrome colour with a grip. Drag to resize (each side at least 25 % and 320 pt),
     double-click for 50/50; the ratio is kept per split. Narrower than 640 pt the window shows only the focused side
-    until it is wide enough again. (Checked: a drag to 1120 / 602 pt, a double-click back to 861 / 861. Not checked:
-    the minimums and the narrow-window fallback.)
+    until it is wide enough again. (Checked: a drag to 1120 / 602 pt, a double-click back to 861 / 861; a drag hard
+    left stops the left side at 317 pt (320 less half the divider); with 560 pt of content only the focused side
+    shows, 559 pt wide.)
   - [ ] Making and ending one: Tabs > Split View (`toggleSplitView`, ⌃⌘\): with one tab it splits with the next tab
     in the strip (or a new New Tab when there is none); in a split it ends the split and keeps the focused tab.
     A tab's right-click menu: "Split with Current Tab" (pairs it with the selected tab) and "End Split". Tabs > Swap
     Sides (`swapSplitSides`) and Focus Other Side (`focusOtherSplitSide`, no default key). Closing,
     pinning, moving to another window or space, or grouping apart one side ends the split. (Checked through the
     bridge: Split View makes one, Swap Sides swaps pages and strip order and keeps focus, closing one side ends it.
-    Not checked: the right-click items, Focus Other Side, ending by pin, move or group. Swapping moves both web views
-    to new hosts, so each page sees one brief 0 × 0 resize.)
-  - [ ] Strip and sidebar: the two tabs sit together with a split symbol (rectangle.split.2x1) on the pair and a
+    2026-10-15: Focus Other Side, and ending by pin, by Move Tab to Space and by grouping one side apart; with the
+    last tab focused, Split View makes a New Tab for the right side. Not checked: the right-click items. Swapping
+    moves both web views to new hosts, so each page sees one brief 0 × 0 resize.)
+  - [x] Strip and sidebar: the two tabs sit together with a split symbol (rectangle.split.2x1) on the pair and a
     shared bracket underline; both look selected when the split shows, the focused one with the stronger edge.
-    (Checked in the horizontal strip. Not checked: the vertical sidebar.)
+    (Checked in the strip and, 2026-10-15, the sidebar. Fixed then: switching layout during a split left both panes
+    blank, since the outgoing panes took the pages with them; both sides now take them back once the switch settles,
+    measured lit through three switches.)
   - [x] Saved in session.json with each space's tabs (pair and ratio); older files have no splits. (Checked: a
     relaunch keeps the pair with both sides awake; unit tests cover old files and bad entries.)
   - Done when: a split shows two pages side by side with the divider dragging and resetting, focus moves the address
@@ -279,7 +284,7 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     ⌥-click itself keeps its behaviour (most routers leave modified clicks to the browser). `linkPreview` (true) in
     config.json and Settings > Tabs & Memory; off, ⌥-click follows the link as it does today. (Checked: a real ⌥-click
     and Preview Link open it with the page underneath unmoved; a script's ⌥-click only navigates; off, ⌥-click
-    follows the link. The Settings toggle was not looked at.)
+    follows the link; the Settings toggle shows under Tabs & Memory > Link preview.)
   - [x] The preview: one per window, a card over the content area (over both sides of a split), inset 5 % (at least
     16 pt) with rounded corners and a shadow, the page behind darkened (brightness, not hue). A header in the chrome
     colours shows the page's icon, its host (always, first: the address field shows the tab underneath, and a page
@@ -288,24 +293,26 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     shows and back to the tab when it closes. The link status bubble shows the preview's links inside the card; the
     tab's own is hidden meanwhile, since the page underneath still gets mouse moves through the card. (Checked:
     backdrop 152 over a white page, the 40 % expected 153; the card edge steps from 255 to about 125; Escape went to
-    the preview. Not checked: over a split, the progress line, Copy Link.)
+    the preview; 2026-10-15: over both sides of a split, the progress line on a slow page, Copy Link.)
   - [ ] Inside it: links navigate the preview; a ⌥-click there navigates it too (no preview in a preview); ⌘-click
     and popups open tabs after the tab underneath; swipe back works as in a tab; downloads go to Downloads, and a
     preview that only downloaded closes. (Checked: ⌥-click navigates the preview; ⌘-click opens a background tab
-    beside the tab underneath. Not checked: popups, swipe, downloads. A popup from a preview is selected, which
-    closes the preview, so a sign-in popup loses its opener page.)
+    beside the tab underneath; 2026-10-15: a popup opens as a tab right after the tab underneath, a download link
+    saves to Downloads with the preview kept, and previewing a file's URL downloads it and closes the preview. Not
+    checked: swipe. A popup from a preview is selected, which closes the preview, so a sign-in popup loses its
+    opener page.)
   - [x] Becoming a tab: Open as Tab (`openLinkPreviewAsTab`, ⇧⌘Return) puts the preview's own web view in a new tab
     after the one underneath and selects it, with no reload (scroll, form input, history kept). Open in Split View
     does the same and splits it with the tab underneath (preview on the right); the button hides when that tab is
     pinned or already split. (Checked with the buttons: the page's load time unchanged and full width; the split
     861 / 861 with the preview on the right and focused. Fixed on the way: the fading card took the page back.
-    Not checked: ⇧⌘Return, the hidden button.)
+    2026-10-15: the button is hidden over a pinned tab and over a split. Not checked: ⇧⌘Return.)
   - [x] Closing: Escape (when the page doesn't use it; it reaches Paddle as cancelOperation, not a menu key, so site
     dialogs keep their Escape), the Close button or `closeLinkPreview` (no default key), a click on the darkened
     page, selecting another tab or space, or closing the tab underneath. A closed preview drops its web view and goes
     nowhere (not Reopen Closed Tab). (Checked: Escape closes it, and a page that takes Escape keeps it open; Close,
-    the backdrop and closeLinkPreview each close it, one WebContent process fewer each time. Not checked: closing by
-    tab or space switch.)
+    the backdrop and closeLinkPreview each close it, one WebContent process fewer each time; 2026-10-15: selecting
+    another tab and switching space each close it.)
   - [x] Data: the preview uses its window's profile and data store; private windows' previews stay private and record
     nothing. In normal windows its pages go into history like any visit. Content blocking, user scripts and
     extensions' content scripts run in it; extensions' tab APIs see it only once it is a tab. Not saved in the

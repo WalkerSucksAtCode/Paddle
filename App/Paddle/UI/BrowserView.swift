@@ -60,10 +60,13 @@ struct BrowserView: View {
         .tint(theme?.accent)
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: model.windowTitle, initial: true) { _, title in model.controller?.window?.title = title }
-        // The switch rebuilds the chrome: hand the keyboard back to the page.
-        // Only in the window being worked in: the others may hold a half-typed address.
+        // The switch rebuilds the chrome and moves the content under a new parent. A split's outgoing panes can take
+        // the pages back as they leave, so both sides take them again once the switch has settled (as `settleSplit`
+        // does). Then the keyboard goes back to the page, only in the window being worked in: the others may hold a
+        // half-typed address.
         .onChange(of: vertical) { _, _ in
             DispatchQueue.main.async {
+                if model.visibleTabs.count == 2 { for tab in model.visibleTabs { tab.generation += 1 } }
                 guard model.controller?.window?.isKeyWindow == true else { return }
                 model.controller?.focusWebView()
             }
