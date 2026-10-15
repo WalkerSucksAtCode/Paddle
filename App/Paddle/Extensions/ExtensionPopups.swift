@@ -211,9 +211,10 @@ final class ExtensionPopupPresenter {
             return clickedButton
         }
         let identifier = ExtensionActionNSButton.identifier(for: context.uniqueIdentifier)
-        return contentView.descendants(withIdentifier: identifier).last {
-            $0.window === window && !$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty
-        }
+        let visible: (NSView) -> Bool = { $0.window === window && !$0.isHiddenOrHasHiddenAncestor && !$0.visibleRect.isEmpty }
+        if let own = contentView.descendants(withIdentifier: identifier).last(where: visible) { return own }
+        // A menu-placed extension has no button of its own: the puzzle button stands in.
+        return contentView.descendants(withIdentifier: ExtensionOverflowNSButton.identifier).last(where: visible)
     }
 
     private func clamp(_ popover: NSPopover) { Self.clampSize(popover) }

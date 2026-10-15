@@ -64,7 +64,7 @@ enum SettingsPane: String, CaseIterable {
         ]
         case .extensions: [
             "addons", "extensionsInPrivate", "extensionCompat", "private windows", "permissions", "folder", "memory",
-            "compatibility", "reload", "options",
+            "compatibility", "reload", "options", "extensionToolbar", "toolbar button", "pin", "pinned", "hide", "puzzle",
         ]
         case .shortcuts: [
             "keyboard", "keys", "key bindings", "shortcut", "shortcuts", "command", "menu", "defaults",

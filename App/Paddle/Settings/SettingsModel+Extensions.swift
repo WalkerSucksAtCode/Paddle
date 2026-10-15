@@ -10,6 +10,11 @@ extension SettingsModel {
         await save([ConfigChange("extensions", folder, enabled ? nil : .bool(false))])
     }
 
+    /// One folder's toolbar button (`extensionToolbar.<folder>`); `pinned` is the default and removes the entry.
+    func setToolbarPlacement(_ folder: String, _ placement: ExtensionToolbarPlacement) async {
+        await save([ConfigChange("extensionToolbar", folder, placement == .pinned ? nil : .string(placement.rawValue))])
+    }
+
     func setExtensionsInPrivate(_ on: Bool) async {
         await save([ConfigChange("extensionsInPrivate", .bool(on))])
     }

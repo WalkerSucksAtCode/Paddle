@@ -448,7 +448,7 @@ private struct NavigationBar: View {
                 .frame(minWidth: 140)
             HStack(spacing: 2) {
                 if model.extensionsAllowed {
-                    ExtensionToolbar(host: app.extensions, tab: tab, isPrivate: model.isPrivate)
+                    ExtensionToolbar(host: app.extensions, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
                 if !app.downloads.items.isEmpty {
                     downloadsButton

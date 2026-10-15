@@ -1,5 +1,10 @@
 import Foundation
 
+/// Where an extension's toolbar button goes (`extensionToolbar` in config.json).
+public enum ExtensionToolbarPlacement: String, Codable, Sendable, CaseIterable {
+    case pinned, menu, hidden
+}
+
 /// Everything a user can change by editing `config.json`. Missing keys fall back to the defaults below,
 /// so a config file only needs the keys it changes. Each key decodes on its own: a value of the wrong type falls back
 /// to its default, an object key skips only the entry that is wrong and a list only the item, and
@@ -75,6 +80,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Per-folder compatibility settings: `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false, "private": true}}`.
     /// See `ExtensionCompatConfig`; folders not listed get the detected persona, shims on and a private id.
     public var extensionCompat: [String: ExtensionCompatConfig]
+    /// Where each extension's toolbar button goes, by folder name: `pinned` on the toolbar (the default for folders not listed), `menu` only in the Extensions (puzzle) menu, `hidden` nowhere; the extension still runs.
+    public var extensionToolbar: [String: ExtensionToolbarPlacement]
     /// Check store-installed extensions for updates daily (and from Check for Extension Updates).
     public var extensionUpdates: Bool
     /// Present Paddle to a site as Chrome or Firefox (user agent and the JavaScript browser identity), keyed by
@@ -95,7 +102,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, developerTools
         case shortcuts
-        case extensions, extensionsInPrivate, extensionCompat, extensionUpdates
+        case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
 
     public init(
@@ -123,6 +130,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools: Bool = true,
         shortcuts: [String: String] = [:],
         extensions: [String: Bool] = [:],
+        extensionToolbar: [String: ExtensionToolbarPlacement] = [:],
         extensionsInPrivate: Bool = false,
         extensionCompat: [String: ExtensionCompatConfig] = [:],
         extensionUpdates: Bool = true,
@@ -152,6 +160,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.developerTools = developerTools
         self.shortcuts = shortcuts
         self.extensions = extensions
+        self.extensionToolbar = extensionToolbar
         self.extensionsInPrivate = extensionsInPrivate
         self.extensionCompat = extensionCompat
         self.extensionUpdates = extensionUpdates
@@ -189,6 +198,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
+        extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)
         extensionsInPrivate = c.decodeValue(.extensionsInPrivate, d.extensionsInPrivate, issues)
         extensionCompat = c.decodeEntries(.extensionCompat, d.extensionCompat, issues)
         extensionUpdates = c.decodeValue(.extensionUpdates, d.extensionUpdates, issues)
@@ -245,6 +255,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
 
     /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.
     public func isExtensionEnabled(_ folder: String) -> Bool { extensions[folder] ?? true }
+
+    /// Where folder `folder`'s toolbar button goes; `pinned` unless `extensionToolbar` says otherwise.
+    public func toolbarPlacement(folder: String) -> ExtensionToolbarPlacement { extensionToolbar[folder] ?? .pinned }
 
     /// The `extensionCompat` entry for folder `folder`, or the defaults.
     public func compat(forFolder folder: String) -> ExtensionCompatConfig { extensionCompat[folder] ?? ExtensionCompatConfig() }

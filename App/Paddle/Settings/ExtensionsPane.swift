@@ -137,6 +137,18 @@ struct ExtensionsPane: View {
         .help("extensionCompat.\(summary.folder).private in config.json; unset follows extensionsInPrivate")
         .disabled(model.controlsDisabled || busy.contains(summary.folder))
 
+        Picker("Toolbar button", selection: Binding(
+            get: { model.file.toolbarPlacement(folder: summary.folder) },
+            set: { placement in run(summary.folder) { await model.setToolbarPlacement(summary.folder, placement) } }
+        )) {
+            Text("On the toolbar").tag(ExtensionToolbarPlacement.pinned)
+            Text("In the Extensions menu").tag(ExtensionToolbarPlacement.menu)
+            Text("Hidden").tag(ExtensionToolbarPlacement.hidden)
+        }
+        .pickerStyle(.menu)
+        .help("extensionToolbar.\(summary.folder) in config.json")
+        .disabled(model.controlsDisabled || busy.contains(summary.folder))
+
         if !summary.compatNotes.isEmpty {
             LabeledContent("Compatibility") {
                 VStack(alignment: .trailing, spacing: 2) {

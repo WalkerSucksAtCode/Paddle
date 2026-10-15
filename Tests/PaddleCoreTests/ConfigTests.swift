@@ -149,4 +149,13 @@ struct ConfigTests {
         #expect(config.isExtensionEnabled("anything"))
         #expect(try PaddleConfig.decode(PaddleConfig(extensions: ["x": false]).encoded()).extensions == ["x": false])
     }
+
+    @Test func extensionToolbarDecodesAndSkipsBadEntries() throws {
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(
+            Data(#"{"extensionToolbar": {"a": "menu", "b": "hidden", "c": "sideways"}}"#.utf8))
+        #expect(config.extensionToolbar == ["a": .menu, "b": .hidden])
+        #expect(issues.map(\.path) == [["extensionToolbar", "c"]])
+        #expect(config.toolbarPlacement(folder: "a") == .menu)
+        #expect(config.toolbarPlacement(folder: "zzz") == .pinned)
+    }
 }

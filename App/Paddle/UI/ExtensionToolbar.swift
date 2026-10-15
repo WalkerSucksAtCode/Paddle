@@ -9,17 +9,109 @@ import WebKit
 /// of extensions allowed in private windows.
 struct ExtensionToolbar: View {
     let host: ExtensionHost
+    let model: BrowserModel
     let tab: Tab?
     let isPrivate: Bool
+    let placements: [String: ExtensionToolbarPlacement]
 
     var body: some View {
+        let shown = host.loaded.filter { $0.hasAction && (!isPrivate || $0.allowedInPrivate) }
+        let inMenu = shown.filter { (placements[$0.name] ?? .pinned) == .menu }
         HStack(spacing: 2) {
-            ForEach(host.loaded) { ext in
-                if ext.hasAction && (!isPrivate || ext.allowedInPrivate) {
-                    ExtensionToolbarItem(ext: ext, tab: tab)
-                }
+            ForEach(shown.filter { (placements[$0.name] ?? .pinned) == .pinned }) { ext in
+                ExtensionToolbarItem(ext: ext, tab: tab)
+            }
+            if !inMenu.isEmpty {
+                ExtensionOverflowButton(host: host, model: model, tab: tab, extensions: inMenu)
+                    .frame(width: 26, height: 26)
             }
         }
+    }
+}
+
+/// The puzzle-piece button that holds the extensions placed `menu`.
+struct ExtensionOverflowButton: NSViewRepresentable {
+    let host: ExtensionHost
+    let model: BrowserModel
+    let tab: Tab?
+    let extensions: [LoadedExtension]
+
+    func makeNSView(context: Context) -> ExtensionOverflowNSButton { ExtensionOverflowNSButton() }
+
+    func updateNSView(_ button: ExtensionOverflowNSButton, context: Context) {
+        button.host = host
+        button.model = model
+        button.tab = tab
+        button.extensions = extensions
+    }
+}
+
+final class ExtensionOverflowNSButton: NSButton {
+    static let identifier = NSUserInterfaceItemIdentifier("extension-overflow")
+
+    var host: ExtensionHost?
+    var model: BrowserModel?
+    weak var tab: Tab?
+    var extensions: [LoadedExtension] = []
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 26, height: 26))
+        isBordered = false
+        imagePosition = .imageOnly
+        image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "Extensions")?
+            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        focusRingType = .none
+        toolTip = "Extensions"
+        setAccessibilityLabel("Extensions")
+        identifier = Self.identifier
+        target = self
+        action = #selector(showMenu)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func showMenu() {
+        let menu = makeMenu()
+        // Left edges aligned under the button (above it when the view is flipped).
+        let y = isFlipped ? bounds.maxY + 4 : bounds.minY - 4
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: y), in: self)
+    }
+
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for ext in extensions {
+            let action = ext.context.action(for: tab?.extensionTab)
+            var title = ExtensionPermissionText.sanitize(ext.displayName, max: 60)
+            let badge = String(ExtensionPermissionText.sanitize(action?.badgeText ?? "", max: 16).prefix(4))
+            if !badge.isEmpty { title += " (\(badge))" }
+            let item = ClosureMenuItem(title: title) { [weak self] in self?.perform(ext) }
+            item.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: action)
+            item.isEnabled = action?.isEnabled ?? false
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let pin = NSMenuItem(title: "Pin to Toolbar", action: nil, keyEquivalent: "")
+        let pinMenu = NSMenu()
+        for ext in extensions {
+            let title = ExtensionPermissionText.sanitize(ext.displayName, max: 60)
+            let folder = ext.name
+            pinMenu.addItem(ClosureMenuItem(title: title) {
+                Task { await AppModel.shared.setToolbarPlacement(.pinned, folder: folder) }
+            })
+        }
+        pin.submenu = pinMenu
+        menu.addItem(pin)
+        let model = self.model
+        menu.addItem(ClosureMenuItem(title: "Manage Extensions…") { model?.showSettings(pane: .extensions) })
+        return menu
+    }
+
+    private func perform(_ ext: LoadedExtension) {
+        guard let host else { return }
+        host.popups.noteClick(from: self, for: ext.context)
+        host.performAction(ext, in: tab)
     }
 }
 
@@ -52,6 +144,16 @@ struct ExtensionActionButton: NSViewRepresentable {
 final class ExtensionActionNSButton: NSButton {
     static func identifier(for extensionID: String) -> NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("extension-action-\(extensionID)")
+    }
+
+    /// The 16 x 16 icon the button draws: the action's, else the extension's, else a puzzle piece.
+    static func toolbarIcon(ext: LoadedExtension, action: WKWebExtension.Action?) -> NSImage? {
+        let size = CGSize(width: 16, height: 16)
+        // A copy: WebKit may hand back its cached image, whose size shouldn't be changed under it.
+        let icon = (action?.icon(for: size) ?? ext.webExtension.icon(for: size))?.copy() as? NSImage
+            ?? NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
+        icon?.size = NSSize(width: 16, height: 16)
+        return icon
     }
 
     private var ext: LoadedExtension
@@ -94,12 +196,7 @@ final class ExtensionActionNSButton: NSButton {
         drawnExtension = ext
         drawnAction = action
         identifier = Self.identifier(for: ext.id)
-        let size = CGSize(width: 16, height: 16)
-        // A copy: WebKit may hand back its cached image, whose size shouldn't be changed under it.
-        let icon = (action?.icon(for: size) ?? ext.webExtension.icon(for: size))?.copy() as? NSImage
-            ?? NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
-        icon?.size = NSSize(width: 16, height: 16)
-        image = icon
+        image = Self.toolbarIcon(ext: ext, action: action)
         isEnabled = action?.isEnabled ?? false
         let rawLabel = action?.label ?? ""
         let label = ExtensionPermissionText.sanitize(rawLabel.isEmpty ? ext.displayName : rawLabel, max: 120)
@@ -142,6 +239,14 @@ final class ExtensionActionNSButton: NSButton {
     /// header with sanitized titles, so an extension can't pass its items off as Paddle's.
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = NSMenu()
+        let folder = ext.name
+        menu.addItem(ClosureMenuItem(title: "Unpin from Toolbar") {
+            Task { await AppModel.shared.setToolbarPlacement(.menu, folder: folder) }
+        })
+        menu.addItem(ClosureMenuItem(title: "Hide Button") {
+            Task { await AppModel.shared.setToolbarPlacement(.hidden, folder: folder) }
+        })
+        menu.addItem(.separator())
         if ext.context.optionsPageURL != nil {
             let options = NSMenuItem(title: "Options…", action: #selector(openOptions), keyEquivalent: "")
             options.target = self

@@ -360,6 +360,7 @@ final class AppModel {
             case .developerTools: old.developerTools != new.developerTools
             case .shortcuts: old.shortcuts != new.shortcuts
             case .extensions: old.extensions != new.extensions
+            case .extensionToolbar: old.extensionToolbar != new.extensionToolbar
             case .extensionsInPrivate: old.extensionsInPrivate != new.extensionsInPrivate
             case .extensionCompat: old.extensionCompat != new.extensionCompat
             case .extensionUpdates: old.extensionUpdates != new.extensionUpdates
@@ -393,6 +394,26 @@ final class AppModel {
             log.error("sites.\(key, privacy: .private).\(field.rawValue, privacy: .public) not written: \(reason, privacy: .public)")
         }
         return result
+    }
+
+    /// Sets where one extension's toolbar button goes (`extensionToolbar.<folder>`), starting from the file as it is on
+    /// disk now. `pinned` is the default, so it removes the entry.
+    func setToolbarPlacement(_ placement: ExtensionToolbarPlacement, folder: String) async {
+        let disk: Data
+        do {
+            disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
+        } catch {
+            log.error("extensionToolbar.\(folder, privacy: .private) not written: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        let result = await writeConfig([ConfigChange("extensionToolbar", folder, placement == .pinned ? nil : .string(placement.rawValue))], base: disk)
+        switch result {
+        case .written: break
+        case .conflict(let paths):
+            log.error("extensionToolbar.\(folder, privacy: .private) not written: changed on disk (\(paths.count) paths)")
+        case .failed(let reason):
+            log.error("extensionToolbar.\(folder, privacy: .private) not written: \(reason, privacy: .public)")
+        }
     }
 
     /// The zoom a page on `host` opens at: `sites` in ordinary windows; in private ones what was set there this
