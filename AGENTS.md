@@ -20,8 +20,9 @@ Personal macOS web browser built on the system WebKit (`WKWebView`). Goals: reso
 - Core tests: `swift test`
 - Ad-blocking oracle (opt-in, ~2.5 min): `PADDLE_ORACLE=1 swift test --filter AdblockOracle` compares the converter with uBlock Origin on 221k real requests and writes `build/oracle/report.txt`. Needs `ublock-matches.tsv` and the `regression-testing` `easylist.txt` / `easyprivacy.txt` from github.com/brave/adblock-rust (`data/`) in `build/oracle/`.
 - Regenerate project after editing `project.yml`: `xcodegen generate`
-- App build: `xcodebuild -project Paddle.xcodeproj -scheme Paddle -configuration Debug -derivedDataPath build/DerivedData -allowProvisioningUpdates build`
-- Run: `open build/DerivedData/Build/Products/Debug/Paddle.app`
+- App build: `xcodebuild -project Paddle.xcodeproj -scheme Paddle -configuration Debug -derivedDataPath build/DerivedData.noindex -allowProvisioningUpdates build`
+- Run: `open build/DerivedData.noindex/Build/Products/Debug/Paddle.app`
+- Build folders end in `.noindex` (`build/DerivedData.noindex`, `build/ReleaseDerivedData.noindex`): Spotlight and Launch Services then skip the build copies, so only `/Applications/Paddle.app` shows up as Paddle and handles links and notification clicks.
 - Logs: `log show --predicate 'subsystem == "com.walker.Paddle"' --last 5m --info`
 
 ## Rules

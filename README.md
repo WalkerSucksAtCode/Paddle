@@ -118,5 +118,5 @@ Paddle runs WebExtensions (the Chrome and Firefox add-on format) on WebKit's own
 ## Build
 
 ```bash
-xcodegen generate && xcodebuild -project Paddle.xcodeproj -scheme Paddle -configuration Debug -derivedDataPath build/DerivedData -allowProvisioningUpdates build
+xcodegen generate && xcodebuild -project Paddle.xcodeproj -scheme Paddle -configuration Debug -derivedDataPath build/DerivedData.noindex -allowProvisioningUpdates build
 ```
