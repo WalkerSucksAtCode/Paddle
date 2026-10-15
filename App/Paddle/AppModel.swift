@@ -186,6 +186,7 @@ final class AppModel {
         web.apply(config)
         applyAppearance(config.appearance)
         MainMenu.applyShortcuts(config.shortcuts)
+        MainMenu.setDevelopMenu(visible: config.developerTools)
         extensions.prepare(config: config)
 
         // Windows open before the block lists are in: tabs make their web views now, and their first page loads
@@ -386,6 +387,7 @@ final class AppModel {
             // Remote inspection follows at once; the context-menu item needs a new page (its configuration).
             for tab in allTabs { tab.webView?.isInspectable = new.developerTools }
             for ext in extensions.loaded { ext.context.isInspectable = new.developerTools }
+            MainMenu.setDevelopMenu(visible: new.developerTools)
         }
         if keys.contains(.showTabMemory) {
             if new.showTabMemory {

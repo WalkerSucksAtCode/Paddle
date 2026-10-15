@@ -1,6 +1,7 @@
 import AppKit
 import os
 import PaddleCore
+import WebKit
 
 /// The menu bar. Every command has an action name (listed under "Shortcut action names" in README) that config.json's
 /// `shortcuts` can rebind, e.g. `"shortcuts": { "nextTab": "cmd+option+right" }`.
@@ -12,6 +13,9 @@ enum MainMenu {
     /// Hidden second shortcuts by the action they belong to (⇧⌘] for `nextTab`); `shortcuts` never changes them.
     private static var aliases: [String: [(String, NSEvent.ModifierFlags)]] = [:]
     private static let log = Logger(subsystem: "com.walker.Paddle", category: "menu")
+
+    /// The Develop menu's bar item; in the bar only while `developerTools` is on.
+    private static var developItem: NSMenuItem?
 
     static var actionNames: [String] { itemsByName.keys.sorted() }
 
@@ -79,7 +83,6 @@ enum MainMenu {
         add(view, "showDownloads", "Show Downloads", #selector(BrowserWindowController.paddleShowDownloads(_:)), "l", [.command, .option])
         view.addItem(.separator())
         add(view, "viewSource", "View Source", #selector(BrowserWindowController.paddleViewSource(_:)), "u", [.command, .option])
-        add(view, "webInspector", "Web Inspector", #selector(BrowserWindowController.paddleWebInspector(_:)), "i", [.command, .option])
         view.addItem(.separator())
         add(view, "fullScreen", "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
 
@@ -103,6 +106,28 @@ enum MainMenu {
         add(bookmarks, "exportBookmarks", "Export Bookmarks…", #selector(AppDelegate.paddleExportBookmarks(_:)), "", target: appDelegate)
         // Bookmarks themselves are listed below, filled in by BookmarksMenuDelegate when the menu opens.
         bookmarks.delegate = BookmarksMenuDelegate.shared
+
+        // Present only while config.developerTools is on (`setDevelopMenu(visible:)`). An item whose private WebKit call
+        // is missing is hidden, decided here once.
+        let develop = submenu(main, "Develop")
+        developItem = main.items.last
+        let webInspector = add(develop, "webInspector", "Show Web Inspector", #selector(BrowserWindowController.paddleWebInspector(_:)), "i", [.command, .option])
+        webInspector.isHidden = !WebInspector.isAvailable(NSSelectorFromString("show"))
+        let console = add(develop, "javaScriptConsole", "Show JavaScript Console", #selector(BrowserWindowController.paddleJavaScriptConsole(_:)), "c", [.command, .option])
+        console.isHidden = !WebInspector.isAvailable(NSSelectorFromString("showConsole"))
+        let selection = add(develop, "elementSelection", "Start Element Selection", #selector(BrowserWindowController.paddleElementSelection(_:)), "c", [.command, .shift])
+        selection.isHidden = !WebInspector.isAvailable(NSSelectorFromString("toggleElementSelection"))
+        develop.addItem(.separator())
+        let noBlockers = add(develop, "reloadWithoutContentBlockers", "Reload Without Content Blockers", #selector(BrowserWindowController.paddleReloadWithoutContentBlockers(_:)), "")
+        noBlockers.isHidden = !WKWebView.instancesRespond(to: NSSelectorFromString("_reloadWithoutContentBlockers"))
+        add(develop, "emptyCaches", "Empty Caches", #selector(BrowserWindowController.paddleEmptyCaches(_:)), "e", [.command, .option])
+        develop.addItem(.separator())
+        add(develop, "responsiveDesignMode", "Responsive Design Mode", #selector(BrowserWindowController.paddleToggleResponsiveDesignMode(_:)), "r", [.command, .control])
+        develop.addItem(.separator())
+        let background = DevelopMenuDelegate.backgroundPagesItem()
+        background.isHidden = !WebInspector.canInspectBackgroundPages
+        develop.addItem(background)
+        if !AppModel.shared.config.developerTools { main.removeItem(developItem!) }
 
         let tabs = submenu(main, "Tabs")
         add(tabs, "nextTab", "Show Next Tab", #selector(BrowserWindowController.paddleNextTab(_:)), "\t", [.control])
@@ -144,6 +169,18 @@ enum MainMenu {
         NSApp.windowsMenu = window
 
         return main
+    }
+
+    /// Puts the Develop menu in the menu bar (after Bookmarks) or takes it out, live when `developerTools` changes.
+    static func setDevelopMenu(visible: Bool) {
+        guard let main = NSApp.mainMenu, let item = developItem else { return }
+        let present = main.items.contains { $0 === item }
+        if visible, !present {
+            let bookmarks = main.items.firstIndex { $0.submenu?.title == "Bookmarks" }
+            main.insertItem(item, at: bookmarks.map { $0 + 1 } ?? main.items.count)
+        } else if !visible, present {
+            main.removeItem(item)
+        }
     }
 
     /// Restores default shortcuts, then applies config.json overrides. Bad entries are logged and skipped.
@@ -251,7 +288,7 @@ enum MainMenu {
     /// A fresh copy of the menu-bar command `name` (action, target, tag and its current shortcut, so a `shortcuts`
     /// rebinding shows here too), for the toolbar menu. `title` replaces the menu-bar title.
     static func copyOfItem(_ name: String, title: String? = nil) -> NSMenuItem? {
-        guard let item = itemsByName[name] else { return nil }
+        guard let item = itemsByName[name], !item.isHidden else { return nil }
         let copy = NSMenuItem(title: title ?? item.title, action: item.action, keyEquivalent: item.keyEquivalent)
         copy.keyEquivalentModifierMask = item.keyEquivalentModifierMask
         copy.target = item.target

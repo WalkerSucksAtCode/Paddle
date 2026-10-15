@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b built and checked in the app 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 built and checked in the app 2026-10-15, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -99,20 +99,36 @@ size control alone touches 72 fixed font sizes in 13 chrome files.
   change applies live to every window, and a broken theme file shows a warning and falls back.
 
 ## Wave 5: developer tools (extends what exists)
-Exists today: Web Inspector (⌥⌘I), right-click > Inspect Element, View Source (⌥⌘U), and the `developerTools` key.
-- [ ] A Develop menu, shown when `developerTools` is on. It holds:
-  - [ ] Show Web Inspector.
-  - [ ] JavaScript Console (⌥⌘C).
-  - [ ] Element picker (⇧⌘C).
-  - [ ] Page Source.
-  - [ ] Reload Without Cache.
-  - [ ] Reload Without Content Blockers (this page, once).
-  - [ ] Disable Caches (this session).
-  - [ ] Responsive Design Mode (device widths and user agents).
-  - [ ] Inspect an extension's background page.
-- [ ] A ≡ menu entry: Developer Tools.
-- Every private inspector call is behind a `responds(to:)` check; if it's missing, the item is hidden.
-- Done when: each item works on a real page, and the items hide cleanly when `developerTools` is off.
+Exists today: Web Inspector (⌥⌘I, View menu), right-click > Inspect Element, View Source (⌥⌘U), Reload Without Cache
+(⌥⌘R), and the `developerTools` key. Probed 2026-10-15 on macOS 27: `_WKInspector` has `show`, `showConsole`,
+`toggleElementSelection`, `isElementSelectionActive`; `WKWebView` has `_reloadWithoutContentBlockers`,
+`_setOverrideDeviceScaleFactor:`; `WKWebExtensionContext` has `_backgroundWebView`. Nothing turns caches off for a
+session (Web Inspector's Network tab has its own Disable Caches switch), so the menu empties them instead.
+- [x] A Develop menu between Bookmarks and Tabs, present only while `developerTools` is on (it appears and goes away
+  live). Rebindable action names in brackets:
+  - [x] Show Web Inspector ⌥⌘I (`webInspector`, moved here from View). (The console item opened the same inspector.)
+  - [x] Show JavaScript Console ⌥⌘C (`javaScriptConsole`).
+  - [x] Start Element Selection ⇧⌘C (`elementSelection`); reads Stop Element Selection while it's on.
+  - [x] Reload Without Content Blockers (`reloadWithoutContentBlockers`): this load only, the next one blocks again.
+    (A local EasyList-matched script and doubleclick's loaded once, then were blocked on the next reload.)
+  - [x] Empty Caches ⌥⌘E (`emptyCaches`): memory, disk and fetch caches of the window's data store (private windows
+    their own); cookies, storage and history stay. (The WebKit cache folder went from 257 MB to 4 MB.)
+  - [x] Responsive Design Mode ⌃⌘R (`responsiveDesignMode`), per tab, not saved: the page drawn at a device's size
+    (always 1:1, so viewport, pixel ratio, fixed positioning and clicks are exact; a device bigger than the window
+    scrolls: a scale effect broke hit-testing and WebKit's view scale misplaced fixed elements), centred on a plain
+    backdrop, under a bar with a device picker (iPhone SE 375 x 667, iPhone 16 393 x 852, iPhone 16
+    Pro Max 440 x 956, iPad mini 744 x 1133, iPad Air 820 x 1180, Laptop 1280 x 800; names and sizes, never icons
+    alone), Rotate, a user agent picker (Paddle, Safari iPhone, Safari iPad, Chrome Android) and Close. The device's
+    user agent wins over `siteUserAgents` and personas while it's on (`TabWebDelegate`), and the tab returns to its
+    own when it's off. Changing the user agent reloads the page.
+  - [x] Inspect Extension Background Page ▸, one entry per loaded extension with background content, by name.
+  - View Source (⌥⌘U) and Reload Without Cache (⌥⌘R) stay in View: they aren't developer-only.
+- [ ] The ≡ menu: a Developer Tools submenu with the same items, while `developerTools` is on. (Built; not opened in
+  the app.)
+- Every private call is behind a `responds(to:)` check; an item whose call is missing is hidden.
+- README: the Develop menu, the action names, the `developerTools` row.
+- Done when: each item works on a real page in the running app, extension background pages open in the inspector, and
+  the menu and submenu disappear when `developerTools` is off.
 
 ## Waves 6-9: chosen extras (Walker, 2026-10-14)
 - [ ] Wave 6, Profiles: separate cookies and logins per profile, for example Work and Personal (Safari profiles,

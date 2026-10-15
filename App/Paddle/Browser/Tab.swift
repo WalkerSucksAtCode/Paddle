@@ -61,6 +61,8 @@ final class Tab: Identifiable {
     @ObservationIgnored private var sessionID: String?
     /// Bumped whenever the web view is created or dropped, so the view layer re-attaches it.
     var generation = 0
+    /// Responsive Design Mode: the page drawn at a device's size. Nil when off. Not saved in the session.
+    var responsive: ResponsiveState?
 
     @ObservationIgnored private(set) var webView: WKWebView?
     /// Holds the web view, and the Web Inspector when it is docked (WebKit puts it beside the web view).
@@ -496,6 +498,39 @@ final class Tab: Identifiable {
         // Not `loadErrorPage`: after a crash there is no failed load to stand in for, and both of its loads append
         // a second item for the crashed page. Loading with `url` as base URL reuses the crashed page's item.
         webView.loadHTMLString(TabWebDelegate.errorPage(title: title, message: message, url: url, button: "Reload"), baseURL: url)
+    }
+
+    /// Turns Responsive Design Mode on or off. Leaving with a device user agent reloads, so the page returns to the tab's own.
+    func toggleResponsive() {
+        if let old = responsive {
+            responsive = nil
+            if old.userAgent != .paddle { reload() }
+        } else {
+            let state = ResponsiveState()
+            responsive = state
+            if state.userAgent != .paddle { reload() }
+        }
+        // The page moves between two WebContainers, and SwiftUI can update the outgoing one after the incoming one
+        // took the container, leaving the page blank. Once the switch has settled, make the shown one take it again.
+        DispatchQueue.main.async { [weak self] in self?.generation += 1 }
+    }
+
+    /// Picks a device and starts with its user agent. The page reloads when the agent changes.
+    func setResponsiveDevice(_ id: String) {
+        guard var state = responsive, let device = ResponsiveDevice.preset(id: id) else { return }
+        let old = state.userAgent
+        state.deviceID = id
+        state.userAgent = device.userAgent
+        responsive = state
+        if old != state.userAgent { reload() }
+    }
+
+    /// Changes the user agent Responsive Design Mode sends and reloads the page.
+    func setResponsiveUserAgent(_ agent: ResponsiveUserAgent) {
+        guard var state = responsive, state.userAgent != agent else { return }
+        state.userAgent = agent
+        responsive = state
+        reload()
     }
 
     /// The toolbar's Reload, View > Reload Page and an extension's `tabs.reload`. On one of Paddle's error or crash

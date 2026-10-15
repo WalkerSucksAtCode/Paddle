@@ -183,7 +183,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func applySiteUserAgent(
         for host: String, _ navigationAction: WKNavigationAction, _ preferences: WKWebpagePreferences, in webView: WKWebView
     ) -> Bool {
-        let wanted = AppModel.shared.config.pageUserAgent(forHost: host)
+        // Responsive Design Mode's device agent wins over siteUserAgents and personas while it is on.
+        let wanted = tab?.responsive?.userAgent.string ?? AppModel.shared.config.pageUserAgent(forHost: host)
         // Private WebKit API: a user agent for this navigation only, so history, form posts and restored
         // state are untouched.
         if preferences.responds(to: Self.setCustomUserAgent) {

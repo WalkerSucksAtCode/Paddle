@@ -79,6 +79,26 @@ final class ToolbarMenuNSButton: NSButton {
         zoom.view = ZoomMenuRowView(model: model)
         menu.addItem(zoom)
         menu.addItem(.separator())
+        if AppModel.shared.config.developerTools {
+            let develop = NSMenu(title: "Developer Tools")
+            for name in ["webInspector", "javaScriptConsole", "elementSelection"] {
+                if let item = MainMenu.copyOfItem(name) { develop.addItem(item) }
+            }
+            develop.addItem(.separator())
+            for name in ["reloadWithoutContentBlockers", "emptyCaches"] {
+                if let item = MainMenu.copyOfItem(name) { develop.addItem(item) }
+            }
+            develop.addItem(.separator())
+            if let item = MainMenu.copyOfItem("responsiveDesignMode") { develop.addItem(item) }
+            if WebInspector.canInspectBackgroundPages {
+                develop.addItem(.separator())
+                develop.addItem(DevelopMenuDelegate.backgroundPagesItem())
+            }
+            let item = NSMenuItem(title: "Developer Tools", action: nil, keyEquivalent: "")
+            item.submenu = develop
+            menu.addItem(item)
+            menu.addItem(.separator())
+        }
         addCommand("print")
         addCommand("importFromBrowser")
         menu.addItem(.separator())

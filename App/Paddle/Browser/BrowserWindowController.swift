@@ -227,6 +227,35 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if let webView { WebInspector.show(webView) }
     }
 
+    @objc func paddleJavaScriptConsole(_ sender: Any?) {
+        if let webView { WebInspector.showConsole(webView) }
+    }
+
+    @objc func paddleElementSelection(_ sender: Any?) {
+        if let webView { WebInspector.toggleElementSelection(webView) }
+    }
+
+    /// Reloads this once with the content blockers off; the next load blocks again.
+    @objc func paddleReloadWithoutContentBlockers(_ sender: Any?) {
+        let selector = NSSelectorFromString("_reloadWithoutContentBlockers")
+        if let webView, webView.responds(to: selector) { _ = webView.perform(selector) }
+    }
+
+    /// Empties the memory, disk and fetch caches of this window's data store (the private store in a private window).
+    /// Cookies, storage and history stay.
+    @objc func paddleEmptyCaches(_ sender: Any?) {
+        let store = webView?.configuration.websiteDataStore ?? (model.isPrivate ? nil : AppModel.shared.web.dataStore)
+        guard let store else { return }
+        let types: Set<String> = [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache, WKWebsiteDataTypeFetchCache]
+        Task { await store.removeData(ofTypes: types, modifiedSince: .distantPast) }
+    }
+
+    /// Develop > Responsive Design Mode: draws the page at a device's size under a bar with the device controls.
+    @objc func paddleToggleResponsiveDesignMode(_ sender: Any?) {
+        guard canActOnPage, let tab else { return }
+        tab.toggleResponsive()
+    }
+
     @objc func paddleViewSource(_ sender: Any?) {
         guard canActOnPage, let tab else { return }
         Task { await model.viewSource(of: tab) }
@@ -357,6 +386,13 @@ final class BrowserWindow: NSWindow {
 extension BrowserWindowController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(paddleToggleResponsiveDesignMode(_:)):
+            menuItem.state = tab?.responsive != nil ? .on : .off
+            return canActOnPage
+        case #selector(paddleElementSelection(_:)):
+            let active = webView.map(WebInspector.isElementSelectionActive) ?? false
+            menuItem.title = active ? "Stop Element Selection" : "Start Element Selection"
+            return webView != nil
         case #selector(paddleBack(_:)): return tab?.canGoBack ?? false
         case #selector(paddleForward(_:)): return tab?.canGoForward ?? false
         case #selector(paddleRenameTab(_:)): return tab != nil
@@ -372,7 +408,8 @@ extension BrowserWindowController: NSMenuItemValidation {
             return canActOnPage
         case #selector(paddleReload(_:)), #selector(paddleHardReload(_:)), #selector(paddleStop(_:)),
              #selector(paddleZoomIn(_:)), #selector(paddleZoomOut(_:)), #selector(paddleActualSize(_:)),
-             #selector(paddleWebInspector(_:)):
+             #selector(paddleWebInspector(_:)), #selector(paddleJavaScriptConsole(_:)),
+             #selector(paddleReloadWithoutContentBlockers(_:)), #selector(paddleEmptyCaches(_:)):
             return webView != nil
         case #selector(paddleToggleBookmark(_:)):
             let bookmarked = AppModel.shared.bookmarks.isBookmarked(tab?.url)

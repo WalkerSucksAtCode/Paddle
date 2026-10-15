@@ -153,8 +153,12 @@ struct BrowserView: View {
             HTTPSOnlyNotice(tab: tab, url: blocked)
                 .id(blocked)
         } else if let tab = model.selectedTab, tab.url != nil {
-            WebContainer(tab: tab, generation: tab.generation)
-                .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: tab) }
+            if tab.responsive != nil {
+                ResponsivePage(tab: tab)
+            } else {
+                WebContainer(tab: tab, generation: tab.generation)
+                    .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: tab) }
+            }
         } else {
             NewTabPage(model: model, app: app)
         }
