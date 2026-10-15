@@ -1,4 +1,5 @@
 import AppKit
+import PaddleCore
 
 @main
 enum PaddleMain {
@@ -100,6 +101,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if menuItem.action == #selector(paddleToggleBookmarksBar(_:)) {
             menuItem.title = AppModel.shared.showBookmarksBar ? "Hide Bookmarks Bar" : "Show Bookmarks Bar"
         }
+        if menuItem.action == #selector(paddleToggleVerticalTabs(_:)) {
+            menuItem.state = AppModel.shared.config.tabLayout == .vertical ? .on : .off
+        }
+        if menuItem.action == #selector(paddleToggleSidebarCollapsed(_:)) {
+            menuItem.title = UserDefaults.standard.bool(forKey: SidebarMetrics.collapsedKey) ? "Expand Sidebar" : "Collapse Sidebar"
+            return AppModel.shared.config.tabLayout == .vertical
+        }
         if menuItem.action == #selector(paddleMakeDefaultBrowser(_:)) {
             let isDefault = DefaultBrowser.isDefault
             menuItem.title = isDefault ? "Paddle Is the Default Browser" : "Make Paddle the Default Browser…"
@@ -140,6 +148,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func paddleShowBookmarks(_ sender: Any?) { BookmarksWindowController.show() }
 
     @objc func paddleToggleBookmarksBar(_ sender: Any?) { AppModel.shared.showBookmarksBar.toggle() }
+
+    @objc func paddleToggleVerticalTabs(_ sender: Any?) {
+        let next: TabLayout = AppModel.shared.config.tabLayout == .vertical ? .horizontal : .vertical
+        Task { await AppModel.shared.setTabLayout(next) }
+    }
+
+    @objc func paddleToggleSidebarCollapsed(_ sender: Any?) {
+        let defaults = UserDefaults.standard
+        defaults.set(!defaults.bool(forKey: SidebarMetrics.collapsedKey), forKey: SidebarMetrics.collapsedKey)
+    }
 
     @objc func paddleImportBookmarks(_ sender: Any?) { BookmarkFiles.importFile() }
 

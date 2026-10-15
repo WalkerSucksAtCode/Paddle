@@ -158,4 +158,12 @@ struct ConfigTests {
         #expect(config.toolbarPlacement(folder: "a") == .menu)
         #expect(config.toolbarPlacement(folder: "zzz") == .pinned)
     }
+
+    @Test func tabLayoutDecodes() throws {
+        #expect(PaddleConfig().tabLayout == .horizontal)
+        #expect(try PaddleConfig.decode(Data(#"{"tabLayout": "vertical"}"#.utf8)).tabLayout == .vertical)
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"tabLayout": "diagonal"}"#.utf8))
+        #expect(config.tabLayout == .horizontal)
+        #expect(issues.map(\.path) == [["tabLayout"]])
+    }
 }

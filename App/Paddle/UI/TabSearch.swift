@@ -125,3 +125,10 @@ struct TabSearchView: View {
         entry.model.controller?.window?.makeKeyAndOrderFront(nil)
     }
 }
+
+extension View {
+    /// Attaches the Search Tabs popover to this view: the strip's leading inset, or the sidebar's top row.
+    func tabSearchPopover(model: BrowserModel) -> some View {
+        popover(isPresented: Bindable(model).tabSearchVisible, arrowEdge: .bottom) { TabSearchView(model: model) }
+    }
+}

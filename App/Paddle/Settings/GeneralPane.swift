@@ -32,6 +32,15 @@ struct GeneralPane: View {
                 ))
                 .help("showFullAddress in config.json. Off, the address field shows only the site until you click it.")
                 .disabled(model.controlsDisabled)
+                Picker("Tab layout", selection: Binding(
+                    get: { model.file.tabLayout },
+                    set: { value in Task { await model.saveKey(.tabLayout, .string(value.rawValue)) } }
+                )) {
+                    Text("Horizontal").tag(TabLayout.horizontal)
+                    Text("Vertical").tag(TabLayout.vertical)
+                }
+                .help("tabLayout in config.json, View > Vertical Tabs. Vertical shows the tabs in a sidebar.")
+                .disabled(model.controlsDisabled)
             }
         }
     }

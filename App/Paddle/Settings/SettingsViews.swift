@@ -45,7 +45,7 @@ enum SettingsPane: String, CaseIterable {
         case .general: [
             "homepage", "newTabPage", "new tab page", "start page", "new windows", "new tabs", "search engine",
             "searchTemplate", "searchSuggestTemplate", "search suggestions", "address", "showFullAddress",
-            "bookmarks bar", "default browser",
+            "bookmarks bar", "default browser", "tab layout", "vertical tabs", "sidebar", "tabLayout",
         ]
         case .tabsMemory: [
             "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",

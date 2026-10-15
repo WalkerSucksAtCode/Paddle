@@ -9,6 +9,11 @@ public enum ExtensionToolbarPlacement: String, Codable, Sendable, CaseIterable {
 /// so a config file only needs the keys it changes. Each key decodes on its own: a value of the wrong type falls back
 /// to its default, an object key skips only the entry that is wrong and a list only the item, and
 /// `decodeReportingIssues` says which. Only invalid JSON, or a top level that isn't an object, refuses the whole file.
+/// Where the tabs show: a strip above the toolbar, or a sidebar.
+public enum TabLayout: String, Codable, Sendable, CaseIterable {
+    case horizontal, vertical
+}
+
 public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Page loaded in a new window. `about:blank` gives an empty page with the address field focused.
     public var homepage: String
@@ -64,6 +69,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var showTabMemory: Bool
     /// The address field shows a web page's whole address while you aren't editing it; off shows only its site.
     public var showFullAddress: Bool
+    /// Where the tabs go: `horizontal` in a strip above the toolbar, `vertical` in a sidebar. View > Vertical Tabs.
+    public var tabLayout: TabLayout
     /// Right-click > Inspect Element and the Web Inspector.
     public var developerTools: Bool
     /// Load http:// pages over https:// instead. A site that doesn't answer securely gets a notice with Continue to
@@ -103,7 +110,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
-        case showTabMemory, showFullAddress, developerTools, httpsOnly
+        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
     }
@@ -130,6 +137,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sites: [String: SiteSettings] = [:],
         showTabMemory: Bool = true,
         showFullAddress: Bool = false,
+        tabLayout: TabLayout = .horizontal,
         developerTools: Bool = true,
         httpsOnly: Bool = true,
         shortcuts: [String: String] = [:],
@@ -161,6 +169,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.sites = sites
         self.showTabMemory = showTabMemory
         self.showFullAddress = showFullAddress
+        self.tabLayout = tabLayout
         self.developerTools = developerTools
         self.httpsOnly = httpsOnly
         self.shortcuts = shortcuts
@@ -200,6 +209,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sites = c.decodeEntries(.sites, d.sites, issues)
         showTabMemory = c.decodeValue(.showTabMemory, d.showTabMemory, issues)
         showFullAddress = c.decodeValue(.showFullAddress, d.showFullAddress, issues)
+        tabLayout = c.decodeValue(.tabLayout, d.tabLayout, issues)
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
         httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
         shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)

@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 built and checked in the app 2026-10-15, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 built and checked in the app 2026-10-15, uncommitted.
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -23,16 +23,16 @@ Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming
 
 ## Wave 2: vertical tabs (optional; horizontal stays the default)
 Where from: Edge, Brave and Firefox vertical tabs; the Arc and Zen sidebar.
-- [ ] New `tabLayout` key ("horizontal" | "vertical"); View > Vertical Tabs (rebindable `toggleVerticalTabs`);
-  also in Settings > Appearance.
+- [x] New `tabLayout` key ("horizontal" | "vertical"); View > Vertical Tabs (rebindable `toggleVerticalTabs`);
+  also in Settings > Appearance. (The picker is in Settings > General until Wave 4 adds Appearance.)
 - [ ] Sidebar contents:
-  - [ ] Pinned tabs as an icon grid at the top (Arc favorites / Zen essentials).
-  - [ ] Groups as collapsible sections.
-  - [ ] Tab rows with close, sound and asleep state.
-  - [ ] A New Tab row.
-  - [ ] Drag to reorder, middle-click to close, and the same right-click menus as the strip.
-- [ ] Sidebar width can be dragged and is remembered. It can collapse to icons only (Edge).
-- [ ] Window layout: the traffic lights and toolbar form the top row, and the tab strip row goes away.
+  - [x] Pinned tabs as an icon grid at the top (Arc favorites / Zen essentials).
+  - [x] Groups as collapsible sections.
+  - [x] Tab rows with close, sound and asleep state. (The sound button wasn't seen in the app.)
+  - [x] A New Tab row. (It's a + button in the sidebar's top row.)
+  - [ ] Drag to reorder, middle-click to close, and the same right-click menus as the strip. (The menus were checked; dragging and middle-click in the sidebar were not.)
+- [x] Sidebar width can be dragged and is remembered. It can collapse to icons only (Edge).
+- [x] Window layout: the traffic lights and toolbar form the top row, and the tab strip row goes away.
 - Done when: switching layouts keeps the tabs, groups and selection, and both layouts pass the Wave 1 checks.
 
 ## Wave 3: New Tab page with pinned sites

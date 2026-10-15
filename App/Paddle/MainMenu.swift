@@ -74,6 +74,8 @@ enum MainMenu {
         add(view, "zoomOut", "Zoom Out", #selector(BrowserWindowController.paddleZoomOut(_:)), "-")
         add(view, "actualSize", "Actual Size", #selector(BrowserWindowController.paddleActualSize(_:)), "0")
         view.addItem(.separator())
+        add(view, "toggleVerticalTabs", "Vertical Tabs", #selector(AppDelegate.paddleToggleVerticalTabs(_:)), "", target: appDelegate)
+        add(view, "toggleSidebarCollapsed", "Collapse Sidebar", #selector(AppDelegate.paddleToggleSidebarCollapsed(_:)), "", target: appDelegate)
         add(view, "showDownloads", "Show Downloads", #selector(BrowserWindowController.paddleShowDownloads(_:)), "l", [.command, .option])
         view.addItem(.separator())
         add(view, "viewSource", "View Source", #selector(BrowserWindowController.paddleViewSource(_:)), "u", [.command, .option])

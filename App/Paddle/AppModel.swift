@@ -360,6 +360,7 @@ final class AppModel {
             case .sites: old.sites != new.sites
             case .showTabMemory: old.showTabMemory != new.showTabMemory
             case .showFullAddress: old.showFullAddress != new.showFullAddress
+            case .tabLayout: old.tabLayout != new.tabLayout
             case .developerTools: old.developerTools != new.developerTools
             case .httpsOnly: old.httpsOnly != new.httpsOnly
             case .shortcuts: old.shortcuts != new.shortcuts
@@ -417,6 +418,22 @@ final class AppModel {
             log.error("extensionToolbar.\(folder, privacy: .private) not written: changed on disk (\(paths.count) paths)")
         case .failed(let reason):
             log.error("extensionToolbar.\(folder, privacy: .private) not written: \(reason, privacy: .public)")
+        }
+    }
+
+    /// Sets `tabLayout` through `writeConfig`, the way Settings does (a value equal to the default removes the key).
+    func setTabLayout(_ layout: TabLayout) async {
+        let disk: Data
+        do {
+            disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
+        } catch {
+            log.error("tabLayout not written: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        switch await writeConfig([ConfigChange("tabLayout", .string(layout.rawValue))], base: disk) {
+        case .written: break
+        case .conflict(let paths): log.error("tabLayout not written: changed on disk (\(paths.count) paths)")
+        case .failed(let reason): log.error("tabLayout not written: \(reason, privacy: .public)")
         }
     }
 

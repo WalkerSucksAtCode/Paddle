@@ -151,27 +151,7 @@ struct TabGroupLabel: View {
         .accessibilityAction { model.toggleCollapsed(group) }
         .accessibilityAction(named: "Rename Group") { model.renamingGroupID = group.id }
         .help(group.isCollapsed ? "Click to show the group's tabs" : "Click to collapse the group")
-        .contextMenu {
-            Button("Rename Group…") { model.renamingGroupID = group.id }
-            Menu("Color") {
-                ForEach(TabGroupColor.allCases, id: \.self) { color in
-                    Button {
-                        model.setColor(color, of: group)
-                    } label: {
-                        if color == group.color {
-                            Label(color.title, systemImage: "checkmark")
-                        } else {
-                            Text(color.title)
-                        }
-                    }
-                }
-            }
-            Button("New Tab in Group") { model.newTab(in: group) }
-            Divider()
-            Button("Ungroup") { model.ungroup(group) }
-            Button("Close Group") { model.closeGroup(group) }
-            Button("Move Group to New Window") { model.moveGroupToNewWindow(group) }
-        }
+        .contextMenu { TabGroupContextMenu(group: group, model: model) }
     }
 
     /// "Group Work, Blue, 3 tabs, collapsed".
