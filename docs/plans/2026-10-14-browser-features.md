@@ -13,11 +13,14 @@ Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming
   in session.json; PaddleCore tests.
 - [x] Rename Tab: right-click > Rename Tab… or double-click the title, edited in place; empty restores the page title.
   It survives navigation and relaunch.
-- [ ] Tab groups:
+- [x] Tab groups:
   - [x] Right-click a tab > Add Tab to New Group / Add to Group ▸.
   - [x] A group label in the strip (name and color). Clicking it collapses or expands the group.
-  - [ ] Right-click the label: Rename, Color, Ungroup, Close Group, Move Group to New Window. (Built; only Color was checked in the app.)
-  - [ ] A tab opened from a grouped tab joins its group, and dragging a tab moves it in or out of a group. (Dropping onto the label was checked; opening from a grouped tab and dragging out were not.)
+  - [x] Right-click the label: Rename, Color, Ungroup, Close Group, Move Group to New Window. (Color checked first;
+    the rest, and New Tab in Group, 2026-10-15.)
+  - [x] A tab opened from a grouped tab joins its group, and dragging a tab moves it in or out of a group. (Dropping
+    onto the label was checked; 2026-10-15: a ⌘-clicked link from a grouped tab joined it, and dragging a tab past an
+    ungrouped one took it out.)
   - [x] Group colors differ in brightness as well as hue, and the name is always shown, never color alone.
 - Done when: a renamed tab and a two-group window survive a relaunch, collapse works, and drag in and out works.
 
@@ -25,12 +28,13 @@ Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming
 Where from: Edge, Brave and Firefox vertical tabs; the Arc and Zen sidebar.
 - [x] New `tabLayout` key ("horizontal" | "vertical"); View > Vertical Tabs (rebindable `toggleVerticalTabs`);
   also in Settings > Appearance. (The picker is in Settings > General until Wave 4 adds Appearance.)
-- [ ] Sidebar contents:
+- [x] Sidebar contents:
   - [x] Pinned tabs as an icon grid at the top (Arc favorites / Zen essentials).
   - [x] Groups as collapsible sections.
   - [x] Tab rows with close, sound and asleep state. (The sound button wasn't seen in the app.)
   - [x] A New Tab row. (It's a + button in the sidebar's top row.)
-  - [ ] Drag to reorder, middle-click to close, and the same right-click menus as the strip. (The menus were checked; dragging and middle-click in the sidebar were not.)
+  - [x] Drag to reorder, middle-click to close, and the same right-click menus as the strip. (The menus were checked;
+    dragging and middle-click, 2026-10-15.)
 - [x] Sidebar width can be dragged and is remembered. It can collapse to icons only (Edge).
 - [x] Window layout: the traffic lights and toolbar form the top row, and the tab strip row goes away.
 - Done when: switching layouts keeps the tabs, groups and selection, and both layouts pass the Wave 1 checks.
@@ -126,8 +130,8 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     own when it's off. Changing the user agent reloads the page.
   - [x] Inspect Extension Background Page ▸, one entry per loaded extension with background content, by name.
   - View Source (⌥⌘U) and Reload Without Cache (⌥⌘R) stay in View: they aren't developer-only.
-- [ ] The ≡ menu: a Developer Tools submenu with the same items, while `developerTools` is on. (Built; not opened in
-  the app.)
+- [x] The ≡ menu: a Developer Tools submenu with the same items, while `developerTools` is on. (Opened in the app
+  2026-10-15: the same seven items as the Develop menu.)
 - Every private call is behind a `responds(to:)` check; an item whose call is missing is hidden.
 - README: the Develop menu, the action names, the `developerTools` row.
 - Done when: each item works on a real page in the running app, extension background pages open in the inspector, and
@@ -147,13 +151,14 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
   History window, Clear History, the New Tab page's Frequently visited. Shared: bookmarks, New Tab pinned sites,
   config.json, block lists, favicons, downloads. Private windows stay as they are (one throwaway store).
   (Checked: a cookie and localStorage set in Work were absent in Personal; each profile's history.sqlite held only
-  its own visit; Work's New Tab page showed only Work's frequent site. Suggestions, the History window and Clear
-  History per profile were not exercised.)
+  its own visit; Work's New Tab page showed only Work's frequent site. 2026-10-15, in a second profile: address
+  suggestions and the History window (and History menu) showed only its pages, and Clear History cleared only it.)
 - [x] Windows: a window belongs to one profile, saved in session.json (`profile` on the window) and restored into it.
   With more than one profile the toolbar shows the window's profile (symbol and name). File > New Window opens in the
   front window's profile; File > New Window in Profile ▸ lists them. A tab never moves between windows of different
   profiles (drops are refused; Move Group to New Window keeps the profile). (Checked: badge, relaunch back into the
-  profile. The New Window in Profile submenu and tab moves between profiles were not exercised.)
+  profile; 2026-10-15: New Window in Profile. Not exercised: a refused drop of a tab onto another profile's
+  window.)
 - [x] Settings > Profiles: add (name and symbol), rename, change symbol, open a window, delete. (Checked all but
   changing the symbol. Deleting removed WebsiteDataStore/<id>, WebExtensions/<id> and profiles/<id>/.) Settings now
   reuses an open Settings tab only in a window of the same profile: before, a Work window landed on Personal's. Deleting asks first,
@@ -202,8 +207,9 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     (Checked: ⌃1/⌃2 with a page focused (control shortcuts now reach the menu first), the Tabs menu, the sidebar row,
     two relaunches, Move Tab to Space, Delete Space with its alert and Cancel, ⇧⌘T after it, Search Tabs, and the
     blue tint measured at its 25 % blend. 2026-10-15: a pin and a group inside a second space, through Next/Previous
-    Space and a relaunch. Not exercised: an extension activating a tab in another space, and a space tint strong
-    enough to be capped.)
+    Space and a relaunch. A space tint can't reach the cap: it blends at a fixed 25 %, and the worst preset (yellow on
+    the dark default look) keeps the selected title at 5.71:1. Not exercised: an extension activating a tab in
+    another space.)
 - [ ] Wave 7b, control bridge (Walker, 2026-10-15; before Split view): a local MCP server so Claude sessions can
   read and drive Paddle directly, instead of screenshots and synthetic clicks (which stop when the screen locks, can't
   press Return in the background, and miss menu rows). Off by default.
@@ -217,7 +223,9 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
   - [x] Switch: `controlBridge` (false) in config.json and Settings > Advanced. On: the socket opens; off: it closes
     and connected clients are dropped. While a client is connected the toolbar shows "Claude connected" (text and
     symbol, not color), clickable to disconnect. (Checked: off by default, on and off live through Reload Config,
-    the label in a window snapshot. Not clicked: Disconnect, and the Settings section was not looked at.)
+    the label in a window snapshot; 2026-10-15: Disconnect asks first and drops the session, which sees end-of-file,
+    while an idle session stays connected past 75 s; the Settings section shows both switches, the setup command,
+    the session count and the recent calls.)
   - [x] Read tools: `paddle_state` (windows with profile and spaces, tabs with id, title, URL, pinned, group, asleep,
     selected; app build; config warnings), `page_text` (a tab's visible text), `page_snapshot` (a tab's PNG through
     WebKit's own snapshot: no Screen Recording permission, works in the background or with the screen locked),
@@ -228,12 +236,14 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     `set_config` (through the same conflict-checked writer as Settings), and `run_js` (in an isolated content world,
     not the page's, returning JSON; http(s) pages only). menu_action refuses quit, the clipboard and file
     commands; set_config refuses controlBridge, the extension and search keys.
-  - [ ] Limits: private windows are invisible to the bridge (not listed, not reachable). No tool reads cookies,
+  - [x] Limits: private windows are invisible to the bridge (not listed, not reachable). No tool reads cookies,
     passwords, the keychain, downloads or files outside Paddle's support folder. Page text and script results are
     labelled as untrusted page content in tool results. Every call is logged; Settings shows the last 50.
     (Build review 2026-10-15: `run_js` can't meet "no cookies or passwords" with a JS guard alone; a script reaches
     what page scripts can. Walker's call: `run_js` sits behind its own switch, `controlBridgeScripts` (Allow page
-    scripts), off by default and changeable only in Settings or config.json; it keeps the guard and the redaction.)
+    scripts), off by default and changeable only in Settings or config.json; it keeps the guard and the redaction.
+    Checked 2026-10-15 with a private window in front: paddle_state listed only the normal window, open_url opened
+    there, and window_snapshot drew it.)
   - Done when: from a Claude Code session, with Paddle in the background and the screen locked, the tools list
     tabs, snapshot a page, read its text, run a menu command and a config change, and read Paddle's logs; with the
     switch off there is no socket; `lsof` shows Paddle on no TCP port; private windows never appear. (Checked with a
@@ -256,15 +266,15 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     until it is wide enough again. (Checked: a drag to 1120 / 602 pt, a double-click back to 861 / 861; a drag hard
     left stops the left side at 317 pt (320 less half the divider); with 560 pt of content only the focused side
     shows, 559 pt wide.)
-  - [ ] Making and ending one: Tabs > Split View (`toggleSplitView`, ⌃⌘\): with one tab it splits with the next tab
+  - [x] Making and ending one: Tabs > Split View (`toggleSplitView`, ⌃⌘\): with one tab it splits with the next tab
     in the strip (or a new New Tab when there is none); in a split it ends the split and keeps the focused tab.
     A tab's right-click menu: "Split with Current Tab" (pairs it with the selected tab) and "End Split". Tabs > Swap
     Sides (`swapSplitSides`) and Focus Other Side (`focusOtherSplitSide`, no default key). Closing,
     pinning, moving to another window or space, or grouping apart one side ends the split. (Checked through the
     bridge: Split View makes one, Swap Sides swaps pages and strip order and keeps focus, closing one side ends it.
     2026-10-15: Focus Other Side, and ending by pin, by Move Tab to Space and by grouping one side apart; with the
-    last tab focused, Split View makes a New Tab for the right side. Not checked: the right-click items. Swapping
-    moves both web views to new hosts, so each page sees one brief 0 × 0 resize.)
+    last tab focused, Split View makes a New Tab for the right side; the tab right-click Split with Current Tab and
+    End Split. Swapping moves both web views to new hosts, so each page sees one brief 0 × 0 resize.)
   - [x] Strip and sidebar: the two tabs sit together with a split symbol (rectangle.split.2x1) on the pair and a
     shared bracket underline; both look selected when the split shows, the focused one with the stronger edge.
     (Checked in the strip and, 2026-10-15, the sidebar. Fixed then: switching layout during a split left both panes
@@ -301,12 +311,14 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     saves to Downloads with the preview kept, and previewing a file's URL downloads it and closes the preview. Not
     checked: swipe. A popup from a preview is selected, which closes the preview, so a sign-in popup loses its
     opener page.)
-  - [x] Becoming a tab: Open as Tab (`openLinkPreviewAsTab`, ⇧⌘Return) puts the preview's own web view in a new tab
+  - [ ] Becoming a tab: Open as Tab (`openLinkPreviewAsTab`, ⇧⌘Return) puts the preview's own web view in a new tab
     after the one underneath and selects it, with no reload (scroll, form input, history kept). Open in Split View
     does the same and splits it with the tab underneath (preview on the right); the button hides when that tab is
     pinned or already split. (Checked with the buttons: the page's load time unchanged and full width; the split
     861 / 861 with the preview on the right and focused. Fixed on the way: the fading card took the page back.
-    2026-10-15: the button is hidden over a pinned tab and over a split. Not checked: ⇧⌘Return.)
+    2026-10-15: the button is hidden over a pinned tab and over a split. Open bug: a real ⇧⌘Return with Paddle in
+    front makes the tab but leaves its page out of the window (viewport stays the card's 900 x 619, the pane blank);
+    the same command through the bridge's menu_action, Paddle in the background, works. Mechanism not found yet.)
   - [x] Closing: Escape (when the page doesn't use it; it reaches Paddle as cancelOperation, not a menu key, so site
     dialogs keep their Escape), the Close button or `closeLinkPreview` (no default key), a click on the darkened
     page, selecting another tab or space, or closing the tab underneath. A closed preview drops its web view and goes
@@ -317,8 +329,9 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     nothing. In normal windows its pages go into history like any visit. Content blocking, user scripts and
     extensions' content scripts run in it; extensions' tab APIs see it only once it is a tab. Not saved in the
     session. (Checked: a private window's preview left no history row, normal previews did; the probe's ad script
-    blocked in the preview; an open preview absent from session.json and sessions/ after quitting. Not checked:
-    extensions, other profiles.)
+    blocked in the preview; an open preview absent from session.json and sessions/ after quitting; 2026-10-15: in a
+    second profile the preview read that profile's cookie and storage and its page went into that profile's history.
+    Not checked: extensions.)
   - [x] Control bridge: `paddle_state` reports each window's preview (URL, title); `window_snapshot` draws it over the
     page; `open_url` gains `"in": "preview"` (refused while `linkPreview` is off); `openLinkPreviewAsTab` and
     `closeLinkPreview` run through `menu_action`. (Checked: all of them; the snapshot draws the backdrop and page but

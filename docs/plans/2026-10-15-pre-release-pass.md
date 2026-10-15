@@ -1,7 +1,7 @@
 # Pre-release pass (2026-10-15)
 
-Status: Waves A and A2 done (A2 left the Wave 6 and 7b items and the extension checks to Wave B); Wave B awaits
-Walker's go. Before releasing main (a97c4ac) over the installed build 49, which predates
+Status: Waves A, A2 and B done (2026-10-15). Before Wave C: the ⇧⌘Return bug (open), the address suggestions
+follow-up, the extension checks, and Walker's call on Add to New Tab Page; see "Left after Wave B". Before releasing main (a97c4ac) over the installed build 49, which predates
 every wave of `2026-10-14-browser-features.md`.
 
 Three waves, each about 45 minutes or less, run in this session with no sub-agents: the checks drive one running app
@@ -78,6 +78,26 @@ scenario over the threshold explained.
 - Not checkable here, marked as such unless Walker wants them: reduce motion and reduce transparency (0.15-0.2 s
   animations over flat backgrounds; reviewed in code only), and the bridge with the screen locked (needs Walker to
   lock the screen while a probe runs).
+
+## Left after Wave B
+
+Wave B checked (notes in the roadmap): Wave 6's second profile (New Window in Profile, suggestions, History window,
+Clear History, a preview there, Delete removing its data); Wave 7b's Disconnect, Settings section and private
+windows; the space tint cap (unreachable at the fixed 25 %); screen windows 1 and 2 (group label menu, a grouped
+tab's link joining, drag out of a group, sidebar drag and middle-click, the ≡ Developer Tools submenu, Split with
+Current Tab and End Split).
+
+- [ ] Open bug: a real ⇧⌘Return (Open Preview as Tab) with Paddle in front leaves the new tab's page out of the
+  window: the viewport stays the card's 900 x 619 and the pane is blank. The header button and the bridge's
+  menu_action (Paddle in the background) both work. Next: log the page container's superview and window at each
+  step of `openPreviewAsTab` and the card's teardown for both paths, then name the mechanism before changing code.
+- [ ] Follow-up: address suggestions open when the field's text changes under focus (a tab switch), not only on
+  typing.
+- [ ] Extension checks, with a probe extension: a tab activated in another space, what an extension sees of a
+  split, a preview's content scripts.
+- [ ] Walker's call: Add to New Tab Page in a page's right-click menu (about 15 lines now).
+- Not checkable here: swipe back in a preview (computer use can't make trackpad swipes), reduce motion and
+  transparency, the bridge with the screen locked.
 
 ## Wave C: memory, main against build 49 (about 35 min; Paddle unavailable meanwhile)
 
