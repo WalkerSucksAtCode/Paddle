@@ -5,7 +5,7 @@ about 45 minutes. Each wave: spec, builder(s), two-lens review, then a check in 
 committed locally; no notarized release until Walker asks (a signed `scripts/release.sh --install` without
 `--notarize` is the cheap way to try a build in /Applications).
 
-Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 committed (206ff00). Wave 7b committed (d1c3f40). Wave 8 built and checked in the debug build, uncommitted.
+Status: approved 2026-10-14 (vertical tabs optional; extras Profiles, Spaces, Split view, Link preview as waves 6-9). Wave 1 committed (934594c). Wave 2 committed (6e66ff2). Wave 3 committed (967ea9a). Wave 4a committed (73c241c). Wave 4b committed (d21df2b). Wave 5 committed (22c132c). Wave 6a and 6b committed (0b81f01). Wave 7 committed (206ff00). Wave 7b committed (d1c3f40). Wave 8 committed (da2b886). Wave 9 committed (see git log).
 
 ## Wave 1: tab foundations, rename, tab groups (horizontal strip)
 Where from: Chrome, Firefox, Edge and Brave tab groups; Arc and Zen tab renaming.
@@ -267,7 +267,57 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
   - Done when: a split shows two pages side by side with the divider dragging and resetting, focus moves the address
     field between sides, both sides stay awake, the split survives a relaunch, and closing one side ends it.
 - [ ] Wave 9, Link preview: ⌥-click shows a link in a floating preview over the page, which can then become a tab
-  (Arc Peek, Zen Glance).
+  (Arc Peek, Zen Glance). Specified 2026-10-15:
+  - [x] Opening: a real ⌥-click on a link (any frame, including target=_blank links) opens it in a preview instead of
+    following it; the page underneath stays where it is. Only real clicks count (`_isUserInitiated`, as for ⌘-click),
+    so a page can't open previews by faking one. The page's right-click menu on a link gains "Preview Link", added
+    through WebKit's private `_webView:getContextMenuFromProposedMenu:…` with the link WebKit hit-tested for that menu
+    (a WKWebView subclass's `willOpenMenu` sees a right-mouse-up and only the last hovered link). A page that handles
+    ⌥-click itself keeps its behaviour (most routers leave modified clicks to the browser). `linkPreview` (true) in
+    config.json and Settings > Tabs & Memory; off, ⌥-click follows the link as it does today. (Checked: a real ⌥-click
+    and Preview Link open it with the page underneath unmoved; a script's ⌥-click only navigates; off, ⌥-click
+    follows the link. The Settings toggle was not looked at.)
+  - [x] The preview: one per window, a card over the content area (over both sides of a split), inset 5 % (at least
+    16 pt) with rounded corners and a shadow, the page behind darkened (brightness, not hue). A header in the chrome
+    colours shows the page's icon, its host (always, first: the address field shows the tab underneath, and a page
+    can title itself anything) and title, a progress line, and buttons: Open as Tab, Open in Split View, Copy Link,
+    Close. The address field and toolbar keep showing the tab underneath. The keyboard goes to the preview while it
+    shows and back to the tab when it closes. The link status bubble shows the preview's links inside the card; the
+    tab's own is hidden meanwhile, since the page underneath still gets mouse moves through the card. (Checked:
+    backdrop 152 over a white page, the 40 % expected 153; the card edge steps from 255 to about 125; Escape went to
+    the preview. Not checked: over a split, the progress line, Copy Link.)
+  - [ ] Inside it: links navigate the preview; a ⌥-click there navigates it too (no preview in a preview); ⌘-click
+    and popups open tabs after the tab underneath; swipe back works as in a tab; downloads go to Downloads, and a
+    preview that only downloaded closes. (Checked: ⌥-click navigates the preview; ⌘-click opens a background tab
+    beside the tab underneath. Not checked: popups, swipe, downloads. A popup from a preview is selected, which
+    closes the preview, so a sign-in popup loses its opener page.)
+  - [x] Becoming a tab: Open as Tab (`openLinkPreviewAsTab`, ⇧⌘Return) puts the preview's own web view in a new tab
+    after the one underneath and selects it, with no reload (scroll, form input, history kept). Open in Split View
+    does the same and splits it with the tab underneath (preview on the right); the button hides when that tab is
+    pinned or already split. (Checked with the buttons: the page's load time unchanged and full width; the split
+    861 / 861 with the preview on the right and focused. Fixed on the way: the fading card took the page back.
+    Not checked: ⇧⌘Return, the hidden button.)
+  - [x] Closing: Escape (when the page doesn't use it; it reaches Paddle as cancelOperation, not a menu key, so site
+    dialogs keep their Escape), the Close button or `closeLinkPreview` (no default key), a click on the darkened
+    page, selecting another tab or space, or closing the tab underneath. A closed preview drops its web view and goes
+    nowhere (not Reopen Closed Tab). (Checked: Escape closes it, and a page that takes Escape keeps it open; Close,
+    the backdrop and closeLinkPreview each close it, one WebContent process fewer each time. Not checked: closing by
+    tab or space switch.)
+  - [x] Data: the preview uses its window's profile and data store; private windows' previews stay private and record
+    nothing. In normal windows its pages go into history like any visit. Content blocking, user scripts and
+    extensions' content scripts run in it; extensions' tab APIs see it only once it is a tab. Not saved in the
+    session. (Checked: a private window's preview left no history row, normal previews did; the probe's ad script
+    blocked in the preview; an open preview absent from session.json and sessions/ after quitting. Not checked:
+    extensions, other profiles.)
+  - [x] Control bridge: `paddle_state` reports each window's preview (URL, title); `window_snapshot` draws it over the
+    page; `open_url` gains `"in": "preview"` (refused while `linkPreview` is off); `openLinkPreviewAsTab` and
+    `closeLinkPreview` run through `menu_action`. (Checked: all of them; the snapshot draws the backdrop and page but
+    not the card's header, which the backdrop covers.)
+  - Done when: a real ⌥-click opens a preview and the page underneath stays put; Open as Tab keeps the page without
+    reloading (the probe page's load time unchanged); Open in Split View makes a split; Escape, the backdrop and Close
+    each close it, and the WebContent process count returns to what it was; a script's fake ⌥-click opens nothing;
+    with `linkPreview` off ⌥-click follows the link; a private window's preview adds no history row; the darkened
+    backdrop and card edge are measured, not judged by eye.
 
 Not chosen for now: command palette (⌘K), reader mode, auto-archive, per-site boosts, full-page screenshots, sidebar
 web panels.

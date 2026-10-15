@@ -153,6 +153,8 @@ struct BrowserView: View {
         // Design Mode does), so neither side is left blank when a split starts or ends. On the Group, which outlives
         // the branch change.
         .onChange(of: model.visibleTabs.map(\.id)) { old, new in settleSplit(old: old, new: new) }
+        // Over the content only (both sides of a split), not the tab strip or toolbar.
+        .overlay { LinkPreviewOverlay(model: model) }
     }
 
     @ViewBuilder
@@ -190,7 +192,10 @@ struct BrowserView: View {
                 ResponsivePage(tab: tab)
             } else {
                 WebContainer(tab: tab, generation: tab.generation, takesKeyboard: focused)
-                    .overlay(alignment: .bottomLeading) { LinkStatusBubble(tab: tab) }
+                    // Not under a link preview: the page there still gets mouse moves through the card (tracking
+                    // areas ignore what covers them), so its bubble would name a link the pointer isn't on. The
+                    // card shows the preview's own.
+                    .overlay(alignment: .bottomLeading) { if model.preview == nil { LinkStatusBubble(tab: tab) } }
             }
         } else {
             NewTabPage(model: model, app: app)
@@ -201,7 +206,7 @@ struct BrowserView: View {
 // MARK: - Link status
 
 /// The address of the link under the pointer. A separate view so hovering redraws only this.
-private struct LinkStatusBubble: View {
+struct LinkStatusBubble: View {
     let tab: Tab
 
     var body: some View {

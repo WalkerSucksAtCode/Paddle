@@ -469,6 +469,7 @@ final class AppModel {
             case .sleepPinnedTabs: old.sleepPinnedTabs != new.sleepPinnedTabs
             case .cpuSleepPercent: old.cpuSleepPercent != new.cpuSleepPercent
             case .sessionHistoryTabs: old.sessionHistoryTabs != new.sessionHistoryTabs
+            case .linkPreview: old.linkPreview != new.linkPreview
             case .contentBlocking: old.contentBlocking != new.contentBlocking
             case .filterLists: old.filterLists != new.filterLists
             case .filterUpdateDays: old.filterUpdateDays != new.filterUpdateDays

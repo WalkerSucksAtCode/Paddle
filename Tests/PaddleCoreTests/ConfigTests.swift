@@ -50,6 +50,15 @@ struct ConfigTests {
         #expect(try PaddleConfig.decode(Data(#"{"tabFreezeAfterMinutes": 0}"#.utf8)).tabFreezeAfterMinutes == 0)
     }
 
+    @Test func linkPreviewDefaultsToOnAndWrongTypeFallsBack() throws {
+        #expect(PaddleConfig().linkPreview)
+        #expect(try PaddleConfig.decode(Data(#"{"linkPreview": false}"#.utf8)).linkPreview == false)
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"linkPreview": "no"}"#.utf8))
+        #expect(config.linkPreview)
+        #expect(issues.count == 1)
+        #expect(issues.first?.path == ["linkPreview"])
+    }
+
     @Test func nullAndMissingKeysAreTheDefaultWithNoIssue() throws {
         let (config, issues) = try PaddleConfig.decodeReportingIssues(
             Data(#"{"maxAwakeTabs": null, "sites": null, "filterLists": null, "unknownKey": [1]}"#.utf8)

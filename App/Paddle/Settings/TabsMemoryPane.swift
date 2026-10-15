@@ -48,6 +48,15 @@ struct TabsMemoryPane: View {
             }
             .disabled(model.controlsDisabled)
 
+            Section("Link preview") {
+                Toggle("Preview links on ⌥-click", isOn: Binding(
+                    get: { model.file.linkPreview },
+                    set: { value in Task { await model.saveKey(.linkPreview, .bool(value)) } }
+                ))
+                .help("linkPreview in config.json. ⌥-click a link to see it in a card over the page; Open as Tab keeps it.")
+                .disabled(model.controlsDisabled)
+            }
+
             Section("Memory") {
                 Toggle("Show memory in toolbar", isOn: Binding(
                     get: { model.file.showTabMemory },

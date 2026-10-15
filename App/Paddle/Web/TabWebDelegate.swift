@@ -78,8 +78,21 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         if navigationAction.navigationType == .linkActivated, byUser, let tab, let browser = tab.browser {
             let flags = navigationAction.modifierFlags
             if flags.contains(.command) || navigationAction.buttonNumber == 4 {
-                browser.newTab(url: url, select: flags.contains(.shift), after: tab)
+                browser.newTab(url: url, select: flags.contains(.shift), after: Self.anchor(for: tab, in: browser))
                 return (.cancel, preferences)
+            }
+            // Option-click (left button, which WebKit numbers 1): the link opens in the window's preview, any frame,
+            // target=_blank too. Inside the preview it navigates the preview instead (no preview in a preview); a
+            // target=_blank link there would otherwise become a tab.
+            if flags.contains(.option), navigationAction.buttonNumber == 1, AppModel.shared.config.linkPreview, Self.isWebPage(url) {
+                if !tab.isPreview {
+                    browser.openPreview(url, from: tab)
+                    return (.cancel, preferences)
+                }
+                if navigationAction.targetFrame == nil {
+                    webView.load(navigationAction.request)
+                    return (.cancel, preferences)
+                }
             }
         }
 
@@ -286,7 +299,10 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         tab?.typedNavigationPending = false
         guard let tab, webView.backForwardList.currentItem == nil, let browser = tab.browser else { return }
         DispatchQueue.main.async {
-            if tab.closesIfOnlyDownload, browser.allTabs.count > 1 {
+            // A preview opened for a file link has nothing to show either.
+            if tab.isPreview {
+                if browser.preview === tab { browser.closePreview() }
+            } else if tab.closesIfOnlyDownload, browser.allTabs.count > 1 {
                 browser.close(tab, remember: false)
             } else {
                 tab.url = nil
@@ -544,7 +560,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let targetExtension = ExtensionIdentity.identifier(of: requestURL)
         if let pageID = tab.extensionPageID {
             if Self.isWebPage(requestURL) {
-                browser.newTab(url: requestURL, after: tab)
+                browser.newTab(url: requestURL, after: Self.anchor(for: tab, in: browser))
                 return nil
             }
             let scheme = requestURL?.scheme?.lowercased() ?? ""
@@ -560,27 +576,70 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // window.open() with no URL has no request URL; about:blank keeps the tab showing its web view
         // (which the opener may write into) instead of the start page.
         let newTab = Tab(url: navigationAction.request.url ?? URL(string: "about:blank"), isPrivate: tab.isPrivate)
-        newTab.opener = tab
+        // From a preview, the tab underneath stands in as opener: selecting the popup closes the preview.
+        let anchor = Self.anchor(for: tab, in: browser)
+        newTab.opener = anchor
         newTab.returnsToOpener = true
         newTab.closesIfOnlyDownload = true
         // Private WebKit API: whether the page keeps a window.opener reference (plain target=_blank links are
         // noopener). Without it, treat script-opened windows as having one.
-        if navigationAction.responds(to: NSSelectorFromString(Self.hasOpenerKey)) {
+        if tab.isPreview {
+            // Its opener page goes away with the preview, so nothing holds the two awake together.
+            newTab.hasLiveOpener = false
+        } else if navigationAction.responds(to: NSSelectorFromString(Self.hasOpenerKey)) {
             newTab.hasLiveOpener = (navigationAction.value(forKey: Self.hasOpenerKey) as? Bool) ?? false
         } else {
             newTab.hasLiveOpener = navigationAction.navigationType == .other
         }
         // A popup from an extension page shares its configuration (WebKit's `configuration` is that page's).
         newTab.attach(popup, extensionPageID: tab.extensionPageID)
-        browser.insert(newTab, after: tab, select: true)
+        browser.insert(newTab, after: anchor, select: true)
         return popup
+    }
+
+    /// Where a tab opened from `tab` goes: after it, or for the link preview after the tab underneath (the selected
+    /// tab if that one is gone).
+    private static func anchor(for tab: Tab, in browser: BrowserModel) -> Tab? {
+        tab.isPreview ? browser.previewSource ?? browser.selectedTab : tab
     }
 
     func webViewDidClose(_ webView: WKWebView) {
         guard let tab, let browser = tab.browser else { return }
+        // window.close() in the preview closes the preview.
+        if tab.isPreview {
+            if browser.preview === tab { browser.closePreview() }
+            return
+        }
         // A popup that never showed a page (it only started a download) stays out of Reopen Closed Tab.
         // A page closing its own window (a finished sign-in) always hands focus back to the opener.
         browser.close(tab, remember: webView.backForwardList.currentItem != nil, returnToOpener: true)
+    }
+
+    // MARK: - Context menu
+
+    private static let openLinkInNewWindowItem = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierOpenLinkInNewWindow")
+
+    /// Private WebKit callback with the page's context menu before it shows. On an http(s) link it adds "Preview Link"
+    /// after "Open Link in New Window", for the link WebKit hit-tested for this menu (not the last one hovered, which
+    /// differs for a keyboard-opened menu). If WebKit stops calling this, the menu is just WebKit's own.
+    @objc(_webView:getContextMenuFromProposedMenu:forElement:userInfo:completionHandler:)
+    func _webView(_ webView: WKWebView, getContextMenuFromProposedMenu menu: NSMenu, forElement element: NSObject, userInfo: NSObject?, completionHandler: @escaping (NSMenu?) -> Void) {
+        defer { completionHandler(menu) }
+        guard let tab, !tab.isPreview, AppModel.shared.config.linkPreview,
+              element.responds(to: NSSelectorFromString("hitTestResult")),
+              let hit = element.value(forKey: "hitTestResult") as? NSObject,
+              hit.responds(to: NSSelectorFromString("absoluteLinkURL")),
+              let link = hit.value(forKey: "absoluteLinkURL") as? URL, Self.isWebPage(link),
+              let index = menu.items.firstIndex(where: { $0.identifier == Self.openLinkInNewWindowItem }) else { return }
+        let item = NSMenuItem(title: "Preview Link", action: #selector(previewLink(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = link
+        menu.insertItem(item, at: index + 1)
+    }
+
+    @objc private func previewLink(_ sender: NSMenuItem) {
+        guard let link = sender.representedObject as? URL, let tab, let browser = tab.browser else { return }
+        browser.openPreview(link, from: tab)
     }
 
     // MARK: - JavaScript dialogs

@@ -1360,8 +1360,9 @@ final class ExtensionHost {
         loaded.first { $0.owns(url) }?.context.hasAccessToPrivateData ?? true
     }
 
+    /// A link preview isn't a tab to extensions until it becomes one (`openPreviewAsTab` reports it opened then).
     private func isRegistered(_ tab: Tab) -> Bool {
-        guard let window = tab.browser?.controller else { return false }
+        guard !tab.isPreview, let window = tab.browser?.controller else { return false }
         return isRegistered(window)
     }
 

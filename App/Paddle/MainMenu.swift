@@ -170,6 +170,10 @@ enum MainMenu {
         add(tabs, "swapSplitSides", "Swap Sides", #selector(BrowserWindowController.paddleSwapSplitSides(_:)), "")
         add(tabs, "focusOtherSplitSide", "Focus Other Side", #selector(BrowserWindowController.paddleFocusOtherSplitSide(_:)), "")
         tabs.addItem(.separator())
+        add(tabs, "openLinkPreviewAsTab", "Open Preview as Tab", #selector(BrowserWindowController.paddleOpenLinkPreviewAsTab(_:)), "\r", [.command, .shift])
+        // No key: Escape closes the preview from the page (`BrowserWindowController.closePreviewOnEscape`).
+        add(tabs, "closeLinkPreview", "Close Preview", #selector(BrowserWindowController.paddleCloseLinkPreview(_:)), "")
+        tabs.addItem(.separator())
         add(tabs, "moveTabLeft", "Move Tab Left", #selector(BrowserWindowController.paddleMoveTabLeft(_:)), String(UnicodeScalar(NSPageUpFunctionKey)!), [.control, .shift])
         add(tabs, "moveTabRight", "Move Tab Right", #selector(BrowserWindowController.paddleMoveTabRight(_:)), String(UnicodeScalar(NSPageDownFunctionKey)!), [.control, .shift])
         add(tabs, "toggleMute", "Mute Tab", #selector(BrowserWindowController.paddleToggleMute(_:)), "m", [.command, .control])

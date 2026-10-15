@@ -120,6 +120,9 @@ extension ControlBridge {
                 "id": .string(model.id.uuidString), "profile": .string(app.profiles.profile(id: model.profileID).name),
                 "activeSpace": .string(model.activeSpace.name), "spaces": .array(spaces), "tabs": .array(tabs),
                 "visibleTabs": .array(model.visibleTabs.map { .string($0.id.uuidString) }),
+                "preview": model.preview.map { preview -> JSONValue in
+                    ["url": .string(preview.url?.absoluteString ?? ""), "title": .string(preview.displayTitle)]
+                } ?? .null,
             ]
         }
         let state: JSONValue = [
@@ -171,6 +174,7 @@ extension ControlBridge {
         for tab in controller.model.visibleTabs where tab.webView != nil {
             _ = try readableWebView(tab)
         }
+        if let preview = controller.model.preview, preview.webView != nil { _ = try readableWebView(preview) }
         let bounds = content.bounds
         guard let rep = content.bitmapImageRepForCachingDisplay(in: bounds) else {
             throw BridgeToolError("the window couldn't be drawn")
@@ -178,8 +182,11 @@ extension ControlBridge {
         content.cacheDisplay(in: bounds, to: rep)
         // A web view draws in another process, so its area comes out blank; WebKit's own snapshot goes there, for each
         // page on screen. (Paddle's drawing over a page, such as a split's focus ring, is under the snapshot.)
-        for webView in controller.model.visibleTabs.compactMap(\.webView)
-            where webView.window === nsWindow && !webView.isHiddenOrHasHiddenAncestor {
+        // The link preview last, so it lands over the page at its on-screen frame (a preview not in the window yet is skipped).
+        let previewView = controller.model.preview?.webView
+        let pages = controller.model.visibleTabs.compactMap(\.webView) + [previewView].compactMap { $0 }
+        var pageRects: [NSRect] = []
+        for webView in pages where webView.window === nsWindow && !webView.isHiddenOrHasHiddenAncestor {
             guard let shot = try? await webView.takeSnapshot(configuration: nil) else { continue }
             let frame = webView.convert(webView.bounds, to: content)
             let rect = content.isFlipped
@@ -187,6 +194,14 @@ extension ControlBridge {
                 : frame
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            if webView === previewView {
+                // The tab snapshots covered the card's backdrop, so redraw its 40% black over the pages, and round the card.
+                NSColor.black.withAlphaComponent(0.4).setFill()
+                for page in pageRects { page.fill() }
+                NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).addClip()
+            } else {
+                pageRects.append(rect)
+            }
             shot.draw(in: rect)
             NSGraphicsContext.restoreGraphicsState()
         }
@@ -248,6 +263,9 @@ extension ControlBridge {
             throw BridgeToolError("url must be an address")
         }
         let settings = scheme == "paddle" && url.host()?.lowercased() == "settings"
+        let place = string(args, "in") ?? "tab"
+        guard ["tab", "preview"].contains(place) else { throw BridgeToolError("in must be \"tab\" or \"preview\"") }
+        if place == "preview" { return try openPreview(url, scheme: scheme, args) }
         guard ["http", "https"].contains(scheme) || url.absoluteString.lowercased() == "about:blank" || settings else {
             throw BridgeToolError("only http, https, about:blank and paddle://settings addresses")
         }
@@ -268,6 +286,17 @@ extension ControlBridge {
             model.go(to: url, typed: false)
         }
         return .text("opened in tab \(model.selectedTab?.id.uuidString ?? "?") of window \(model.id.uuidString)")
+    }
+
+    /// open_url with "in": "preview": the window's link preview over its selected tab. Never opens a window.
+    private func openPreview(_ url: URL, scheme: String, _ args: [String: JSONValue]) throws -> MCPToolResult {
+        guard AppModel.shared.config.linkPreview else { throw BridgeToolError("link preview is off (linkPreview in config.json)") }
+        guard ["http", "https"].contains(scheme) else { throw BridgeToolError("a preview shows only http and https addresses") }
+        let model = try window(args).model
+        guard let source = model.selectedTab else { throw BridgeToolError("the window has no selected tab") }
+        model.openPreview(url, from: source)
+        guard model.preview != nil else { throw BridgeToolError("the preview didn't open") }
+        return .text("opened in the preview over tab \(source.id.uuidString) of window \(model.id.uuidString)")
     }
 
     private func selectTab(_ args: [String: JSONValue]) throws -> MCPToolResult {

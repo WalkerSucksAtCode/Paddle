@@ -63,6 +63,10 @@ final class Tab: Identifiable {
     var generation = 0
     /// Responsive Design Mode: the page drawn at a device's size. Nil when off. Not saved in the session.
     var responsive: ResponsiveState?
+    /// The window's link preview (`BrowserModel.preview`), not a tab yet: in no tab list, so the strip, session, sleep
+    /// policy, memory sampling, extensions' tab APIs and the bridge's tab lists never see it. Cleared when it becomes
+    /// a tab (`BrowserModel.openPreviewAsTab`).
+    var isPreview = false
 
     @ObservationIgnored private(set) var webView: WKWebView?
     /// Holds the web view, and the Web Inspector when it is docked (WebKit puts it beside the web view).
@@ -476,7 +480,7 @@ final class Tab: Identifiable {
         loadedUnblocked = own == nil && extensionPageID == nil && !AppModel.shared.web.blockersReady.isReady
         applySiteZoom()
         // A navigation inside the tab is a session change too (its URL and history), not only tab and window changes.
-        if !isPrivate { AppModel.shared.sessionChanged() }
+        if !isPrivate && !isPreview { AppModel.shared.sessionChanged() }
     }
 
     /// Why WebKit stopped a web process (`_WKProcessTerminationReason`, private WebKit API).

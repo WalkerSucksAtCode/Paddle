@@ -67,6 +67,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Tabs whose back/forward history the saved session keeps: the most recently used ones, plus pinned tabs. The
     /// others come back on their page with no Back history.
     public var sessionHistoryTabs: Int
+    /// A real ⌥-click on a link opens it in a preview over the page (one per window), which can become a tab. Off,
+    /// ⌥-click follows the link.
+    public var linkPreview: Bool
 
     /// Ad and tracker blocking with the lists below plus `user-filters.txt`.
     public var contentBlocking: Bool
@@ -162,7 +165,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs
+        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs, linkPreview
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites
@@ -184,6 +187,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sleepPinnedTabs: Bool = false,
         cpuSleepPercent: Int = 30,
         sessionHistoryTabs: Int = 30,
+        linkPreview: Bool = true,
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
         filterUpdateDays: Int = 7,
@@ -230,6 +234,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.sleepPinnedTabs = sleepPinnedTabs
         self.cpuSleepPercent = cpuSleepPercent
         self.sessionHistoryTabs = sessionHistoryTabs
+        self.linkPreview = linkPreview
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
         self.filterUpdateDays = filterUpdateDays
@@ -284,6 +289,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sleepPinnedTabs = c.decodeValue(.sleepPinnedTabs, d.sleepPinnedTabs, issues)
         cpuSleepPercent = c.decodeValue(.cpuSleepPercent, d.cpuSleepPercent, issues)
         sessionHistoryTabs = c.decodeValue(.sessionHistoryTabs, d.sessionHistoryTabs, issues)
+        linkPreview = c.decodeValue(.linkPreview, d.linkPreview, issues)
         contentBlocking = c.decodeValue(.contentBlocking, d.contentBlocking, issues)
         filterLists = c.decodeStrings(.filterLists, d.filterLists, issues)
         filterUpdateDays = c.decodeValue(.filterUpdateDays, d.filterUpdateDays, issues)

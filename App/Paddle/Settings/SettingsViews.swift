@@ -67,7 +67,7 @@ enum SettingsPane: String, CaseIterable {
             "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",
             "tabFreezeAfterMinutes", "tabSleepAfterMinutes",
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
-            "awake",
+            "awake", "linkPreview", "link preview",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",

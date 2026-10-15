@@ -212,6 +212,8 @@ final class BrowserModel {
     }
 
     private func activate(_ tab: Tab, previous: Tab?) {
+        // Selecting any tab but the one under the preview closes it (another tab, a space switch, a popup).
+        if preview != nil, tab !== previewSource { closePreview() }
         let now = Date()
         if let previous, previous !== tab {
             previous.lastActive = now
@@ -270,6 +272,7 @@ final class BrowserModel {
     ///   - remember: offer the tab in Reopen Closed Tab. Never for private windows or View Source tabs.
     ///   - returnToOpener: select the tab's opener next; by default only for a popup the user hasn't left.
     func close(_ tab: Tab, remember: Bool = true, returnToOpener: Bool? = nil) {
+        if tab === previewSource { closePreview() }
         guard let index = tabs.firstIndex(where: { $0 === tab }) else {
             // A tab of a hidden space closes there, without changing what is shown.
             if let home = stashedSpace(of: tab) {
@@ -551,6 +554,7 @@ final class BrowserModel {
 
     private func switchToSpace(_ id: String, selecting chosen: Tab?) {
         guard id != activeSpaceID, spaces.contains(where: { $0.id == id }) else { return }
+        closePreview()
         let previous = selectedTab
         stashes[activeSpaceID] = Stash(tabs: tabs, groups: groups, selectedID: selectedID, splits: splits)
         let stash = stashes.removeValue(forKey: id) ?? Stash()
@@ -632,6 +636,7 @@ final class BrowserModel {
     func moveTab(_ tab: Tab, toSpace id: String) {
         let source = space(of: tab)
         guard source.id != id, spaces.contains(where: { $0.id == id }), allTabs.contains(where: { $0 === tab }) else { return }
+        if tab === previewSource { closePreview() }
         if renamingTabID == tab.id { renamingTabID = nil }
         let leave: () -> Void = { [self] in
             let index = tabs.firstIndex { $0 === tab } ?? 0
@@ -718,8 +723,9 @@ final class BrowserModel {
         return split.leftID == selected.id ? [selected, partner] : [partner, selected]
     }
 
+    /// On screen: a side of what `visibleTabs` shows, or the link preview over it (so its dialogs show).
     func isVisible(_ tab: Tab) -> Bool {
-        visibleTabs.contains { $0 === tab }
+        tab === preview || visibleTabs.contains { $0 === tab }
     }
 
     /// Splits `a` and `b`: `b` moves to just right of `a` (into `a`'s group, or none). Refused for pinned tabs, the same
@@ -838,6 +844,71 @@ final class BrowserModel {
             guard let left = key(split.leftID), let right = key(split.rightID) else { return nil }
             return SplitRecord(left: left, right: right, ratio: split.ratio)
         }
+    }
+
+    // MARK: - Link preview
+
+    /// The link preview (⌥-click): a page over the content area, its own `Tab` with `isPreview` set and never in `tabs`
+    /// or `allTabs`, so no tab walk (strip, session, sleep policy, memory sampling, tab search, Reopen Closed Tab,
+    /// extensions, the bridge's tab lists) sees it. One per window; nil when none shows.
+    private(set) var preview: Tab?
+    /// The tab under the preview, where its links and popups open and next to which it becomes a tab.
+    @ObservationIgnored private(set) weak var previewSource: Tab?
+
+    /// Open in Split View is offered: the tab underneath is in this space, not pinned and not split already. The new
+    /// tab lands next to it in its group, so the split rules accept the pair.
+    var canSplitPreview: Bool {
+        guard preview != nil, let source = previewSource, tabs.contains(where: { $0 === source }) else { return false }
+        return !source.isPinned && split(of: source) == nil
+    }
+
+    /// Shows `url` (http or https) in the preview over `source`, replacing any preview already open. It gets this
+    /// window's profile, data store, block lists, user scripts and extensions' content scripts, as a tab would.
+    func openPreview(_ url: URL, from source: Tab) {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), tabs.contains(where: { $0 === source }) else { return }
+        closePreview()
+        let tab = Tab(url: url, isPrivate: source.isPrivate)
+        tab.browser = self
+        tab.isPreview = true
+        tab.opener = source
+        // A link that only downloads a file leaves nothing to show (`TabWebDelegate.tabShowsNothingAfterDownload`).
+        tab.closesIfOnlyDownload = true
+        previewSource = source
+        preview = tab
+        tab.wake()
+        controller?.focusWebView()
+    }
+
+    /// Closes the preview and drops its web view (delegate, observers and all), so its WebContent process can exit.
+    /// It goes nowhere: not into Reopen Closed Tab, never into the session. The keyboard goes back to the tab.
+    func closePreview() {
+        guard let tab = preview else { return }
+        preview = nil
+        previewSource = nil
+        tab.sleep()
+        tab.opener = nil
+        controller?.focusWebView()
+    }
+
+    /// Open as Tab (`split` false) or Open in Split View: the preview's own tab, web view and all (no reload; history,
+    /// scroll and form input kept), goes into the strip after the tab underneath through the usual insert, so
+    /// extensions hear of it and the session saves it, and is selected. With `split` and `canSplitPreview` it is split
+    /// with that tab, on the right.
+    func openPreviewAsTab(split: Bool) {
+        guard let tab = preview else { return }
+        let source = previewSource.flatMap { source in tabs.contains { $0 === source } ? source : nil } ?? selectedTab
+        let partner = split && canSplitPreview ? source : nil
+        preview = nil
+        previewSource = nil
+        tab.isPreview = false
+        insert(tab, after: source, select: true)
+        // Already selected, so it stays the focused side.
+        if let partner { makeSplit(partner, with: tab) }
+        // The page moves from the preview's card into the tab's WebContainer; as in `Tab.toggleResponsive`, the
+        // outgoing view can update after the incoming one took the container, so the shown one takes it again once
+        // the switch has settled.
+        tab.generation += 1
+        DispatchQueue.main.async { [weak tab] in tab?.generation += 1 }
     }
 
     // MARK: - Tab groups
@@ -1013,6 +1084,7 @@ final class BrowserModel {
     /// selection to its neighbour; a window left empty stays open for the caller to close once the tab has arrived.
     /// Returns the tab's old index.
     func detach(_ tab: Tab) -> Int? {
+        if tab === previewSource { closePreview() }
         guard let index = tabs.firstIndex(where: { $0 === tab }) else {
             guard let home = stashedSpace(of: tab) else { return nil }
             let offset = tabOffset(ofSpace: home.id)
@@ -1184,6 +1256,8 @@ final class BrowserModel {
     }
 
     func tabURLChanged(_ tab: Tab) {
+        // The preview isn't in the address field, the session or extensions' tabs.
+        if tab.isPreview { return }
         if tab.id == selectedID { syncAddress() }
         extensionHost?.tabChanged(tab, .URL)
         AppModel.shared.sessionChanged()

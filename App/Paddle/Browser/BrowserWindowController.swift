@@ -100,10 +100,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Gives the keyboard to the page: the link preview's while one shows, else the selected tab's.
     func focusWebView() {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.model.renamingTabID == nil, self.model.renamingGroupID == nil,
-                  let webView = self.model.selectedTab?.webView, webView.window === self.window else { return }
+                  let webView = self.model.preview?.webView ?? self.model.selectedTab?.webView, webView.window === self.window else { return }
             self.window?.makeFirstResponder(webView)
         }
     }
@@ -112,7 +113,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     /// on the next turn, so the page has already taken it.
     private func focusSplitSide(after event: NSEvent) {
         let frame = model.splitUnfocusedFrame
-        guard frame != .zero, let window, event.window === window, let root = window.contentView else { return }
+        // The preview's card covers both sides; a click on it is for the preview.
+        guard frame != .zero, model.preview == nil, let window, event.window === window, let root = window.contentView else { return }
         let local = root.convert(event.locationInWindow, from: nil)
         let point = root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
         guard frame.contains(point) else { return }
@@ -136,6 +138,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
         model.extensionHost?.windowClosing(self)
+        model.closePreview()
         for tab in model.allTabs { tab.sleep() }
         AppModel.shared.windowClosed(self)
     }
@@ -383,6 +386,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleSwapSplitSides(_ sender: Any?) { model.swapSplitSides() }
     @objc func paddleFocusOtherSplitSide(_ sender: Any?) { model.focusOtherSplitSide() }
 
+    // MARK: - Link preview
+
+    @objc func paddleOpenLinkPreviewAsTab(_ sender: Any?) { model.openPreviewAsTab(split: false) }
+    @objc func paddleCloseLinkPreview(_ sender: Any?) { model.closePreview() }
+
+    /// Escape closes the preview only when the page didn't use the key, so a site's own dialogs keep their Escape;
+    /// hence no menu key and no key monitor, which would see the key before the page. WKWebView hands a key event
+    /// the page didn't handle back to AppKit (`keyDown` up the responder chain from the web view), and NSWindow
+    /// turns Escape into `cancelOperation:`. NSWindow has its own `cancelOperation:` and comes before this controller
+    /// in the chain, so `BrowserWindow` passes both on to here first. Returns whether a preview closed.
+    @discardableResult
+    func closePreviewOnEscape() -> Bool {
+        guard model.preview != nil else { return false }
+        model.closePreview()
+        return true
+    }
+
+    override func cancelOperation(_ sender: Any?) { closePreviewOnEscape() }
+
     @objc func paddleMoveTabToSpace(_ sender: Any?) {
         guard let tab, let id = (sender as? NSMenuItem)?.representedObject as? String else { return }
         model.moveTab(tab, toSpace: id)
@@ -434,7 +456,11 @@ final class BrowserWindow: NSWindow {
         if event.type == .otherMouseDown || event.type == .otherMouseUp, event.buttonNumber == 3 || event.buttonNumber == 4,
            let controller = windowController as? BrowserWindowController {
             if event.type == .otherMouseUp {
-                if event.buttonNumber == 3, controller.model.selectedTab?.canGoBack == true {
+                // The link preview, while one shows, goes back and forward itself.
+                if let preview = controller.model.preview {
+                    if event.buttonNumber == 3, preview.canGoBack { preview.webView?.goBack() }
+                    if event.buttonNumber == 4, preview.canGoForward { preview.webView?.goForward() }
+                } else if event.buttonNumber == 3, controller.model.selectedTab?.canGoBack == true {
                     controller.paddleBack(nil)
                 } else if event.buttonNumber == 4, controller.model.selectedTab?.canGoForward == true {
                     controller.paddleForward(nil)
@@ -443,6 +469,19 @@ final class BrowserWindow: NSWindow {
             return
         }
         super.sendEvent(event)
+    }
+
+    /// An Escape the page didn't use, coming back up from the web view (`BrowserWindowController.closePreviewOnEscape`).
+    override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .function, .numericPad])
+        if event.keyCode == 53, flags.isEmpty, (windowController as? BrowserWindowController)?.closePreviewOnEscape() == true { return }
+        super.keyDown(with: event)
+    }
+
+    /// The same Escape as an action; NSWindow's own `cancelOperation:` runs when no preview closed.
+    override func cancelOperation(_ sender: Any?) {
+        if (windowController as? BrowserWindowController)?.closePreviewOnEscape() == true { return }
+        super.cancelOperation(sender)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -507,6 +546,8 @@ extension BrowserWindowController: NSMenuItemValidation {
             return split || (tab.map { !$0.isPinned } ?? false)
         case #selector(paddleSwapSplitSides(_:)), #selector(paddleFocusOtherSplitSide(_:)):
             return tab.map { model.split(of: $0) != nil } ?? false
+        case #selector(paddleOpenLinkPreviewAsTab(_:)), #selector(paddleCloseLinkPreview(_:)):
+            return model.preview != nil
         case #selector(paddleSelectTab(_:)):
             return menuItem.tag == 9 ? !model.tabs.isEmpty : model.tabs.count >= menuItem.tag
         default:
