@@ -55,7 +55,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func indexInWindow(for context: WKWebExtensionContext) -> Int {
         guard let tab, let browser else { return NSNotFound }
-        return browser.allTabs.firstIndex { $0 === tab } ?? NSNotFound
+        return browser.extensionTabs.firstIndex { $0 === tab } ?? NSNotFound
     }
 
     func parentTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
@@ -91,6 +91,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func setPinned(_ pinned: Bool, for context: WKWebExtensionContext) async throws {
         guard let tab, let browser else { throw PaddleExtensionError.noWindow }
+        guard !tab.isPreview else { throw PaddleExtensionError.unsupported("Pinning the link preview") }
         if tab.isPinned != pinned { browser.togglePin(tab) }
     }
 
@@ -145,9 +146,10 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         webView.goForward()
     }
 
+    /// Activating the link preview opens it as a tab, the way it becomes the active one.
     func activate(for context: WKWebExtensionContext) async throws {
         guard let tab, let browser else { throw PaddleExtensionError.noWindow }
-        browser.select(tab)
+        if tab.isPreview { browser.openPreviewAsTab(split: false) } else { browser.select(tab) }
         NSApp.activate()
         browser.controller?.window?.makeKeyAndOrderFront(nil)
     }
@@ -170,7 +172,7 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
 
     func close(for context: WKWebExtensionContext) async throws {
         guard let tab, let browser else { throw PaddleExtensionError.noWindow }
-        browser.close(tab)
+        if tab.isPreview { browser.closePreview() } else { browser.close(tab) }
     }
 
     /// `takeSnapshotUsingConfiguration:forWebExtensionContext:completionHandler:`; its async Swift name is
@@ -198,7 +200,7 @@ final class ExtensionWindow: NSObject, WKWebExtensionWindow {
     private var window: NSWindow? { controller?.window }
 
     func tabs(for context: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        controller?.model.allTabs.map(\.extensionTab) ?? []
+        controller?.model.extensionTabs.map(\.extensionTab) ?? []
     }
 
     func activeTab(for context: WKWebExtensionContext) -> (any WKWebExtensionTab)? {

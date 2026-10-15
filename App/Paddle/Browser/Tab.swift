@@ -64,8 +64,8 @@ final class Tab: Identifiable {
     /// Responsive Design Mode: the page drawn at a device's size. Nil when off. Not saved in the session.
     var responsive: ResponsiveState?
     /// The window's link preview (`BrowserModel.preview`), not a tab yet: in no tab list, so the strip, session, sleep
-    /// policy, memory sampling, extensions' tab APIs and the bridge's tab lists never see it. Cleared when it becomes
-    /// a tab (`BrowserModel.openPreviewAsTab`).
+    /// policy, memory sampling and the bridge's tab lists never see it; extensions do, as the window's last tab
+    /// (`BrowserModel.extensionTabs`). Cleared when it becomes a tab (`BrowserModel.openPreviewAsTab`).
     var isPreview = false
 
     @ObservationIgnored private(set) var webView: WKWebView?

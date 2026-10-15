@@ -283,7 +283,7 @@ final class ExtensionHost {
 
         for window in registeredWindows.compactMap(\.value) {
             controller.didOpenWindow(window.extensionWindow)
-            for tab in window.model.allTabs { controller.didOpenTab(tab.extensionTab) }
+            for tab in window.model.extensionTabs { controller.didOpenTab(tab.extensionTab) }
             if let selected = window.model.selectedTab { controller.didActivateTab(selected.extensionTab) }
         }
         reportedFocus = nil
@@ -1306,7 +1306,7 @@ final class ExtensionHost {
         registeredWindows.append(Weak(window))
         guard let controller else { return }
         controller.didOpenWindow(window.extensionWindow)
-        for tab in window.model.allTabs { controller.didOpenTab(tab.extensionTab) }
+        for tab in window.model.extensionTabs { controller.didOpenTab(tab.extensionTab) }
         if let selected = window.model.selectedTab { controller.didActivateTab(selected.extensionTab) }
         if window.window?.isKeyWindow == true { reportFocus(window) }
     }
@@ -1314,7 +1314,7 @@ final class ExtensionHost {
     func windowClosing(_ window: BrowserWindowController) {
         guard isRegistered(window) else { return }
         if let controller {
-            for tab in window.model.allTabs { controller.didCloseTab(tab.extensionTab, windowIsClosing: true) }
+            for tab in window.model.extensionTabs { controller.didCloseTab(tab.extensionTab, windowIsClosing: true) }
             controller.didCloseWindow(window.extensionWindow)
         }
         if reportedFocus === window { reportedFocus = nil }
@@ -1360,9 +1360,9 @@ final class ExtensionHost {
         loaded.first { $0.owns(url) }?.context.hasAccessToPrivateData ?? true
     }
 
-    /// A link preview isn't a tab to extensions until it becomes one (`openPreviewAsTab` reports it opened then).
+    /// A tab of a registered window; the link preview counts too (`BrowserModel.extensionTabs`).
     private func isRegistered(_ tab: Tab) -> Bool {
-        guard !tab.isPreview, let window = tab.browser?.controller else { return false }
+        guard let window = tab.browser?.controller else { return false }
         return isRegistered(window)
     }
 

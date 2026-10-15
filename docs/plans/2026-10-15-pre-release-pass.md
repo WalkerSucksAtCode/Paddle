@@ -1,7 +1,6 @@
 # Pre-release pass (2026-10-15)
 
-Status: Waves A, A2 and B done, and every item left after B (2026-10-15) except Walker's call on extensions in a
-preview; then Wave C. Before releasing main (a97c4ac) over the installed build 49, which predates
+Status: Waves A, A2 and B done, and every item left after B (2026-10-15); next, Wave C. Before releasing main (a97c4ac) over the installed build 49, which predates
 every wave of `2026-10-14-browser-features.md`.
 
 Three waves, each about 45 minutes or less, run in this session with no sub-agents: the checks drive one running app
@@ -98,8 +97,9 @@ Current Tab and End Split).
 - [x] Extension checks, with a probe extension (removed afterwards, with its WebKit state): a tab activated in
   another space switches space; in a split both pages are visible and only the focused side is the active tab; a
   preview's content script runs but can't message its background ("Tab not found") until Open as Tab.
-- [ ] Walker's call: extensions in a preview. Keep the preview unknown to extensions (content scripts can't reach
-  their background there), or register it as a tab while it shows (they work; extensions see a short-lived tab).
+- [x] Walker's call, extensions in a preview: register it as a tab while it shows. Done and checked with the probe:
+  messages from the preview arrive, it counts as a tab only while it shows, and activating it from an extension
+  opens it as a tab.
 - [x] Add to New Tab Page in a page's right-click menu (Walker: build it): after Reload, Add or Remove, greyed out
   when the New Tab page is full; checked in the app.
 - Not checkable here: swipe back in a preview (computer use can't make trackpad swipes), reduce motion and

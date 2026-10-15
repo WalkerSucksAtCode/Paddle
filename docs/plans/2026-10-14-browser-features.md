@@ -330,14 +330,16 @@ session (Web Inspector's Network tab has its own Disable Caches switch), so the 
     another tab and switching space each close it.)
   - [x] Data: the preview uses its window's profile and data store; private windows' previews stay private and record
     nothing. In normal windows its pages go into history like any visit. Content blocking, user scripts and
-    extensions' content scripts run in it; extensions' tab APIs see it only once it is a tab. Not saved in the
-    session. (Checked: a private window's preview left no history row, normal previews did; the probe's ad script
+    extensions' content scripts run in it. Extensions know it as a tab while it shows (inactive, last in the window),
+    so their content scripts can reach their background pages; activating it from an extension opens it as a tab,
+    closing it closes the preview. (Walker, 2026-10-15; at first it was unknown to extensions until it became a tab.)
+    Not saved in the session. (Checked: a private window's preview left no history row, normal previews did; the probe's ad script
     blocked in the preview; an open preview absent from session.json and sessions/ after quitting; 2026-10-15: in a
     second profile the preview read that profile's cookie and storage and its page went into that profile's history.
-    Extensions, with a probe: its content script runs in the preview, but runtime.sendMessage fails there ("Tab not
-    found"), since WebKit delivers messages only from tabs it knows; after Open as Tab it works. So an extension
-    whose content script talks to its background (autofill, for one) doesn't work in a preview. Walker's call:
-    keep this, or register the preview as a tab with extensions while it shows.)
+    Extensions, with a probe: first its content script ran in the preview but runtime.sendMessage failed ("Tab not
+    found"), since WebKit delivers messages only from tabs it knows. Now registered: the message arrives with the
+    preview as an inactive sender, tabs.query counts it while it shows and not after it closes, and an extension's
+    tabs.update on it opened it as a tab under the same tab id.)
   - [x] Control bridge: `paddle_state` reports each window's preview (URL, title); `window_snapshot` draws it over the
     page; `open_url` gains `"in": "preview"` (refused while `linkPreview` is off); `openLinkPreviewAsTab` and
     `closeLinkPreview` run through `menu_action`. (Checked: all of them; the snapshot draws the backdrop and page but

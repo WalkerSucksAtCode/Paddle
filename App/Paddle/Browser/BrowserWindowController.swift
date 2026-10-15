@@ -142,8 +142,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
-        model.extensionHost?.windowClosing(self)
+        // The preview first, so extensions hear it closed while the window is still theirs.
         model.closePreview()
+        model.extensionHost?.windowClosing(self)
         for tab in model.allTabs { tab.sleep() }
         AppModel.shared.windowClosed(self)
     }

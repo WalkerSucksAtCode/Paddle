@@ -153,7 +153,8 @@ final class BrowserModel {
         if page == nil { focusAddress() }
     }
 
-    func insert(_ tab: Tab, after anchor: Tab?, select: Bool) {
+    /// `announce` false: extensions already know the tab (the link preview becoming one), so no tab-opened event.
+    func insert(_ tab: Tab, after anchor: Tab?, select: Bool, announce: Bool = true) {
         tab.browser = self
         var select = select
         // A link from a tab of a hidden space lands in that space, behind the scenes.
@@ -163,7 +164,7 @@ final class BrowserModel {
         } else {
             place(tab, after: anchor)
         }
-        extensionHost?.tabOpened(tab)
+        if announce { extensionHost?.tabOpened(tab) }
         if select {
             self.select(tab)
         } else if tab.url != nil {
@@ -854,9 +855,14 @@ final class BrowserModel {
     // MARK: - Link preview
 
     /// The link preview (⌥-click): a page over the content area, its own `Tab` with `isPreview` set and never in `tabs`
-    /// or `allTabs`, so no tab walk (strip, session, sleep policy, memory sampling, tab search, Reopen Closed Tab,
-    /// extensions, the bridge's tab lists) sees it. One per window; nil when none shows.
+    /// or `allTabs`, so no tab walk (strip, session, sleep policy, memory sampling, tab search, Reopen Closed Tab, the
+    /// bridge's tab lists) sees it. Extensions do (`extensionTabs`). One per window; nil when none shows.
     private(set) var preview: Tab?
+
+    /// The tabs extensions see: every tab of every space, then the link preview while one shows. WebKit delivers a
+    /// content script's messages only from a web view it knows as a tab, so the preview is registered with them while
+    /// it shows (inactive, last in the window) and its extensions' content scripts reach their background pages.
+    var extensionTabs: [Tab] { preview.map { allTabs + [$0] } ?? allTabs }
     /// The tab under the preview, where its links and popups open and next to which it becomes a tab.
     @ObservationIgnored private(set) weak var previewSource: Tab?
 
@@ -881,6 +887,7 @@ final class BrowserModel {
         previewSource = source
         preview = tab
         tab.wake()
+        extensionHost?.tabOpened(tab)
         controller?.focusWebView()
     }
 
@@ -890,14 +897,15 @@ final class BrowserModel {
         guard let tab = preview else { return }
         preview = nil
         previewSource = nil
+        extensionHost?.tabClosed(tab, windowIsClosing: false)
         tab.sleep()
         tab.opener = nil
         controller?.focusWebView()
     }
 
     /// Open as Tab (`split` false) or Open in Split View: the preview's own tab, web view and all (no reload; history,
-    /// scroll and form input kept), goes into the strip after the tab underneath through the usual insert, so
-    /// extensions hear of it and the session saves it, and is selected. With `split` and `canSplitPreview` it is split
+    /// scroll and form input kept), goes into the strip after the tab underneath through the usual insert, so the
+    /// session saves it, and is selected; extensions, which knew it as the preview, hear it moved. With `split` and `canSplitPreview` it is split
     /// with that tab, on the right.
     func openPreviewAsTab(split: Bool) {
         guard let tab = preview else { return }
@@ -906,7 +914,10 @@ final class BrowserModel {
         preview = nil
         previewSource = nil
         tab.isPreview = false
-        insert(tab, after: source, select: true)
+        // Extensions knew it as the window's last tab (`extensionTabs`); now it moves into the strip.
+        let previewIndex = allTabs.count
+        insert(tab, after: source, select: true, announce: false)
+        extensionHost?.tabMoved(tab, from: previewIndex)
         // Already selected, so it stays the focused side.
         if let partner { makeSplit(partner, with: tab) }
         // The page moves from the preview's card into the tab's WebContainer; the card's never takes it back
@@ -1263,8 +1274,11 @@ final class BrowserModel {
     }
 
     func tabURLChanged(_ tab: Tab) {
-        // The preview isn't in the address field, the session or extensions' tabs.
-        if tab.isPreview { return }
+        // The preview isn't in the address field or the session; extensions know it (`extensionTabs`).
+        if tab.isPreview {
+            extensionHost?.tabChanged(tab, .URL)
+            return
+        }
         if tab.id == selectedID { syncAddress() }
         extensionHost?.tabChanged(tab, .URL)
         AppModel.shared.sessionChanged()
