@@ -302,6 +302,7 @@ struct TabButton: View {
         }
         .onHover { inside in
             hovering = inside
+            model.pointerRests(on: tab, inside)
             if inside { hoverMemory = tab.memoryBytes.map { ($0, tab.sharesProcess) } }
         }
         .help(tooltip)

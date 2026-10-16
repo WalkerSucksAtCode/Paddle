@@ -33,6 +33,8 @@ struct WebContainer: NSViewRepresentable {
         container.frame = view.bounds
         container.autoresizingMask = [.width, .height]
         container.isHidden = false
+        // A container taken from `MountedWebPages` may still be transparent there.
+        container.alphaValue = 1
         view.addSubview(container)
         context.coordinator.generation = generation
         if takesKeyboard { tab.browser?.controller?.focusWebView() }
@@ -45,17 +47,25 @@ struct WebContainer: NSViewRepresentable {
     }
 }
 
-/// Draws the awake pages in one window. They stay attached. The one on screen is opaque; the others are
-/// transparent, so nothing is reparented when you switch.
+/// Draws the window's mounted pages (`BrowserModel.mountedWebTabs`: the selected one, the one you just left, a tab
+/// the pointer rests on and the one Cmd-W would show), so switching to any of them is an opacity flip. Every other page is detached from the window, which lets WebKit
+/// mark it hidden and throttle its timers, animations and video as Safari does for background tabs.
 ///
 /// `addSubview` on a view that is already in this window still calls `viewDidMoveToWindow` and
 /// `_removeLayerFromSuperlayer`. The layer is gone until that tab's process paints again, which is the
-/// frozen second between two awake pages. `isHidden` does the same via `viewDidHide`. Opacity does neither.
+/// frozen second between two awake pages. `isHidden` does the same via `viewDidHide`. Opacity does neither, so the
+/// mounted pages switch by opacity.
+///
+/// A page that was detached draws nothing until its process commits a frame after it is attached. Where WebKit has
+/// `_doAfterNextPresentationUpdate:`, the page on screen stays opaque (and attached, even when it has left the
+/// mounted set) until the new one has presented; without it the switch flips at once.
 /// Media is left alone unless `resumeMediaOnSelect` is on.
 struct MountedWebPages: NSViewRepresentable {
     var tabs: [Tab]
     var selectedID: UUID?
-    /// Off unless `resumeMediaOnSelect` is set. On, the selected page's media resumes and the others pause.
+    /// Off unless `resumeMediaOnSelect` is set. On, the selected page's media resumes and every other page of the
+    /// space stays paused, mounted or detached, until it is selected again; a page that sleeps, closes or leaves the
+    /// space gets its media back.
     var resumeMediaOnSelect = false
 
     func makeNSView(context: Context) -> MountedWebHost {
@@ -65,53 +75,178 @@ struct MountedWebPages: NSViewRepresentable {
     }
 
     func updateNSView(_ view: MountedWebHost, context: Context) {
-        let keep = Set(tabs.map { ObjectIdentifier($0.container) })
-        for subview in view.subviews where !keep.contains(ObjectIdentifier(subview)) {
-            subview.isHidden = false
-            subview.removeFromSuperview()
-        }
+        let coordinator = context.coordinator
+        let frontChanged = coordinator.front != selectedID
+        coordinator.host = view
+        coordinator.keep = Set(tabs.map { ObjectIdentifier($0.container) })
+        let target = tabs.first { $0.id == selectedID }
+        // The page drawn now, when it is about to be replaced by another.
+        let outgoing = coordinator.shown.flatMap { $0.superview === view && $0 !== target?.container ? $0 : nil }
+        let attached = target.map { $0.container.superview === view } ?? false
+        let stillWaiting = attached && target != nil && coordinator.pendingID == target?.id
+        // Not yet painted: just attached, or mounted ahead of a click (hover) that came before WebKit presented it.
+        let painted = target.map { coordinator.hasPresented($0.container) } ?? true
+        let startsWaiting = !stillWaiting && (!attached || !painted)
+            && target?.webView?.responds(to: Coordinator.presentationSelector) == true
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for tab in tabs {
-            let show = tab.id == selectedID
-            // Opacity, not addSubview and not isHidden: both of those take the layer down.
-            tab.container.alphaValue = show ? 1 : 0
-            guard tab.container.superview !== view else { continue }
+        for tab in tabs where tab.container.superview !== view {
+            // Transparent until `apply` picks the front, so a page that has not presented never covers the old one.
+            tab.container.alphaValue = 0
             tab.container.frame = view.bounds
             tab.container.autoresizingMask = [.width, .height]
             tab.container.isHidden = false
             view.addSubview(tab.container)
+            coordinator.attached(tab)
         }
         CATransaction.commit()
-        view.front = tabs.first { $0.id == selectedID }?.container
+        if let outgoing, let target, stillWaiting || startsWaiting {
+            coordinator.apply(front: outgoing, retaining: outgoing)
+            if startsWaiting { coordinator.wait(for: target) }
+        } else {
+            coordinator.cancelWait()
+            coordinator.apply(front: target?.container)
+            coordinator.shown = target?.container
+            if frontChanged, let target { SwitchTrace.shown(target) }
+        }
+        view.front = target?.container
+        updateMedia(coordinator)
+        if frontChanged, let target { target.browser?.controller?.focusWebView() }
+        coordinator.front = selectedID
+    }
+
+    private func updateMedia(_ coordinator: Coordinator) {
+        if let browser = tabs.first?.browser { coordinator.browser = browser }
+        let mounted = Set(tabs.map(\.id))
+        for (id, page) in coordinator.media where !mounted.contains(id) {
+            // Only detached, the page keeps its pause until it is selected again ("pauses the tab you left").
+            // Asleep, closed, or moved to another space or window: a pause set here must not outlive its place here.
+            let browser = coordinator.browser
+            let gone = page.tab.webView == nil || page.tab.browser !== browser
+                || browser?.tabs.contains(where: { $0 === page.tab }) != true
+            guard gone else { continue }
+            if page.suspended { page.tab.webView?.setAllMediaPlaybackSuspended(false, completionHandler: nil) }
+            coordinator.media[id] = nil
+        }
         if resumeMediaOnSelect {
-            let alive = Set(tabs.map(\.id))
-            context.coordinator.suspended = context.coordinator.suspended.filter { alive.contains($0.key) }
             for tab in tabs {
                 let suspend = tab.id != selectedID
-                guard context.coordinator.suspended[tab.id] != suspend else { continue }
+                guard coordinator.media[tab.id]?.suspended != suspend else { continue }
                 tab.webView?.setAllMediaPlaybackSuspended(suspend, completionHandler: nil)
-                context.coordinator.suspended[tab.id] = suspend
+                coordinator.media[tab.id] = (tab, suspend)
             }
-        } else if context.coordinator.suspended.values.contains(true) {
+        } else {
             // The option was on and paused these. Release them so a page can play on its own again.
-            for tab in tabs where context.coordinator.suspended[tab.id] == true {
-                tab.webView?.setAllMediaPlaybackSuspended(false, completionHandler: nil)
+            for page in coordinator.media.values where page.suspended {
+                page.tab.webView?.setAllMediaPlaybackSuspended(false, completionHandler: nil)
             }
-            context.coordinator.suspended.removeAll()
+            coordinator.media.removeAll()
         }
-        if context.coordinator.front != selectedID, selectedID != nil, let shown = tabs.first(where: { $0.id == selectedID }) {
-            shown.browser?.controller?.focusWebView()
-            SwitchTrace.shown(shown)
-        }
-        context.coordinator.front = selectedID
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     final class Coordinator {
+        static let presentationSelector = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        /// How long the old page stays up when the new one never reports a presentation (a hung process, an
+        /// occluded window); then the switch flips anyway, as it would without the private call.
+        private static let presentationLimit: Duration = .milliseconds(300)
+
         var front: UUID?
-        var suspended: [UUID: Bool] = [:]
+        /// The page drawn opaque now.
+        weak var shown: NSView?
+        weak var host: MountedWebHost?
+        /// The mounted containers as of the last update; `apply` detaches the rest.
+        var keep: Set<ObjectIdentifier> = []
+        /// The selected tab whose newly attached page has not presented yet.
+        private(set) var pendingID: UUID?
+        /// Bumped by every wait and cancel, so a callback from an earlier switch does nothing.
+        private var generation = 0
+        /// Containers WebKit has presented since they were last attached; a page in here shows at once.
+        private var presented: Set<ObjectIdentifier> = []
+
+        func hasPresented(_ container: NSView) -> Bool { presented.contains(ObjectIdentifier(container)) }
+
+        /// `tab`'s container was just added to the host: it counts as painted once WebKit presents it.
+        func attached(_ tab: Tab) {
+            let key = ObjectIdentifier(tab.container)
+            presented.remove(key)
+            guard let webView = tab.webView, webView.responds(to: Self.presentationSelector) else {
+                presented.insert(key)
+                return
+            }
+            let done: @Sendable @convention(block) () -> Void = { [weak self, weak tab] in
+                MainActor.assumeIsolated {
+                    guard let self, let tab, tab.container.superview === self.host else { return }
+                    self.presented.insert(ObjectIdentifier(tab.container))
+                }
+            }
+            typealias After = @convention(c) (WKWebView, Selector, @escaping @convention(block) () -> Void) -> Void
+            unsafeBitCast(webView.method(for: Self.presentationSelector), to: After.self)(webView, Self.presentationSelector, done)
+        }
+        /// Pages whose media this view set, and whether it holds it paused.
+        var media: [UUID: (tab: Tab, suspended: Bool)] = [:]
+        /// The window's tabs, for telling a page that is only detached from one that has left the window's space.
+        weak var browser: BrowserModel?
+
+        /// Makes `front` the one opaque page and detaches every container outside `keep` but `extra`.
+        func apply(front: NSView?, retaining extra: NSView? = nil) {
+            guard let host else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for subview in host.subviews {
+                if keep.contains(ObjectIdentifier(subview)) || subview === extra {
+                    // Opacity, not addSubview and not isHidden: both of those take the layer down.
+                    subview.alphaValue = subview === front ? 1 : 0
+                } else {
+                    subview.isHidden = false
+                    subview.alphaValue = 1
+                    subview.removeFromSuperview()
+                    presented.remove(ObjectIdentifier(subview))
+                }
+            }
+            CATransaction.commit()
+        }
+
+        func cancelWait() {
+            generation += 1
+            pendingID = nil
+        }
+
+        /// Shows `tab`'s page once WebKit has presented it after attaching, or after `presentationLimit`.
+        func wait(for tab: Tab) {
+            guard let webView = tab.webView else { return }
+            generation += 1
+            let generation = generation
+            pendingID = tab.id
+            let presented: @Sendable @convention(block) () -> Void = { [weak self, weak tab] in
+                MainActor.assumeIsolated {
+                    guard let self, let tab, self.generation == generation else { return }
+                    self.finishWait(tab)
+                }
+            }
+            typealias After = @convention(c) (WKWebView, Selector, @escaping @convention(block) () -> Void) -> Void
+            let after = unsafeBitCast(webView.method(for: Self.presentationSelector), to: After.self)
+            after(webView, Self.presentationSelector, presented)
+            Task { [weak self, weak tab] in
+                try? await Task.sleep(for: Self.presentationLimit)
+                guard let self, let tab, self.generation == generation else { return }
+                self.finishWait(tab)
+            }
+        }
+
+        private func finishWait(_ tab: Tab) {
+            cancelWait()
+            guard let host, tab.container.superview === host else {
+                // The page left this window meanwhile: drop the old page rather than keep it up.
+                apply(front: nil)
+                shown = nil
+                return
+            }
+            apply(front: tab.container)
+            shown = tab.container
+            SwitchTrace.shown(tab)
+        }
     }
 }
 

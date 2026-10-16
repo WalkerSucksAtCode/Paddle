@@ -14,6 +14,11 @@ final class NewTabStore {
     /// newtab.json's modification date and size as last read or written; nil when there was no file.
     @ObservationIgnored private var diskStamp: DiskStamp?
     @ObservationIgnored private var saveWork: DispatchWorkItem?
+    /// Frequent sites per profile as of the last finished query, shown at once while the next one runs.
+    @ObservationIgnored private var frequentCache: [ProfileID: [HistoryEntry]] = [:]
+    /// Bumped whenever the cache is dropped (history cleared or off, profile deleted): a query that was already
+    /// running then lands nowhere, so it can't put back what was just cleared.
+    @ObservationIgnored private var frequentEpoch = 0
     private let log = Logger(subsystem: "com.walker.Paddle", category: "newtab")
 
     private struct DiskStamp: Equatable {
@@ -73,13 +78,39 @@ final class NewTabStore {
         return data.sites.first { NewTabSites.normalized($0.url) == key }?.id
     }
 
+    /// The frequent sites last computed for `profile`, minus anything pinned or hidden since. Instant: no database access.
+    func cachedFrequentSites(profile: ProfileID) -> [HistoryEntry] {
+        guard AppModel.shared.historyEnabled else { return [] }
+        let excluded = excludedFrequentHosts
+        return (frequentCache[profile] ?? []).filter { NewTabSites.siteHost($0.url).map { !excluded.contains($0) } ?? false }
+    }
+
     /// The most visited sites of the last 30 days that aren't pinned or hidden: one page per host. Empty when
-    /// history is off. Read from `profile`'s history.
-    func frequentSites(limit: Int = 8, profile: String = ProfileStore.defaultID) -> [HistoryEntry] {
-        guard let history = AppModel.shared.history(for: profile) else { return [] }
-        let pinned = data.sites.compactMap { NewTabSites.siteHost($0.url) }
-        let excluded = Set(pinned).union(data.hiddenFrequent)
-        return (try? history.topSites(limit: limit, days: 30, now: Date(), excludingHosts: excluded)) ?? []
+    /// history is off. Read from `profile`'s history on a separate connection off the main thread (the app's own
+    /// `HistoryStore` is main-actor only), one query at a time. Nil when the calling task was cancelled, so a
+    /// superseded request never lands. The result is also kept for `cachedFrequentSites`.
+    func loadFrequentSites(limit: Int = 8, profile: ProfileID = ProfileStore.defaultID) async -> [HistoryEntry]? {
+        // Asking the app model opens the main connection on first use and applies the history-off and removed-profile rules.
+        guard AppModel.shared.history(for: profile) != nil else {
+            frequentCache[profile] = nil
+            return []
+        }
+        let path = AppModel.shared.historyPath(for: profile).path
+        let epoch = frequentEpoch
+        guard let found = await FrequentSitesQuery.shared.run(path: path, limit: limit, excluding: excludedFrequentHosts),
+              epoch == frequentEpoch else { return nil }
+        frequentCache[profile] = found
+        return cachedFrequentSites(profile: profile)
+    }
+
+    /// History was cleared (one profile's) or turned off (every profile's, `profile` nil): drop the cached row.
+    func forgetFrequentSites(profile: ProfileID? = nil) {
+        frequentEpoch += 1
+        if let profile { frequentCache[profile] = nil } else { frequentCache.removeAll() }
+    }
+
+    private var excludedFrequentHosts: Set<String> {
+        Set(data.sites.compactMap { NewTabSites.siteHost($0.url) }).union(data.hiddenFrequent)
     }
 
     // MARK: - Editing
@@ -171,5 +202,19 @@ final class NewTabStore {
             }
         }
         undoManager.setActionName(actionName)
+    }
+}
+
+/// Runs the Frequently visited query off the main thread. An actor, so queries run one after another and
+/// requests cancelled while waiting are skipped instead of piling up. Each query opens its own connection to the
+/// WAL database: `HistoryStore` is not shared across threads.
+private actor FrequentSitesQuery {
+    static let shared = FrequentSitesQuery()
+
+    /// Nil when the caller was cancelled or the database can't be read.
+    func run(path: String, limit: Int, excluding: Set<String>) -> [HistoryEntry]? {
+        guard !Task.isCancelled, FileManager.default.fileExists(atPath: path),
+              let history = try? HistoryStore(path: path) else { return nil }
+        return try? history.topSites(limit: limit, days: 30, now: Date(), excludingHosts: excluding)
     }
 }

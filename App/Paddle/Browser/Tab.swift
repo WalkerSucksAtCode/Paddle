@@ -535,7 +535,9 @@ final class Tab: Identifiable {
     func freeze() -> Bool {
         guard Self.supportsFreezing, let webView, !isFrozen, !suspendRequested, !isLoading, !awaitingBlockers,
               webView.responds(to: Self.suspendSelector), webView.responds(to: Self.resumeSelector) else { return false }
-        PrivateAPI.trimWebKitMemory(on: webView)
+        // No `PrivateAPI.trimWebKitMemory` here: it acts on the shared process pool, forcing a JavaScript collection in
+        // every web process (the page on screen included) and dropping WebKit's cached processes, on each freeze.
+        // Memory pressure still trims (`AppModel.trimWebKitMemory`).
         suspendRequested = true
         // Private WebKit API (`_suspendPage:`, a reply block with a BOOL), called the way `applyMute` calls its selectors.
         typealias Suspend = @convention(c) (AnyObject, Selector, @escaping @convention(block) (Bool) -> Void) -> Void

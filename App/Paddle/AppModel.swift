@@ -740,6 +740,7 @@ final class AppModel {
     /// Drops a profile's open history database (the profile was deleted, or its file is about to be).
     func forgetHistoryStore(profile: ProfileID) {
         histories[profile] = nil
+        newTab.forgetFrequentSites(profile: profile)
     }
 
     /// At launch and when historyDays changes: with historyDays 0 nothing is recorded (the files are left as they
@@ -748,6 +749,7 @@ final class AppModel {
         defer { historyGeneration += 1 }
         guard historyEnabled else {
             histories = [:]
+            newTab.forgetFrequentSites()
             return
         }
         _ = history(for: ProfileStore.defaultID)
@@ -829,6 +831,8 @@ final class AppModel {
     /// Only `profile`'s history and recently closed tabs; other profiles keep theirs.
     func clearHistory(since date: Date?, profile: ProfileID) {
         defer { historyGeneration += 1 }
+        // The New Tab page's Frequently visited row must not show what was just cleared, even for a moment.
+        newTab.forgetFrequentSites(profile: profile)
         windows.filter { $0.model.profileID == profile }.forEach { $0.model.forgetClosedTabs() }
         saveSessionNow()
         favicons.forget(since: date, keeping: bookmarks.siteKeys)
@@ -1142,8 +1146,11 @@ final class AppModel {
         source.setEventHandler {
             MainActor.assumeIsolated {
                 AppModel.shared.log.info("memory pressure: sleeping background tabs and trimming WebKit memory")
+                AppModel.shared.lastMemoryPressure = Date()
                 AppModel.shared.sweepSleepingTabs(memoryPressure: true)
                 AppModel.shared.trimWebKitMemory()
+                // Hands free malloc pages back to the system (vmmap, 2026-10-16: the default zone held ~24 MB unused).
+                malloc_zone_pressure_relief(nil, 0)
             }
         }
         source.resume()
@@ -1399,10 +1406,17 @@ final class AppModel {
     /// WebKit to run JavaScript garbage collection and clear process caches.
     func trimWebKitMemory() {
         web.emptyMemoryCaches()
+        // The trim acts on a web view's process pool (a forced collection in every one of its processes), so once per
+        // pool: tabs share WebKit's default pool, and once per tab repeated the same work for each.
+        var trimmed = Set<ObjectIdentifier>()
         for tab in allTabs {
-            if let webView = tab.webView {
-                PrivateAPI.trimWebKitMemory(on: webView)
-            }
+            guard let webView = tab.webView else { continue }
+            let pool = webView.configuration.value(forKey: "processPool") as AnyObject?
+            guard trimmed.insert(ObjectIdentifier(pool ?? webView)).inserted else { continue }
+            PrivateAPI.trimWebKitMemory(on: webView)
         }
     }
+
+    /// When the system last reported memory pressure; `WebEnvironment` doesn't launch a spare process soon after.
+    @ObservationIgnored var lastMemoryPressure: Date?
 }

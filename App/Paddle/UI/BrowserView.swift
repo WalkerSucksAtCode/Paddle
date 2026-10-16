@@ -169,7 +169,8 @@ struct BrowserView: View {
                 pane(tab, focused: focused)
             }
         } else {
-            // Awake pages stay in the window. Swapping a web view out and back waits on its process.
+            // The pages a switch is likely to show next stay in the window for an instant flip
+            // (`BrowserModel.mountedWebTabs`); other awake pages are taken out so WebKit throttles them.
             ZStack {
                 MountedWebPages(
                     tabs: model.mountedWebTabs,
@@ -208,7 +209,8 @@ struct BrowserView: View {
         }
     }
 
-    /// The tab's web view, kept in the window for as long as the tab has one.
+    /// The tab's web view as one side of a split, or the fallback pane. Single-page layouts attach web views through
+    /// `MountedWebPages`, which keeps only `BrowserModel.mountedWebTabs` in the window.
     @ViewBuilder
     private func webPane(_ tab: Tab, focused: Bool) -> some View {
         WebContainer(tab: tab, generation: tab.generation, takesKeyboard: focused)

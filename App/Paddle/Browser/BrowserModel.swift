@@ -31,6 +31,14 @@ final class BrowserModel {
     /// The active space's tabs. The other spaces' are in `stashes`; `allTabs` has every one.
     var tabs: [Tab] = []
     var selectedID: UUID?
+    /// The web page selected before `selectedID`, kept mounted beside it so switching back is instant. A tab that
+    /// draws no web page (Settings, New Tab, reader) doesn't take the slot, so the page before it stays.
+    private(set) var previousSelectedID: UUID?
+    /// An awake tab the pointer is resting on in the tab strip or sidebar. Its page is mounted (transparent) ahead of
+    /// the click, so WebKit has painted it by the time the click selects it (measured: a detached page otherwise
+    /// takes 33-118 ms to show).
+    private(set) var hoveredTabID: UUID?
+    @ObservationIgnored private var hoverWork: DispatchWorkItem?
     /// The active space's tab groups. Each group's tabs are adjacent in `tabs`, and a group with no tabs is removed.
     var groups: [TabGroup] = []
     /// The active space's split views. Each pairs two adjacent tabs of the same group (or none); `normalizeSplits` ends
@@ -119,10 +127,49 @@ final class BrowserModel {
 
     private static let speculativeLog = Logger(subsystem: "com.walker.Paddle", category: "web")
 
-    /// Awake pages kept in the window. Switching fades the others out; it does not reparent them, which drops
-    /// the layer until that tab's process paints.
+    /// Pages kept in the window: the selected tab's, the web page selected before it, an awake tab the pointer rests
+    /// on (`hoveredTabID`, not inside a collapsed group) and the tab closing the selected one would show
+    /// (`closeSuccessorID`), so each of those switches is an opacity flip of a page WebKit has already painted.
+    /// Every other page is detached, so WebKit treats it as hidden and throttles it (measured with 8 tabs: the
+    /// app's CPU 61% -> 25%).
     var mountedWebTabs: [Tab] {
-        tabs.filter { $0.hostsWebView && $0.webView != nil }
+        let successor = closeSuccessorID
+        return tabs.filter { tab in
+            let hovered = tab.id == hoveredTabID && group(of: tab)?.isCollapsed != true
+            return (tab.id == selectedID || tab.id == previousSelectedID || hovered || tab.id == successor)
+                && tab.hostsWebView && tab.webView != nil
+        }
+    }
+
+    /// The tab `close` would select if the selected tab closed now (Cmd-W): its opener when closing returns there,
+    /// else the nearest visible tab on the right (on the left for the last tab).
+    private var closeSuccessorID: UUID? {
+        guard let selected = selectedTab, let index = tabs.firstIndex(where: { $0 === selected }), tabs.count > 1 else { return nil }
+        if selected.returnsToOpener, let opener = selected.opener, opener !== selected, tabs.contains(where: { $0 === opener }) {
+            return opener.id
+        }
+        var rest = tabs
+        rest.remove(at: index)
+        let target = min(index, rest.count - 1)
+        let visible = rest.indices.filter { group(of: rest[$0])?.isCollapsed != true }
+        return (visible.min { abs($0 - target) < abs($1 - target) }.map { rest[$0] } ?? rest[target]).id
+    }
+
+    /// The pointer entered (`inside`) or left a tab in the strip or sidebar. After a short rest the tab's page is
+    /// mounted ahead of a click; passing over tabs on the way elsewhere mounts nothing.
+    func pointerRests(on tab: Tab, _ inside: Bool) {
+        hoverWork?.cancel()
+        hoverWork = nil
+        guard inside else {
+            if hoveredTabID == tab.id { hoveredTabID = nil }
+            return
+        }
+        let work = DispatchWorkItem { [weak self, weak tab] in
+            guard let self, let tab, tab.webView != nil, tab.id != self.selectedID else { return }
+            self.hoveredTabID = tab.id
+        }
+        hoverWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
     }
 
     /// Every tab of the window, in space order: the active space's and the stashed ones.
@@ -255,6 +302,9 @@ final class BrowserModel {
             // Once the user has moved on, closing a popup no longer jumps back to its opener (as in Chrome).
             previous.returnsToOpener = false
         }
+        if previous !== tab, let previous, previous.hostsWebView, previous.webView != nil { previousSelectedID = previous.id }
+        hoverWork?.cancel()
+        hoveredTabID = nil
         selectedID = tab.id
         if let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
         tab.lastActive = now
@@ -1078,6 +1128,7 @@ final class BrowserModel {
     }
 
     func toggleCollapsed(_ group: TabGroup) {
+        hoveredTabID = nil
         if group.isCollapsed {
             group.isCollapsed = false
         } else {

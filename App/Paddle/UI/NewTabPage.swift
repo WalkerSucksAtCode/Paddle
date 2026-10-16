@@ -3,11 +3,12 @@ import PaddleCore
 import SwiftUI
 
 /// The page of an empty tab: pinned sites, an optional Frequently visited row and a link to the config folder.
-/// Pinned sites come from `app.newTab`; the frequent row is computed once on appear and when the store or config changes.
+/// Pinned sites come from `app.newTab`; the frequent row is shown from the last result at once and re-queried off the main thread on appear and when the store or config changes.
 struct NewTabPage: View {
     let model: BrowserModel
     let app: AppModel
     @State private var frequent: [HistoryEntry] = []
+    @State private var frequentTask: Task<Void, Never>?
     @State private var adding = false
     @Environment(\.chromeScale) private var scale
     @Environment(\.chromeTheme) private var theme
@@ -62,13 +63,27 @@ struct NewTabPage: View {
         .background(theme?.newTabBackground ?? Color(nsColor: .textBackgroundColor))
         .chromeText(enabled: theme?.newTabBackground != nil)
         .onAppear(perform: refreshFrequent)
+        .onDisappear { frequentTask?.cancel() }
         .onChange(of: app.newTab.sites) { refreshFrequent() }
         .onChange(of: app.newTab.hiddenFrequent) { refreshFrequent() }
         .onChange(of: app.config.newTabFrequentSites) { refreshFrequent() }
     }
 
+    /// Shows the cached row now, then replaces it with a fresh query's result. A newer refresh cancels the older one;
+    /// a result only lands while this page still belongs to the profile it was asked for.
     private func refreshFrequent() {
-        frequent = showsFrequent ? app.newTab.frequentSites(limit: 8, profile: model.profileID) : []
+        frequentTask?.cancel()
+        guard showsFrequent else {
+            frequent = []
+            return
+        }
+        let profile = model.profileID
+        frequent = app.newTab.cachedFrequentSites(profile: profile)
+        frequentTask = Task {
+            guard let found = await app.newTab.loadFrequentSites(limit: 8, profile: profile),
+                  !Task.isCancelled, model.profileID == profile, showsFrequent else { return }
+            frequent = found
+        }
     }
 }
 

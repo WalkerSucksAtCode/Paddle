@@ -144,6 +144,10 @@ final class WebEnvironment {
         c.preferences.javaScriptCanOpenWindowsAutomatically = Self.allowsScriptWindows
         c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
+        // A background tab is out of the window (`MountedWebPages` keeps only `BrowserModel.mountedWebTabs` in it). WebKit's default for such a view suspends its process; throttling keeps chat, mail and notification
+        // pages receiving while it slows their timers and stops their drawing. Idle tabs still freeze and sleep
+        // through Paddle's own policy.
+        c.preferences.inactiveSchedulingPolicy = .throttle
         c.allowsAirPlayForMediaPlayback = true
         // Safari's default ("Stop media with sound"): pages can autoplay muted video, sound waits for a click or key.
         // WebKit's own macOS default lets pages start sound on their own.
@@ -151,7 +155,32 @@ final class WebEnvironment {
         c.webExtensionController = extensions ? extensionController(for: isPrivate ? ProfileStore.defaultID : profile) : nil
         Self.enableWebFeatures(c.preferences)
         if !isPrivate, config.speculativeLoading { Self.enableDNSPrefetching(c.preferences) }
+        if !isPrivate { scheduleProcessWarm(for: c) }
         return c
+    }
+
+    private static let warmInitialProcess = NSSelectorFromString("_warmInitialProcess")
+    @ObservationIgnored private var warmTask: Task<Void, Never>?
+
+    /// Keeps one spare WebContent process launched in the shared pool, so a new tab or a woken tab can skip launching
+    /// one (a cold wake's process start measured 20-40 ms; the saving itself is not measured). WebKit prewarms by itself only once it has swapped processes on a navigation, and
+    /// `prewarmsProcessesAutomatically` lives on the pool configuration, which cannot change for a pool that exists;
+    /// `-[WKProcessPool _warmInitialProcess]` is a no-op while a prewarmed process is already waiting, so calling it
+    /// after every web view creation refills the spare once the previous one was taken. Delayed and coalesced so the
+    /// spare launches after the view that is being made has picked up its own process. Not for private windows; the
+    /// spare carries no data store, so it serves any window. Without the selector nothing happens.
+    /// Not in Low Power Mode or heat (`AppModel.power`), and not within a minute of memory pressure: a spare is an
+    /// idle process (measured: one extra WebContent process of about 7 MB), the opposite of what a pressure trim frees.
+    private func scheduleProcessWarm(for c: WKWebViewConfiguration) {
+        guard let pool = c.value(forKey: "processPool") as? NSObject, pool.responds(to: Self.warmInitialProcess) else { return }
+        warmTask?.cancel()
+        warmTask = Task { [weak pool] in
+            try? await Task.sleep(for: .milliseconds(800))
+            guard !Task.isCancelled, let pool else { return }
+            let app = AppModel.shared
+            guard !app.power.isConstrained, app.lastMemoryPressure.map({ Date().timeIntervalSince($0) > 60 }) ?? true else { return }
+            pool.perform(Self.warmInitialProcess)
+        }
     }
 
     private static let setDNSPrefetching = NSSelectorFromString("_setDNSPrefetchingEnabled:")

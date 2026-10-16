@@ -291,7 +291,10 @@ private struct SidebarTabBehavior: ViewModifier {
             .accessibilityAction(named: tab.isMuted ? "Unmute Tab" : "Mute Tab") {
                 if Tab.supportsMuting { model.toggleMute(tab) }
             }
-            .onHover(perform: onHover)
+            .onHover { inside in
+                onHover(inside)
+                model.pointerRests(on: tab, inside)
+            }
             .help(tooltip)
             .modifier(TabDrag(tab: tab, enabled: !isRenaming))
             .overlay { TabDropBar(tab: tab, model: model, vertical: true) }
