@@ -202,6 +202,12 @@ struct BrowserView: View {
                     // areas ignore what covers them), so its bubble would name a link the pointer isn't on. The
                     // card shows the preview's own.
                     .overlay(alignment: .bottomLeading) { if model.preview == nil { LinkStatusBubble(tab: tab) } }
+                    .overlay(alignment: .bottom) {
+                        if tab.isPDF {
+                            PDFToolbarHUD(tab: tab, model: model)
+                                .padding(.bottom, 16)
+                        }
+                    }
             }
         } else {
             NewTabPage(model: model, app: app)
@@ -407,6 +413,38 @@ private struct NavigationBar: View {
                 .buttonStyle(.borderless)
                 .help(tab.readerArticle != nil ? "Hide Reader (⇧⌘R)" : "Show Reader (⇧⌘R)")
                 .accessibilityLabel("Reader Mode")
+            }
+            if let tab, tab.url != nil, !tab.isPDF, !addressFocused {
+                Button {
+                    tab.showTranslatePopover.toggle()
+                } label: {
+                    Image(systemName: "translate")
+                        .chromeFont(size: 12)
+                        .foregroundStyle(tab.url?.host?.contains("translate.goog") == true ? (theme?.accent ?? Color.accentColor) : Color.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Translate Page…")
+                .accessibilityLabel("Translate Page")
+                .popover(isPresented: Bindable(tab).showTranslatePopover, arrowEdge: .bottom) {
+                    TranslatePopover(tab: tab, model: model)
+                }
+            }
+            if let tab, tab.isPDF, !addressFocused {
+                Button {
+                    model.controller?.paddleOpenInPreview(nil)
+                } label: {
+                    Text("PDF")
+                        .chromeFont(size: 10, weight: .bold)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(theme?.accent?.opacity(0.18) ?? Color.accentColor.opacity(0.18)))
+                        .foregroundStyle(theme?.accent ?? Color.accentColor)
+                }
+                .buttonStyle(.borderless)
+                .help("Open in Preview.app")
+                .accessibilityLabel("PDF Document")
             }
             if let url = tab?.url, HistoryStore.isRecordable(url), !addressFocused {
                 let bookmarked = app.bookmarks.isBookmarked(url)

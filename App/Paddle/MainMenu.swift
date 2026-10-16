@@ -54,6 +54,8 @@ enum MainMenu {
         add(file, "reopenClosedTab", "Reopen Closed Tab", #selector(BrowserWindowController.paddleReopenClosedTab(_:)), "t", [.command, .shift])
         file.addItem(.separator())
         add(file, "savePage", "Save Page As…", #selector(BrowserWindowController.paddleSavePage(_:)), "s")
+        add(file, "exportPDF", "Export as PDF…", #selector(BrowserWindowController.paddleExportPDF(_:)), "")
+        add(file, "openInPreview", "Open in Preview", #selector(BrowserWindowController.paddleOpenInPreview(_:)), "")
         add(file, "print", "Print…", #selector(BrowserWindowController.paddlePrint(_:)), "p")
         let share = add(file, "sharePage", "Share…", #selector(BrowserWindowController.paddleShare(_:)), "")
         let shareSubmenu = NSMenu(title: "Share")
@@ -96,6 +98,7 @@ enum MainMenu {
         add(view, "viewSource", "View Source", #selector(BrowserWindowController.paddleViewSource(_:)), "u", [.command, .option])
         add(view, "toggleReaderMode", "Show Reader", #selector(BrowserWindowController.paddleToggleReaderMode(_:)), "r", [.command, .shift])
         add(view, "togglePictureInPicture", "Picture in Picture", #selector(BrowserWindowController.paddleTogglePictureInPicture(_:)), "p", [.command, .control])
+        add(view, "translatePage", "Translate Page…", #selector(BrowserWindowController.paddleTranslatePage(_:)), "")
         view.addItem(.separator())
         add(view, "fullScreen", "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
 

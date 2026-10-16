@@ -110,6 +110,10 @@ final class Tab: Identifiable {
     var readerArticle: ReaderArticle?
     /// Whether the current page has article content that can be read in Reader Mode.
     var isReaderAvailable = false
+    /// Whether the tab is currently displaying a PDF document.
+    var isPDF = false
+    /// Whether the translation popover is presented for this tab.
+    var showTranslatePopover = false
     @ObservationIgnored private var committedErrorPage = false
     @ObservationIgnored private var isProcessTerminated = false
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []

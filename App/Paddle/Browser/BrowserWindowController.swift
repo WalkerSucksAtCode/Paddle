@@ -237,6 +237,76 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// File > Export as PDF…: exports the active page as a PDF file using WebKit's native PDF renderer.
+    @objc func paddleExportPDF(_ sender: Any?) {
+        guard canActOnPage, let tab, let webView, let window else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = Self.fileName(for: tab) + ".pdf"
+        Task {
+            guard await panel.beginSheetModal(for: window) == .OK, let destination = panel.url else { return }
+            let config = WKPDFConfiguration()
+            webView.createPDF(configuration: config) { result in
+                switch result {
+                case .success(let data):
+                    do {
+                        try data.write(to: destination, options: .atomic)
+                    } catch {
+                        let alert = NSAlert()
+                        alert.alertStyle = .warning
+                        alert.messageText = "The PDF couldn't be saved"
+                        alert.informativeText = error.localizedDescription
+                        alert.beginSheetModal(for: window) { _ in }
+                    }
+                case .failure(let error):
+                    let alert = NSAlert()
+                    alert.alertStyle = .warning
+                    alert.messageText = "The PDF couldn't be exported"
+                    alert.informativeText = error.localizedDescription
+                    alert.beginSheetModal(for: window) { _ in }
+                }
+            }
+        }
+    }
+
+    /// Opens the current PDF in macOS Preview.app.
+    @objc func paddleOpenInPreview(_ sender: Any?) {
+        guard let tab, let url = tab.url else { return }
+        if url.isFileURL {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        Task {
+            do {
+                let (tempURL, _) = try await URLSession.shared.download(from: url)
+                let filename = url.lastPathComponent.isEmpty ? (Self.fileName(for: tab) + ".pdf") : url.lastPathComponent
+                let destination = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: tempURL, to: destination)
+                NSWorkspace.shared.open(destination)
+            } catch {
+                if let webView = tab.webView {
+                    let config = WKPDFConfiguration()
+                    webView.createPDF(configuration: config) { result in
+                        if case .success(let data) = result {
+                            let destination = FileManager.default.temporaryDirectory.appendingPathComponent(Self.fileName(for: tab) + ".pdf")
+                            try? data.write(to: destination)
+                            NSWorkspace.shared.open(destination)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// View > Translate Page…: presents the translation popover for the active tab.
+    @objc func paddleTranslatePage(_ sender: Any?) {
+        guard canActOnPage, let tab else { return }
+        tab.showTranslatePopover.toggle()
+    }
+
     /// A file name from the page title (or host), without characters Finder or the shell trip over.
     private static func fileName(for tab: Tab) -> String {
         let raw = tab.title.isEmpty ? (tab.url?.host() ?? "Page") : tab.title
@@ -569,9 +639,12 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleToggleReaderMode(_:)):
             menuItem.title = tab?.readerArticle != nil ? "Hide Reader" : "Show Reader"
             return tab != nil && (tab?.isReaderAvailable == true || tab?.readerArticle != nil)
-        case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleViewSource(_:)),
+        case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
+             #selector(paddleTranslatePage(_:)), #selector(paddleViewSource(_:)),
              #selector(paddleTogglePictureInPicture(_:)):
             return canActOnPage
+        case #selector(paddleOpenInPreview(_:)):
+            return tab?.isPDF == true || tab?.url?.pathExtension.lowercased() == "pdf"
         case #selector(paddleReload(_:)), #selector(paddleHardReload(_:)), #selector(paddleStop(_:)),
              #selector(paddleZoomIn(_:)), #selector(paddleZoomOut(_:)), #selector(paddleActualSize(_:)),
              #selector(paddleWebInspector(_:)), #selector(paddleJavaScriptConsole(_:)),

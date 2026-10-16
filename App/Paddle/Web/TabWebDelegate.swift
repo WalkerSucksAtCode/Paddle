@@ -252,7 +252,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
-        if navigationResponse.isForMainFrame { mainFrameResponded = true }
+        if navigationResponse.isForMainFrame {
+            mainFrameResponded = true
+            let mime = navigationResponse.response.mimeType?.lowercased() ?? ""
+            let ext = navigationResponse.response.url?.pathExtension.lowercased() ?? ""
+            tab?.isPDF = (mime == "application/pdf" || ext == "pdf")
+        }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let isAttachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
         guard isAttachment || !navigationResponse.canShowMIMEType else { return .allow }
@@ -376,6 +381,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         tab?.hoveredLink = nil
+        tab?.isPDF = false
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
