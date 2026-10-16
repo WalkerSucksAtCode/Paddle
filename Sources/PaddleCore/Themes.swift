@@ -172,8 +172,28 @@ public struct ChromeTheme: Sendable, Equatable, Identifiable {
             }
             return result
         }
-        let theme = ChromeTheme(id: id, name: id, light: palette("light"), dark: palette("dark"))
+        let themeName = (root["name"] as? String)?.trimmingCharacters(in: .whitespaces)
+        let name = (themeName?.isEmpty == false) ? themeName! : id
+        let theme = ChromeTheme(id: id, name: name, light: palette("light"), dark: palette("dark"))
         return (theme, warnings)
+    }
+
+    /// Encodes the theme as a JSON object matching `decode`: `{"name": "...", "light": {...}, "dark": {...}}`.
+    public func encode() throws -> Data {
+        var dict: [String: Any] = ["name": name]
+        func paletteDict(_ palette: ThemePalette?) -> [String: String]? {
+            guard let palette else { return nil }
+            var d: [String: String] = [:]
+            for key in ThemePalette.keys {
+                if let color = palette[key] {
+                    d[key] = color.hex
+                }
+            }
+            return d.isEmpty ? nil : d
+        }
+        if let light = paletteDict(light) { dict["light"] = light }
+        if let dark = paletteDict(dark) { dict["dark"] = dark }
+        return try JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys])
     }
 }
 

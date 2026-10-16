@@ -136,6 +136,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabFrequentSites: Bool
     /// Prompt for a destination folder for each download instead of saving directly to ~/Downloads.
     public var askWhereToDownload: Bool
+    /// Underline website links for readability and colorblind accessibility.
+    public var underlineLinks: Bool
+    /// Keep the close button visible on all tabs without needing to hover.
+    public var alwaysShowTabCloseButtons: Bool
+    /// Show a Home button on the toolbar that navigates to `homepage`.
+    public var showHomeButton: Bool
+    /// Keep the Downloads button visible on the toolbar even when no downloads are active.
+    public var alwaysShowDownloadsButton: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -171,6 +179,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload
+        case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case appearance, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -205,6 +214,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         httpsOnly: Bool = true,
         newTabFrequentSites: Bool = true,
         askWhereToDownload: Bool = false,
+        underlineLinks: Bool = false,
+        alwaysShowTabCloseButtons: Bool = false,
+        showHomeButton: Bool = false,
+        alwaysShowDownloadsButton: Bool = false,
         appearance: AppearanceMode = .system,
         highContrastTabs: Bool = false,
         theme: String = "default",
@@ -253,6 +266,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.httpsOnly = httpsOnly
         self.newTabFrequentSites = newTabFrequentSites
         self.askWhereToDownload = askWhereToDownload
+        self.underlineLinks = underlineLinks
+        self.alwaysShowTabCloseButtons = alwaysShowTabCloseButtons
+        self.showHomeButton = showHomeButton
+        self.alwaysShowDownloadsButton = alwaysShowDownloadsButton
         self.appearance = appearance
         self.highContrastTabs = highContrastTabs
         self.theme = theme
@@ -309,6 +326,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
         newTabFrequentSites = c.decodeValue(.newTabFrequentSites, d.newTabFrequentSites, issues)
         askWhereToDownload = c.decodeValue(.askWhereToDownload, d.askWhereToDownload, issues)
+        underlineLinks = c.decodeValue(.underlineLinks, d.underlineLinks, issues)
+        alwaysShowTabCloseButtons = c.decodeValue(.alwaysShowTabCloseButtons, d.alwaysShowTabCloseButtons, issues)
+        showHomeButton = c.decodeValue(.showHomeButton, d.showHomeButton, issues)
+        alwaysShowDownloadsButton = c.decodeValue(.alwaysShowDownloadsButton, d.alwaysShowDownloadsButton, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
         theme = c.decodeValue(.theme, d.theme, issues)

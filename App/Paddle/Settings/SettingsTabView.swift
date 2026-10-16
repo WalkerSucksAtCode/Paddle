@@ -27,6 +27,13 @@ struct SettingsTabView: View {
                 SettingsPaneView(pane: selected, model: model)
             }
         }
+        .onKeyPress(phases: .down) { press in
+            guard press.modifiers.contains(.command),
+                  let num = Int(press.characters),
+                  num >= 1, num <= SettingsPane.allCases.count else { return .ignored }
+            choose(SettingsPane.allCases[num - 1])
+            return .handled
+        }
         .onAppear(perform: start)
         .onDisappear {
             watcher?.cancel()
@@ -59,6 +66,26 @@ struct SettingsTabView: View {
                     .foregroundStyle(.secondary)
                     .padding(12)
             }
+            Divider()
+            HStack {
+                if !search.isEmpty {
+                    Text("\(matches.count) \(matches.count == 1 ? "pane" : "panes")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear") { search = "" }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(Color.accentColor)
+                } else {
+                    Text("⌘1–⌘9 jumps to pane")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
     }
 
@@ -71,6 +98,11 @@ struct SettingsTabView: View {
                 .textFieldStyle(.plain)
                 .accessibilityLabel("Search settings")
                 .focused($searchFocused)
+                .onSubmit {
+                    if let first = matches.first {
+                        choose(first)
+                    }
+                }
                 .onChange(of: browser.settingsSearchFocusRequest) {
                     searchFocused = true
                     DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }

@@ -9,6 +9,8 @@ struct AppearancePane: View {
     @Environment(\.colorScheme) private var colorScheme
     /// The tint strength while the slider is dragged; saved when the drag ends.
     @State private var strengthDraft: Double?
+    @State private var showingThemeBuilder = false
+    @State private var editingTheme: ChromeTheme?
 
     /// Default zoom choices (percent); a value set by hand is added to them.
     private static let zoomLevels = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]
@@ -54,12 +56,35 @@ struct AppearancePane: View {
                 .help("highContrastTabs in config.json. Draws the selected tab with a stronger outline and brightness difference.")
             }
             .disabled(model.controlsDisabled)
+            Section("Toolbar & Tabs") {
+                Toggle("Show Home button on toolbar", isOn: Binding(
+                    get: { model.file.showHomeButton },
+                    set: { value in Task { await model.saveKey(.showHomeButton, .bool(value)) } }
+                ))
+                .help("showHomeButton in config.json. Adds a Home button that navigates directly to your homepage.")
+                Toggle("Always show Downloads button", isOn: Binding(
+                    get: { model.file.alwaysShowDownloadsButton },
+                    set: { value in Task { await model.saveKey(.alwaysShowDownloadsButton, .bool(value)) } }
+                ))
+                .help("alwaysShowDownloadsButton in config.json. Keeps the Downloads icon visible even when no downloads are active.")
+                Toggle("Always show tab close buttons", isOn: Binding(
+                    get: { model.file.alwaysShowTabCloseButtons },
+                    set: { value in Task { await model.saveKey(.alwaysShowTabCloseButtons, .bool(value)) } }
+                ))
+                .help("alwaysShowTabCloseButtons in config.json. Keeps the close button visible on all tabs without having to hover.")
+            }
+            .disabled(model.controlsDisabled)
             Section("Pages") {
                 zoomPicker
                 fontSizePicker
             }
             .disabled(model.controlsDisabled)
             Section("Accessibility") {
+                Toggle("Underline website links", isOn: Binding(
+                    get: { model.file.underlineLinks },
+                    set: { value in Task { await model.saveKey(.underlineLinks, .bool(value)) } }
+                ))
+                .help("underlineLinks in config.json. Underlines text hyperlinks across all websites to aid colorblind readability.")
                 Toggle("Always reduce motion", isOn: Binding(
                     get: { model.file.reduceMotion == .always },
                     set: { value in Task { await model.saveKey(.reduceMotion, .string(value ? "always" : "system")) } }
@@ -72,6 +97,11 @@ struct AppearancePane: View {
                 .help("reduceTransparency in config.json. Off follows System Settings > Accessibility > Display.")
             }
             .disabled(model.controlsDisabled)
+        }
+        .sheet(isPresented: $showingThemeBuilder) {
+            ThemeBuilderSheet(model: model, existingTheme: editingTheme) {
+                showingThemeBuilder = false
+            }
         }
     }
 
@@ -91,11 +121,26 @@ struct AppearancePane: View {
                 }
             }
             .help("theme in config.json. Default keeps today's look; the others set the colors of the tab strip, toolbar, selected tab, text and New Tab page.")
-            Button("Open Themes Folder") {
-                try? FileManager.default.createDirectory(at: Paths.themes, withIntermediateDirectories: true)
-                NSWorkspace.shared.open(Paths.themes)
+            HStack(spacing: 12) {
+                Button("Create Custom Theme…") {
+                    editingTheme = nil
+                    showingThemeBuilder = true
+                }
+                if let current = app.themes.available.first(where: { $0.id == model.file.theme }), !current.isBuiltIn {
+                    Button("Edit Theme…") {
+                        editingTheme = current
+                        showingThemeBuilder = true
+                    }
+                    Button("Delete Theme", role: .destructive) {
+                        deleteCustomTheme(id: current.id)
+                    }
+                }
+                Button("Open Themes Folder") {
+                    try? FileManager.default.createDirectory(at: Paths.themes, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(Paths.themes)
+                }
             }
-            .help("themes/ in the config folder. A theme is themes/<name>.json with light and dark colors; see the README.")
+            .help("themes/ in the config folder. Create, customize, or open themes/<name>.json files.")
             // Every theme problem, not only the first one the notice under the toolbar names.
             ForEach(app.themeWarnings, id: \.self) { warning in
                 Label(warning, systemImage: "exclamationmark.triangle")
@@ -199,6 +244,15 @@ struct AppearancePane: View {
             ForEach(sizes, id: \.self) { Text($0 == 0 ? "Off" : "\($0) pt").tag($0) }
         }
         .help("minimumFontSize in config.json. Pages never show text smaller than this; Off leaves the page's sizes alone.")
+    }
+
+    private func deleteCustomTheme(id: String) {
+        let file = Paths.themes.appendingPathComponent("\(id).json")
+        try? FileManager.default.removeItem(at: file)
+        AppModel.shared.themes.load()
+        Task {
+            await model.saveKey(.theme, .string("default"))
+        }
     }
 }
 

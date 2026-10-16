@@ -43,6 +43,17 @@ struct ThemeTests {
         #expect(darkOnly.theme.light == nil && darkOnly.theme.dark != nil)
     }
 
+    @Test func encodeAndDecodeWithCustomName() throws {
+        let palette = ThemePalette(tabStrip: RGBColor(hex: "#112233"), toolbar: RGBColor(hex: "#445566"))
+        let theme = ChromeTheme(id: "custom-sunset", name: "Custom Sunset", light: palette, dark: palette)
+        let data = try theme.encode()
+        let (decoded, warnings) = try ChromeTheme.decode(id: "custom-sunset", data: data)
+        #expect(warnings.isEmpty)
+        #expect(decoded.name == "Custom Sunset")
+        #expect(decoded.light?.tabStrip == RGBColor(hex: "#112233"))
+        #expect(decoded.dark?.toolbar == RGBColor(hex: "#445566"))
+    }
+
     @Test func nonObjectThrows() {
         #expect(throws: (any Error).self) { try ChromeTheme.decode(id: "x", data: Data("[1]".utf8)) }
         #expect(throws: (any Error).self) { try ChromeTheme.decode(id: "x", data: Data("nope".utf8)) }
@@ -88,5 +99,16 @@ struct ThemeTests {
         #expect(bad.config.accentColor == "system" && bad.config.chromeTint == "none" && bad.config.theme == "default")
         #expect(Set(bad.issues.map(\.key)) == [.accentColor, .chromeTint, .theme])
         #expect(try PaddleConfig.decode(good.encoded()) == good)
+    }
+
+    @Test func accessibilityAndCustomizationConfigKeys() throws {
+        let d = PaddleConfig()
+        #expect(!d.underlineLinks && !d.alwaysShowTabCloseButtons && !d.showHomeButton && !d.alwaysShowDownloadsButton)
+        let json = """
+        {"underlineLinks": true, "alwaysShowTabCloseButtons": true, "showHomeButton": true, "alwaysShowDownloadsButton": true}
+        """
+        let config = try PaddleConfig.decode(Data(json.utf8))
+        #expect(config.underlineLinks && config.alwaysShowTabCloseButtons && config.showHomeButton && config.alwaysShowDownloadsButton)
+        #expect(try PaddleConfig.decode(config.encoded()) == config)
     }
 }

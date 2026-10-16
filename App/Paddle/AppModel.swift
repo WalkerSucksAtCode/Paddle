@@ -485,6 +485,10 @@ final class AppModel {
             case .httpsOnly: old.httpsOnly != new.httpsOnly
             case .newTabFrequentSites: old.newTabFrequentSites != new.newTabFrequentSites
             case .askWhereToDownload: old.askWhereToDownload != new.askWhereToDownload
+            case .underlineLinks: old.underlineLinks != new.underlineLinks
+            case .alwaysShowTabCloseButtons: old.alwaysShowTabCloseButtons != new.alwaysShowTabCloseButtons
+            case .showHomeButton: old.showHomeButton != new.showHomeButton
+            case .alwaysShowDownloadsButton: old.alwaysShowDownloadsButton != new.alwaysShowDownloadsButton
             case .appearance: old.appearance != new.appearance
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
             case .theme: old.theme != new.theme

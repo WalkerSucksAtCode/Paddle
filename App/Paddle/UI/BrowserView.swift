@@ -315,6 +315,11 @@ private struct NavigationBar: View {
             iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil && tab?.settingsPane == nil) {
                 if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.reload() }
             }
+            if app.config.showHomeButton {
+                iconButton("house", help: "Home", enabled: true) {
+                    model.navigate(app.config.homepage)
+                }
+            }
             if model.isPrivate {
                 Label("Private", systemImage: "eye.slash")
                     .chromeFont(size: 11, weight: .medium)
@@ -339,7 +344,7 @@ private struct NavigationBar: View {
                 if model.extensionsAllowed, let host = model.extensionHost {
                     ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
-                if !app.downloads.items.isEmpty {
+                if app.config.alwaysShowDownloadsButton || !app.downloads.items.isEmpty {
                     downloadsButton
                 }
             }

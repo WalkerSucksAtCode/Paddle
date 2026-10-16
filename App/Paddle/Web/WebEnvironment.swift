@@ -223,6 +223,16 @@ final class WebEnvironment {
             ))
         }
 
+        if config.underlineLinks {
+            let underlineCSS = "a, a:link, a:visited { text-decoration: underline !important; }"
+            contentController.addUserScript(WKUserScript(
+                source: Self.styleInjection(underlineCSS),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false,
+                in: .defaultClient
+            ))
+        }
+
         let files = (try? FileManager.default.contentsOfDirectory(at: Paths.userScripts, includingPropertiesForKeys: nil)) ?? []
         for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where file.pathExtension == "js" {
             guard let source = try? String(contentsOf: file, encoding: .utf8) else { continue }

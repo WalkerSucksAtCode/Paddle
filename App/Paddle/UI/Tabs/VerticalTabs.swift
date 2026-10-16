@@ -428,7 +428,7 @@ private struct SidebarTabRow: View {
                     .help(audio == .muted ? "Unmute Tab" : "Mute Tab")
                     .accessibilityLabel(audio == .muted ? "Unmute Tab" : "Mute Tab")
                 }
-                let closeShown = hovering || isSelected
+                let closeShown = AppModel.shared.config.alwaysShowTabCloseButtons || hovering || isSelected
                 Button {
                     model.close(tab)
                 } label: {

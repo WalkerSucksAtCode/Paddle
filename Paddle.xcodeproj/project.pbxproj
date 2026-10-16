@@ -72,6 +72,7 @@
 		A136EA310CE39E5B3601C8CA /* PaddleCore in Frameworks */ = {isa = PBXBuildFile; productRef = BD5C9C757A3417F27389B736 /* PaddleCore */; };
 		A2709A6C8A004234864B824C /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDB45BBE62413E30D184AA5E /* BookmarkStore.swift */; };
 		A8A2BBA04239338337B0BF50 /* NewTabPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3485769C1E48286709A33E89 /* NewTabPage.swift */; };
+		A988120F0AF7A12280F035C0 /* ThemeBuilderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0B10214AB500E253508F96 /* ThemeBuilderSheet.swift */; };
 		AA1C532B2F2AFD7C39F1E0EA /* BridgeSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */; };
 		AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */; };
 		B15050EC419C701DB0C5049D /* Bookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10F08E60740FF045413DAC8 /* Bookmarks.swift */; };
@@ -159,6 +160,7 @@
 		363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreInstallViews.swift; sourceTree = "<group>"; };
 		37018AF63521DBC068EE5C08 /* TabGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabGroup.swift; sourceTree = "<group>"; };
 		38FF180A042514269EA95F84 /* ExtensionPopups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPopups.swift; sourceTree = "<group>"; };
+		3C0B10214AB500E253508F96 /* ThemeBuilderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeBuilderSheet.swift; sourceTree = "<group>"; };
 		3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionToolbar.swift; sourceTree = "<group>"; };
 		3E7ED48B391F11998BD4520C /* PrivacySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettings.swift; sourceTree = "<group>"; };
 		3FA5FEBD20A366AEBD2ED6A5 /* BrowserImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserImport.swift; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 				0FF189A4771C73A817501D59 /* ShortcutsPane.swift */,
 				D6AB8511862F229DB168B109 /* SitesPane.swift */,
 				C3D0FE4D946C5EE2383EBBDC /* TabsMemoryPane.swift */,
+				3C0B10214AB500E253508F96 /* ThemeBuilderSheet.swift */,
 				DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */,
 			);
 			path = Settings;
@@ -658,6 +661,7 @@
 				42740581FC010E6931D6CAF0 /* TabStrip.swift in Sources */,
 				20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */,
 				BC2CEBCE8FF9D14CC221526D /* TabsMemoryPane.swift in Sources */,
+				A988120F0AF7A12280F035C0 /* ThemeBuilderSheet.swift in Sources */,
 				068B1FFAF8EA401C986A45F2 /* ThemeStore.swift in Sources */,
 				0CF43FCD9929F0D48DC6C8DA /* ToolbarMenu.swift in Sources */,
 				B778B37FBC0B67633F253D8E /* TranslatePopover.swift in Sources */,

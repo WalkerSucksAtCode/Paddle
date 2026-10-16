@@ -19,6 +19,20 @@ enum SettingsPane: String, CaseIterable {
         }
     }
 
+    var summary: String {
+        switch self {
+        case .general: "Home page, search engine, start page, and download preferences."
+        case .appearance: "Themes, custom theme builder, colors, text size, and accessibility options."
+        case .profiles: "Manage separate container profiles, cookies, and browsing data."
+        case .tabsMemory: "Tab freezing, automatic memory sleep, and background performance."
+        case .privacy: "Ad and tracker blocking, filter lists, HTTPS upgrades, and browsing history."
+        case .sites: "Per-site permissions for zoom, JavaScript, autoplay, location, and camera."
+        case .extensions: "WebExtensions management, permissions, and private window access."
+        case .shortcuts: "Custom keyboard shortcuts for menu items and browser actions."
+        case .advanced: "Developer tools, configuration editor, and control bridge automation."
+        }
+    }
+
     var symbol: String {
         switch self {
         case .general: "gearshape"
@@ -48,7 +62,7 @@ enum SettingsPane: String, CaseIterable {
         case .general: [
             "homepage", "newTabPage", "new tab page", "start page", "new windows", "new tabs", "search engine",
             "searchTemplate", "searchSuggestTemplate", "search suggestions", "address", "showFullAddress",
-            "bookmarks bar", "default browser",
+            "bookmarks bar", "default browser", "downloads", "download", "askWhereToDownload", "ask where to download",
             "pinned sites", "speed dial", "frequently visited", "newTabFrequentSites",
         ]
         case .appearance: [
@@ -57,6 +71,9 @@ enum SettingsPane: String, CaseIterable {
             "highContrastTabs", "themes", "color", "colour", "accent", "accent color", "tint", "chrome tint", "tint strength", "palette",
             "open themes folder", "accentColor", "chromeTint", "chromeTintStrength", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
             "reduceTransparency", "default zoom", "minimum font size", "reduce motion", "reduce transparency",
+            "theme builder", "custom theme", "preset", "create theme", "underline", "links", "underlineLinks", "close button",
+            "always show close buttons", "alwaysShowTabCloseButtons", "home button", "showHomeButton", "downloads button", "alwaysShowDownloadsButton",
+            "colorblind",
         ]
         case .profiles: [
             "profile", "work", "personal", "container", "containers", "accounts", "separate cookies", "logins",
@@ -115,9 +132,31 @@ struct SettingsPaneView: View {
             if let banner = model.banner {
                 SettingsBanner(banner: banner, model: model)
             }
+            paneHeader
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var paneHeader: some View {
+        HStack(spacing: 12) {
+            Image(systemName: pane.symbol)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(pane.title)
+                    .font(.title2.weight(.bold))
+                Text(pane.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 28)
+        .padding(.top, 20)
+        .padding(.bottom, 6)
     }
 
     @ViewBuilder private var content: some View {

@@ -47,6 +47,10 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `newTabFrequentSites` | `true` | Show a Frequently visited row on the New Tab page, from history (never in private windows). Settings > General |
 | `showFullAddress` | `false` | The address field shows a web page's whole address while you aren't editing it. Off, it shows only the site (`accounts.google.com`, without `www.`); click it for the whole address. Settings > General |
 | `askWhereToDownload` | `false` | When downloading a file, prompt for the destination folder instead of saving directly to ~/Downloads. Settings > General > Downloads: Always ask where to save each file |
+| `underlineLinks` | `false` | Underline website links on web pages to improve readability and colorblind accessibility. Settings > Appearance |
+| `alwaysShowTabCloseButtons` | `false` | Keep the close button (×) visible on all tabs without requiring hover. Settings > Appearance |
+| `showHomeButton` | `false` | Show a Home button on the toolbar that navigates to `homepage`. Settings > Appearance |
+| `alwaysShowDownloadsButton` | `false` | Always show the Downloads button on the toolbar, even when no downloads are active. Settings > Appearance |
 | `tabLayout` | `"horizontal"` | `"vertical"` shows the tabs in a sidebar beside the page instead of a strip above the toolbar. View > Vertical Tabs, Settings > Appearance |
 | `appearance` | `"system"` | `"light"` or `"dark"` forces the windows (and the color scheme pages see) instead of following macOS. Settings > Appearance |
 | `theme` | `"default"` | Colors of the tab strip (and sidebar), toolbar, selected tab, text, accent and New Tab page, light and dark: `"default"` (today's look), a built-in (`"graphite"`, `"ocean"`, `"forest"`, `"dusk"`, `"sand"`, `"high-contrast"`) or the name of a file in `themes/` (without `.json`). A name that matches nothing uses Default and is reported. Settings > Appearance |

@@ -230,7 +230,7 @@ struct TabButton: View {
                 }
                 // Every tab wide enough for one shows its close button, not only the hovered one; a narrow tab keeps the
                 // room for its title and shows it on hover or when selected.
-                if hovering || isSelected || width >= Self.alwaysCloseWidth * scale {
+                if AppModel.shared.config.alwaysShowTabCloseButtons || hovering || isSelected || width >= Self.alwaysCloseWidth * scale {
                     Button {
                         model.close(tab)
                     } label: {
