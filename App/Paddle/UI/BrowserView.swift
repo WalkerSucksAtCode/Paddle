@@ -169,7 +169,35 @@ struct BrowserView: View {
                 pane(tab, focused: focused)
             }
         } else {
-            pane(model.selectedTab, focused: true)
+            // Awake pages stay in the window. Swapping a web view out and back waits on its process.
+            ZStack {
+                MountedWebPages(
+                    tabs: model.mountedWebTabs,
+                    selectedID: model.selectedTab?.hostsWebView == true ? model.selectedTab?.id : nil,
+                    resumeMediaOnSelect: AppModel.shared.config.resumeMediaOnSelect
+                )
+                .overlay(alignment: .bottomLeading) {
+                    if model.preview == nil, let tab = model.selectedTab, tab.hostsWebView {
+                        LinkStatusBubble(tab: tab)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if let tab = model.selectedTab, tab.hostsWebView, tab.isPDF {
+                        PDFToolbarHUD(tab: tab, model: model)
+                            .padding(.bottom, 16)
+                    }
+                }
+                if let selected = model.selectedTab, selected.settingsPane != nil {
+                    SettingsTabView(tab: selected, browser: model)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                } else if let selected = model.selectedTab, selected.settingsPane == nil,
+                          !selected.hostsWebView || selected.responsive != nil {
+                    pane(selected, focused: true)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .windowBackgroundColor))
+                }
+            }
         }
     }
 
@@ -178,6 +206,22 @@ struct BrowserView: View {
         DispatchQueue.main.async {
             for tab in model.visibleTabs { tab.generation += 1 }
         }
+    }
+
+    /// The tab's web view, kept in the window for as long as the tab has one.
+    @ViewBuilder
+    private func webPane(_ tab: Tab, focused: Bool) -> some View {
+        WebContainer(tab: tab, generation: tab.generation, takesKeyboard: focused)
+            // Not under a link preview: the page there still gets mouse moves through the card (tracking
+            // areas ignore what covers them), so its bubble would name a link the pointer isn't on. The
+            // card shows the preview's own.
+            .overlay(alignment: .bottomLeading) { if model.preview == nil { LinkStatusBubble(tab: tab) } }
+            .overlay(alignment: .bottom) {
+                if tab.isPDF {
+                    PDFToolbarHUD(tab: tab, model: model)
+                        .padding(.bottom, 16)
+                }
+            }
     }
 
     /// What one tab shows in the content area (the whole area, or one side of a split). Only the focused side gets
@@ -197,17 +241,7 @@ struct BrowserView: View {
             if tab.responsive != nil, focused {
                 ResponsivePage(tab: tab)
             } else {
-                WebContainer(tab: tab, generation: tab.generation, takesKeyboard: focused)
-                    // Not under a link preview: the page there still gets mouse moves through the card (tracking
-                    // areas ignore what covers them), so its bubble would name a link the pointer isn't on. The
-                    // card shows the preview's own.
-                    .overlay(alignment: .bottomLeading) { if model.preview == nil { LinkStatusBubble(tab: tab) } }
-                    .overlay(alignment: .bottom) {
-                        if tab.isPDF {
-                            PDFToolbarHUD(tab: tab, model: model)
-                                .padding(.bottom, 16)
-                        }
-                    }
+                webPane(tab, focused: focused)
             }
         } else {
             NewTabPage(model: model, app: app)
@@ -656,14 +690,8 @@ private struct NavigationBar: View {
 
     @ViewBuilder
     private var progressBar: some View {
-        if let tab, tab.isLoading {
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(theme?.accent ?? Color.accentColor)
-                    .frame(width: geometry.size.width * max(0.05, tab.progress), height: 2)
-                    .animation(app.reducesMotion ? nil : .easeOut(duration: 0.2), value: tab.progress)
-            }
-            .frame(height: 2)
+        if let tab {
+            TabProgressBar(tab: tab, accent: theme?.accent ?? Color.accentColor, reducesMotion: app.reducesMotion)
         }
     }
 
@@ -720,6 +748,24 @@ private struct FindBar: View {
         // Each search that finds nothing is announced, not only the first.
         .onChange(of: model.findNoMatch) { _, noMatch in
             if noMatch { AccessibilityNotification.Announcement("Not found").post() }
+        }
+    }
+}
+
+private struct TabProgressBar: View {
+    let tab: Tab
+    let accent: Color
+    let reducesMotion: Bool
+
+    var body: some View {
+        if tab.isLoading {
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(accent)
+                    .frame(width: geometry.size.width * max(0.05, tab.progress), height: 2)
+                    .animation(reducesMotion ? nil : .easeOut(duration: 0.2), value: tab.progress)
+            }
+            .frame(height: 2)
         }
     }
 }

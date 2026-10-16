@@ -52,6 +52,8 @@ final class WebEnvironment {
     /// The lists' scriptlets as user scripts (`Scriptlets`), rebuilt with the block lists and added after user.css
     /// and userscripts by `reloadUserScripts`.
     @ObservationIgnored private var scriptletScripts: [WKUserScript] = []
+    /// `paddlePageScript` is added once. `removeAllUserScripts` does not remove it.
+    @ObservationIgnored private var didInstallPageScriptBridge = false
     private(set) var isUpdatingFilters = false
 
     /// `Version/27.0 Safari/605.1.15` from the installed Safari, so sites treat Paddle as Safari.
@@ -145,7 +147,19 @@ final class WebEnvironment {
         c.mediaTypesRequiringUserActionForPlayback = .audio
         c.webExtensionController = extensions ? extensionController(for: isPrivate ? ProfileStore.defaultID : profile) : nil
         Self.enableWebFeatures(c.preferences)
+        if !isPrivate, config.speculativeLoading { Self.enableDNSPrefetching(c.preferences) }
         return c
+    }
+
+    private static let setDNSPrefetching = NSSelectorFromString("_setDNSPrefetchingEnabled:")
+
+    /// WebKit's private DNS prefetching (off by default): looks up the hosts of a page's links while it loads, so a
+    /// click skips the lookup. `speculativeLoading`, never in private windows. Without the call nothing changes.
+    private static func enableDNSPrefetching(_ preferences: WKPreferences) {
+        guard preferences.responds(to: setDNSPrefetching),
+              let method = class_getInstanceMethod(type(of: preferences), setDNSPrefetching) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(method_getImplementation(method), to: Setter.self)(preferences, setDNSPrefetching, true)
     }
 
     /// Settings' "Clear this site's data": removes every kind of website data WebKit keeps for `host` (cookies,
@@ -253,8 +267,81 @@ final class WebEnvironment {
 
     // MARK: - User CSS and scripts
 
+    /// Page-world half of the content prelude's `xray` and `pageScripts` sections. The content-script window and
+    /// the page window do not share events, so the prelude writes a hidden element and dispatches on `document`.
+    /// Capturing listeners stop the event before a page script sees it. Extension script URLs are posted to
+    /// `PageScriptBridge`, which runs the file in this world; a `<script src>` would die on the page's CSP.
+    private static let xrayBridgeScript = """
+    (function () {
+      function runQueued() {
+        var html = document.documentElement;
+        var raw = html && html.getAttribute('data-paddle-run');
+        if (!raw || raw === '[]') return;
+        html.removeAttribute('data-paddle-run');
+        var batch;
+        try { batch = JSON.parse(raw); } catch (e) { return; }
+        if (!Array.isArray(batch)) return;
+        for (var i = 0; i < batch.length; i++) {
+          var item = batch[i];
+          if (!item || typeof item.url !== 'string') continue;
+          try {
+            webkit.messageHandlers.paddlePageScript.postMessage({ url: item.url, dataset: item.dataset || {} });
+          } catch (e) {}
+        }
+      }
+      document.addEventListener('__paddle_run_page_script__', function (e) {
+        e.stopImmediatePropagation();
+        runQueued();
+      }, true);
+      if (document.documentElement) {
+        new MutationObserver(runQueued).observe(document.documentElement, { attributes: true, attributeFilter: ['data-paddle-run'] });
+      }
+      document.addEventListener('DOMContentLoaded', runQueued);
+      runQueued();
+      document.addEventListener('__paddle_xray__', function (e) {
+        e.stopImmediatePropagation();
+        var el = document.getElementById('__paddle_xray__');
+        if (!el) return;
+        var raw = el.textContent;
+        el.textContent = '';
+        if (!raw) return;
+        var m;
+        try { m = JSON.parse(raw); } catch (err) { return; }
+        if (!m || typeof m.k !== 'string') return;
+        try {
+          if (m.op === 'set') {
+            window[m.k] = m.v;
+          } else if (m.op === 'del') {
+            delete window[m.k];
+          } else if (m.op === 'get') {
+            var has = m.k in window;
+            var val = has ? window[m.k] : undefined;
+            var reply = { has: has && typeof val !== 'function' };
+            if (reply.has) {
+              try { JSON.stringify(val); reply.v = val; }
+              catch (err) { reply.has = false; }
+            }
+            el.setAttribute('data-reply', JSON.stringify(reply));
+          }
+        } catch (err) {}
+      }, true);
+      runQueued();
+    })();
+    """
+
+    private func installPageScriptBridge() {
+        guard !didInstallPageScriptBridge else { return }
+        didInstallPageScriptBridge = true
+        contentController.add(PageScriptBridge.shared, contentWorld: .page, name: PageScriptBridge.handlerName)
+    }
+
     func reloadUserScripts() {
+        installPageScriptBridge()
         contentController.removeAllUserScripts()
+
+        contentController.addUserScript(WKUserScript(
+            source: Self.xrayBridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page
+        ))
 
         // First, so user scripts see the persona too. Private windows share this controller, so they get it as well.
         let persona = SitePersonaScript.source(for: config.sitePersonas)

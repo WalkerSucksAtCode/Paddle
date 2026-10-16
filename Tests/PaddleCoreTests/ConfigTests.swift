@@ -27,8 +27,8 @@ struct ConfigTests {
         #expect(issues.count == 1)
         #expect(issues.first?.path == ["maxAwakeTabs"])
         #expect(issues.first?.severity == .warning)
-        #expect(issues.first?.message == "Expected a whole number. Paddle uses the default, 10, until this is fixed.")
-        #expect(try PaddleConfig.decode(Data(#"{"maxAwakeTabs": "four"}"#.utf8)).maxAwakeTabs == 10)
+        #expect(issues.first?.message == "Expected a whole number. Paddle uses the default, 2, until this is fixed.")
+        #expect(try PaddleConfig.decode(Data(#"{"maxAwakeTabs": "four"}"#.utf8)).maxAwakeTabs == 2)
     }
 
     @Test func cpuSleepPercentDefaultsToThirtyAndWrongTypeFallsBack() throws {
@@ -41,13 +41,26 @@ struct ConfigTests {
         #expect(try PaddleConfig.decode(Data(#"{"cpuSleepPercent": 0}"#.utf8)).cpuSleepPercent == 0)
     }
 
-    @Test func tabFreezeAfterMinutesDefaultsToFiveAndWrongTypeFallsBack() throws {
-        #expect(PaddleConfig().tabFreezeAfterMinutes == 5)
+    @Test func tabFreezeAfterMinutesDefaultsToTwoAndWrongTypeFallsBack() throws {
+        #expect(PaddleConfig().tabFreezeAfterMinutes == 2)
         let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"tabFreezeAfterMinutes": "soon"}"#.utf8))
-        #expect(config.tabFreezeAfterMinutes == 5)
+        #expect(config.tabFreezeAfterMinutes == 2)
         #expect(issues.count == 1)
         #expect(issues.first?.path == ["tabFreezeAfterMinutes"])
         #expect(try PaddleConfig.decode(Data(#"{"tabFreezeAfterMinutes": 0}"#.utf8)).tabFreezeAfterMinutes == 0)
+    }
+
+    @Test func speculativeLoadingDefaultsToOn() throws {
+        #expect(PaddleConfig().speculativeLoading)
+        #expect(try PaddleConfig.decode(Data(#"{"speculativeLoading": false}"#.utf8)).speculativeLoading == false)
+    }
+
+    @Test func resumeMediaOnSelectDefaultsToOff() throws {
+        #expect(PaddleConfig().resumeMediaOnSelect == false)
+        #expect(try PaddleConfig.decode(Data(#"{"resumeMediaOnSelect": true}"#.utf8)).resumeMediaOnSelect)
+        let (config, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"resumeMediaOnSelect": "yes"}"#.utf8))
+        #expect(config.resumeMediaOnSelect == false)
+        #expect(issues.first?.path == ["resumeMediaOnSelect"])
     }
 
     @Test func linkPreviewDefaultsToOnAndWrongTypeFallsBack() throws {

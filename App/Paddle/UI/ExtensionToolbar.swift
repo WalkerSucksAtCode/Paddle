@@ -107,9 +107,11 @@ final class ExtensionOverflowNSButton: NSButton {
         for ext in extensions {
             let title = ExtensionPermissionText.sanitize(ext.displayName, max: 60)
             let folder = ext.name
-            pinMenu.addItem(ClosureMenuItem(title: title) {
+            let pinItem = ClosureMenuItem(title: title) {
                 Task { await AppModel.shared.setToolbarPlacement(.pinned, folder: folder) }
-            })
+            }
+            pinItem.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: ext.context.action(for: tab?.extensionTab))
+            pinMenu.addItem(pinItem)
         }
         pin.submenu = pinMenu
         menu.addItem(pin)
@@ -159,12 +161,12 @@ final class ExtensionActionNSButton: NSButton {
     /// The icon the button draws, 16 x 16 at the default text size: the action's, else the extension's, else a puzzle
     /// piece.
     static func toolbarIcon(ext: LoadedExtension, action: WKWebExtension.Action?, side: CGFloat = 16) -> NSImage? {
-        let size = CGSize(width: side, height: side)
-        // A copy: WebKit may hand back its cached image, whose size shouldn't be changed under it.
-        let icon = (action?.icon(for: size) ?? ext.webExtension.icon(for: size))?.copy() as? NSImage
-            ?? NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
-        icon?.size = size
-        return icon
+        if let icon = ext.icon(side: side, action: action) {
+            return icon
+        }
+        let fallback = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: nil)
+        fallback?.size = NSSize(width: side, height: side)
+        return fallback
     }
 
     private var ext: LoadedExtension

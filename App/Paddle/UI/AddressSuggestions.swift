@@ -16,6 +16,8 @@ final class AddressSuggestions {
     @ObservationIgnored private var phrases: [String] = []
     @ObservationIgnored private var phrasesQuery = ""
     @ObservationIgnored private var fetch: Task<Void, Never>?
+    @ObservationIgnored private weak var browser: BrowserModel?
+    @ObservationIgnored private var warm: Task<Void, Never>?
 
     /// Suggestion requests send and keep no cookies and cache nothing.
     private static let session: URLSession = {
@@ -38,6 +40,7 @@ final class AddressSuggestions {
     func update(for text: String, in browser: BrowserModel) {
         let previous = self.text
         self.text = text
+        self.browser = browser
         fieldText = text
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
@@ -89,10 +92,12 @@ final class AddressSuggestions {
         highlighted = min(max(highlighted + delta, 0), rows.count - 1)
         if highlighted != previous, let row = highlightedRow {
             AccessibilityNotification.Announcement("\(row.spokenDescription), \(highlighted + 1) of \(rows.count)").post()
+            warmHighlightedRow()
         }
     }
 
     func dismiss() {
+        warm?.cancel()
         rows = []
         highlighted = 0
         fetch?.cancel()
@@ -114,6 +119,26 @@ final class AddressSuggestions {
         rows = [primary] + pageRows + ranked.filter { $0.kind == .search }
         // Search phrases arrive while the user may be arrowing through the list; keep their place.
         highlighted = rows.firstIndex { $0.id == previous } ?? 0
+        warmHighlightedRow()
+    }
+
+    /// Warms the site Return would open (`BrowserModel.preconnect`): the highlighted row's page, or the search
+    /// engine for a search. After a short pause, so fast typing doesn't warm every half-typed host.
+    private func warmHighlightedRow() {
+        warm?.cancel()
+        guard let row = highlightedRow else { return }
+        let target: URL? = if let url = row.url {
+            URL(string: url)
+        } else if let query = row.query {
+            AddressResolver(searchTemplate: AppModel.shared.config.searchTemplate).searchURL(for: query)
+        } else {
+            nil
+        }
+        warm = Task { [weak browser] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            browser?.preconnect(to: target)
+        }
     }
 
     private func fetchPhrases(for query: String) {

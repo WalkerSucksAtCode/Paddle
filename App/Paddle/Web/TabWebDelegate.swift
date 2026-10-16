@@ -369,8 +369,19 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         if link?.scheme?.lowercased() == "javascript" {
             link = URL(string: "javascript:")
         }
-        if tab?.hoveredLink != link { tab?.hoveredLink = link }
+        guard let tab, tab.hoveredLink != link else { return }
+        tab.hoveredLink = link
+        // A link the pointer rests on is likely the next page: warm its site (`BrowserModel.preconnect`).
+        hoverWarm?.cancel()
+        guard let link else { return }
+        hoverWarm = Task { [weak tab] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled, let tab, tab.hoveredLink == link else { return }
+            tab.browser?.preconnect(to: link)
+        }
     }
+
+    private var hoverWarm: Task<Void, Never>?
 
     // MARK: - History
 

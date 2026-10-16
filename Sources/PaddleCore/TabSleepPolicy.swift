@@ -13,10 +13,13 @@ public struct TabSnapshot: Sendable, Equatable {
     public var cpuBusySince: Date?
     /// Frozen: its page is kept but not running (see `TabSleepPolicy.tabsToFreeze`). Still awake.
     public var isFrozen: Bool
+    /// Physical footprint of this tab's own WebContent process, in bytes. 0 when unknown, or when another tab shares
+    /// the process (sleeping this tab would not end it). Memory pressure discards the largest of these first.
+    public var footprint: UInt64
 
     public init(
         id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool, cpuBusySince: Date? = nil,
-        isFrozen: Bool = false
+        isFrozen: Bool = false, footprint: UInt64 = 0
     ) {
         self.id = id
         self.lastActive = lastActive
@@ -26,6 +29,7 @@ public struct TabSnapshot: Sendable, Equatable {
         self.isBusy = isBusy
         self.cpuBusySince = cpuBusySince
         self.isFrozen = isFrozen
+        self.footprint = footprint
     }
 }
 
@@ -81,14 +85,21 @@ public struct TabSleepPolicy: Sendable, Equatable {
             .map(\.id)
     }
 
-    /// Tabs to put to sleep now, least recently used first. A frozen tab is awake, so it is eligible like any other.
-    /// - Parameter memoryPressure: the system reported memory pressure; every eligible tab sleeps.
+    /// Tabs to put to sleep now. A frozen tab is awake, so it is eligible like any other.
+    /// Idle, CPU and cap victims stay least-recently-used, so the tab you just left is the one the cap keeps.
+    /// - Parameter memoryPressure: the system reported memory pressure; every eligible tab sleeps, largest footprint
+    ///   first (an unknown or shared footprint sorts with the oldest).
     public func tabsToSleep(_ tabs: [TabSnapshot], now: Date, memoryPressure: Bool = false) -> [UUID] {
         let eligible = tabs
             .filter { $0.isAwake && !$0.isSelected && !$0.isBusy && (sleepPinnedTabs || !$0.isPinned) }
             .sorted { $0.lastActive < $1.lastActive }
 
-        if memoryPressure { return eligible.map(\.id) }
+        if memoryPressure {
+            return eligible.sorted { a, b in
+                if a.footprint != b.footprint { return a.footprint > b.footprint }
+                return a.lastActive < b.lastActive
+            }.map(\.id)
+        }
 
         var chosen: [UUID] = []
         var chosenSet: Set<UUID> = []

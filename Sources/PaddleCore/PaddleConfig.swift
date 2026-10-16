@@ -57,7 +57,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var tabFreezeAfterMinutes: Double
     /// Background tabs idle longer than this are put to sleep (their web process exits). 0 disables idle sleep.
     public var tabSleepAfterMinutes: Double
-    /// At most this many tabs stay awake at once; the least recently used extra tabs sleep. 0 disables the cap.
+    /// At most this many tabs stay awake at once. The one you're looking at and the one you just left stay; further
+    /// background tabs sleep, least recently used first. 0 disables the cap.
     public var maxAwakeTabs: Int
     /// Pinned tabs never sleep unless this is true.
     public var sleepPinnedTabs: Bool
@@ -70,6 +71,12 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// A real ⌥-click on a link opens it in a preview over the page (one per window), which can become a tab. Off,
     /// ⌥-click follows the link.
     public var linkPreview: Bool
+    /// Switching to a tab resumes its media and pauses the one you left. Off, a switch leaves whatever is playing alone.
+    public var resumeMediaOnSelect: Bool
+    /// Warm a site's connection before it is opened: the address bar's top suggestion as you type, a link after the
+    /// pointer rests on it, and DNS for a page's links. Never in private windows. Off, nothing connects before you
+    /// press Return or click.
+    public var speculativeLoading: Bool
 
     /// Ad and tracker blocking with the lists below plus `user-filters.txt`.
     public var contentBlocking: Bool
@@ -175,7 +182,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs, linkPreview
+        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs, linkPreview, resumeMediaOnSelect, speculativeLoading
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload
@@ -192,13 +199,15 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         searchTemplate: String = "https://duckduckgo.com/?q=%s",
         searchSuggestTemplate: String = "https://duckduckgo.com/ac/?q=%s&type=list",
         historyDays: Int = 365,
-        tabFreezeAfterMinutes: Double = 5,
-        tabSleepAfterMinutes: Double = 30,
-        maxAwakeTabs: Int = 10,
+        tabFreezeAfterMinutes: Double = 2,
+        tabSleepAfterMinutes: Double = 5,
+        maxAwakeTabs: Int = 2,
         sleepPinnedTabs: Bool = false,
         cpuSleepPercent: Int = 30,
         sessionHistoryTabs: Int = 30,
         linkPreview: Bool = true,
+        resumeMediaOnSelect: Bool = false,
+        speculativeLoading: Bool = true,
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
         filterUpdateDays: Int = 7,
@@ -251,6 +260,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.cpuSleepPercent = cpuSleepPercent
         self.sessionHistoryTabs = sessionHistoryTabs
         self.linkPreview = linkPreview
+        self.resumeMediaOnSelect = resumeMediaOnSelect
+        self.speculativeLoading = speculativeLoading
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
         self.filterUpdateDays = filterUpdateDays
@@ -311,6 +322,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         cpuSleepPercent = c.decodeValue(.cpuSleepPercent, d.cpuSleepPercent, issues)
         sessionHistoryTabs = c.decodeValue(.sessionHistoryTabs, d.sessionHistoryTabs, issues)
         linkPreview = c.decodeValue(.linkPreview, d.linkPreview, issues)
+        resumeMediaOnSelect = c.decodeValue(.resumeMediaOnSelect, d.resumeMediaOnSelect, issues)
+        speculativeLoading = c.decodeValue(.speculativeLoading, d.speculativeLoading, issues)
         contentBlocking = c.decodeValue(.contentBlocking, d.contentBlocking, issues)
         filterLists = c.decodeStrings(.filterLists, d.filterLists, issues)
         filterUpdateDays = c.decodeValue(.filterUpdateDays, d.filterUpdateDays, issues)

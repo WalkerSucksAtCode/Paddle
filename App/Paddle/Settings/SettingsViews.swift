@@ -83,12 +83,12 @@ enum SettingsPane: String, CaseIterable {
             "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",
             "tabFreezeAfterMinutes", "tabSleepAfterMinutes",
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
-            "awake", "linkPreview", "link preview",
+            "awake", "linkPreview", "link preview", "audio", "resumeMediaOnSelect", "play the tab",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
             "filterUpdateDays", "list updates", "scriptlets", "uBlock Origin", "EasyList", "my rules", "user-filters.txt",
-            "https", "httpsOnly", "secure connection", "http", "history", "historyDays", "clear history", "cookies", "website data", "site storage",
+            "https", "httpsOnly", "secure connection", "speculativeLoading", "preconnect", "preload", "warm", "http", "history", "historyDays", "clear history", "cookies", "website data", "site storage",
         ]
         case .sites: [
             "site", "zoom", "JavaScript", "autoplay", "location", "notifications", "camera", "microphone", "downloads", "blocking",

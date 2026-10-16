@@ -42,13 +42,13 @@ final class FaviconStore {
         })
         """
 
-    /// The icon for `url`'s site if Paddle has one. A miss starts a disk load (never a network fetch) and the
-    /// view redraws when it lands, so this is safe to call while drawing.
+    /// The icon for `url`'s site if Paddle has one. A miss starts a background disk load (never a network fetch)
+    /// and the view redraws when it lands, so this is safe and non-blocking to call while drawing.
     func image(for url: URL?) -> NSImage? {
         guard let url, let key = FaviconPicker.cacheKey(for: url) else { return nil }
         if let image = images[key] { return image }
         if !missing.contains(key), pendingDiskLoads.insert(key).inserted {
-            DispatchQueue.main.async { [weak self] in self?.loadFromDisk(key) }
+            loadFromDiskAsync(key)
         }
         return nil
     }
@@ -134,13 +134,13 @@ final class FaviconStore {
         missing.removeAll()
     }
 
-    private func keep(_ image: NSImage, for key: String) {
-        luminance[key] = Self.meanLuminance(image)
+    private func keep(_ image: NSImage, for key: String, precomputedLuminance: Double?? = nil) {
+        luminance[key] = precomputedLuminance ?? Self.meanLuminance(image)
         images[key] = image
     }
 
     /// The icon drawn at 16 x 16; the mean of its pixels' relative luminance (linearized sRGB), weighted by opacity.
-    private static func meanLuminance(_ image: NSImage) -> Double? {
+    nonisolated private static func meanLuminance(_ image: NSImage) -> Double? {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
               let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         let side = 16
@@ -181,8 +181,32 @@ final class FaviconStore {
         fetchedAt[key] = modified
     }
 
+    private func loadFromDiskAsync(_ key: String) {
+        let file = Paths.favicons.appending(path: FaviconPicker.fileName(forKey: key))
+        Task.detached(priority: .utility) { [weak self] in
+            let loaded: (Data, Double?, Date)? = {
+                guard let data = try? Data(contentsOf: file),
+                      let image = Self.image(data) else { return nil }
+                let lum = Self.meanLuminance(image)
+                let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return (data, lum, modified)
+            }()
+            await MainActor.run {
+                guard let self else { return }
+                self.pendingDiskLoads.remove(key)
+                guard self.images[key] == nil else { return }
+                guard let (data, lum, modified) = loaded, let image = Self.image(data) else {
+                    self.missing.insert(key)
+                    return
+                }
+                self.keep(image, for: key, precomputedLuminance: .some(lum))
+                self.fetchedAt[key] = modified
+            }
+        }
+    }
+
     /// A stored 32 px icon, sized 16 pt so it is crisp on 2x screens (menus use the size as is).
-    private static func image(_ png: Data) -> NSImage? {
+    nonisolated private static func image(_ png: Data) -> NSImage? {
         guard let image = NSImage(data: png) else { return nil }
         image.size = NSSize(width: 16, height: 16)
         return image
@@ -226,19 +250,24 @@ struct FaviconView: View {
     var fallback = "globe"
     var size: CGFloat = 14
     var fallbackStyle = AnyShapeStyle(.secondary)
+    var dimmed = false
 
     var body: some View {
-        if let image = AppModel.shared.favicons.image(for: url) {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: size, height: size)
-                .clipShape(RoundedRectangle(cornerRadius: 2))
-        } else {
-            Image(systemName: fallback)
-                .font(.system(size: size * 0.8))
-                .foregroundStyle(fallbackStyle)
-                .frame(width: size, height: size)
+        Group {
+            if let image = AppModel.shared.favicons.image(for: url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: 2))
+            } else {
+                Image(systemName: fallback)
+                    .font(.system(size: size * 0.8))
+                    .foregroundStyle(fallbackStyle)
+                    .frame(width: size, height: size)
+            }
         }
+        .saturation(dimmed ? 0 : 1)
+        .opacity(dimmed ? 0.55 : 1)
     }
 }

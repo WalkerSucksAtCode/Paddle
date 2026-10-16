@@ -48,6 +48,16 @@ struct TabsMemoryPane: View {
             }
             .disabled(model.controlsDisabled)
 
+            Section("Audio") {
+                Toggle("Play the tab you switch to", isOn: Binding(
+                    get: { model.file.resumeMediaOnSelect },
+                    set: { value in Task { await model.saveKey(.resumeMediaOnSelect, .bool(value)) } }
+                ))
+                .help("resumeMediaOnSelect in config.json. Off, switching tabs leaves whatever is already playing alone.")
+                SettingsCaption("Leave this off and switching tabs does not start or stop audio. On, the tab you switch to plays and the one you left pauses.")
+            }
+            .disabled(model.controlsDisabled)
+
             Section("Link preview") {
                 Toggle("Preview links on ⌥-click", isOn: Binding(
                     get: { model.file.linkPreview },
@@ -121,7 +131,7 @@ private struct SleepAfterRows: View {
     @State private var issues: [ConfigIssue] = []
     @FocusState private var focused: Bool
 
-    private static let choices: [Double] = [0, 5, 10, 15, 30, 60, 120]
+    private static let choices: [Double] = [0, 1, 2, 5, 10, 15, 30, 60, 120]
     /// The picker's tag for Custom; never a saved value (negative minutes are refused).
     private static let custom: Double = -1
 
@@ -160,6 +170,7 @@ private struct SleepAfterRows: View {
     private static func label(_ minutes: Double) -> String {
         switch minutes {
         case 0: "Never"
+        case 1: "1 minute"
         case 60: "1 hour"
         case 120: "2 hours"
         default: "\(Int(minutes)) minutes"

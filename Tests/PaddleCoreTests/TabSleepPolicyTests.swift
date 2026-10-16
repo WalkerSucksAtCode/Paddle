@@ -46,6 +46,16 @@ struct TabSleepPolicyTests {
         #expect(policy.tabsToSleep([a, b, c, d], now: now, memoryPressure: true) == [c.id, b.id])
     }
 
+    @Test func memoryPressureDiscardsTheLargestProcessFirst() {
+        let policy = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: false)
+        var recentHeavy = tab(1)
+        recentHeavy.footprint = 900
+        var olderLight = tab(10)
+        olderLight.footprint = 20
+        let selected = tab(0, selected: true)
+        #expect(policy.tabsToSleep([olderLight, recentHeavy, selected], now: now, memoryPressure: true) == [recentHeavy.id, olderLight.id])
+    }
+
     // MARK: - Freeze
 
     /// Freezing on at 5 minutes, sleep and the cap off, so only the freeze rule is under test.
@@ -94,7 +104,7 @@ struct TabSleepPolicyTests {
 
     @Test func freezeAfterFromConfig() {
         var config = PaddleConfig()
-        #expect(TabSleepPolicy(config: config).freezeAfter == 5 * 60)
+        #expect(TabSleepPolicy(config: config).freezeAfter == 2 * 60)
         config.tabFreezeAfterMinutes = 0
         #expect(TabSleepPolicy(config: config).freezeAfter == 0)
     }

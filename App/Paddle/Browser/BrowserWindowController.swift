@@ -108,9 +108,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     /// Gives the keyboard to the page: the link preview's while one shows, else the selected tab's.
     func focusWebView() {
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.model.renamingTabID == nil, self.model.renamingGroupID == nil,
-                  let webView = self.model.preview?.webView ?? self.model.selectedTab?.webView, webView.window === self.window else { return }
-            self.window?.makeFirstResponder(webView)
+            guard let self, self.model.renamingTabID == nil, self.model.renamingGroupID == nil else { return }
+            let webView = self.model.preview?.webView ?? self.model.selectedTab?.webView
+            if let webView, webView.window === self.window {
+                self.window?.makeFirstResponder(webView)
+            } else if self.window?.firstResponder is WKWebView {
+                // The page stayed in the window under Settings. It must not keep the keyboard.
+                self.window?.makeFirstResponder(nil)
+            }
         }
     }
 

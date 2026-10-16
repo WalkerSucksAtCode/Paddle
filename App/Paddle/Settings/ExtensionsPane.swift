@@ -203,7 +203,9 @@ struct ExtensionsPane: View {
 
     @ViewBuilder private func icon(_ summary: ExtensionFolderSummary) -> some View {
         let size = CGSize(width: 32, height: 32)
-        if let image = host.loaded.first(where: { $0.name == summary.folder })?.webExtension.icon(for: size) {
+        let root = summary.root ?? Paths.extensions.appendingPathComponent(summary.folder, isDirectory: true)
+        if let image = host.loaded.first(where: { $0.name == summary.folder })?.icon(side: 32)
+            ?? LoadedExtension.icon(in: root, side: 32) {
             Image(nsImage: image).resizable().frame(width: size.width, height: size.height).accessibilityHidden(true)
         } else {
             Image(systemName: "puzzlepiece.extension")

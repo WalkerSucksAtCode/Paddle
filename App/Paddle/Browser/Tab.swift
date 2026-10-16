@@ -76,6 +76,11 @@ final class Tab: Identifiable {
         view.wantsLayer = true
         return view
     }()
+    /// Opaque stand-in over a web view that has not painted yet. A restored page is a blank white document for
+    /// a beat; in the dark appearance that white is the whole window.
+    @ObservationIgnored private var wakeCover: NSView?
+    @ObservationIgnored private var wakeCoverGeneration = 0
+    @ObservationIgnored private var wakeCoverStarted: Date?
     @ObservationIgnored private var savedState: Any?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored private var audioObserver: AudioPlaybackObserver?
@@ -179,6 +184,12 @@ final class Tab: Identifiable {
 
     /// A page tab with no web view. A settings tab has none and is not asleep.
     var isAsleep: Bool { !isAwake && settingsPane == nil }
+
+    /// This tab's page is drawn by its own web view in the content area. Settings, the new-tab page, reader and the
+    /// HTTPS notice draw something else over that area.
+    var hostsWebView: Bool {
+        url != nil && settingsPane == nil && httpsOnlyBlocked == nil && readerArticle == nil && responsive == nil
+    }
 
     var displayTitle: String {
         if let customTitle, !customTitle.isEmpty { return customTitle }
@@ -356,7 +367,9 @@ final class Tab: Identifiable {
         self.webView = webView
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
+        applyPageBackdrop(to: webView)
         container.addSubview(webView)
+        showWakeCover(over: webView)
         observe(webView)
         audioObserver = AudioPlaybackObserver(webView) { [weak self] playing in self?.isPlayingAudio = playing }
         if isMuted { applyMute(to: webView) }
@@ -367,8 +380,104 @@ final class Tab: Identifiable {
         // reports itself through the `isLoading` observer.
     }
 
+    /// The color behind a page that has not painted: the theme's new-tab background, or the default chrome.
+    /// Follows the appearance, so a dark window stays dark and a light one stays light.
+    func refreshPageBackdrop() {
+        let color = pageBackdropColor()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = color.cgColor
+        if let webView { webView.underPageBackgroundColor = color }
+        wakeCover?.layer?.backgroundColor = color.cgColor
+    }
+
+    private func applyPageBackdrop(to webView: WKWebView) {
+        let color = pageBackdropColor()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = color.cgColor
+        webView.underPageBackgroundColor = color
+    }
+
+    private func pageBackdropColor() -> NSColor {
+        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua
+        let rgb = AppModel.shared.activeTheme?.palette(dark: dark)?.newTabBackground ?? DefaultChromeColors.base(dark: dark)
+        return NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
+    }
+
+    /// Covers `webView` until its page is more than a flat field. A new web view paints a blank white document
+    /// before the restored page, and that white is what shows for the whole gap.
+    private func showWakeCover(over webView: WKWebView) {
+        endWakeCover()
+        let cover = NSView(frame: webView.frame)
+        cover.wantsLayer = true
+        cover.layer?.isOpaque = true
+        cover.layer?.backgroundColor = pageBackdropColor().cgColor
+        cover.autoresizingMask = [.width, .height]
+        container.addSubview(cover, positioned: .above, relativeTo: webView)
+        wakeCover = cover
+        wakeCoverStarted = Date()
+        watchWakeCover(generation: wakeCoverGeneration)
+    }
+
+    private func endWakeCover() {
+        wakeCoverGeneration += 1
+        wakeCover?.removeFromSuperview()
+        wakeCover = nil
+        wakeCoverStarted = nil
+    }
+
+    /// How long the cover may hide a page that never paints anything but a flat color.
+    private static let wakeCoverLimit: TimeInterval = 3
+
+    private func watchWakeCover(generation: Int) {
+        Task { @MainActor [weak self] in
+            while let self, self.wakeCoverGeneration == generation, self.wakeCover != nil {
+                if let started = self.wakeCoverStarted, Date().timeIntervalSince(started) > Self.wakeCoverLimit {
+                    self.endWakeCover()
+                    return
+                }
+                guard let webView = self.webView, webView.window != nil, webView.bounds.width > 2 else {
+                    try? await Task.sleep(for: .milliseconds(50))
+                    continue
+                }
+                // The container is often given its size after the web view is created. Keep the cover on it.
+                if self.wakeCover?.frame != webView.frame { self.wakeCover?.frame = webView.frame }
+                let config = WKSnapshotConfiguration()
+                config.snapshotWidth = 48
+                let image = try? await webView.takeSnapshot(configuration: config)
+                guard self.wakeCoverGeneration == generation else { return }
+                if let image, Self.pageHasContent(image) {
+                    self.endWakeCover()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(70))
+            }
+        }
+    }
+
+    /// A blank document is one flat color. The edges are ignored: the dark backdrop shows there while the
+    /// document in the middle is still white, and that contrast is not the page.
+    private static func pageHasContent(_ image: NSImage) -> Bool {
+        guard let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return false }
+        let width = rep.pixelsWide, height = rep.pixelsHigh
+        guard width > 4, height > 4 else { return false }
+        var minLuma = 1.0, maxLuma = 0.0, samples = 0
+        let x0 = width / 4, x1 = width * 3 / 4, y0 = height / 4, y1 = height * 3 / 4
+        let stepX = max(1, (x1 - x0) / 8), stepY = max(1, (y1 - y0) / 8)
+        for y in stride(from: y0, to: y1, by: stepY) {
+            for x in stride(from: x0, to: x1, by: stepX) {
+                guard let color = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                let luma = 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent
+                minLuma = min(minLuma, luma)
+                maxLuma = max(maxLuma, luma)
+                samples += 1
+            }
+        }
+        return samples > 0 && maxLuma - minLuma > 0.12
+    }
+
     /// Drops the web view. WebKit exits the WebContent process once no web view uses it.
     func sleep() {
+        endWakeCover()
         guard let webView else { return }
         // Before the first page commits there is no history worth keeping; waking then loads the URL again. The
         // "Extension not loaded" page keeps the history it was standing in for.
@@ -770,8 +879,11 @@ final class Tab: Identifiable {
         }
         observations = [
             watch(\.title) { tab, webView in
-                tab.title = webView.title ?? ""
-                AppModel.shared.existingExtensions(for: tab.profileID)?.tabChanged(tab, .title)
+                let nextTitle = webView.title ?? ""
+                if tab.title != nextTitle {
+                    tab.title = nextTitle
+                    AppModel.shared.existingExtensions(for: tab.profileID)?.tabChanged(tab, .title)
+                }
                 // One write per real title change of the recorded page.
                 guard let url = tab.historyURL, webView.url == url, !tab.title.isEmpty, tab.title != tab.historyTitle else { return }
                 tab.historyTitle = tab.title
@@ -779,25 +891,38 @@ final class Tab: Identifiable {
             },
             watch(\.url) { tab, webView in
                 // The error page's about:blank must not replace the extension URL it stands in for.
-                guard let url = webView.url, !tab.showsExtensionUnavailable else { return }
+                guard let url = webView.url, !tab.showsExtensionUnavailable, tab.url != url else { return }
                 tab.url = url
                 tab.browser?.tabURLChanged(tab)
             },
             watch(\.isLoading) { tab, webView in
+                guard tab.isLoading != webView.isLoading else { return }
                 tab.isLoading = webView.isLoading
                 AppModel.shared.existingExtensions(for: tab.profileID)?.tabChanged(tab, .loading)
             },
-            watch(\.estimatedProgress) { tab, webView in tab.progress = webView.estimatedProgress },
-            watch(\.canGoBack) { tab, webView in tab.canGoBack = webView.canGoBack },
-            watch(\.canGoForward) { tab, webView in tab.canGoForward = webView.canGoForward },
-            watch(\.hasOnlySecureContent) { tab, webView in tab.isSecure = webView.hasOnlySecureContent },
+            watch(\.estimatedProgress) { tab, webView in
+                let next = webView.estimatedProgress
+                if abs(tab.progress - next) >= 0.005 || next == 0 || next == 1 {
+                    tab.progress = next
+                }
+            },
+            watch(\.canGoBack) { tab, webView in
+                if tab.canGoBack != webView.canGoBack { tab.canGoBack = webView.canGoBack }
+            },
+            watch(\.canGoForward) { tab, webView in
+                if tab.canGoForward != webView.canGoForward { tab.canGoForward = webView.canGoForward }
+            },
+            watch(\.hasOnlySecureContent) { tab, webView in
+                if tab.isSecure != webView.hasOnlySecureContent { tab.isSecure = webView.hasOnlySecureContent }
+            },
             watch(\.cameraCaptureState) { tab, webView in tab.updateCapturing(webView) },
             watch(\.microphoneCaptureState) { tab, webView in tab.updateCapturing(webView) },
         ]
     }
 
     private func updateCapturing(_ webView: WKWebView) {
-        isCapturing = webView.cameraCaptureState != .none || webView.microphoneCaptureState != .none
+        let next = webView.cameraCaptureState != .none || webView.microphoneCaptureState != .none
+        if isCapturing != next { isCapturing = next }
     }
 
     /// The configuration for this tab's ordinary pages: the private data store in a private window,

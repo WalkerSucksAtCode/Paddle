@@ -54,6 +54,14 @@ private struct BlockingRows: View {
         .disabled(model.controlsDisabled)
         SettingsCaption("An http:// address loads over https:// instead. A site that can't be reached securely gets a notice with Continue to HTTP (until Paddle quits) and Always Allow. Local addresses are exempt.")
 
+        Toggle("Connect to sites before you open them", isOn: Binding(
+            get: { model.file.speculativeLoading },
+            set: { value in Task { await model.saveKey(.speculativeLoading, .bool(value)) } }
+        ))
+        .help("speculativeLoading in config.json")
+        .disabled(model.controlsDisabled)
+        SettingsCaption("Opens the connection to the address bar's top suggestion as you type and to a link you point at, so the page starts sooner. The site sees a connection but no request. Never in private windows.")
+
         Toggle("Block ads and trackers", isOn: Binding(
             get: { model.file.contentBlocking },
             set: { value in Task { await model.saveKey(.contentBlocking, .bool(value)) } }

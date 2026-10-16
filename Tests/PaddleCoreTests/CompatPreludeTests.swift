@@ -326,4 +326,68 @@ struct CompatPreludeTests {
         #expect(Self.eval(c, "browser.extension.getURL('a.html')") == #""chrome-extension://abcd/a.html""#)
         #expect(Self.eval(c, "(() => { browser.pageAction.show(5); return [__enabled, browser.browserAction === browser.action]; })()") == "[5,true]")
     }
+
+    /// Enough of a document for the xray carrier and the extension-script hook. `before` runs after the
+    /// window stub, so this replaces that stub's empty `document`.
+    static let contentDOM = """
+    globalThis.__docEvents = [];
+    globalThis.__byId = {};
+    globalThis.Event = class { constructor(type) { this.type = type; } };
+    function Node() { this.__kids = []; this.attrs = {}; }
+    Node.prototype.appendChild = function (n) {
+      this.__kids.push(n);
+      if (n && n.id) __byId[n.id] = n;
+      return n;
+    };
+    Node.prototype.setAttribute = function (k, v) { this.attrs[k] = String(v); };
+    Node.prototype.getAttribute = function (k) {
+      return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null;
+    };
+    Node.prototype.removeAttribute = function (k) { delete this.attrs[k]; };
+    globalThis.Node = Node;
+    globalThis.document = {
+      getElementById(id) { return __byId[id] || null; },
+      createElement(tag) {
+        return {
+          tagName: String(tag).toUpperCase(), id: '', hidden: false, textContent: '', dataset: {}, attrs: {},
+          setAttribute(k, v) { this.attrs[k] = v; },
+          getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+          removeAttribute(k) { delete this.attrs[k]; },
+        };
+      },
+      documentElement: new Node(),
+      dispatchEvent(e) { __docEvents.push(e.type); },
+    };
+    """
+
+    @Test func firefoxContentXrayVision() throws {
+        let ff = try Self.run(try Self.plan(.firefox), kind: .content, window: true, before: Self.contentDOM)
+        #expect(Self.eval(ff, "typeof window.wrappedJSObject") == #""object""#)
+        ff.evaluateScript("window.wrappedJSObject.efyt = cloneInto({prefs: {speed: 1.5}}, window); XPCNativeWrapper(window.wrappedJSObject.efyt);")
+        #expect(Self.eval(ff, "window.wrappedJSObject.efyt") == #"{"prefs":{"speed":1.5}}"#)
+        #expect(Self.eval(ff, "JSON.parse(document.getElementById('__paddle_xray__').textContent)") == #"{"op":"set","k":"efyt","v":{"prefs":{"speed":1.5}}}"#)
+        #expect(Self.eval(ff, "__docEvents[0]") == #""__paddle_xray__""#)
+        ff.evaluateScript("delete window.wrappedJSObject.efyt")
+        #expect(Self.eval(ff, "JSON.parse(document.getElementById('__paddle_xray__').textContent)") == #"{"op":"del","k":"efyt"}"#)
+
+        let ch = try Self.run(try Self.plan(.chrome), kind: .content, window: true, before: Self.contentDOM)
+        #expect(Self.eval(ch, "typeof window.wrappedJSObject") == #""undefined""#)
+    }
+
+    @Test func contentScriptExtensionURLIsQueuedForThePage() throws {
+        let ctx = try Self.run(try Self.plan(.firefox), kind: .content, window: true, before: Self.contentDOM)
+        ctx.evaluateScript("""
+        const blocked = document.createElement('script');
+        blocked.src = 'moz-extension://82c09bd7-d175-14c6-53f7-f536bdd19334/resources/youtube-main-start.js';
+        blocked.dataset.version = '2.0.136';
+        document.documentElement.appendChild(blocked);
+        const allowed = document.createElement('script');
+        allowed.src = 'https://www.youtube.com/s.js';
+        document.documentElement.appendChild(allowed);
+        """)
+        #expect(ctx.exception == nil, "\(ctx.exception?.toString() ?? "")")
+        #expect(Self.eval(ctx, "JSON.parse(document.documentElement.getAttribute('data-paddle-run'))") == #"[{"url":"moz-extension://82c09bd7-d175-14c6-53f7-f536bdd19334/resources/youtube-main-start.js","dataset":{"version":"2.0.136"}}]"#)
+        #expect(Self.eval(ctx, "document.documentElement.__kids.map(n => n.src || n.id)") == #"["https://www.youtube.com/s.js"]"#)
+        #expect(Self.eval(ctx, "__docEvents.includes('__paddle_run_page_script__')") == "true")
+    }
 }

@@ -22,14 +22,28 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
         if !host.loaded.isEmpty { add(.separator(), to: menu) }
         for line in host.statusLines {
             // No action: AppKit shows it disabled.
-            add(NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: ""), to: menu)
+            let statusItem = NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: "")
+            if let colon = line.firstIndex(of: ":") {
+                let folder = String(line[..<colon])
+                statusItem.image = icon(forFolder: folder)
+            }
+            add(statusItem, to: menu)
         }
         // Store updates, one line per folder checked (`ExtensionUpdater`).
         let updates = ExtensionUpdater.shared.statuses
         for folder in updates.keys.sorted() {
             let line = "\(folder): \(updates[folder] ?? "")"
-            add(NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: ""), to: menu)
+            let updateItem = NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: "")
+            updateItem.image = icon(forFolder: folder)
+            add(updateItem, to: menu)
         }
+    }
+
+    private func icon(forFolder folder: String) -> NSImage? {
+        if let ext = host.loaded.first(where: { $0.name == folder }) {
+            return ext.icon(side: 16)
+        }
+        return LoadedExtension.icon(in: Paths.extensions.appendingPathComponent(folder, isDirectory: true), side: 16)
     }
 
     func menuDidClose(_ menu: NSMenu) {
@@ -52,10 +66,8 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
 
     private func item(for ext: LoadedExtension) -> NSMenuItem {
         let item = NSMenuItem(title: "\(ext.displayName) \(ext.version) (\(ext.name))", action: nil, keyEquivalent: "")
-        if let icon = ext.webExtension.icon(for: CGSize(width: 16, height: 16)) {
-            icon.size = NSSize(width: 16, height: 16)
-            item.image = icon
-        }
+        let tab = AppModel.shared.frontExtensionWindow(for: ext.context)?.model.selectedTab
+        item.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: ext.context.action(for: tab?.extensionTab))
         item.submenu = submenu(for: ext)
         return item
     }

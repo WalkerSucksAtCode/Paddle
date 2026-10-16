@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import os
 import PaddleCore
 import WebKit
 
@@ -93,6 +94,32 @@ final class BrowserModel {
     }
 
     var selectedTab: Tab? { tabs.first { $0.id == selectedID } }
+
+    // MARK: - Speculative loading
+
+    @ObservationIgnored private var preconnects = PreconnectPolicy()
+    private static let preconnectSelector = NSSelectorFromString("_preconnectToServer:")
+
+    /// Opens a connection to `url`'s site ahead of the click or Return (`speculativeLoading`): DNS, TCP and TLS, no
+    /// request. Through one of this window's web pages, so it uses the window's data store. Never in a private
+    /// window; a no-op where WebKit lacks the private call or the site was warmed moments ago.
+    func preconnect(to url: URL?) {
+        guard !isPrivate, AppModel.shared.config.speculativeLoading else { return }
+        let pages = [selectedTab].compactMap { $0 } + allTabs
+        guard let webView = pages.lazy.filter({ $0.extensionPageID == nil }).compactMap(\.webView).first,
+              webView.responds(to: Self.preconnectSelector),
+              let origin = preconnects.originToWarm(url) else { return }
+        webView.perform(Self.preconnectSelector, with: origin)
+        Self.speculativeLog.info("preconnect \(origin.absoluteString, privacy: .private)")
+    }
+
+    private static let speculativeLog = Logger(subsystem: "com.walker.Paddle", category: "web")
+
+    /// Awake pages kept in the window. Switching fades the others out; it does not reparent them, which drops
+    /// the layer until that tab's process paints.
+    var mountedWebTabs: [Tab] {
+        tabs.filter { $0.hostsWebView && $0.webView != nil }
+    }
 
     /// Every tab of the window, in space order: the active space's and the stashed ones.
     var allTabs: [Tab] {

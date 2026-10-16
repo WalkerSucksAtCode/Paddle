@@ -442,6 +442,163 @@ public enum CompatPrelude {
         }
       });
 
+      // The content-script window and the page window are different objects. The shared document carries the
+      // message; the page-world bridge (WebEnvironment) applies it to the page's window.
+      const carrier = (id) => {
+        let el = document.getElementById(id);
+        if (el) return el;
+        el = document.createElement('div');
+        el.id = id;
+        el.hidden = true;
+        (document.documentElement || document.head || document.body).appendChild(el);
+        return el;
+      };
+      section('xray', () => {
+        if (full || !isWindow || P.persona !== 'firefox') return;
+        const send = (op, k, v) => {
+          try {
+            const el = carrier('__paddle_xray__');
+            el.textContent = JSON.stringify({op, k: String(k), v});
+            el.removeAttribute('data-reply');
+            document.dispatchEvent(new Event('__paddle_xray__'));
+          } catch (e) {}
+        };
+        const xray = new Proxy(G, {
+          get(target, prop) {
+            if (typeof prop === 'symbol') return Reflect.get(target, prop, target);
+            if (prop in target) {
+              const v = Reflect.get(target, prop, target);
+              return typeof v === 'function' ? v.bind(target) : v;
+            }
+            let reply = null;
+            try {
+              send('get', prop);
+              const raw = carrier('__paddle_xray__').getAttribute('data-reply');
+              if (raw) reply = JSON.parse(raw);
+            } catch (e) {}
+            if (reply && reply.has) return reply.v;
+            return undefined;
+          },
+          set(target, prop, value) {
+            try { target[prop] = value; } catch (e) {}
+            send('set', prop, value);
+            return true;
+          },
+          deleteProperty(target, prop) {
+            try { delete target[prop]; } catch (e) {}
+            send('del', prop);
+            return true;
+          },
+        });
+        fill(G, 'wrappedJSObject', xray);
+        fill(G, 'cloneInto', (obj) => obj);
+        fill(G, 'XPCNativeWrapper', (obj) => obj);
+        fill(G, 'exportFunction', (fn, scope, opts) => {
+          if (opts && opts.defineAs && scope && (typeof scope === 'object' || typeof scope === 'function')) {
+            try { scope[opts.defineAs] = fn; } catch (e) {}
+          }
+          return fn;
+        });
+      });
+
+      // A content script's `<script src="moz-extension://…">` is the page's script, but the page's CSP
+      // (YouTube's script-src allowlist) refuses every extension scheme. Swallow the element and ask the
+      // page-world bridge to run that web-accessible file. http(s) scripts are left alone.
+      // YouTube's Trusted Types policy can throw on `script.src =`, which would skip appendChild entirely,
+      // so the src assignment is caught and remembered on the element.
+      section('pageScripts', () => {
+        if (full || !isWindow || typeof Node !== 'function') return;
+        const schemes = {'moz-extension:': 1, 'webkit-extension:': 1, 'chrome-extension:': 1, 'safari-web-extension:': 1};
+        const remembered = new WeakMap();
+        const extensionURL = (src) => {
+          src = String(src || '');
+          const colon = src.indexOf(':');
+          return colon > 0 && schemes[src.slice(0, colon + 1).toLowerCase()] ? src : '';
+        };
+        const remember = (node, value) => {
+          const src = extensionURL(value);
+          if (src) remembered.set(node, src);
+          return src;
+        };
+        if (typeof HTMLScriptElement === 'function') {
+          const d = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+          if (d && typeof d.set === 'function' && d.configurable !== false) {
+            try {
+              Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+                configurable: true, enumerable: d.enumerable !== false,
+                get() { return remembered.get(this) || (d.get ? d.get.call(this) : ''); },
+                set(v) { remember(this, v); try { d.set.call(this, v); } catch (e) {} },
+              });
+            } catch (e) {}
+          }
+        }
+        const origCreate = document.createElement;
+        if (typeof origCreate === 'function') {
+          document.createElement = function (tag) {
+            const el = origCreate.apply(this, arguments);
+            if (String(tag).toLowerCase() !== 'script') return el;
+            try {
+              const proto = Object.getPrototypeOf(el);
+              const d = (proto && Object.getOwnPropertyDescriptor(proto, 'src'))
+                || (typeof HTMLScriptElement === 'function' && Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src'));
+              Object.defineProperty(el, 'src', {
+                configurable: true,
+                get() {
+                  if (remembered.has(el)) return remembered.get(el);
+                  if (d && d.get) { try { return d.get.call(el); } catch (e) {} }
+                  return el.__paddleSrc || '';
+                },
+                set(v) {
+                  remember(el, v);
+                  try {
+                    if (d && d.set) d.set.call(el, v);
+                    else el.__paddleSrc = String(v);
+                  } catch (e) { el.__paddleSrc = String(v); }
+                },
+              });
+            } catch (e) {}
+            return el;
+          };
+        }
+        const post = (node) => {
+          if (!node || String(node.tagName).toUpperCase() !== 'SCRIPT') return false;
+          let src = remembered.get(node) || '';
+          if (!src) { try { src = extensionURL(node.src); } catch (e) {} }
+          if (!src) { try { src = extensionURL(node.getAttribute && node.getAttribute('src')); } catch (e) {} }
+          if (!src) return false;
+          const dataset = {};
+          try {
+            const ds = node.dataset || {};
+            for (const k of Object.keys(ds)) dataset[k] = String(ds[k]);
+          } catch (e) {}
+          try {
+            const html = document.documentElement;
+            let items = [];
+            try { items = JSON.parse(html.getAttribute('data-paddle-run') || '[]'); } catch (e) { items = []; }
+            if (!Array.isArray(items)) items = [];
+            items.push({url: src, dataset});
+            html.setAttribute('data-paddle-run', JSON.stringify(items));
+            document.dispatchEvent(new Event('__paddle_run_page_script__'));
+            return true;
+          } catch (e) {}
+          return false;
+        };
+        const wrap = (proto, name) => {
+          const orig = proto[name];
+          if (typeof orig !== 'function') return;
+          const wrapped = function (node) {
+            try { if (post(node)) return node; } catch (e) {}
+            return orig.apply(this, arguments);
+          };
+          try { Object.defineProperty(proto, name, {configurable: true, writable: true, value: wrapped}); }
+          catch (e) { try { proto[name] = wrapped; } catch (e2) {} }
+        };
+        wrap(Node.prototype, 'appendChild');
+        wrap(Node.prototype, 'insertBefore');
+        wrap(Node.prototype, 'replaceChild');
+        try { document.documentElement.setAttribute('data-paddle-page-scripts', 'on'); } catch (e) {}
+      });
+
       if (!full) return;
 
       section('permissions', () => {

@@ -62,18 +62,18 @@ struct ConfigFileTests {
     }
 
     @Test func defaultValueRemovesTheKey() throws {
-        #expect(try applied([ConfigChange("maxAwakeTabs", 10)], to: "{\n  \"maxAwakeTabs\": 4\n}\n") == "{}\n")
-        #expect(try applied([ConfigChange("maxAwakeTabs", 10)], to: "{\n  \"homepage\": \"x\",\n  \"maxAwakeTabs\": 4\n}\n")
+        #expect(try applied([ConfigChange("maxAwakeTabs", 2)], to: "{\n  \"maxAwakeTabs\": 4\n}\n") == "{}\n")
+        #expect(try applied([ConfigChange("maxAwakeTabs", 2)], to: "{\n  \"homepage\": \"x\",\n  \"maxAwakeTabs\": 4\n}\n")
             == "{\n  \"homepage\": \"x\"\n}\n")
-        #expect(try applied([ConfigChange("tabSleepAfterMinutes", 30.0)], to: "{\n  \"tabSleepAfterMinutes\": 5,\n  \"homepage\": \"x\"\n}\n")
+        #expect(try applied([ConfigChange("tabSleepAfterMinutes", 5.0)], to: "{\n  \"tabSleepAfterMinutes\": 30,\n  \"homepage\": \"x\"\n}\n")
             == "{\n  \"homepage\": \"x\"\n}\n")
         // Removing a key that isn't there, or setting a default into a file that lacks it, changes nothing.
         #expect(try applied([ConfigChange("maxAwakeTabs", nil), ConfigChange("historyDays", 365)], to: "{\"homepage\": \"x\"}") == "{\"homepage\": \"x\"}")
     }
 
     @Test func sameValueRewritesNothing() throws {
-        let disk = "{\n  \"tabSleepAfterMinutes\": 5.0,\n  \"homepage\": \"x\"\n}\n"
-        #expect(try applied([ConfigChange("tabSleepAfterMinutes", 5)], to: disk) == disk)
+        let disk = "{\n  \"tabSleepAfterMinutes\": 15.0,\n  \"homepage\": \"x\"\n}\n"
+        #expect(try applied([ConfigChange("tabSleepAfterMinutes", 15)], to: disk) == disk)
     }
 
     @Test func newKeyIsAppendedInTheFilesIndent() throws {
@@ -102,8 +102,8 @@ struct ConfigFileTests {
 
     @Test func conflictComparesValuesNotBytes() {
         // 30 and 30.0 are the same number; true and 1 are not the same value.
-        #expect(ConfigFile.apply(changes: [ConfigChange("tabSleepAfterMinutes", 5)], base: data("{\"tabSleepAfterMinutes\": 30.0}"), disk: data("{\"tabSleepAfterMinutes\" : 30}")).map(text)
-            == .success("{\"tabSleepAfterMinutes\" : 5}"))
+        #expect(ConfigFile.apply(changes: [ConfigChange("tabSleepAfterMinutes", 7)], base: data("{\"tabSleepAfterMinutes\": 30.0}"), disk: data("{\"tabSleepAfterMinutes\" : 30}")).map(text)
+            == .success("{\"tabSleepAfterMinutes\" : 7}"))
         #expect(ConfigFile.apply(changes: [ConfigChange("flag", false)], base: data("{\"flag\": 1}"), disk: data("{\"flag\": true}"))
             == .failure(.conflict([["flag"]])))
         #expect(ConfigFile.apply(changes: [ConfigChange("homepage", "x")], base: data("{ \"homepage\" :\"a\" }"), disk: data("{\"homepage\":\"a\"}")).map(text)
@@ -133,7 +133,7 @@ struct ConfigFileTests {
 
     @Test func emptyFileBecomesAnObject() throws {
         #expect(try applied([ConfigChange("maxAwakeTabs", 4)], to: "") == "{\n  \"maxAwakeTabs\": 4\n}\n")
-        #expect(try applied([ConfigChange("maxAwakeTabs", 10)], to: "") == "")
+        #expect(try applied([ConfigChange("maxAwakeTabs", 2)], to: "") == "")
         #expect(try applied([ConfigChange("maxAwakeTabs", 4)], to: "{}\n") == "{\n  \"maxAwakeTabs\": 4\n}\n")
     }
 
@@ -213,7 +213,7 @@ struct ConfigFileTests {
         #expect(try applied([ConfigChange("maxAwakeTabs", 4)], to: dup) == "{\n  \"maxAwakeTabs\" : 4,\n  \"homepage\" : \"x\"\n}\n")
         #expect(try applied([ConfigChange("maxAwakeTabs", nil)], to: dup) == "{\n  \"homepage\" : \"x\"\n}\n")
         #expect(try applied([ConfigChange("homepage", "y")], to: dup) == "{\n  \"maxAwakeTabs\" : 10,\n  \"homepage\" : \"y\",\n  \"maxAwakeTabs\": 6\n}\n")
-        let tidy = try ConfigFile.tidy(data("{\"maxAwakeTabs\": 10, \"maxAwakeTabs\": 6, \"homepage\": \"x\"}")).get()
+        let tidy = try ConfigFile.tidy(data("{\"maxAwakeTabs\": 2, \"maxAwakeTabs\": 6, \"homepage\": \"x\"}")).get()
         #expect(tidy.removed == [["maxAwakeTabs"]])
         #expect(text(tidy.data) == "{\"homepage\": \"x\"}")
     }

@@ -11,6 +11,7 @@
 		068B1FFAF8EA401C986A45F2 /* ThemeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD607686048CC6FC424BAA6 /* ThemeStore.swift */; };
 		078157F3D8E0845D5FC7959B /* ActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 952BF713553853D7D819E091 /* ActivityView.swift */; };
 		0CF43FCD9929F0D48DC6C8DA /* ToolbarMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42F0C8E8DA7F5F5F5A041EAB /* ToolbarMenu.swift */; };
+		0F04F03A6413237CABB691D4 /* PageScriptBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051B514CEEDC0054FF8F84AB /* PageScriptBridge.swift */; };
 		0F6E165D6ACF3FF836033255 /* SitesPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6AB8511862F229DB168B109 /* SitesPane.swift */; };
 		0F847D747DD9BFF41243A86B /* AdvancedPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352D2127E14005724BE87B4B /* AdvancedPane.swift */; };
 		11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 796C7AE983E4F84683CFAFB2 /* Tab.swift */; };
@@ -135,6 +136,7 @@
 		003C7BF64845D3C48DC73855 /* ExtensionHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionHost.swift; sourceTree = "<group>"; };
 		02550A60C504642F9EFF0FFD /* TabStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabStrip.swift; sourceTree = "<group>"; };
 		02E7809C8918A663DD060962 /* DevelopMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevelopMenu.swift; sourceTree = "<group>"; };
+		051B514CEEDC0054FF8F84AB /* PageScriptBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageScriptBridge.swift; sourceTree = "<group>"; };
 		06B95CD836D55F745348E437 /* PrivacyPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPane.swift; sourceTree = "<group>"; };
 		08A0AF5CF0C8F628DF3A3616 /* FilterSnapshots */ = {isa = PBXFileReference; lastKnownFileType = folder; name = FilterSnapshots; path = Resources/FilterSnapshots; sourceTree = SOURCE_ROOT; };
 		08F96B8821DF8FD7A21F3C13 /* ProfilesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesPane.swift; sourceTree = "<group>"; };
@@ -291,6 +293,7 @@
 				02E7809C8918A663DD060962 /* DevelopMenu.swift */,
 				ADA58B4D797F83211511883E /* Downloads.swift */,
 				0F4F309759477C08BF952345 /* FaviconStore.swift */,
+				051B514CEEDC0054FF8F84AB /* PageScriptBridge.swift */,
 				2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */,
 				4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */,
 				46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */,
@@ -624,6 +627,7 @@
 				DA1FCADBAB0B44818AFB9F84 /* NewTabStore.swift in Sources */,
 				71DD83DB9877EB04B0FBE55C /* PDFToolbarHUD.swift in Sources */,
 				243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */,
+				0F04F03A6413237CABB691D4 /* PageScriptBridge.swift in Sources */,
 				155D75229E6FB2CCF84341A8 /* Paths.swift in Sources */,
 				9D1DD6B67A237E0F27BFD667 /* PrivacyPane.swift in Sources */,
 				82D2196BCAE45461C6DEEDFD /* PrivacySettings.swift in Sources */,

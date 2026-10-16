@@ -183,6 +183,7 @@ final class AppModel {
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
+        for tab in allTabs { tab.refreshPageBackdrop() }
     }
 
     // MARK: - Lifecycle
@@ -470,6 +471,8 @@ final class AppModel {
             case .cpuSleepPercent: old.cpuSleepPercent != new.cpuSleepPercent
             case .sessionHistoryTabs: old.sessionHistoryTabs != new.sessionHistoryTabs
             case .linkPreview: old.linkPreview != new.linkPreview
+            case .resumeMediaOnSelect: old.resumeMediaOnSelect != new.resumeMediaOnSelect
+            case .speculativeLoading: old.speculativeLoading != new.speculativeLoading
             case .contentBlocking: old.contentBlocking != new.contentBlocking
             case .filterLists: old.filterLists != new.filterLists
             case .filterUpdateDays: old.filterUpdateDays != new.filterUpdateDays
@@ -1329,7 +1332,9 @@ final class AppModel {
                     isSelected: selected.contains(tab.id), isPinned: tab.isPinned, isBusy: busy.contains(tab.id),
                     // Not before the tab was last shown: viewing it between two sweeps restarts its clock too.
                     cpuBusySince: sampling ? cpuUsage.busySince(tab.id).map { max($0, tab.lastActive) } : nil,
-                    isFrozen: tab.isFrozen
+                    isFrozen: tab.isFrozen,
+                    // A shared process stays up after this tab sleeps, so it doesn't count as memory this sleep frees.
+                    footprint: tab.sharesProcess ? 0 : (tab.memoryBytes ?? 0)
                 )
             }
             let ids = Set(policy.tabsToSleep(snapshots, now: now, memoryPressure: memoryPressure))

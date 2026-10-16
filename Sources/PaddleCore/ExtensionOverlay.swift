@@ -90,7 +90,7 @@ public enum ExtensionOverlay {
     }
 
     /// Bump when what `make` writes changes, so every kept overlay is remade once.
-    static let recipeVersion = 4
+    static let recipeVersion = 7
     /// Written last into a finished overlay: the source fingerprint it was made from and what it holds.
     static let stampFileName = ".paddle-overlay.json"
 

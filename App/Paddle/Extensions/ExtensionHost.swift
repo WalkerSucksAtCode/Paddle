@@ -83,6 +83,68 @@ final class LoadedExtension: Identifiable {
         return host == urlHost.lowercased() || ExtensionIdentity.privateHosts(saltedID: saltedID).contains(host)
     }
     var version: String { ExtensionPermissionText.sanitize(webExtension.displayVersion ?? webExtension.version ?? "", max: 24) }
+
+    /// Returns a sized, non-template copy of this extension's icon for menus, toolbars, and settings.
+    /// Prefers a 2x Retina representation from `action` or `webExtension`, falling back to `manifest.json` on disk.
+    func icon(side: CGFloat = 16, action: WKWebExtension.Action? = nil) -> NSImage? {
+        let retina = CGSize(width: side * 2, height: side * 2)
+        let points = CGSize(width: side, height: side)
+        let raw = action?.icon(for: retina)
+            ?? action?.icon(for: points)
+            ?? webExtension.icon(for: retina)
+            ?? webExtension.icon(for: points)
+            ?? Self.icon(in: Paths.extensions.appendingPathComponent(name, isDirectory: true), side: side)
+        guard let raw else { return nil }
+        let image = (raw.copy() as? NSImage) ?? raw
+        image.size = NSSize(width: side, height: side)
+        image.isTemplate = false
+        return image
+    }
+
+    /// Loads an extension's icon directly from its unpacked folder on disk by inspecting `manifest.json`.
+    static func icon(in root: URL, side: CGFloat = 16) -> NSImage? {
+        let manifestURL = root.appendingPathComponent("manifest.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        func extractPaths(from value: Any?) -> [(Int, String)] {
+            if let path = value as? String, !path.isEmpty {
+                return [(Int(side * 2), path)]
+            }
+            if let dict = value as? [String: Any] {
+                return dict.compactMap { k, v in
+                    guard let path = v as? String, !path.isEmpty else { return nil }
+                    return (Int(k) ?? Int(side * 2), path)
+                }
+            }
+            return []
+        }
+
+        var candidates = extractPaths(from: json["icons"])
+        for actionKey in ["action", "browser_action", "page_action"] {
+            if let actionDict = json[actionKey] as? [String: Any] {
+                candidates.append(contentsOf: extractPaths(from: actionDict["default_icon"]))
+            }
+        }
+        guard !candidates.isEmpty else { return nil }
+        let target = Int(side * 2)
+        let sorted = candidates.sorted { a, b in
+            let aGe = a.0 >= target
+            let bGe = b.0 >= target
+            if aGe != bGe { return aGe }
+            return aGe ? (a.0 < b.0) : (a.0 > b.0)
+        }
+        for (_, relPath) in sorted {
+            let clean = relPath.hasPrefix("/") ? String(relPath.dropFirst()) : relPath
+            let url = root.appendingPathComponent(clean)
+            if let image = NSImage(contentsOf: url) {
+                image.size = NSSize(width: side, height: side)
+                image.isTemplate = false
+                return image
+            }
+        }
+        return nil
+    }
 }
 
 /// WebExtensions from `extensions/` for one profile: permission decisions, that profile's

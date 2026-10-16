@@ -331,10 +331,8 @@ struct TabButton: View {
                 Image(systemName: "video.fill")
             } else if tab.settingsPane != nil {
                 Image(systemName: "gearshape")
-            } else if !tab.isAwake {
-                Glyph(name: "surf-tab-sleep")
             } else {
-                FaviconView(url: tab.url, fallback: tab.isPinned ? "pin.fill" : "globe")
+                FaviconView(url: tab.url, fallback: tab.isPinned ? "pin.fill" : "globe", dimmed: !tab.isAwake)
             }
         }
         .chromeFont(size: 11)
