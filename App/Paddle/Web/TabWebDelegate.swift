@@ -525,12 +525,13 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
           body { font: 14px -apple-system, sans-serif; max-width: 34rem; margin: 18vh auto; padding: 0 1.5rem; color: CanvasText; }
           h1 { font-size: 1.4rem; margin: 0 0 .6rem; }
           p { color: GrayText; line-height: 1.5; overflow-wrap: anywhere; }
-          button { font: inherit; padding: .35rem 1rem; }
+          .action-btn { font: inherit; padding: .35rem 1rem; display: inline-block; color: CanvasText; background: ButtonFace; border: 1px solid GrayText; border-radius: 4px; text-decoration: none; cursor: default; }
+          .action-btn:active { filter: brightness(0.9); }
         </style>
         <h1>\(escape(title))</h1>
         <p>\(escape(message))</p>
         <p>\(escape(urlText))</p>
-        <button data-url="\(escape(urlText))" onclick="location.href = this.dataset.url">\(escape(button))</button>
+        <a class="action-btn" role="button" href="\(escape(urlText))">\(escape(button))</a>
         """
     }
 

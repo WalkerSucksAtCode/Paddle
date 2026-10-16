@@ -1124,8 +1124,9 @@ final class AppModel {
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler {
             MainActor.assumeIsolated {
-                AppModel.shared.log.info("memory pressure: sleeping background tabs")
+                AppModel.shared.log.info("memory pressure: sleeping background tabs and trimming WebKit memory")
                 AppModel.shared.sweepSleepingTabs(memoryPressure: true)
+                AppModel.shared.trimWebKitMemory()
             }
         }
         source.resume()
@@ -1246,6 +1247,7 @@ final class AppModel {
             let policy = effectiveSleepPolicy
             log.info("power constrained by \(reason, privacy: .public): tabs sleep after \(Int(policy.sleepAfter / 60), privacy: .public) min idle, at most \(policy.maxAwakeTabs, privacy: .public) awake (0 = off)")
             sweepSleepingTabs()
+            trimWebKitMemory()
         } else if wasConstrained {
             log.info("power back to normal: the configured sleep settings apply")
         }
@@ -1371,5 +1373,17 @@ final class AppModel {
 
     func sleepBackgroundTabs() {
         sweepSleepingTabs(memoryPressure: true)
+        trimWebKitMemory()
+    }
+
+    /// Trims WebKit memory: purges in-memory caches across website data stores, and asks
+    /// WebKit to run JavaScript garbage collection and clear process caches.
+    func trimWebKitMemory() {
+        web.emptyMemoryCaches()
+        for tab in allTabs {
+            if let webView = tab.webView {
+                PrivateAPI.trimWebKitMemory(on: webView)
+            }
+        }
     }
 }

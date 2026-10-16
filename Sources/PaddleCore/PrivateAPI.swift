@@ -41,11 +41,39 @@ public enum PrivateAPI {
         return receiver.perform(selector)?.takeUnretainedValue()
     }
 
+    /// Calls the argument-less, void-returning selector `name` on `receiver`, or does nothing when
+    /// `receiver` has no such method.
+    public static func callVoid(_ name: String, on receiver: AnyObject) {
+        let selector = NSSelectorFromString(name)
+        guard receiver.responds(to: selector) else { return }
+        typealias VoidMethod = @convention(c) (AnyObject, Selector) -> Void
+        let method = receiver.method(for: selector)
+        let imp = unsafeBitCast(method, to: VoidMethod.self)
+        imp(receiver, selector)
+    }
+
     /// The C function `name` from any loaded image (`RTLD_DEFAULT`), typed as `Function` (a `@convention(c)` type),
     /// or nil when no loaded image has it.
     public static func function<Function>(named name: String, as _: Function.Type) -> Function? {
         guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), name) else { return nil }
         return unsafeBitCast(symbol, to: Function.self)
+    }
+
+    /// Triggers a JavaScript engine garbage collection pass and process cache purge across WebKit processes.
+    public static func trimWebKitMemory(on object: NSObject) {
+        let pool: NSObject?
+        if let config = value(of: object, forKey: "configuration") as? NSObject,
+           let p = value(of: config, forKey: "processPool") as? NSObject {
+            pool = p
+        } else if let p = value(of: object, forKey: "processPool") as? NSObject {
+            pool = p
+        } else {
+            pool = object
+        }
+        if let pool {
+            callVoid("_garbageCollectJavaScriptObjectsForTesting", on: pool)
+            callVoid("_clearWebProcessCache", on: pool)
+        }
     }
 }
 

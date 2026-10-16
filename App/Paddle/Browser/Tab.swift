@@ -105,8 +105,9 @@ final class Tab: Identifiable {
     enum OwnPage { case source, error }
     /// Showing one of Paddle's error pages (load failure, crash, extension unavailable), not the site's page:
     /// Print, Save Page As and View Source are off then.
-    var isShowingErrorPage: Bool { committedErrorPage || showsExtensionUnavailable }
+    var isShowingErrorPage: Bool { committedErrorPage || showsExtensionUnavailable || isProcessTerminated }
     @ObservationIgnored private var committedErrorPage = false
+    @ObservationIgnored private var isProcessTerminated = false
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []
     /// This tab as WebKit's extension API sees it. One object for the tab's whole life, so an extension's tab id
     /// survives sleep and wake.
@@ -369,6 +370,7 @@ final class Tab: Identifiable {
         awaitingBlockers = false
         loadedUnblocked = false
         committedErrorPage = false
+        isProcessTerminated = false
         pendingOwnPage = nil
         resumeSelectionWaiters(false)
         observations.forEach { $0.invalidate() }
@@ -409,6 +411,7 @@ final class Tab: Identifiable {
     func freeze() -> Bool {
         guard Self.supportsFreezing, let webView, !isFrozen, !suspendRequested, !isLoading, !awaitingBlockers,
               webView.responds(to: Self.suspendSelector), webView.responds(to: Self.resumeSelector) else { return false }
+        PrivateAPI.trimWebKitMemory(on: webView)
         suspendRequested = true
         // Private WebKit API (`_suspendPage:`, a reply block with a BOOL), called the way `applyMute` calls its selectors.
         typealias Suspend = @convention(c) (AnyObject, Selector, @escaping @convention(block) (Bool) -> Void) -> Void
@@ -450,6 +453,7 @@ final class Tab: Identifiable {
         showsExtensionUnavailable = false
         sourceHTML = nil
         committedErrorPage = false
+        isProcessTerminated = false
         if let webView {
             if ExtensionIdentity.identifier(of: url) != extensionPageID {
                 replaceWebView(loading: url)
@@ -494,6 +498,9 @@ final class Tab: Identifiable {
             sleep()
             return
         }
+        isProcessTerminated = true
+        committedErrorPage = true
+        pendingOwnPage = .error
         let (title, message) = switch reason {
         case .exceededMemoryLimit:
             ("This page used too much memory", "macOS stopped its web process because it used more memory than a page may. Reload to start it again.")
@@ -503,7 +510,6 @@ final class Tab: Identifiable {
             ("This page crashed", "Its web process stopped unexpectedly. Reload to load it again.")
         }
         skipNextCommitInHistory = true
-        pendingOwnPage = .error
         // Not `loadErrorPage`: after a crash there is no failed load to stand in for, and both of its loads append
         // a second item for the crashed page. Loading with `url` as base URL reuses the crashed page's item.
         webView.loadHTMLString(TabWebDelegate.errorPage(title: title, message: message, url: url, button: "Reload"), baseURL: url)
@@ -547,7 +553,10 @@ final class Tab: Identifiable {
     func reload(fromOrigin: Bool = false) {
         guard let webView else { return }
         unfreeze()
-        if committedErrorPage, let url {
+        if (committedErrorPage || pendingOwnPage == .error || isProcessTerminated), let url {
+            isProcessTerminated = false
+            committedErrorPage = false
+            pendingOwnPage = nil
             webView.load(URLRequest(url: url, cachePolicy: fromOrigin ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy))
         } else if fromOrigin {
             webView.reloadFromOrigin()

@@ -150,4 +150,14 @@ struct PrivateAPITests {
         typealias ResponsibleFor = @convention(c) (pid_t) -> pid_t
         #expect(PrivateAPI.function(named: "responsibility_get_pid_responsible_for_pid", as: ResponsibleFor.self) != nil)
     }
+
+    @Test func trimWebKitMemoryDegradesGracefullyOnBareObject() {
+        PrivateAPI.trimWebKitMemory(on: BareObject())
+    }
+
+    @MainActor
+    @Test func trimWebKitMemoryExecutesOnRealWebView() {
+        let webView = WKWebView(frame: .zero)
+        PrivateAPI.trimWebKitMemory(on: webView)
+    }
 }

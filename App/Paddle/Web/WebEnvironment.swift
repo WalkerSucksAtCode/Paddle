@@ -94,6 +94,17 @@ final class WebEnvironment {
         return false
     }
 
+    /// Evicts WebKit's in-memory image, decoding, and resource caches across all active data stores.
+    /// Disk caches, cookies, and local storage are untouched.
+    func emptyMemoryCaches() {
+        let stores = [dataStore] + Array(profileStores.values) + (privateDataStore.map { [$0] } ?? [])
+        let memoryCacheType = Set([WKWebsiteDataTypeMemoryCache])
+        for store in stores {
+            store.removeData(ofTypes: memoryCacheType, modifiedSince: .distantPast) { }
+        }
+        log.info("evicted in-memory WebKit caches across \(stores.count) store(s)")
+    }
+
     /// Web views of private windows get the private store and, unless `extensions` (the window carries extensions,
     /// see `BrowserModel.extensionsAllowed`), no extension controller. Content blockers, user CSS and userscripts are
     /// the same as everywhere.
