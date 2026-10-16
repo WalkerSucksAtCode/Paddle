@@ -16,25 +16,49 @@ struct ExtensionToolbar: View {
 
     var body: some View {
         let shown = host.loaded.filter { $0.hasAction && (!isPrivate || $0.allowedInPrivate) }
-        let inMenu = shown.filter { (placements[$0.name] ?? .pinned) == .menu }
+        let listed = shown.filter { (placements[$0.name] ?? .pinned) != .hidden }
         HStack(spacing: 2) {
             ForEach(shown.filter { (placements[$0.name] ?? .pinned) == .pinned }) { ext in
-                ExtensionToolbarItem(ext: ext, tab: tab)
+                ExtensionToolbarItem(ext: ext, tab: tab, pinnedFolders: Self.pinned(listed, placements))
             }
-            if !inMenu.isEmpty {
-                ExtensionOverflowButton(host: host, model: model, tab: tab, extensions: inMenu)
+            // Always there while any extension has a button, as in Chrome: it lists every extension, pinned or not.
+            if !listed.isEmpty {
+                ExtensionOverflowButton(host: host, model: model, tab: tab, extensions: listed, placements: placements)
                     .frame(width: 26, height: 26)
             }
         }
     }
+
+    static func pinned(_ extensions: [LoadedExtension], _ placements: [String: ExtensionToolbarPlacement]) -> [String] {
+        extensions.filter { (placements[$0.name] ?? .pinned) == .pinned }.map(\.name)
+    }
 }
 
-/// The puzzle-piece button that holds the extensions placed `menu`.
+/// "Hide All Pinned Extensions in Menu" and "Pin All Extensions to Toolbar", for the puzzle button's menus and a
+/// pinned button's right-click menu. Each is left out when it would do nothing.
+@MainActor
+enum ExtensionPlacementItems {
+    static func add(to menu: NSMenu, pinned: [String], unpinned: [String]) {
+        if !pinned.isEmpty {
+            menu.addItem(ClosureMenuItem(title: "Hide All Pinned Extensions in Menu") {
+                Task { await AppModel.shared.setToolbarPlacement(.menu, folders: pinned) }
+            })
+        }
+        if !unpinned.isEmpty {
+            menu.addItem(ClosureMenuItem(title: "Pin All Extensions to Toolbar") {
+                Task { await AppModel.shared.setToolbarPlacement(.pinned, folders: unpinned) }
+            })
+        }
+    }
+}
+
+/// The puzzle-piece button: every extension with a button (pinned ones too), each with its icon.
 struct ExtensionOverflowButton: NSViewRepresentable {
     let host: ExtensionHost
     let model: BrowserModel
     let tab: Tab?
     let extensions: [LoadedExtension]
+    let placements: [String: ExtensionToolbarPlacement]
 
     func makeNSView(context: Context) -> ExtensionOverflowNSButton { ExtensionOverflowNSButton() }
 
@@ -43,6 +67,7 @@ struct ExtensionOverflowButton: NSViewRepresentable {
         button.model = model
         button.tab = tab
         button.extensions = extensions
+        button.placements = placements
         button.setScale(context.environment.chromeScale)
     }
 }
@@ -54,6 +79,9 @@ final class ExtensionOverflowNSButton: NSButton {
     var model: BrowserModel?
     weak var tab: Tab?
     var extensions: [LoadedExtension] = []
+    var placements: [String: ExtensionToolbarPlacement] = [:]
+
+    private func isPinned(_ ext: LoadedExtension) -> Bool { (placements[ext.name] ?? .pinned) == .pinned }
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: 26, height: 26))
@@ -91,30 +119,58 @@ final class ExtensionOverflowNSButton: NSButton {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
-        for ext in extensions {
+        // Unpinned first: those are the ones only reachable here.
+        for ext in extensions.sorted(by: { !isPinned($0) && isPinned($1) }) {
             let action = ext.context.action(for: tab?.extensionTab)
             var title = ExtensionPermissionText.sanitize(ext.displayName, max: 60)
             let badge = String(ExtensionPermissionText.sanitize(action?.badgeText ?? "", max: 16).prefix(4))
             if !badge.isEmpty { title += " (\(badge))" }
             let item = ClosureMenuItem(title: title) { [weak self] in self?.perform(ext) }
-            item.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: action)
+            ExtensionActionNSButton.setMenuIcon(item, ext: ext, action: action)
             item.isEnabled = action?.isEnabled ?? false
+            item.toolTip = isPinned(ext) ? "Pinned to the toolbar" : nil
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(pinMenuItem())
+        addPlacementItems(to: menu)
+        let model = self.model
+        menu.addItem(ClosureMenuItem(title: "Manage Extensions…") { model?.showSettings(pane: .extensions) })
+        return menu
+    }
+
+    /// "Pin to Toolbar": each extension with its icon, checked when pinned; choosing one toggles it.
+    private func pinMenuItem() -> NSMenuItem {
         let pin = NSMenuItem(title: "Pin to Toolbar", action: nil, keyEquivalent: "")
         let pinMenu = NSMenu()
         for ext in extensions {
-            let title = ExtensionPermissionText.sanitize(ext.displayName, max: 60)
             let folder = ext.name
-            let pinItem = ClosureMenuItem(title: title) {
-                Task { await AppModel.shared.setToolbarPlacement(.pinned, folder: folder) }
+            let pinned = isPinned(ext)
+            let pinItem = ClosureMenuItem(title: ExtensionPermissionText.sanitize(ext.displayName, max: 60)) {
+                Task { await AppModel.shared.setToolbarPlacement(pinned ? .menu : .pinned, folder: folder) }
             }
-            pinItem.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: ext.context.action(for: tab?.extensionTab))
+            pinItem.state = pinned ? .on : .off
+            ExtensionActionNSButton.setMenuIcon(pinItem, ext: ext, action: ext.context.action(for: tab?.extensionTab))
             pinMenu.addItem(pinItem)
         }
         pin.submenu = pinMenu
-        menu.addItem(pin)
+        return pin
+    }
+
+    private func addPlacementItems(to menu: NSMenu) {
+        ExtensionPlacementItems.add(
+            to: menu,
+            pinned: extensions.filter(isPinned).map(\.name),
+            unpinned: extensions.filter { !isPinned($0) }.map(\.name)
+        )
+    }
+
+    /// Right-click: the placement items without the extension list.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(pinMenuItem())
+        addPlacementItems(to: menu)
+        menu.addItem(.separator())
         let model = self.model
         menu.addItem(ClosureMenuItem(title: "Manage Extensions…") { model?.showSettings(pane: .extensions) })
         return menu
@@ -131,9 +187,10 @@ final class ExtensionOverflowNSButton: NSButton {
 private struct ExtensionToolbarItem: View {
     let ext: LoadedExtension
     let tab: Tab?
+    let pinnedFolders: [String]
 
     var body: some View {
-        ExtensionActionButton(ext: ext, tab: tab, generation: ext.actionGeneration)
+        ExtensionActionButton(ext: ext, tab: tab, generation: ext.actionGeneration, pinnedFolders: pinnedFolders)
             .frame(width: 26, height: 26)
     }
 }
@@ -143,12 +200,14 @@ struct ExtensionActionButton: NSViewRepresentable {
     let ext: LoadedExtension
     let tab: Tab?
     let generation: Int
+    let pinnedFolders: [String]
 
     func makeNSView(context: Context) -> ExtensionActionNSButton {
         ExtensionActionNSButton(ext: ext)
     }
 
     func updateNSView(_ button: ExtensionActionNSButton, context: Context) {
+        button.pinnedFolders = pinnedFolders
         button.update(ext: ext, tab: tab, generation: generation, scale: context.environment.chromeScale)
     }
 }
@@ -160,6 +219,12 @@ final class ExtensionActionNSButton: NSButton {
 
     /// The icon the button draws, 16 x 16 at the default text size: the action's, else the extension's, else a puzzle
     /// piece.
+    /// The toolbar icon for an NSMenu row. macOS 27 hides menu item images unless the item asks to show them.
+    static func setMenuIcon(_ item: NSMenuItem, ext: LoadedExtension, action: WKWebExtension.Action?) {
+        item.image = toolbarIcon(ext: ext, action: action)
+        item.preferredImageVisibility = .visible
+    }
+
     static func toolbarIcon(ext: LoadedExtension, action: WKWebExtension.Action?, side: CGFloat = 16) -> NSImage? {
         if let icon = ext.icon(side: side, action: action) {
             return icon
@@ -171,6 +236,8 @@ final class ExtensionActionNSButton: NSButton {
 
     private var ext: LoadedExtension
     private weak var tab: Tab?
+    /// Every pinned extension's folder, for Hide All Pinned Extensions in Menu.
+    var pinnedFolders: [String] = []
     private let badge = BadgeLabel()
     /// What the button last drew: an update with the same extension, action object and generation is skipped.
     private weak var drawnAction: WKWebExtension.Action?
@@ -262,6 +329,7 @@ final class ExtensionActionNSButton: NSButton {
         menu.addItem(ClosureMenuItem(title: "Hide Button") {
             Task { await AppModel.shared.setToolbarPlacement(.hidden, folder: folder) }
         })
+        ExtensionPlacementItems.add(to: menu, pinned: pinnedFolders, unpinned: [])
         menu.addItem(.separator())
         if ext.context.optionsPageURL != nil {
             let options = NSMenuItem(title: "Options…", action: #selector(openOptions), keyEquivalent: "")

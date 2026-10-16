@@ -374,6 +374,7 @@ private struct NavigationBar: View {
                 .padding(.horizontal, 4)
                 .frame(minWidth: 140)
             HStack(spacing: 2) {
+                if let tab { PopupBlockedButton(tab: tab) }
                 MediaControlsButton(app: app, model: model)
                 if model.extensionsAllowed, let host = model.extensionHost {
                     ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
@@ -680,11 +681,6 @@ private struct NavigationBar: View {
         .accessibilityLabel("Downloads")
         .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
             DownloadsView(store: app.downloads).systemText()
-        }
-        .onChange(of: app.downloads.downloadStartedTime) { _, started in
-            if started != nil {
-                model.downloadsVisible = true
-            }
         }
     }
 

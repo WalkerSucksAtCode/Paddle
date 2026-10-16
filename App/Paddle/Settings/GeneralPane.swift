@@ -40,6 +40,25 @@ struct GeneralPane: View {
                 .disabled(model.controlsDisabled)
             }
             Section("Downloads") {
+                LabeledContent("Save files to") {
+                    HStack {
+                        Text(DownloadStore.folderDisplayName(model.file.downloadFolder))
+                            .lineLimit(1).truncationMode(.middle)
+                            .foregroundStyle(.secondary)
+                        Button("Change…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            panel.canCreateDirectories = true
+                            panel.prompt = "Choose"
+                            panel.directoryURL = DownloadStore.folder
+                            guard panel.runModal() == .OK, let url = panel.url else { return }
+                            Task { await model.saveKey(.downloadFolder, .string(DownloadStore.configValue(for: url))) }
+                        }
+                    }
+                }
+                .help("downloadFolder in config.json. Empty: ~/Downloads.")
+                .disabled(model.controlsDisabled)
                 Toggle("Always ask where to save each file", isOn: Binding(
                     get: { model.file.askWhereToDownload },
                     set: { value in Task { await model.saveKey(.askWhereToDownload, .bool(value)) } }

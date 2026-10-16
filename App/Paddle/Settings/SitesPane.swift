@@ -77,6 +77,10 @@ struct SitesPane: View {
                     .width(84)
                 TableColumn("Blocking") { row in blockingToggle(row) }
                     .width(58)
+                TableColumn("Pop-ups") { row in
+                    toggle(row, .popups, isOn: row.policy.popups, label: "Pop-ups")
+                }
+                .width(56)
                 TableColumn("Location") { row in locationPicker(row) }
                     .width(74)
                 TableColumn("Notifications") { row in notificationsPicker(row) }
@@ -323,6 +327,7 @@ struct SitesPane: View {
         case .location: return entry.location != nil
         case .notifications: return entry.notifications != nil
         case .httpsOnly: return entry.httpsOnly != nil
+        case .popups: return entry.popups != nil
         }
     }
 

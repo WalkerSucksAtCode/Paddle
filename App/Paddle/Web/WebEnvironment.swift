@@ -138,7 +138,10 @@ final class WebEnvironment {
         c.applicationNameForUserAgent = applicationName
         c.preferences.isElementFullscreenEnabled = true
         c.preferences.isFraudulentWebsiteWarningEnabled = true
-        c.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // Paddle blocks pop-ups itself when it can tell a click from a script (`TabWebDelegate` createWebViewWith,
+        // `PopupProbe`), so a window a script opens to download a file still works. Without that private flag WebKit
+        // keeps blocking them silently, as before.
+        c.preferences.javaScriptCanOpenWindowsAutomatically = Self.allowsScriptWindows
         c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         c.allowsAirPlayForMediaPlayback = true
@@ -222,6 +225,10 @@ final class WebEnvironment {
 
     /// Sets process identity on WebKit configurations so child processes (WebContent, Networking, GPU) bear the
     /// Paddle name and bundle identifier in macOS Activity Monitor and system task accounting.
+    /// WebKit tells Paddle whether a navigation came from a click (`WKNavigationAction._isUserInitiated`), so Paddle can
+    /// let every script window reach `createWebViewWith` and block pages there itself.
+    static let allowsScriptWindows = WKNavigationAction.instancesRespond(to: NSSelectorFromString("_isUserInitiated"))
+
     static func configureProcessIdentity(_ c: WKWebViewConfiguration, displayName: String = "Paddle") {
         if c.responds(to: Selector(("_setProcessDisplayName:"))) {
             c.perform(Selector(("_setProcessDisplayName:")), with: displayName as NSString)

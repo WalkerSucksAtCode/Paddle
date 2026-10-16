@@ -79,6 +79,8 @@ struct TabStrip: View {
                         .background(WindowDragArea())
                     }
                     .scrollBounceBehavior(.basedOnSize)
+                    // A tab dropped between or after the tabs (from this window or another) goes to the end.
+                    .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.append(items, to: model) }
                     // The tabs take their own width, so New Tab follows the last tab; the scroll view gets the rest.
                     .frame(width: min(tabsWidth, max(0, geometry.size.width - leadingInset - switcherWidth - 44)))
                     .accessibilityElement(children: .contain)
@@ -114,15 +116,6 @@ struct TabStrip: View {
     }
 }
 
-/// `.draggable` only while the tab is not being renamed, so a drag inside the title field selects text.
-struct TabDrag: ViewModifier {
-    let id: String
-    let enabled: Bool
-
-    @ViewBuilder func body(content: Content) -> some View {
-        if enabled { content.draggable(id) } else { content }
-    }
-}
 
 /// The text field for renaming a tab, in the tab itself or (pinned tabs) in a popover. Return or focus loss keeps
 /// the edited name (the page's title back when it is empty or unchanged from what was shown); Escape cancels.
@@ -313,12 +306,8 @@ struct TabButton: View {
             if inside { hoverMemory = tab.memoryBytes.map { ($0, tab.sharesProcess) } }
         }
         .help(tooltip)
-        .modifier(TabDrag(id: tab.id.uuidString, enabled: !isRenaming))
-        .dropDestination(for: String.self) { items, _ in
-            guard let id = items.first.flatMap(UUID.init(uuidString:)),
-                  let dragged = model.tabs.first(where: { $0.id == id }) else { return false }
-            return model.move(dragged, onto: tab)
-        }
+        .modifier(TabDrag(tab: tab, enabled: !isRenaming))
+        .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.drop(items, onto: tab, in: model) }
         .contextMenu { TabContextMenu(tab: tab, model: model) }
     }
 

@@ -980,7 +980,7 @@ final class BrowserModel {
     /// Makes the rules hold again after tabs changed: pinned tabs and tabs of unknown groups lose their group,
     /// each group's tabs become adjacent (at the place of its first one), and groups left empty are removed.
     /// Callers report the change (session, extensions).
-    private func normalizeGroups() {
+    func normalizeGroups() {
         let known = Set(groups.map(\.id))
         for tab in tabs where tab.isPinned || (tab.groupID.map { !known.contains($0) } ?? false) { tab.groupID = nil }
         let order = TabGroups.contiguousOrder(groupSlots)

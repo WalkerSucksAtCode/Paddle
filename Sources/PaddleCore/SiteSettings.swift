@@ -30,6 +30,9 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     public var notifications: Permission?
     /// False lets this site load over http:// without the HTTPS-only upgrade.
     public var httpsOnly: Bool?
+    /// True lets pages on this site open windows without a click (pop-ups). Unset or false: a window a script opens
+    /// on its own may still download a file, but a page in it is blocked, with a Pop-up blocked button to open it.
+    public var popups: Bool?
 
     public init(
         zoom: Double? = nil,
@@ -38,7 +41,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         contentBlocking: Bool? = nil,
         location: Permission? = nil,
         notifications: Permission? = nil,
-        httpsOnly: Bool? = nil
+        httpsOnly: Bool? = nil,
+        popups: Bool? = nil
     ) {
         self.zoom = zoom
         self.javaScript = javaScript
@@ -47,12 +51,13 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         self.location = location
         self.notifications = notifications
         self.httpsOnly = httpsOnly
+        self.popups = popups
     }
 
     /// True when no field is set, so the entry says nothing and can be dropped.
     public var isEmpty: Bool {
         zoom == nil && javaScript == nil && autoplay == nil && contentBlocking == nil && location == nil
-            && notifications == nil && httpsOnly == nil
+            && notifications == nil && httpsOnly == nil && popups == nil
     }
 
     /// `other` laid over self: every field `other` sets replaces the one here.
@@ -64,7 +69,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
             contentBlocking: other.contentBlocking ?? contentBlocking,
             location: other.location ?? location,
             notifications: other.notifications ?? notifications,
-            httpsOnly: other.httpsOnly ?? httpsOnly
+            httpsOnly: other.httpsOnly ?? httpsOnly,
+            popups: other.popups ?? popups
         )
     }
 }

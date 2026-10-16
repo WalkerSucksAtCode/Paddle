@@ -127,6 +127,7 @@ extension SettingsModel {
         case (.location, .string(let text)): entry.location = SiteSettings.Permission(rawValue: text)
         case (.notifications, .string(let text)): entry.notifications = SiteSettings.Permission(rawValue: text)
         case (.httpsOnly, .bool(let on)): entry.httpsOnly = on
+        case (.popups, .bool(let on)): entry.popups = on
         default: return "\(field.rawValue) can't be set to that value."
         }
         candidate.sites[key] = entry
@@ -174,6 +175,7 @@ extension SettingsModel {
         case .location: .string(policy.location.rawValue)
         case .notifications: .string(policy.notifications.rawValue)
         case .httpsOnly: .bool(policy.httpsOnly)
+        case .popups: .bool(policy.popups)
         }
     }
 }

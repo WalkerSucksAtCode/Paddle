@@ -139,12 +139,7 @@ struct TabGroupLabel: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(group.color.fill(scheme)))
         .contentShape(Rectangle())
         .onTapGesture { if !isRenaming { model.toggleCollapsed(group) } }
-        .dropDestination(for: String.self) { items, _ in
-            guard let id = items.first.flatMap(UUID.init(uuidString:)),
-                  let dragged = model.tabs.first(where: { $0.id == id }), !dragged.isPinned else { return false }
-            model.add(dragged, to: group)
-            return true
-        }
+        .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.add(items, to: group, in: model) }
         // While renaming, the text field is what VoiceOver reaches.
         .accessibilityElement(children: isRenaming ? .contain : .ignore)
         .accessibilityLabel(Self.spokenLabel(group, count: count))

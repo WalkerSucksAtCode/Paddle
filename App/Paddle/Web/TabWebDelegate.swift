@@ -8,6 +8,7 @@ import WebKit
 final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private weak var tab: Tab?
     private static let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
+    private static let downloadLog = Logger(subsystem: "com.walker.Paddle", category: "downloads")
 
     init(tab: Tab) {
         self.tab = tab
@@ -263,10 +264,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard isAttachment || !navigationResponse.canShowMIMEType else { return .allow }
         // Any frame can download: sites export files through hidden iframes. A frame from another site (an ad)
         // needs permission first, once per site per session, like Safari's "Allow downloads" prompt.
-        if !navigationResponse.isForMainFrame, let site = navigationResponse.response.url?.host(), site != webView.url?.host(),
+        // Same site means the same registrable domain, so Drive's drive.usercontent.google.com frame counts as Drive's.
+        if !navigationResponse.isForMainFrame, let site = navigationResponse.response.url?.host(),
+           !SitePolicy.isSameSite(site, webView.url?.host() ?? ""),
            !(await allowsDownloads(from: site, filename: navigationResponse.response.suggestedFilename ?? "a file")) {
+            Self.downloadLog.info("download from another site's frame refused")
             return .cancel
         }
+        Self.downloadLog.info("response becomes a download (\(navigationResponse.isForMainFrame ? "main frame" : "subframe", privacy: .public), \(isAttachment ? "attachment" : "unshowable type", privacy: .public))")
         return .download
     }
 
@@ -288,12 +293,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        AppModel.shared.downloads.track(download, isPrivate: tab?.isPrivate ?? false)
+        AppModel.shared.downloads.track(download, isPrivate: tab?.isPrivate ?? false, from: tab)
         tabShowsNothingAfterDownload(webView)
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        AppModel.shared.downloads.track(download, isPrivate: tab?.isPrivate ?? false)
+        AppModel.shared.downloads.track(download, isPrivate: tab?.isPrivate ?? false, from: tab)
         tabShowsNothingAfterDownload(webView)
     }
 
@@ -400,6 +405,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         tab?.httpsUpgrade = nil
         trackErrorPageItem(webView)
         tab?.committedPost = mainFrameIsPost
+        tab?.blockedPopups = []
         tab?.pageCommitted()
         guard let tab, let url = webView.url else { return }
         defer {
@@ -590,6 +596,24 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         } else if targetExtension != nil {
             Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .private) from \(webView.url?.absoluteString ?? "-", privacy: .private)")
             return nil
+        }
+        // WebKit lets every window.open through (`WebEnvironment.allowsScriptWindows`), so Paddle decides: a click,
+        // or a site with `sites.<host>.popups: true`, opens a tab; anything else is probed (a download goes through,
+        // a page waits behind the Pop-up blocked button).
+        if WebEnvironment.allowsScriptWindows, tab.extensionPageID == nil, !Self.isUserInitiated(navigationAction),
+           !AppModel.shared.config.sitePolicy(forHost: webView.url?.host() ?? "").popups {
+            guard let url = requestURL, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                Self.log.info("blocked script-opened window without an http(s) address")
+                return nil
+            }
+            // A frame from another site (an ad) gets what WebKit always gave it: nothing. Only the page's own site
+            // may download through a window it opens on its own.
+            let source = navigationAction.value(forKey: "sourceFrame") as? WKFrameInfo
+            if let source, !source.isMainFrame, !SitePolicy.isSameSite(source.securityOrigin.host, webView.url?.host() ?? "") {
+                Self.log.info("blocked script-opened window from another site's frame")
+                return nil
+            }
+            return PopupProbe.start(configuration: configuration, url: url, opener: tab)
         }
         WebEnvironment.configureProcessIdentity(configuration, displayName: "Paddle")
         let popup = WKWebView(frame: .zero, configuration: configuration)

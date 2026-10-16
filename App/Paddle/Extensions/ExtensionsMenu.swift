@@ -26,6 +26,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
             if let colon = line.firstIndex(of: ":") {
                 let folder = String(line[..<colon])
                 statusItem.image = icon(forFolder: folder)
+                statusItem.preferredImageVisibility = .visible
             }
             add(statusItem, to: menu)
         }
@@ -35,6 +36,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
             let line = "\(folder): \(updates[folder] ?? "")"
             let updateItem = NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: "")
             updateItem.image = icon(forFolder: folder)
+            updateItem.preferredImageVisibility = .visible
             add(updateItem, to: menu)
         }
     }
@@ -67,7 +69,7 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     private func item(for ext: LoadedExtension) -> NSMenuItem {
         let item = NSMenuItem(title: "\(ext.displayName) \(ext.version) (\(ext.name))", action: nil, keyEquivalent: "")
         let tab = AppModel.shared.frontExtensionWindow(for: ext.context)?.model.selectedTab
-        item.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: ext.context.action(for: tab?.extensionTab))
+        ExtensionActionNSButton.setMenuIcon(item, ext: ext, action: ext.context.action(for: tab?.extensionTab))
         item.submenu = submenu(for: ext)
         return item
     }

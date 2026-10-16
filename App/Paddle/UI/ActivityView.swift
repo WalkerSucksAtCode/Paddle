@@ -1,6 +1,7 @@
 import AppKit
 import PaddleCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Popover from the memory button: every tab's memory and sleep state, plus content-blocking status.
 /// Other private windows' tabs are not listed one by one (their titles would show in any window), only counted.
@@ -221,58 +222,146 @@ struct DownloadsView: View {
                     .disabled(store.items.allSatisfy { $0.state == .running })
             }
             FittedScrollView(maxHeight: 360) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     ForEach(store.items) { item in
-                        row(item)
+                        DownloadRow(item: item, store: store)
                     }
                 }
             }
+            if store.items.isEmpty {
+                Text("No downloads this session.").chromeFont(size: 11).foregroundStyle(.secondary)
+            }
+            Divider()
+            Button("Open Downloads Folder") { NSWorkspace.shared.open(DownloadStore.folder) }
+                .buttonStyle(.borderless)
+                .chromeFont(size: 12)
         }
         .padding(14)
         .frame(width: 340 * scale)
     }
+}
 
-    private func row(_ item: DownloadItem) -> some View {
+/// One download: the file's icon, name and progress (bytes, speed, time left) or result. A finished row opens the
+/// file on click and drags out as the file; the right-click menu has Open, Show in Finder, Copy Download Link, Retry
+/// and Remove from List, as in Chrome and Safari.
+private struct DownloadRow: View {
+    let item: DownloadItem
+    let store: DownloadStore
+    @State private var hovering = false
+
+    private var exists: Bool {
+        item.destination.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+    }
+
+    var body: some View {
         HStack(spacing: 8) {
+            Image(nsImage: icon).resizable().frame(width: 28, height: 28)
+                .opacity(item.state == .finished && exists ? 1 : 0.55)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.filename).lineLimit(1).truncationMode(.middle).chromeFont(size: 12)
                 switch item.state {
                 case .running:
                     // Servers that don't send a size get a moving bar and a byte count, not a bar stuck at zero.
-                    if let expected = item.expectedBytes {
+                    if item.expectedBytes != nil {
                         ProgressView(value: item.fraction).controlSize(.small)
-                        status("\(bytes(item.receivedBytes)) of \(bytes(expected))")
                     } else {
                         ProgressView().progressViewStyle(.linear).controlSize(.small)
-                        status(bytes(item.receivedBytes))
                     }
+                    status(progressText)
                 case .finished:
-                    status("Done")
+                    status(exists ? Self.bytes(item.receivedBytes) : "Deleted or moved")
                 case .failed(let message):
                     status("Failed: \(message)").lineLimit(2)
                 case .cancelled:
                     status("Cancelled")
                 }
             }
-            Spacer()
-            if item.state == .running {
+            Spacer(minLength: 4)
+            switch item.state {
+            case .running:
                 Button { store.cancel(item) } label: { Image(systemName: "xmark.circle") }
                     .help("Cancel")
                     .accessibilityLabel("Cancel download of \(item.filename)")
-            } else if item.state == .finished, let url = item.destination {
-                Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: { Image(systemName: "magnifyingglass") }
-                    .help("Show in Finder")
-                    .accessibilityLabel("Show \(item.filename) in Finder")
+            case .finished:
+                if let url = item.destination, exists {
+                    Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: { Image(systemName: "magnifyingglass") }
+                        .help("Show in Finder")
+                        .accessibilityLabel("Show \(item.filename) in Finder")
+                }
+            case .failed, .cancelled:
+                if store.canRetry(item) {
+                    Button { store.retry(item) } label: { Image(systemName: "arrow.clockwise") }
+                    .help("Retry")
+                    .accessibilityLabel("Retry download of \(item.filename)")
+                }
             }
         }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(hovering && item.state == .finished && exists ? Color.primary.opacity(0.08) : .clear))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture { store.open(item) }
+        .onDrag {
+            guard item.state == .finished, let url = item.destination, exists else { return NSItemProvider() }
+            return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+        }
+        .contextMenu { menu }
         .buttonStyle(.borderless)
+        .help(item.state == .finished && exists ? "Click to open, or drag the file out" : "")
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        if item.state == .finished, exists, let url = item.destination {
+            Button("Open") { store.open(item) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        }
+        if let source = DownloadStore.sourceURL(of: item), ["http", "https"].contains(source.scheme?.lowercased() ?? "") {
+            Button("Copy Download Link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(source.absoluteString, forType: .string)
+            }
+        }
+        if item.state != .running {
+            if store.canRetry(item) { Button("Retry") { store.retry(item) } }
+            Divider()
+            Button("Remove from List") { store.remove(item) }
+        } else {
+            Button("Cancel") { store.cancel(item) }
+        }
+    }
+
+    private var icon: NSImage {
+        if item.state == .finished, let url = item.destination, exists { return NSWorkspace.shared.icon(forFile: url.path) }
+        let ext = (item.filename as NSString).pathExtension
+        return NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .data)
+    }
+
+    /// "12.4 MB of 57.8 MB — 3.1 MB/s, 15 s left", as Chrome's row reads.
+    private var progressText: String {
+        let received = Self.bytes(item.receivedBytes)
+        let elapsed = Date().timeIntervalSince(item.startedAt)
+        let rate = elapsed > 1 ? Double(item.receivedBytes) / elapsed : 0
+        var text = item.expectedBytes.map { "\(received) of \(Self.bytes($0))" } ?? received
+        if rate > 0 {
+            text += " — \(Self.bytes(Int64(rate)))/s"
+            if let expected = item.expectedBytes, expected > item.receivedBytes {
+                let left = Double(expected - item.receivedBytes) / rate
+                let formatter = DateComponentsFormatter()
+                formatter.unitsStyle = .abbreviated
+                formatter.maximumUnitCount = 1
+                if let remaining = formatter.string(from: max(1, left)) { text += ", \(remaining) left" }
+            }
+        }
+        return text
     }
 
     private func status(_ text: String) -> some View {
         Text(text).chromeFont(size: 11).foregroundStyle(.secondary)
     }
 
-    private func bytes(_ count: Int64) -> String {
+    private static func bytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
     }
 }

@@ -488,6 +488,7 @@ final class AppModel {
             case .httpsOnly: old.httpsOnly != new.httpsOnly
             case .newTabFrequentSites: old.newTabFrequentSites != new.newTabFrequentSites
             case .askWhereToDownload: old.askWhereToDownload != new.askWhereToDownload
+            case .downloadFolder: old.downloadFolder != new.downloadFolder
             case .underlineLinks: old.underlineLinks != new.underlineLinks
             case .alwaysShowTabCloseButtons: old.alwaysShowTabCloseButtons != new.alwaysShowTabCloseButtons
             case .showHomeButton: old.showHomeButton != new.showHomeButton
@@ -546,6 +547,13 @@ final class AppModel {
     /// Sets where one extension's toolbar button goes (`extensionToolbar.<folder>`), starting from the file as it is on
     /// disk now. `pinned` is the default, so it removes the entry.
     func setToolbarPlacement(_ placement: ExtensionToolbarPlacement, folder: String) async {
+        await setToolbarPlacement(placement, folders: [folder])
+    }
+
+    /// Several extensions' `extensionToolbar` placement in one write (the toolbar's Hide All Pinned / Pin All).
+    func setToolbarPlacement(_ placement: ExtensionToolbarPlacement, folders: [String]) async {
+        guard !folders.isEmpty else { return }
+        let folder = folders.joined(separator: ",")
         let disk: Data
         do {
             disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
@@ -553,7 +561,8 @@ final class AppModel {
             log.error("extensionToolbar.\(folder, privacy: .private) not written: \(error.localizedDescription, privacy: .public)")
             return
         }
-        let result = await writeConfig([ConfigChange("extensionToolbar", folder, placement == .pinned ? nil : .string(placement.rawValue))], base: disk)
+        let changes = folders.map { ConfigChange("extensionToolbar", $0, placement == .pinned ? nil : .string(placement.rawValue)) }
+        let result = await writeConfig(changes, base: disk)
         switch result {
         case .written: break
         case .conflict(let paths):

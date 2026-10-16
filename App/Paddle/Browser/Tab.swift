@@ -27,6 +27,9 @@ final class Tab: Identifiable {
     /// Set when HTTPS-only mode refused to load this http:// address: the tab shows Paddle's notice for it instead of
     /// the page. Cleared by the next navigation.
     var httpsOnlyBlocked: URL?
+    /// Pages this tab's page opened in a window without a click, refused by `PopupProbe`. The toolbar's Pop-up blocked
+    /// button opens them. Cleared when the next page commits.
+    var blockedPopups: [URL] = []
     /// The http:// address of the pending upgraded load, for failure detection; cleared when a page commits.
     @ObservationIgnored var httpsUpgrade: (original: URL, at: Date)?
     /// The host last upgraded in this tab and when, for loop detection. Not cleared by a commit: an https:// page

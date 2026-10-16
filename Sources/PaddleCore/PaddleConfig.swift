@@ -143,6 +143,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabFrequentSites: Bool
     /// Prompt for a destination folder for each download instead of saving directly to ~/Downloads.
     public var askWhereToDownload: Bool
+    /// Folder downloads are saved to (`~` allowed). Empty: ~/Downloads.
+    public var downloadFolder: String
     /// Underline website links for readability and colorblind accessibility.
     public var underlineLinks: Bool
     /// Keep the close button visible on all tabs without needing to hover.
@@ -185,7 +187,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs, linkPreview, resumeMediaOnSelect, speculativeLoading
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
-        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload
+        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case appearance, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
@@ -223,6 +225,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         httpsOnly: Bool = true,
         newTabFrequentSites: Bool = true,
         askWhereToDownload: Bool = false,
+        downloadFolder: String = "",
         underlineLinks: Bool = false,
         alwaysShowTabCloseButtons: Bool = false,
         showHomeButton: Bool = false,
@@ -277,6 +280,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.httpsOnly = httpsOnly
         self.newTabFrequentSites = newTabFrequentSites
         self.askWhereToDownload = askWhereToDownload
+        self.downloadFolder = downloadFolder
         self.underlineLinks = underlineLinks
         self.alwaysShowTabCloseButtons = alwaysShowTabCloseButtons
         self.showHomeButton = showHomeButton
@@ -339,6 +343,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
         newTabFrequentSites = c.decodeValue(.newTabFrequentSites, d.newTabFrequentSites, issues)
         askWhereToDownload = c.decodeValue(.askWhereToDownload, d.askWhereToDownload, issues)
+        downloadFolder = c.decodeValue(.downloadFolder, d.downloadFolder, issues)
         underlineLinks = c.decodeValue(.underlineLinks, d.underlineLinks, issues)
         alwaysShowTabCloseButtons = c.decodeValue(.alwaysShowTabCloseButtons, d.alwaysShowTabCloseButtons, issues)
         showHomeButton = c.decodeValue(.showHomeButton, d.showHomeButton, issues)

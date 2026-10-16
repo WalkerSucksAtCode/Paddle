@@ -13,6 +13,8 @@ public struct SitePolicy: Sendable, Equatable {
     public var notifications: SiteSettings.Permission
     /// False lets the host load over http:// in HTTPS-only mode.
     public var httpsOnly: Bool
+    /// True lets the host's pages open windows without a click.
+    public var popups: Bool
 
     /// Paddle's defaults: 100 %, JavaScript on, media may autoplay muted (Safari's "Stop media with sound"),
     /// blocking on, location and notifications asked once per site per session.
@@ -27,6 +29,7 @@ public struct SitePolicy: Sendable, Equatable {
         location = settings.location ?? .ask
         notifications = settings.notifications ?? .ask
         httpsOnly = settings.httpsOnly ?? true
+        popups = settings.popups ?? false
     }
 
     /// The smallest and largest zoom Zoom In / Zoom Out reach, and their step.
@@ -118,7 +121,7 @@ extension PaddleConfig {
 extension SiteSettings {
     /// The field names as config.json writes them.
     public enum Field: String, Sendable, CaseIterable {
-        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly
+        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly, popups
     }
 
     /// A `sites` entry as it is in the file (`existing`, nil when there is none) with one field set to `value`, or
@@ -142,6 +145,7 @@ extension SiteSettings {
         case .location: return .string(d.location.rawValue)
         case .notifications: return .string(d.notifications.rawValue)
         case .httpsOnly: return .bool(d.httpsOnly)
+        case .popups: return .bool(d.popups)
         }
     }
 }
@@ -219,4 +223,36 @@ public struct SessionPermissions: Sendable, Equatable {
     }
 
     public var isEmpty: Bool { answers.isEmpty }
+}
+
+extension SitePolicy {
+    /// Hosting suffixes where every subdomain is someone else's site (from the public suffix list's private section).
+    static let sharedHostingSuffixes: Set<String> = [
+        "github.io", "gitlab.io", "pages.dev", "workers.dev", "netlify.app", "vercel.app", "herokuapp.com",
+        "blogspot.com", "web.app", "firebaseapp.com", "appspot.com", "s3.amazonaws.com", "cloudfront.net",
+        "azurewebsites.net", "glitch.me", "fly.dev", "onrender.com", "ngrok.io", "ngrok-free.app",
+    ]
+
+    /// A host's site for same-site checks: its last two labels (`drive.usercontent.google.com` → `google.com`), three
+    /// under a two-letter country code with a short second level (`www.bbc.co.uk` → `bbc.co.uk`), and one more under a
+    /// shared hosting suffix (`a.github.io` and `b.github.io` differ). An approximation of the public suffix list;
+    /// unlisted shared suffixes count as one site. IP addresses stay whole.
+    public static func approximateSite(of host: String) -> String {
+        let host = PaddleConfig.normalizedHost(host)
+        let labels = host.split(separator: ".")
+        guard labels.count > 2, !labels.allSatisfy({ $0.allSatisfy(\.isNumber) }), !host.contains(":") else { return host }
+        let tld = labels[labels.count - 1], second = labels[labels.count - 2]
+        var keep = tld.count == 2 && second.count <= 3 ? 3 : 2
+        // The longest shared hosting suffix the host ends with: the site is that plus one label.
+        for count in stride(from: labels.count - 1, through: 2, by: -1)
+        where sharedHostingSuffixes.contains(labels.suffix(count).joined(separator: ".")) {
+            keep = count + 1
+            break
+        }
+        return labels.suffix(keep).joined(separator: ".")
+    }
+
+    public static func isSameSite(_ a: String, _ b: String) -> Bool {
+        approximateSite(of: a) == approximateSite(of: b)
+    }
 }

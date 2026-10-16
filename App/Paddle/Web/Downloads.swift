@@ -14,6 +14,7 @@ final class DownloadItem: Identifiable {
     }
 
     let id = UUID()
+    let startedAt = Date()
     var filename: String
     var destination: URL?
     var fraction: Double = 0
@@ -25,6 +26,11 @@ final class DownloadItem: Identifiable {
     let isPrivate: Bool
     /// A private download still running when the last private window closed: it leaves the list when it ends.
     @ObservationIgnored var outlivedPrivateWindows = false
+
+    /// The window whose tab started it: the save panel is its sheet and its downloads popover opens. Captured at the
+    /// start, since a tab opened only for the download closes as soon as the download begins.
+    @ObservationIgnored weak var browser: BrowserModel?
+    @ObservationIgnored weak var window: NSWindow?
 
     @ObservationIgnored let download: WKDownload
     @ObservationIgnored var progressObservation: NSKeyValueObservation?
@@ -44,12 +50,38 @@ final class DownloadStore {
     @ObservationIgnored private lazy var delegate = DownloadDelegate(store: self)
 
     var activeCount: Int { items.filter { $0.state == .running }.count }
-    var downloadStartedTime: Date?
+
+    /// `downloadFolder` from config.json (`~` expanded), or ~/Downloads when it is empty or not an existing folder.
+    static var folder: URL {
+        let configured = (AppModel.shared.config.downloadFolder as NSString).expandingTildeInPath
+        var isDirectory: ObjCBool = false
+        if !configured.isEmpty, FileManager.default.fileExists(atPath: configured, isDirectory: &isDirectory), isDirectory.boolValue {
+            return URL(fileURLWithPath: configured, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    }
+
+    /// "Downloads" or a path with `~` for the home folder, for Settings. A folder that no longer exists says so.
+    static func folderDisplayName(_ configured: String) -> String {
+        let path = (configured as NSString).expandingTildeInPath
+        guard !path.isEmpty else { return "Downloads" }
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+        return (path as NSString).abbreviatingWithTildeInPath + (exists ? "" : " (missing: using Downloads)")
+    }
+
+    /// What Settings writes for a chosen folder: empty for ~/Downloads, else the path with `~` for home.
+    static func configValue(for url: URL) -> String {
+        let standard = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        if url.standardizedFileURL.path == standard.standardizedFileURL.path { return "" }
+        return (url.path as NSString).abbreviatingWithTildeInPath
+    }
 
     /// The list lives in memory only; Paddle keeps no download history on disk, private or not.
-    func track(_ download: WKDownload, isPrivate: Bool) {
+    func track(_ download: WKDownload, isPrivate: Bool, from tab: Tab?) {
         let item = DownloadItem(download: download, isPrivate: isPrivate)
-        downloadStartedTime = Date()
+        item.browser = tab?.browser
+        item.window = tab?.window ?? NSApp.keyWindow
         download.delegate = delegate
         // Progress KVO can fire on any thread, so this closure is explicitly non-isolated and hops to main. It fires
         // for every chunk received; the coalescer turns that into at most four updates a second, each reading the
@@ -67,6 +99,48 @@ final class DownloadStore {
             }
         }
         items.insert(item, at: 0)
+    }
+
+    /// The address the download came from (after redirects WebKit reports the original), for Copy Link and Retry.
+    static func sourceURL(of item: DownloadItem) -> URL? {
+        item.download.originalRequest?.url
+    }
+
+    /// Starts the same address again as a new download from the web view that started this one (or any open tab of
+    /// its window), replacing this row. Paddle keeps no partial files, so a retry starts from the beginning.
+    func retry(_ item: DownloadItem) {
+        // A form post (an export) isn't sent again behind the user's back.
+        guard canRetry(item), let request = item.download.originalRequest,
+              let webView = item.download.webView ?? item.browser?.allTabs.lazy.compactMap(\.webView).first else { return }
+        let browser = item.browser
+        let window = item.window
+        let isPrivate = item.isPrivate
+        items.removeAll { $0 === item }
+        webView.startDownload(using: request) { [weak self] download in
+            guard let self else { return }
+            self.track(download, isPrivate: isPrivate, from: nil)
+            if let restarted = self.item(for: download) {
+                restarted.browser = browser
+                restarted.window = window
+            }
+        }
+    }
+
+    func canRetry(_ item: DownloadItem) -> Bool {
+        guard item.state != .running, let request = item.download.originalRequest,
+              ["http", "https"].contains(request.url?.scheme?.lowercased() ?? "") else { return false }
+        return (request.httpMethod ?? "GET").uppercased() == "GET"
+    }
+
+    func remove(_ item: DownloadItem) {
+        guard item.state != .running else { return }
+        items.removeAll { $0 === item }
+    }
+
+    /// Opens a finished file the way Finder would (Gatekeeper checks it: it carries the quarantine flag).
+    func open(_ item: DownloadItem) {
+        guard item.state == .finished, let url = item.destination, FileManager.default.fileExists(atPath: url.path) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func item(for download: WKDownload) -> DownloadItem? {
@@ -102,6 +176,11 @@ final class DownloadStore {
         try? FileManager.default.removeItem(at: destination)
     }
 
+    /// Save panel cancelled: the download never started, so it leaves no row.
+    func removeUnstarted(_ item: DownloadItem) {
+        items.removeAll { $0 === item }
+    }
+
     func clearFinished() {
         items.removeAll { $0.state != .running }
     }
@@ -114,8 +193,7 @@ final class DownloadStore {
     }
 
     /// A free name in ~/Downloads: "name (1).ext" when "name.ext" exists on disk or belongs to a running download.
-    func uniqueDestination(for filename: String) -> URL {
-        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    func uniqueDestination(for filename: String, in folder: URL = DownloadStore.folder) -> URL {
         let safe = filename.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
         let base = (safe as NSString).deletingPathExtension
         let ext = (safe as NSString).pathExtension
@@ -157,6 +235,7 @@ nonisolated final class ProgressCoalescer: Sendable {
 }
 
 final class DownloadDelegate: NSObject, WKDownloadDelegate {
+    private static let log = Logger(subsystem: "com.walker.Paddle", category: "downloads")
     private weak var store: DownloadStore?
 
     init(store: DownloadStore) {
@@ -165,27 +244,57 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
         guard let store else { return nil }
+        let item = store.item(for: download)
         let destination: URL
         if AppModel.shared.config.askWhereToDownload {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = suggestedFilename
+            panel.directoryURL = DownloadStore.folder
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
-            let result = await panel.begin()
-            guard result == .OK, let chosen = panel.url else { return nil }
-            destination = chosen
+            // A sheet on the window the download came from, so it can't open behind it.
+            let result: NSApplication.ModalResponse
+            if let window = item?.window, window.isVisible {
+                result = await panel.beginSheetModal(for: window)
+            } else {
+                NSApp.activate()
+                result = await panel.begin()
+            }
+            guard result == .OK, let chosen = panel.url else {
+                Self.log.info("save panel cancelled")
+                if let item {
+                    item.state = .cancelled
+                    store.removeUnstarted(item)
+                }
+                return nil
+            }
+            // The panel already asked about replacing an existing file. WebKit only writes to a path that doesn't
+            // exist, so the old file goes to the Trash (recoverable if this download then fails), or, when it can't,
+            // the download takes a free name beside it.
+            if FileManager.default.fileExists(atPath: chosen.path) {
+                destination = (try? FileManager.default.trashItem(at: chosen, resultingItemURL: nil)) != nil
+                    ? chosen : store.uniqueDestination(for: chosen.lastPathComponent, in: chosen.deletingLastPathComponent())
+            } else {
+                destination = chosen
+            }
         } else {
             destination = store.uniqueDestination(for: suggestedFilename)
         }
-        if let item = store.item(for: download) {
+        Self.log.info("download started")
+        if let item {
             item.filename = destination.lastPathComponent
             item.destination = destination
             AccessibilityNotification.Announcement("Downloading \(item.filename)").post()
+            // Chrome-style: the window it came from opens its downloads popover as the file starts.
+            // Never a window of the other kind: a private download's name stays out of normal windows.
+            let front = AppModel.shared.frontWindow?.model
+            (item.browser ?? (front?.isPrivate == item.isPrivate ? front : nil))?.downloadsVisible = true
         }
         return destination
     }
 
     func downloadDidFinish(_ download: WKDownload) {
+        Self.log.info("download finished")
         guard let item = store?.item(for: download) else { return }
         item.state = .finished
         item.fraction = 1
@@ -198,6 +307,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
     }
 
     func download(_ download: WKDownload, didFailWithError error: any Error, resumeData: Data?) {
+        Self.log.error("download failed: \(error.localizedDescription, privacy: .public)")
         guard let item = store?.item(for: download), item.state != .cancelled else { return }
         item.state = .failed(error.localizedDescription)
         AccessibilityNotification.Announcement("\(item.filename) failed to download").post()
