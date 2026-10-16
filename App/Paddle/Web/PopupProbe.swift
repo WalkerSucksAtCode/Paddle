@@ -25,6 +25,8 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
     /// The opener's page when the window opened; a page blocked after the opener navigated away isn't offered.
     private let openerPage: URL?
     private var finished = false
+    /// Already sent to https:// once by HTTPS-only.
+    private var upgraded = false
 
     private init(webView: WKWebView, opener: Tab) {
         self.webView = webView
@@ -61,11 +63,20 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
             blocked(nil)
             return (.cancel, preferences)
         }
-        // HTTPS-only lives in the tab's delegate; here a plain http:// address isn't loaded but offered, and opening
-        // it from the button goes through the tab's upgrade.
-        let config = AppModel.shared.config
-        if scheme == "http", config.httpsOnly, config.sitePolicy(forHost: url?.host() ?? "").httpsOnly {
-            blocked(url)
+        // HTTPS-only, as a tab applies it (local addresses and allowed sites stay http): the address loads over
+        // https instead. Sent back to http after that, it isn't loaded but offered on the button.
+        let app = AppModel.shared
+        if let url, scheme == "http", let secure = HTTPSOnlyPolicy.upgrade(
+            url, enabled: app.config.httpsOnly,
+            siteAllowsHTTP: !app.config.sitePolicy(forHost: url.host() ?? "").httpsOnly,
+            sessionExceptions: app.httpExceptions
+        ) {
+            if upgraded {
+                blocked(url)
+            } else {
+                upgraded = true
+                webView.load(URLRequest(url: secure))
+            }
             return (.cancel, preferences)
         }
         return (.allow, preferences)
@@ -90,6 +101,11 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        // A load this probe cancelled or turned into a download or an https load reports a failure too; the probe
+        // carries on (or has already ended) and the timeout still drops it.
+        let error = error as NSError
+        if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled { return }
+        if error.domain == "WebKitErrorDomain", error.code == 102 { return }
         end("load failed")
     }
 

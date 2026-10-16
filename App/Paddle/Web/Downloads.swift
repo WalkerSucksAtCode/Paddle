@@ -51,6 +51,12 @@ final class DownloadStore {
 
     var activeCount: Int { items.filter { $0.state == .running }.count }
 
+    /// What one window lists: a normal window never shows private downloads (their names and addresses would leak
+    /// out of private browsing); a private window shows everything.
+    func items(forPrivateWindow isPrivate: Bool) -> [DownloadItem] {
+        isPrivate ? items : items.filter { !$0.isPrivate }
+    }
+
     /// `downloadFolder` from config.json (`~` expanded), or ~/Downloads when it is empty or not an existing folder.
     static var folder: URL {
         let configured = (AppModel.shared.config.downloadFolder as NSString).expandingTildeInPath
@@ -181,8 +187,9 @@ final class DownloadStore {
         items.removeAll { $0 === item }
     }
 
-    func clearFinished() {
-        items.removeAll { $0.state != .running }
+    /// Clear: the finished, failed and cancelled rows this window lists.
+    func clearFinished(inPrivateWindow isPrivate: Bool) {
+        items.removeAll { $0.state != .running && (isPrivate || !$0.isPrivate) }
     }
 
     /// The last private window closed: its finished, failed and cancelled downloads leave the list (the files

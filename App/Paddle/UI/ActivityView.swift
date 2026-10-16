@@ -211,24 +211,28 @@ private struct CoverageDisclosure: View {
 
 struct DownloadsView: View {
     let store: DownloadStore
+    /// The window's privacy: a normal window doesn't list private downloads.
+    let isPrivate: Bool
     @Environment(\.chromeScale) private var scale
+
+    private var listed: [DownloadItem] { store.items(forPrivateWindow: isPrivate) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Downloads").font(.headline)
                 Spacer()
-                Button("Clear") { store.clearFinished() }
-                    .disabled(store.items.allSatisfy { $0.state == .running })
+                Button("Clear") { store.clearFinished(inPrivateWindow: isPrivate) }
+                    .disabled(listed.allSatisfy { $0.state == .running })
             }
             FittedScrollView(maxHeight: 360) {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(store.items) { item in
+                    ForEach(listed) { item in
                         DownloadRow(item: item, store: store)
                     }
                 }
             }
-            if store.items.isEmpty {
+            if listed.isEmpty {
                 Text("No downloads this session.").chromeFont(size: 11).foregroundStyle(.secondary)
             }
             Divider()

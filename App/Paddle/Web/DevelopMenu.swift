@@ -25,7 +25,7 @@ final class DevelopMenuDelegate: NSObject, NSMenuDelegate {
         let withBackground = AppModel.shared.frontExtensions.loaded.filter { $0.webExtension.hasBackgroundContent }
         for ext in withBackground {
             let item = NSMenuItem(title: ext.displayName, action: #selector(inspect(_:)), keyEquivalent: "")
-            item.image = ExtensionActionNSButton.toolbarIcon(ext: ext, action: nil)
+            ExtensionActionNSButton.setMenuIcon(item, ext: ext, action: nil)
             item.target = self
             item.representedObject = ext
             menu.addItem(item)

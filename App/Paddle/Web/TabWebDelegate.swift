@@ -312,7 +312,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             // A preview opened for a file link has nothing to show either.
             if tab.isPreview {
                 if browser.preview === tab { browser.closePreview() }
-            } else if tab.closesIfOnlyDownload, browser.allTabs.count > 1 {
+            // Only this space's tabs count: closing a space's last tab would switch the window to another space.
+            } else if tab.closesIfOnlyDownload, browser.tabs.count > 1 {
                 browser.close(tab, remember: false)
             } else {
                 tab.url = nil

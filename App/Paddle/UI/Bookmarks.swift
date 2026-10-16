@@ -345,6 +345,8 @@ final class BookmarksMenuDelegate: NSObject, NSMenuDelegate {
 
     private func item(for node: Bookmark) -> NSMenuItem {
         let item = NSMenuItem(title: String(node.title.prefix(60)), action: nil, keyEquivalent: "")
+        // macOS 27 hides menu item images unless the item asks to show them.
+        item.preferredImageVisibility = .visible
         if node.isFolder {
             item.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
             item.submenu = submenu(for: node.children ?? [])

@@ -379,7 +379,7 @@ private struct NavigationBar: View {
                 if model.extensionsAllowed, let host = model.extensionHost {
                     ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
-                if app.config.alwaysShowDownloadsButton || !app.downloads.items.isEmpty {
+                if app.config.alwaysShowDownloadsButton || !app.downloads.items(forPrivateWindow: model.isPrivate).isEmpty {
                     downloadsButton
                 }
             }
@@ -643,8 +643,12 @@ private struct NavigationBar: View {
         }
     }
 
+    private var activeDownloads: Int {
+        app.downloads.items(forPrivateWindow: model.isPrivate).filter { $0.state == .running }.count
+    }
+
     private var overallDownloadFraction: Double {
-        let active = app.downloads.items.filter { $0.state == .running }
+        let active = app.downloads.items(forPrivateWindow: model.isPrivate).filter { $0.state == .running }
         guard !active.isEmpty else { return 0 }
         let total = active.reduce(0.0) { $0 + $1.fraction }
         return total / Double(active.count)
@@ -655,7 +659,7 @@ private struct NavigationBar: View {
             model.downloadsVisible.toggle()
         } label: {
             ZStack {
-                if app.downloads.activeCount > 0 {
+                if activeDownloads > 0 {
                     Circle()
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
                         .frame(width: 18, height: 18)
@@ -677,10 +681,10 @@ private struct NavigationBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help(app.downloads.activeCount > 0 ? "Downloading (\(app.downloads.activeCount))" : "Downloads (⌥⌘L)")
+        .help(activeDownloads > 0 ? "Downloading (\(activeDownloads))" : "Downloads (⌥⌘L)")
         .accessibilityLabel("Downloads")
         .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
-            DownloadsView(store: app.downloads).systemText()
+            DownloadsView(store: app.downloads, isPrivate: model.isPrivate).systemText()
         }
     }
 

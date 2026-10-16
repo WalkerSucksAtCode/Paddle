@@ -453,6 +453,7 @@ final class ProfileMenuDelegate: NSObject, NSMenuDelegate {
             entry.target = NSApp.delegate
             entry.representedObject = profile.id
             entry.image = NSImage(systemSymbolName: profile.symbol.sfSymbol, accessibilityDescription: profile.symbol.displayName)
+            entry.preferredImageVisibility = .visible
             submenu.addItem(entry)
         }
     }
@@ -473,6 +474,7 @@ final class SpacesMenuDelegate: NSObject, NSMenuDelegate {
             item.isHidden = space == nil
             item.title = space?.name ?? "Space \(item.tag)"
             item.image = space.flatMap { NSImage(systemSymbolName: $0.symbol.sfSymbol, accessibilityDescription: $0.symbol.displayName) }
+            item.preferredImageVisibility = .visible
             item.state = space?.id == model?.activeSpaceID ? .on : .off
         }
         guard let moveItem, let submenu = moveItem.submenu else { return }
@@ -481,6 +483,7 @@ final class SpacesMenuDelegate: NSObject, NSMenuDelegate {
             let entry = NSMenuItem(title: space.name, action: #selector(BrowserWindowController.paddleMoveTabToSpace(_:)), keyEquivalent: "")
             entry.representedObject = space.id
             entry.image = NSImage(systemSymbolName: space.symbol.sfSymbol, accessibilityDescription: space.symbol.displayName)
+            entry.preferredImageVisibility = .visible
             submenu.addItem(entry)
         }
         moveItem.isHidden = false
@@ -509,6 +512,7 @@ final class ShareMenuDelegate: NSObject, NSMenuDelegate {
             let entry = NSMenuItem(title: service.title, action: #selector(BrowserWindowController.performSharingService(_:)), keyEquivalent: "")
             entry.representedObject = service
             entry.image = service.image
+            entry.preferredImageVisibility = .visible
             menu.addItem(entry)
         }
     }

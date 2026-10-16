@@ -375,10 +375,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         tab.setZoom(AppModel.shared.config.defaultZoom)
     }
 
-    /// View > Show Downloads (⌥⌘L): the downloads popover, or the Downloads folder when the list is empty.
+    /// View > Show Downloads (⌥⌘L): the downloads popover, or the download folder when this window's list is empty.
     @objc func paddleShowDownloads(_ sender: Any?) {
-        if AppModel.shared.downloads.items.isEmpty {
-            NSWorkspace.shared.open(FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0])
+        if AppModel.shared.downloads.items(forPrivateWindow: model.isPrivate).isEmpty {
+            NSWorkspace.shared.open(DownloadStore.folder)
         } else {
             model.downloadsVisible = true
         }
