@@ -180,8 +180,6 @@ struct VerticalTabsSidebar: View {
                 .background(WindowDragArea())
             }
             .scrollBounceBehavior(.basedOnSize)
-            // A tab dropped below the tabs (from this window or another) goes to the end.
-            .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.append(items, to: model) }
             // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
             .onChange(of: model.selectedID) { _, id in
                 guard let id else { return }
@@ -293,7 +291,7 @@ private struct SidebarTabBehavior: ViewModifier {
             .onHover(perform: onHover)
             .help(tooltip)
             .modifier(TabDrag(tab: tab, enabled: !isRenaming))
-            .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.drop(items, onto: tab, in: model) }
+            .overlay { TabDropBar(tab: tab, model: model, vertical: true) }
             .contextMenu { TabContextMenu(tab: tab, model: model) }
             // Without room for a field the name is edited in a popover; closing it hands the keyboard back to the page.
             .popover(isPresented: Binding(

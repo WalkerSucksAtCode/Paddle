@@ -80,6 +80,10 @@ final class BrowserModel {
     /// The toolbar's downloads popover is open (Show Downloads, the toolbar button and the menu button drive it).
     var downloadsVisible = false
 
+    /// While a tab is dragged over this window's tabs: the slot in `tabs` it would land in, drawn as an insertion bar
+    /// (`TabDragController`).
+    var tabDropIndex: Int?
+
     var findVisible = false
     var findText = ""
     var findFocusRequest = 0

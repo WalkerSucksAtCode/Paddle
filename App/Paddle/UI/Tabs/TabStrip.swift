@@ -79,8 +79,6 @@ struct TabStrip: View {
                         .background(WindowDragArea())
                     }
                     .scrollBounceBehavior(.basedOnSize)
-                    // A tab dropped between or after the tabs (from this window or another) goes to the end.
-                    .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.append(items, to: model) }
                     // The tabs take their own width, so New Tab follows the last tab; the scroll view gets the rest.
                     .frame(width: min(tabsWidth, max(0, geometry.size.width - leadingInset - switcherWidth - 44)))
                     .accessibilityElement(children: .contain)
@@ -307,7 +305,7 @@ struct TabButton: View {
         }
         .help(tooltip)
         .modifier(TabDrag(tab: tab, enabled: !isRenaming))
-        .dropDestination(for: TabDragPayload.self) { items, _ in TabDrop.drop(items, onto: tab, in: model) }
+        .overlay { TabDropBar(tab: tab, model: model, vertical: false) }
         .contextMenu { TabContextMenu(tab: tab, model: model) }
     }
 
