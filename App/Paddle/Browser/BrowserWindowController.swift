@@ -161,7 +161,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         model.suggestions.dismiss()
     }
 
-    private var tab: Tab? { model.selectedTab }
+    var tab: Tab? { model.selectedTab }
     private var webView: WKWebView? { model.selectedTab?.webView }
 
     // MARK: - File
@@ -194,6 +194,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         // WebKit's print view has no size of its own; without one the operation can print blank pages.
         operation.view?.frame = webView.bounds
         operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// File > Share…: standard macOS share sheet for the active page.
+    @objc func paddleShare(_ sender: Any?) {
+        guard let tab, let url = tab.url, let view = window?.contentView else { return }
+        let picker = NSSharingServicePicker(items: [url, tab.title])
+        let sourceView = (sender as? NSView) ?? view
+        let rect = (sender as? NSView)?.bounds ?? NSRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        picker.show(relativeTo: rect, of: sourceView, preferredEdge: .minY)
+    }
+
+    /// Invoked by dynamic menu items in File > Share submenu.
+    @objc func performSharingService(_ sender: NSMenuItem) {
+        guard let service = sender.representedObject as? NSSharingService,
+              let tab, let url = tab.url else { return }
+        service.perform(withItems: [url, tab.title])
     }
 
     /// File > Save Page As…: the page as a Web Archive (`createWebArchiveData`: the page and its loaded
@@ -296,6 +312,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         tab.togglePictureInPicture()
     }
 
+    /// View > Show Reader (⇧⌘R): toggles distraction-free Reader Mode for article pages.
+    @objc func paddleToggleReaderMode(_ sender: Any?) {
+        guard let tab else { return }
+        tab.toggleReaderMode()
+    }
+
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
@@ -375,6 +397,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddlePreviousTab(_ sender: Any?) { model.selectNeighbor(offset: -1) }
     @objc func paddleTogglePin(_ sender: Any?) { if let tab { model.togglePin(tab) } }
     @objc func paddleDuplicateTab(_ sender: Any?) { if let tab { model.duplicate(tab) } }
+    @objc func paddleCloseOtherTabs(_ sender: Any?) { if let tab { model.closeOthers(tab) } }
+    @objc func paddleCloseTabsToTheRight(_ sender: Any?) { if let tab { model.closeTabsToTheRight(tab) } }
+    @objc func paddleMuteOtherTabs(_ sender: Any?) { if let tab { model.muteOthers(tab) } }
     @objc func paddleRenameTab(_ sender: Any?) { if let tab { model.renamingTabID = tab.id } }
     @objc func paddleAddTabToNewGroup(_ sender: Any?) { if let tab, !tab.isPinned { model.addToNewGroup(tab) } }
     @objc func paddleRemoveTabFromGroup(_ sender: Any?) { if let tab { model.removeFromGroup(tab) } }
@@ -532,6 +557,18 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleToggleMute(_:)):
             menuItem.title = tab?.isMuted == true ? "Unmute Tab" : "Mute Tab"
             return tab != nil && Tab.supportsMuting
+        case #selector(paddleMuteOtherTabs(_:)):
+            return Tab.supportsMuting && model.allTabs.count > 1
+        case #selector(paddleCloseOtherTabs(_:)):
+            return model.tabs.count > 1
+        case #selector(paddleCloseTabsToTheRight(_:)):
+            guard let tab, let idx = model.tabs.firstIndex(where: { $0 === tab }) else { return false }
+            return idx < model.tabs.count - 1
+        case #selector(paddleShare(_:)):
+            return tab?.url != nil
+        case #selector(paddleToggleReaderMode(_:)):
+            menuItem.title = tab?.readerArticle != nil ? "Hide Reader" : "Show Reader"
+            return tab != nil && (tab?.isReaderAvailable == true || tab?.readerArticle != nil)
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleViewSource(_:)),
              #selector(paddleTogglePictureInPicture(_:)):
             return canActOnPage

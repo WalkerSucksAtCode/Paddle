@@ -1,0 +1,156 @@
+import PaddleCore
+import SwiftUI
+
+/// Toolbar button that appears whenever any tab is playing audio or video, opening a global playback controller.
+struct MediaControlsButton: View {
+    let app: AppModel
+    let model: BrowserModel
+    @State private var showPopover = false
+
+    private var playingTabs: [Tab] {
+        app.allTabs.filter { $0.isAwake && $0.isPlayingAudio }
+    }
+
+    var body: some View {
+        if !playingTabs.isEmpty {
+            Button {
+                showPopover.toggle()
+            } label: {
+                Image(systemName: "speaker.wave.2.fill")
+                    .chromeFont(size: 13, weight: .semibold)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help("Media Playback Controls")
+            .accessibilityLabel("Media Playback")
+            .accessibilityValue("\(playingTabs.count) tab(s) playing")
+            .popover(isPresented: $showPopover, arrowEdge: .bottom) {
+                MediaControlsPopover(app: app, currentModel: model)
+                    .systemText()
+            }
+        }
+    }
+}
+
+/// Popover listing all tabs playing media with quick Play/Pause, Mute, and PiP controls.
+struct MediaControlsPopover: View {
+    let app: AppModel
+    let currentModel: BrowserModel
+
+    private var playingTabs: [Tab] {
+        app.allTabs.filter { $0.isAwake && $0.isPlayingAudio }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Media Playing", systemImage: "play.circle.fill")
+                    .font(.headline)
+                Spacer()
+                Text("\(playingTabs.count)")
+                    .font(.caption.monospacedDigit())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.quaternary))
+            }
+            .padding(.bottom, 4)
+
+            Divider()
+
+            if playingTabs.isEmpty {
+                Text("No media currently playing.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(playingTabs) { tab in
+                    mediaRow(for: tab)
+                }
+            }
+        }
+        .padding(14)
+        .frame(minWidth: 280, maxWidth: 340)
+    }
+
+    private func mediaRow(for tab: Tab) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "music.note")
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tab.title)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+
+                if let host = tab.url?.host() {
+                    Text(host)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                jumpTo(tab)
+            }
+
+            HStack(spacing: 6) {
+                // Play / Pause toggle
+                Button {
+                    togglePlayback(in: tab)
+                } label: {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.borderless)
+                .help("Pause Playback")
+
+                // Mute toggle
+                Button {
+                    tab.toggleMute()
+                } label: {
+                    Image(systemName: tab.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 11))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.borderless)
+                .help(tab.isMuted ? "Unmute" : "Mute")
+
+                // PiP toggle
+                Button {
+                    tab.togglePictureInPicture()
+                } label: {
+                    Image(systemName: "pip.enter")
+                        .font(.system(size: 11))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.borderless)
+                .help("Picture in Picture")
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func jumpTo(_ tab: Tab) {
+        guard let browser = tab.browser else { return }
+        browser.select(tab)
+        browser.controller?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func togglePlayback(in tab: Tab) {
+        let script = """
+        (() => {
+            const media = Array.from(document.querySelectorAll('video, audio'));
+            for (const m of media) {
+                if (m.paused) { m.play(); } else { m.pause(); }
+            }
+        })()
+        """
+        tab.webView?.evaluateJavaScript(script, in: nil, in: .defaultClient) { _ in }
+    }
+}

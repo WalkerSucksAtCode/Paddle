@@ -419,6 +419,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// Private windows fetch no icons (nothing reaches favicons/ or the in-memory cache); they show icons already
     /// on disk from normal browsing.
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        tab?.checkReaderAvailability()
         guard tab?.isPrivate == false else { return }
         Task { await AppModel.shared.favicons.refresh(for: webView) }
     }

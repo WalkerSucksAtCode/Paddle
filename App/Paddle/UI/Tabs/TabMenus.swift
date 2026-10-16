@@ -12,6 +12,8 @@ struct TabContextMenu: View {
         Button("Duplicate Tab") { model.duplicate(tab) }
         Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") { model.toggleMute(tab) }
             .disabled(!Tab.supportsMuting)
+        Button("Mute Other Tabs") { model.muteOthers(tab) }
+            .disabled(!Tab.supportsMuting)
         Button("Picture in Picture") { tab.togglePictureInPicture() }
             .disabled(!tab.isAwake || tab.isShowingErrorPage)
         Button("Put Tab to Sleep") { model.sleep(tab) }
@@ -38,6 +40,8 @@ struct TabContextMenu: View {
         Divider()
         Button("Close Tab") { model.close(tab) }
         Button("Close Other Tabs") { model.closeOthers(tab) }
+        Button("Close Tabs to the Right") { model.closeTabsToTheRight(tab) }
+            .disabled(model.tabs.last === tab)
     }
 }
 

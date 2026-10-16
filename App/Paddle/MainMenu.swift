@@ -55,6 +55,11 @@ enum MainMenu {
         file.addItem(.separator())
         add(file, "savePage", "Save Page As…", #selector(BrowserWindowController.paddleSavePage(_:)), "s")
         add(file, "print", "Print…", #selector(BrowserWindowController.paddlePrint(_:)), "p")
+        let share = add(file, "sharePage", "Share…", #selector(BrowserWindowController.paddleShare(_:)), "")
+        let shareSubmenu = NSMenu(title: "Share")
+        shareSubmenu.delegate = ShareMenuDelegate.shared
+        share.submenu = shareSubmenu
+        ShareMenuDelegate.shared.item = share
         file.addItem(.separator())
         add(file, "importFromBrowser", "Import from Browser…", #selector(AppDelegate.paddleImportFromBrowser(_:)), "", target: appDelegate)
 
@@ -89,6 +94,7 @@ enum MainMenu {
         add(view, "showDownloads", "Show Downloads", #selector(BrowserWindowController.paddleShowDownloads(_:)), "l", [.command, .option])
         view.addItem(.separator())
         add(view, "viewSource", "View Source", #selector(BrowserWindowController.paddleViewSource(_:)), "u", [.command, .option])
+        add(view, "toggleReaderMode", "Show Reader", #selector(BrowserWindowController.paddleToggleReaderMode(_:)), "r", [.command, .shift])
         add(view, "togglePictureInPicture", "Picture in Picture", #selector(BrowserWindowController.paddleTogglePictureInPicture(_:)), "p", [.command, .control])
         view.addItem(.separator())
         add(view, "fullScreen", "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
@@ -146,6 +152,8 @@ enum MainMenu {
         tabs.addItem(.separator())
         add(tabs, "togglePin", "Pin Tab", #selector(BrowserWindowController.paddleTogglePin(_:)), "")
         add(tabs, "duplicateTab", "Duplicate Tab", #selector(BrowserWindowController.paddleDuplicateTab(_:)), "")
+        add(tabs, "closeOtherTabs", "Close Other Tabs", #selector(BrowserWindowController.paddleCloseOtherTabs(_:)), "")
+        add(tabs, "closeTabsToTheRight", "Close Tabs to the Right", #selector(BrowserWindowController.paddleCloseTabsToTheRight(_:)), "")
         add(tabs, "renameTab", "Rename Tab…", #selector(BrowserWindowController.paddleRenameTab(_:)), "")
         add(tabs, "addTabToNewGroup", "Add Tab to New Group", #selector(BrowserWindowController.paddleAddTabToNewGroup(_:)), "")
         add(tabs, "removeTabFromGroup", "Remove Tab from Group", #selector(BrowserWindowController.paddleRemoveTabFromGroup(_:)), "")
@@ -178,6 +186,7 @@ enum MainMenu {
         add(tabs, "moveTabLeft", "Move Tab Left", #selector(BrowserWindowController.paddleMoveTabLeft(_:)), String(UnicodeScalar(NSPageUpFunctionKey)!), [.control, .shift])
         add(tabs, "moveTabRight", "Move Tab Right", #selector(BrowserWindowController.paddleMoveTabRight(_:)), String(UnicodeScalar(NSPageDownFunctionKey)!), [.control, .shift])
         add(tabs, "toggleMute", "Mute Tab", #selector(BrowserWindowController.paddleToggleMute(_:)), "m", [.command, .control])
+        add(tabs, "muteOtherTabs", "Mute Other Tabs", #selector(BrowserWindowController.paddleMuteOtherTabs(_:)), "")
         add(tabs, "searchTabs", "Search Tabs…", #selector(BrowserWindowController.paddleSearchTabs(_:)), "a", [.command, .shift])
         add(tabs, "sleepBackgroundTabs", "Sleep Background Tabs", #selector(AppDelegate.paddleSleepBackgroundTabs(_:)), "", target: appDelegate)
         tabs.addItem(.separator())
@@ -470,5 +479,31 @@ final class SpacesMenuDelegate: NSObject, NSMenuDelegate {
         }
         moveItem.isHidden = false
         moveItem.isEnabled = !submenu.items.isEmpty && model?.selectedTab != nil
+    }
+}
+
+/// Fills File > Share submenu with system sharing services for the active page (AirDrop, Messages, Notes, etc.).
+@MainActor
+final class ShareMenuDelegate: NSObject, NSMenuDelegate {
+    static let shared = ShareMenuDelegate()
+    var item: NSMenuItem?
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard let controller = NSApp.keyWindow?.windowController as? BrowserWindowController,
+              let tab = controller.tab, let url = tab.url else {
+            let empty = NSMenuItem(title: "No Shareable Page", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+            return
+        }
+        let items: [Any] = [url, tab.title]
+        let services = NSSharingService.sharingServices(forItems: items)
+        for service in services {
+            let entry = NSMenuItem(title: service.title, action: #selector(BrowserWindowController.performSharingService(_:)), keyEquivalent: "")
+            entry.representedObject = service
+            entry.image = service.image
+            menu.addItem(entry)
+        }
     }
 }

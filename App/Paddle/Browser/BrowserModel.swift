@@ -330,6 +330,18 @@ final class BrowserModel {
         for tab in tabs where tab !== keep && !tab.isPinned { close(tab) }
     }
 
+    func closeTabsToTheRight(_ from: Tab) {
+        guard let index = tabs.firstIndex(where: { $0 === from }) else { return }
+        let toClose = Array(tabs.suffix(from: index + 1).filter { !$0.isPinned })
+        for tab in toClose { close(tab) }
+    }
+
+    func muteOthers(_ keep: Tab) {
+        for tab in allTabs where tab !== keep {
+            tab.setMuted(true)
+        }
+    }
+
     func reopenClosedTab() {
         guard let record = closedTabs.popLast() else { return }
         insert(Tab(record: record, isPrivate: isPrivate), after: selectedTab, select: true)

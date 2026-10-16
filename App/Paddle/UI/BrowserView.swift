@@ -190,6 +190,9 @@ struct BrowserView: View {
         } else if let tab, let blocked = tab.httpsOnlyBlocked {
             HTTPSOnlyNotice(tab: tab, url: blocked)
                 .id(blocked)
+        } else if let tab, let article = tab.readerArticle {
+            ReaderView(tab: tab, article: article)
+                .id(tab.id)
         } else if let tab, tab.url != nil {
             if tab.responsive != nil, focused {
                 ResponsivePage(tab: tab)
@@ -326,6 +329,7 @@ private struct NavigationBar: View {
                 .padding(.horizontal, 4)
                 .frame(minWidth: 140)
             HStack(spacing: 2) {
+                MediaControlsButton(app: app, model: model)
                 if model.extensionsAllowed, let host = model.extensionHost {
                     ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
@@ -390,6 +394,20 @@ private struct NavigationBar: View {
                     addressFocused = false
                     model.controller?.focusWebView()
                 }
+            if let tab, (tab.isReaderAvailable || tab.readerArticle != nil), !addressFocused {
+                Button {
+                    tab.toggleReaderMode()
+                } label: {
+                    Image(systemName: tab.readerArticle != nil ? "doc.plaintext.fill" : "doc.plaintext")
+                        .chromeFont(size: 12)
+                        .foregroundStyle(tab.readerArticle != nil ? (theme?.accent ?? Color.accentColor) : Color.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help(tab.readerArticle != nil ? "Hide Reader (⇧⌘R)" : "Show Reader (⇧⌘R)")
+                .accessibilityLabel("Reader Mode")
+            }
             if let url = tab?.url, HistoryStore.isRecordable(url), !addressFocused {
                 let bookmarked = app.bookmarks.isBookmarked(url)
                 Button {

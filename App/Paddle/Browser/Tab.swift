@@ -106,6 +106,10 @@ final class Tab: Identifiable {
     /// Showing one of Paddle's error pages (load failure, crash, extension unavailable), not the site's page:
     /// Print, Save Page As and View Source are off then.
     var isShowingErrorPage: Bool { committedErrorPage || showsExtensionUnavailable || isProcessTerminated }
+    /// Distraction-free article content when Reader Mode is active on this tab.
+    var readerArticle: ReaderArticle?
+    /// Whether the current page has article content that can be read in Reader Mode.
+    var isReaderAvailable = false
     @ObservationIgnored private var committedErrorPage = false
     @ObservationIgnored private var isProcessTerminated = false
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -371,6 +375,8 @@ final class Tab: Identifiable {
         loadedUnblocked = false
         committedErrorPage = false
         isProcessTerminated = false
+        readerArticle = nil
+        isReaderAvailable = false
         pendingOwnPage = nil
         resumeSelectionWaiters(false)
         observations.forEach { $0.invalidate() }
@@ -454,6 +460,8 @@ final class Tab: Identifiable {
         sourceHTML = nil
         committedErrorPage = false
         isProcessTerminated = false
+        readerArticle = nil
+        isReaderAvailable = false
         if let webView {
             if ExtensionIdentity.identifier(of: url) != extensionPageID {
                 replaceWebView(loading: url)
@@ -565,6 +573,42 @@ final class Tab: Identifiable {
         }
     }
 
+    /// Toggles Reader Mode on this tab. If already showing Reader Mode, closes it and returns to the page.
+    /// Otherwise extracts the article and displays Reader Mode.
+    func toggleReaderMode() {
+        if readerArticle != nil {
+            readerArticle = nil
+            return
+        }
+        guard let webView, isAwake, !isShowingErrorPage else { return }
+        unfreeze()
+        webView.evaluateJavaScript(ReaderExtractor.extractionScript, in: nil, in: .defaultClient) { [weak self] result in
+            guard let self, case .success(let value) = result,
+                  let json = value as? String,
+                  let data = json.data(using: .utf8) else { return }
+            if let article = try? JSONDecoder().decode(ReaderArticle.self, from: data) {
+                self.readerArticle = article
+                self.isReaderAvailable = true
+            }
+        }
+    }
+
+    /// Checks whether the loaded page is an article suitable for Reader Mode.
+    func checkReaderAvailability() {
+        guard let webView, isAwake, !isShowingErrorPage, readerArticle == nil else {
+            isReaderAvailable = false
+            return
+        }
+        webView.evaluateJavaScript(ReaderExtractor.availabilityProbeScript, in: nil, in: .defaultClient) { [weak self] result in
+            guard let self else { return }
+            if case .success(let value) = result, let available = value as? Bool {
+                self.isReaderAvailable = available
+            } else {
+                self.isReaderAvailable = false
+            }
+        }
+    }
+
     // MARK: - Dialogs
 
     var window: NSWindow? { browser?.controller?.window }
@@ -621,6 +665,10 @@ final class Tab: Identifiable {
         guard Self.supportsMuting, muted != isMuted else { return }
         isMuted = muted
         if let webView { applyMute(to: webView) }
+    }
+
+    func toggleMute() {
+        setMuted(!isMuted)
     }
 
     /// Private WebKit API (`_setPageMuted:` with `_WKMediaMutedState`), guarded by `supportsMuting`. Only the audio
