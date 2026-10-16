@@ -202,6 +202,7 @@ private struct ReaderContentWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        WebEnvironment.configureProcessIdentity(config, displayName: "Paddle Reader")
         config.preferences.minimumFontSize = 12
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")

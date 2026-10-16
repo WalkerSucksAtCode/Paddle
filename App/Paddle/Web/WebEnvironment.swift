@@ -12,7 +12,11 @@ final class WebEnvironment {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "web")
 
     @ObservationIgnored let contentController = WKUserContentController()
-    @ObservationIgnored let dataStore = WKWebsiteDataStore.default()
+    @ObservationIgnored let dataStore: WKWebsiteDataStore = {
+        let store = WKWebsiteDataStore.default()
+        WebEnvironment.configureDataStoreIdentity(store, displayName: "Paddle")
+        return store
+    }()
     /// The other profiles' persistent stores, made on first use (`dataStore(for:)`).
     @ObservationIgnored private var profileStores: [String: WKWebsiteDataStore] = [:]
     @ObservationIgnored private(set) var config = PaddleConfig()
@@ -73,6 +77,7 @@ final class WebEnvironment {
         guard profile != ProfileStore.defaultID, let uuid = UUID(uuidString: profile) else { return dataStore }
         if let store = profileStores[profile] { return store }
         let store = WKWebsiteDataStore(forIdentifier: uuid)
+        Self.configureDataStoreIdentity(store, displayName: "Paddle")
         profileStores[profile] = store
         return store
     }
@@ -112,12 +117,17 @@ final class WebEnvironment {
     /// it and carry the default profile's controller.
     func makeConfiguration(isPrivate: Bool, extensions: Bool, profile: String = ProfileStore.defaultID) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
+        Self.configureProcessIdentity(c, displayName: "Paddle")
         // This configuration's process pool gets the page notification provider (WebsiteNotifications). KVC, not
         // `processPool`: that property is deprecated.
         WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: isPrivate)
         c.userContentController = contentController
         if isPrivate {
-            let store = privateDataStore ?? .nonPersistent()
+            let store = privateDataStore ?? {
+                let s = WKWebsiteDataStore.nonPersistent()
+                Self.configureDataStoreIdentity(s, displayName: "Paddle Private")
+                return s
+            }()
             privateDataStore = store
             c.websiteDataStore = store
         } else {
@@ -186,6 +196,7 @@ final class WebEnvironment {
     /// and block lists never reach extension pages.
     func makeExtensionPageBaseConfiguration(profile: String = ProfileStore.defaultID) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
+        Self.configureProcessIdentity(c, displayName: "Paddle Extension")
         WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: false)
         c.websiteDataStore = dataStore(for: profile)
         c.applicationNameForUserAgent = applicationName
@@ -193,6 +204,45 @@ final class WebEnvironment {
         c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
         Self.enableWebFeatures(c.preferences)
         return c
+    }
+
+    /// Sets process identity on WebKit configurations so child processes (WebContent, Networking, GPU) bear the
+    /// Paddle name and bundle identifier in macOS Activity Monitor and system task accounting.
+    static func configureProcessIdentity(_ c: WKWebViewConfiguration, displayName: String = "Paddle") {
+        if c.responds(to: Selector(("_setProcessDisplayName:"))) {
+            c.perform(Selector(("_setProcessDisplayName:")), with: displayName as NSString)
+        }
+        if c.responds(to: Selector(("_setAttributedBundleIdentifier:"))) {
+            c.perform(Selector(("_setAttributedBundleIdentifier:")), with: "com.walker.Paddle" as NSString)
+        }
+        if let pool = c.value(forKey: "processPool") as? NSObject {
+            configureProcessPoolIdentity(pool, displayName: displayName)
+        }
+    }
+
+    static func configureProcessPoolIdentity(_ pool: NSObject, displayName: String = "Paddle") {
+        if let cfg = pool.value(forKey: "_configuration") as? NSObject {
+            if cfg.responds(to: Selector(("setSourceApplicationBundleIdentifier:"))) {
+                cfg.perform(Selector(("setSourceApplicationBundleIdentifier:")), with: "com.walker.Paddle" as NSString)
+            }
+            if cfg.responds(to: Selector(("setSourceApplicationSecondaryIdentifier:"))) {
+                cfg.perform(Selector(("setSourceApplicationSecondaryIdentifier:")), with: displayName as NSString)
+            }
+            if cfg.responds(to: Selector(("setPresentingApplicationPID:"))) {
+                cfg.setValue(getpid(), forKey: "presentingApplicationPID")
+            }
+        }
+    }
+
+    static func configureDataStoreIdentity(_ store: WKWebsiteDataStore, displayName: String = "Paddle") {
+        if let cfg = store.value(forKey: "_configuration") as? NSObject {
+            if cfg.responds(to: Selector(("setSourceApplicationBundleIdentifier:"))) {
+                cfg.perform(Selector(("setSourceApplicationBundleIdentifier:")), with: "com.walker.Paddle" as NSString)
+            }
+            if cfg.responds(to: Selector(("setSourceApplicationSecondaryIdentifier:"))) {
+                cfg.perform(Selector(("setSourceApplicationSecondaryIdentifier:")), with: displayName as NSString)
+            }
+        }
     }
 
     /// Applies a (re)loaded config. New tabs pick up user agent changes; scripts and CSS apply on next load.

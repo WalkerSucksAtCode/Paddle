@@ -25,6 +25,7 @@ final class SelectorValidator {
         """
         if webView == nil {
             let configuration = WKWebViewConfiguration()
+            WebEnvironment.configureProcessIdentity(configuration, displayName: "Paddle Selector Validator")
             configuration.websiteDataStore = .nonPersistent()
             webView = WKWebView(frame: .zero, configuration: configuration)
         }

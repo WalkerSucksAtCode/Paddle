@@ -9,6 +9,7 @@ struct AppearancePane: View {
     @Environment(\.colorScheme) private var colorScheme
     /// The tint strength while the slider is dragged; saved when the drag ends.
     @State private var strengthDraft: Double?
+    @State private var appearanceDraft: AppearanceMode?
     @State private var showingThemeBuilder = false
     @State private var editingTheme: ChromeTheme?
 
@@ -22,14 +23,24 @@ struct AppearancePane: View {
             themeSection
             Section("Windows") {
                 Picker("Appearance", selection: Binding(
-                    get: { model.file.appearance },
-                    set: { value in Task { await model.saveKey(.appearance, .string(value.rawValue)) } }
+                    get: { appearanceDraft ?? model.file.appearance },
+                    set: { value in
+                        appearanceDraft = value
+                        AppModel.shared.applyAppearance(value)
+                        Task {
+                            await model.saveKey(.appearance, .string(value.rawValue))
+                            if model.file.appearance == value {
+                                appearanceDraft = nil
+                            }
+                        }
+                    }
                 )) {
                     Text("System").tag(AppearanceMode.system)
                     Text("Light").tag(AppearanceMode.light)
                     Text("Dark").tag(AppearanceMode.dark)
                 }
                 .pickerStyle(.segmented)
+                .transaction { $0.animation = nil }
                 .help("appearance in config.json. System follows macOS; pages follow the window.")
                 Picker("Tab layout", selection: Binding(
                     get: { model.file.tabLayout },

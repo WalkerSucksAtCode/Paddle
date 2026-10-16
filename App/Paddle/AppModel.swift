@@ -177,7 +177,7 @@ final class AppModel {
     }
 
     /// `NSApp.appearance` for the `appearance` key: nil follows macOS. Pages follow through their web view's effective appearance.
-    private func applyAppearance(_ mode: AppearanceMode) {
+    func applyAppearance(_ mode: AppearanceMode) {
         switch mode {
         case .system: NSApp.appearance = nil
         case .light: NSApp.appearance = NSAppearance(named: .aqua)

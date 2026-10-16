@@ -580,6 +580,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             Self.log.notice("blocked window.open of \(requestURL?.absoluteString ?? "-", privacy: .private) from \(webView.url?.absoluteString ?? "-", privacy: .private)")
             return nil
         }
+        WebEnvironment.configureProcessIdentity(configuration, displayName: "Paddle")
         let popup = WKWebView(frame: .zero, configuration: configuration)
         // window.open() with no URL has no request URL; about:blank keeps the tab showing its web view
         // (which the opener may write into) instead of the start page.

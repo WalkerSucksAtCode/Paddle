@@ -323,7 +323,9 @@ final class ExtensionHost {
 
     /// The configuration a tab must use to show `url` (an extension page), or nil when that extension isn't running.
     func pageConfiguration(for url: URL) -> WKWebViewConfiguration? {
-        controller?.extensionContext(for: url)?.webViewConfiguration
+        guard let config = controller?.extensionContext(for: url)?.webViewConfiguration else { return nil }
+        WebEnvironment.configureProcessIdentity(config, displayName: "Paddle Extension")
+        return config
     }
 
     /// A saved extension-page URL from before the folder's persona changed (`webkit-extension://<hex>/` for a
