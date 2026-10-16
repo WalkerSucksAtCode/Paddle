@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="sq">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+    <filter id="extShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+    <mask id="scanlines">
+      <rect x="0" y="0" width="1024" height="1024" fill="white"/>
+      <rect x="100" y="450" width="824" height="18" fill="black"/>
+      <rect x="100" y="505" width="824" height="24" fill="black"/>
+      <rect x="100" y="568" width="824" height="32" fill="black"/>
+      <rect x="100" y="640" width="824" height="42" fill="black"/>
+    </mask>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#06120B" filter="url(#extShadow)"/>
+  <g clip-path="url(#sq)">
+    <!-- Horizon Scanline Sun -->
+    <circle cx="485" cy="490" r="245" fill="#174226" mask="url(#scanlines)"/>
+
+    <!-- Surfboard with dark knockout halo -->
+    <g transform="translate(545, 505) rotate(38)">
+      <path d="M 0 -345
+               C 74 -240, 106 -85, 106 95
+               C 106 210, 72 288, 40 325
+               L 0 285 L -40 325
+               C -72 288, -106 210, -106 95
+               C -106 -85, -74 -240, 0 -345 Z"
+            fill="#06120B" stroke="#06120B" stroke-width="48" stroke-linejoin="round"/>
+
+      <path d="M 0 -345
+               C 74 -240, 106 -85, 106 95
+               C 106 210, 72 288, 40 325
+               L 0 285 L -40 325
+               C -72 288, -106 210, -106 95
+               C -106 -85, -74 -240, 0 -345 Z"
+            fill="#E6F4EA"/>
+
+      <rect x="-10" y="-350" width="20" height="650" fill="#06120B"/>
+      <rect x="-110" y="80" width="220" height="34" fill="#06120B"/>
+    </g>
+
+    <!-- Two Crisp Flat 2D Wave Bars -->
+    <path d="M 190 735 Q 350 675 512 735 T 834 735" fill="none" stroke="#06120B" stroke-width="64" stroke-linecap="round"/>
+    <path d="M 190 735 Q 350 675 512 735 T 834 735" fill="none" stroke="#287D48" stroke-width="34" stroke-linecap="round"/>
+    <path d="M 250 815 Q 380 765 512 815 T 774 815" fill="none" stroke="#174226" stroke-width="28" stroke-linecap="round"/>
+  </g>
+  <rect x="102" y="102" width="820" height="820" rx="183" ry="183" fill="none" stroke="#153320" stroke-width="4"/>
+</svg>
