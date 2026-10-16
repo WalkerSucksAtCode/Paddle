@@ -488,13 +488,13 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         Self.loadErrorPage(html, for: failing, in: webView)
     }
 
-    /// Shows `html` as the page for the failed load of `url`, which keeps a back/forward item of its own, as Safari
-    /// does: Back from the error goes to the page before it, and Forward, Reload or Try Again retry `url`.
-    /// (`loadHTMLString` with `url` as base URL added no item, so Back skipped the previous page.)
-    /// Prefers WebKit's alternate-HTML load for an unreachable URL, which reuses the failing load's item. The fallback,
-    /// a simulated request, appends a new item instead (a failed Back loses the forward list, a woken or restored error
-    /// tab gets the entry twice) and Forward re-shows its error page from the back/forward cache without retrying.
-    /// The page runs in `url`'s origin, so user scripts and content scripts for that site may run on it.
+    /// Shows `html` for the failed load of `url`, with its own back/forward item, as Safari does: Back
+    /// goes to the previous page; Forward, Reload or Try Again retry `url`. (`loadHTMLString` with `url`
+    /// as base added no item, so Back skipped the previous page.) Prefers WebKit's alternate-HTML load,
+    /// which reuses the failing item. The fallback (a simulated request) appends a new item — a failed
+    /// Back loses the forward list, a woken/restored error tab gets the entry twice — and Forward
+    /// re-shows the cached error page without retrying. Runs in `url`'s origin, so that site's user
+    /// and content scripts may run.
     static func loadErrorPage(_ html: String, for url: URL?, in webView: WKWebView) {
         guard let url else {
             webView.loadHTMLString(html, baseURL: nil)
@@ -620,12 +620,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private static let openLinkInNewWindowItem = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierOpenLinkInNewWindow")
     private static let reloadItem = NSUserInterfaceItemIdentifier("WKMenuItemIdentifierReload")
 
-    /// Private WebKit callback with the page's context menu before it shows. If WebKit stops calling this, the menu is
-    /// just WebKit's own. Paddle adds:
-    /// - on an http(s) link, "Preview Link" after "Open Link in New Window", for the link WebKit hit-tested for this
-    ///   menu (not the last one hovered, which differs for a keyboard-opened menu);
-    /// - on the page itself (the menu with Reload), "Add Page to New Tab Page" (or Remove) after Reload, for this tab,
-    ///   which in a split may be the side without focus.
+    /// Private WebKit callback with the page's context menu before it shows. If WebKit stops calling
+    /// this, the menu is WebKit's own. Paddle adds:
+    /// - on an http(s) link, "Preview Link" after "Open Link in New Window", for the link WebKit
+    ///   hit-tested (not the last hovered — that differs for a keyboard-opened menu);
+    /// - on the page (the menu with Reload), "Add Page to New Tab Page" (or Remove) after Reload, for
+    ///   this tab, which in a split may be the unfocused side.
     @objc(_webView:getContextMenuFromProposedMenu:forElement:userInfo:completionHandler:)
     func _webView(_ webView: WKWebView, getContextMenuFromProposedMenu menu: NSMenu, forElement element: NSObject, userInfo: NSObject?, completionHandler: @escaping (NSMenu?) -> Void) {
         defer { completionHandler(menu) }

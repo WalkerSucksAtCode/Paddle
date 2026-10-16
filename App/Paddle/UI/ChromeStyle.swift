@@ -15,7 +15,6 @@ extension EnvironmentValues {
 }
 
 extension Color {
-    /// A PaddleCore color as an sRGB SwiftUI color.
     init(rgb: PaddleCore.RGBColor) {
         self.init(.sRGB, red: rgb.red, green: rgb.green, blue: rgb.blue, opacity: 1)
     }

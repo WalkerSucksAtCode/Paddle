@@ -1,13 +1,12 @@
 import Foundation
 
-/// The compatibility prelude for extensions built for Chrome or Firefox rather than Safari, and the manifest edits
-/// that put it in place. Pure text transforms; `ExtensionOverlay` applies them to a cloned folder.
+/// Compatibility prelude for Chrome/Firefox extensions, plus the manifest edits that insert it.
+/// Pure text transforms; `ExtensionOverlay` applies them to a cloned folder.
 ///
-/// Why: WebKit delivers extension events to a JavaScript context only while `browser` or `chrome` is still the
-/// original namespace object. Proton Pass replaces both with Proxies one tick after loading, after which its
-/// background and content scripts hear nothing; it also calls `runtime.onUpdateAvailable.addListener`, which WebKit
-/// doesn't provide, and that throw aborts the rest of its startup. The prelude runs first in each of those contexts,
-/// pins the two globals (writes are ignored instead of throwing) and stubs the missing event.
+/// WebKit delivers extension events only while `browser` or `chrome` is still the original namespace.
+/// Proton Pass replaces both with Proxies one tick after load, then hears nothing; it also calls
+/// `runtime.onUpdateAvailable.addListener`, which WebKit lacks, and that throw aborts startup. The
+/// prelude runs first, pins the two globals (writes ignored, no throw) and stubs the missing event.
 public enum ExtensionCompat {
     public static let preludeFileName = "paddle-prelude.js"
     /// The slim, JS-only prelude for content scripts (personas `chrome` and `firefox`).
@@ -24,9 +23,9 @@ public enum ExtensionCompat {
         "scripting", "storage", "tabs", "unlimitedStorage", "webNavigation", "webRequest",
     ]
 
-    /// The prelude, as verified in the wave 4b probe, plus a `requestIdleCallback` stand-in: WebKit ships that API
-    /// switched off, and Proton Pass's form detector calls it without a fallback. Paddle also switches WebKit's own
-    /// on (WebEnvironment); the stand-in covers a WebKit without that private switch.
+    /// Wave 4b prelude plus a `requestIdleCallback` stand-in: WebKit ships that API off, and Proton Pass's
+    /// form detector calls it with no fallback. `WebEnvironment` also flips WebKit's own switch; the stand-in
+    /// covers a WebKit without that private API.
     public static let prelude = """
     // Paddle compat prelude: runs first in every extension JS context it is listed in (background, content-script world).
     (() => {
@@ -155,9 +154,8 @@ public enum ExtensionCompat {
         try patchManifest(data, persona: .none)
     }
 
-    /// Puts the prelude in front of the extension's own code, editing the text in place so every other byte of
-    /// the file stays as it was (key order, indentation, escapes). Idempotent. No content script is added and no
-    /// match pattern changes, so the extension's requested hosts stay as they were.
+    /// Inserts the prelude ahead of the extension's own code, in place, so every other byte stays (key order,
+    /// indentation, escapes). Idempotent. No content script or match pattern is added, so requested hosts stay.
     ///
     /// Every persona: `paddle-prelude.js` first in a non-empty `background.scripts`.
     ///

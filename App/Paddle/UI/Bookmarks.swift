@@ -149,7 +149,6 @@ enum BookmarkActions {
     }
 }
 
-/// A one-field modal prompt.
 enum TextPrompt {
     static func run(title: String, message: String = "", initial: String, confirm: String) -> String? {
         let alert = NSAlert()

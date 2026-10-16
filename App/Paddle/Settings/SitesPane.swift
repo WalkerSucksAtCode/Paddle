@@ -1,10 +1,11 @@
 import PaddleCore
 import SwiftUI
 
-/// Settings > Sites: a row per host with a `sites` or `siteUserAgents` entry, with its zoom, JavaScript, autoplay,
-/// content blocking, location, notifications and user agent; Add Site / Add Current Site / Remove Site, Clear Data for a site, and
-/// "This session": permission answers kept only for this run, each host with Forget. Fixed height; the table
-/// scrolls. While config.json can't be read only the config edits are off: Clear Data and Forget don't touch the file.
+/// Settings > Sites: a row per host with a `sites` or `siteUserAgents` entry (zoom, JavaScript,
+/// autoplay, blocking, location, notifications, user agent); Add Site / Add Current Site / Remove
+/// Site, Clear Data, and "This session" (this-run answers, Forget per host). Fixed height; the table
+/// scrolls. While config.json can't be read, only the config edits are off: Clear Data and Forget
+/// don't touch the file.
 struct SitesPane: View {
     let model: SettingsModel
     @State private var search = ""

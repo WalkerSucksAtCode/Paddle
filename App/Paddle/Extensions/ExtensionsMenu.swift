@@ -2,10 +2,10 @@ import AppKit
 import PaddleCore
 import WebKit
 
-/// Fills the Extensions menu when it opens: a submenu per running extension, then the load status of every folder
-/// as disabled lines. The items exist only while the menu is open, because a command's menu item carries the
-/// extension's shortcut as its key equivalent; sitting in the menu bar it would claim the key from the page.
-/// Extension commands run from `ExtensionHost`'s key monitor, which leaves keys Paddle's menu uses to the menu.
+/// Extensions menu: a submenu per running extension, then each folder's load status as disabled
+/// lines. Items exist only while the menu is open — a command item carries the extension shortcut
+/// as its key equivalent, and sitting in the menu bar it would claim the key from the page.
+/// Commands run from `ExtensionHost`'s key monitor, which leaves Paddle's menu keys to the menu.
 final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
     static let shared = ExtensionsMenuDelegate()
     private static let tag = 7_003

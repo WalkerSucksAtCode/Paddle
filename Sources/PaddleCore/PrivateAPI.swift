@@ -1,10 +1,9 @@
 import Darwin
 import Foundation
 
-/// Guarded calls into private Apple API. Each one checks that the selector or symbol exists before using it, and
-/// falls back (nil, false, or nothing changed) when it doesn't, so a macOS that drops one degrades instead of raising
-/// an unknown-key or unrecognized-selector exception. The app passes the real objects; the tests pass stand-ins that
-/// lack the selector, so the fallback runs rather than being assumed.
+/// Guarded private Apple API. Each call checks the selector or symbol exists, then falls back (nil, false,
+/// or no-op) if not, so a macOS that drops one degrades instead of throwing. The app passes real objects;
+/// tests pass stand-ins that lack the selector, so the fallback actually runs.
 public enum PrivateAPI {
     /// The value of KVC `key` on `object`, or nil when `object` has no selector named `key`.
     public static func value(of object: NSObject, forKey key: String) -> Any? {

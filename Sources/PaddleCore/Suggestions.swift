@@ -55,19 +55,18 @@ public struct Suggestion: Sendable, Equatable, Identifiable {
 
 /// Ranks and completes address-bar suggestions from plain values. No history store, no WebKit.
 public enum SuggestionRanker {
-    /// Rows for the dropdown: at most `limit`, page matches first, then up to `maxSearch` search phrases.
+    /// At most `limit` rows: page matches first, then up to `maxSearch` search phrases.
     ///
-    /// Every whitespace-separated word of `text` must match (case-insensitive) the title or the display URL,
-    /// otherwise the page is left out. Pages are deduped by normalized URL: the row keeps the best kind
-    /// (open tab > bookmark > history) and title of its sources, plus the highest score and the best match
-    /// quality among them. Pages are ordered by:
+    /// Every whitespace-separated word of `text` must match (case-insensitive) the title or display URL,
+    /// else the page is dropped. Deduped by normalized URL: best kind (open tab > bookmark > history) and
+    /// title, highest score, best match quality. Order:
     /// 1. match quality of the first word: the page's host or host + "/" ("github.com" matches
     ///    https://github.com/anthropics), then a host that starts with it ("git" matches github.com), then a
     ///    word of the title that starts with it, then any other substring match,
     /// 2. kind: open tab, then bookmark, then history,
     /// 3. `score` descending, then shorter URL, then input order.
     /// Search phrases equal to the typed text (case-insensitive) or repeated are dropped.
-    /// The page rows and search rows together are cut to `limit`, so a long page list can crowd search out.
+    /// Page and search rows together are cut to `limit`, so a long page list can crowd search out.
     public static func suggestions(for text: String, pages: [SuggestionSource], searchPhrases: [String], limit: Int = 8, maxSearch: Int = 4) -> [Suggestion] {
         // Matched against display URLs, which drop "www." and a bare trailing "/": typed words drop them too, so
         // "www.github.com" and "github.com/" still find github.com.
@@ -232,7 +231,6 @@ public enum SuggestionRanker {
     }
 }
 
-/// Helpers for the search engine's live-suggestion endpoint.
 public enum SearchSuggestions {
     /// Replaces every `%s` in `template` with `query` percent-encoded as a query value (spaces become %20;
     /// `&`, `+`, `#` and non-ASCII are encoded). Nil when the template has no `%s` or the result is not a valid URL.

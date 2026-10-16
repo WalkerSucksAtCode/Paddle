@@ -1,33 +1,34 @@
 import Foundation
 
 /// Converts Adblock Plus-syntax filter lists (EasyList, EasyPrivacy, uBlock-style basics) into WebKit
-/// content rule list JSON. WebKit compiles that JSON once and enforces it natively, with no extension
-/// process or per-request JavaScript, which is why blocking stays cheap.
+/// content rule list JSON. WebKit compiles the JSON once and enforces it natively: no extension process,
+/// no per-request JavaScript.
 ///
 /// Supported: `||host^` / `|anchor` / `*` / `^` network rules with common options (`third-party`, `domain=`,
 /// resource types, `match-case`, `important`), `/regex/` rules `RegexTranslator` can rewrite exactly, `@@`
-/// exceptions (including `$document` site allowlisting), `##` element hiding (generic and per-domain) and its `#@#`
+/// exceptions (including `$document` site allowlisting), `##` hiding (generic and per-domain) and `#@#`
 /// exceptions. Skipped: scriptlets, extended selectors, and options WebKit cannot express (`redirect`, `csp`,
-/// `removeparam`, `replace=/…/`, ...). Skipped lines and refused regex rules are counted, never guessed.
+/// `removeparam`, `replace=/…/`, ...). Skipped lines and refused regex are counted, never guessed.
 ///
-/// `subdocument` / `frame` become WebKit's `document` type limited to `load-context: child-frame`, since a bare
-/// `document` would also block navigating to the site itself; so does the `document` part of a rule with only
+/// `subdocument` / `frame` become WebKit's `document` type limited to `load-context: child-frame`; a bare
+/// `document` would also block navigating to the site. Same for the `document` part of a rule with only
 /// negated types (`$~script`).
 ///
-/// `##` and `#@#` selector lists are split on their top-level commas, so `site#@#.b` excepts the `.b` of `##.a, .b`.
+/// `##` and `#@#` selector lists split on top-level commas, so `site#@#.b` excepts the `.b` of `##.a, .b`.
 ///
-/// A `#@#` exception takes its generic selector out of the shared chunks into a rule of its own that does not
-/// apply on the excepted domains (`unless-domain`). A per-domain `##` rule that a `#@#` touches (the same domain,
-/// a parent or a subdomain) is dropped for that domain list: WebKit cannot express "this domain but not that
-/// subdomain" in one trigger, and hiding too little beats hiding on a site that asked not to.
+/// A `#@#` exception moves its generic selector into its own `unless-domain` rule. A per-domain `##` that
+/// a `#@#` touches (same domain, parent, or subdomain) is dropped for that domain list: WebKit cannot
+/// express "this domain but not that subdomain" in one trigger, and hiding too little beats hiding on a
+/// site that opted out.
 ///
-/// WebKit applies `ignore-previous-rules` only within one compiled list, so exceptions that must reach every list
-/// (the user's `@@` and `#@#` lines, sites with blocking off) come in as `SharedExceptions` and are appended to each.
+/// WebKit applies `ignore-previous-rules` only inside one compiled list, so exceptions that must reach
+/// every list (the user's `@@` and `#@#`, sites with blocking off) arrive as `SharedExceptions` and are
+/// appended to each.
 ///
-/// Cosmetic selectors are joined 32 to a rule. WebKit silently drops a whole `css-display-none` rule when one
-/// member of its selector list is invalid, so selectors it would reject are dropped first: `{style}` and
-/// `:style(` rules (CSS injection, which must never become `display: none`), nested `:has`, unbalanced
-/// brackets or quotes, and, with `validSelectors`, anything WebKit's own parser refuses.
+/// Cosmetic selectors are joined 32 to a rule. WebKit silently drops a whole `css-display-none` rule when
+/// one selector is invalid, so rejects are dropped first: `{style}` and `:style(` (CSS injection, never
+/// `display: none`), nested `:has`, unbalanced brackets or quotes, and, with `validSelectors`, anything
+/// WebKit's parser refuses.
 public enum FilterListConverter {
     public static let maxRulesPerList = 150_000
     /// Part of the compiled-list cache key. Bump it whenever the JSON for the same list text changes, so lists
@@ -113,11 +114,10 @@ public enum FilterListConverter {
         return assemble(parsed, chunks: cosmeticChunks(parsed, size: cosmeticChunkSize), shared: shared, dropRegex: dropRegex)
     }
 
-    /// `convert` with a last check by the real parser. `validSelectors` gets selector strings and answers one
-    /// Bool each (the app asks a web view's `document.querySelector`). It is called twice: once with every
-    /// chunk's joined selector list, then once with the single selectors of the chunks that failed, so a
-    /// typical list costs two round trips. Only the failing selectors are dropped; an answer of the wrong
-    /// length (the check itself failed) accepts everything, which is the unvalidated result.
+    /// `convert` plus a last check by the real parser. `validSelectors` answers one Bool per selector
+    /// (the app uses a web view's `document.querySelector`). Called twice: every chunk's joined list,
+    /// then the single selectors of failing chunks (two round trips). Only failing selectors are
+    /// dropped; a wrong-length answer accepts everything (the unvalidated result).
     public static func convert(
         _ text: String, cosmeticChunkSize: Int = 32, shared: SharedExceptions = .none, dropRegex: Bool = false,
         validSelectors: @Sendable ([String]) async -> [Bool]

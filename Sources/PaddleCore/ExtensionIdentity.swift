@@ -1,9 +1,8 @@
 import CryptoKit
 import Foundation
 
-/// Stable per-install extension ids. The id becomes the extension's `runtime.id`; the URL host of its pages is the
-/// same id, except for the Firefox persona, whose host is the id formatted as a UUID (`moz-extension://<uuid>/`).
-/// A per-install salt keeps sites from guessing either from a well-known folder name.
+/// Stable per-install extension ids. `runtime.id` is this id; the page host is the same, except Firefox
+/// (`moz-extension://<uuid>/`). A per-install salt keeps sites from guessing either from a folder name.
 public enum ExtensionIdentity {
     /// WebKit's own scheme (personas `none` and `native`).
     public static let scheme = "webkit-extension"

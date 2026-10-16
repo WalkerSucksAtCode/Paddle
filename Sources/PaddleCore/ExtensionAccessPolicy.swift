@@ -2,11 +2,10 @@ import Foundation
 
 /// Which runtime access requests from a running extension become an alert.
 ///
-/// WebKit asks for site access on its own, with no tab, whenever an extension's `tabs.query` would see tabs on
-/// sites it hasn't been granted (and when a fetch from an extension page fails CORS). An extension polling its
-/// tabs would put up an alert for every new site. Those requests are answered "no" at once, unless the user just
-/// acted on that extension (its toolbar button, popup, menu item or key command). Requests for named permissions
-/// (`permissions.request`) and for match patterns always ask.
+/// WebKit asks for site access on its own, with no tab, when `tabs.query` would see ungranted sites
+/// (and when a fetch from an extension page fails CORS). An extension polling tabs would alert on
+/// every new site. Those are answered "no" at once unless the user just acted on that extension
+/// (toolbar button, popup, menu item, or key command). Named permissions and match patterns always ask.
 public enum ExtensionAccessPolicy {
     public enum Kind: Sendable {
         /// Specific URLs: `tabs.query` and CORS failures.

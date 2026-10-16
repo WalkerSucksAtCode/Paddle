@@ -20,7 +20,6 @@ final class ControlBridge {
         let ok: Bool
     }
 
-    /// How many calls the audit keeps.
     static let auditLimit = 50
 
     private(set) var clientCount = 0
@@ -44,7 +43,6 @@ final class ControlBridge {
         return "\(version) (\(build))"
     }
 
-    /// The relay helper inside the running app's bundle.
     static var helperPath: String {
         Bundle.main.bundleURL.appending(path: "Contents/Helpers/paddle-mcp").path
     }

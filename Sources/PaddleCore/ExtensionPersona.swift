@@ -1,13 +1,12 @@
 import Foundation
 
-/// The browser an extension is run as. It decides the extension's URL scheme, base URL and id
-/// (`ExtensionIdentity.resolve`), which compatibility prelude it gets (`CompatPrelude`) and the user agent its own
-/// views send.
+/// Which browser an extension runs as: URL scheme, id (`ExtensionIdentity.resolve`), prelude
+/// (`CompatPrelude`) and the user agent its own views send.
 ///
 /// - `chrome`: `chrome-extension://`, Chrome's user agent, no `browser` global.
 /// - `firefox`: `moz-extension://`, Firefox's user agent, `browser` and `chrome`.
-/// - `native`: a Safari build or an `.appex`: no overlay and no prelude, so it costs nothing.
-/// - `none`: the wave 4b overlay with no persona (today's behaviour); the escape hatch.
+/// - `native`: a Safari build or an `.appex`: no overlay, no prelude.
+/// - `none`: wave 4b overlay with no persona; the escape hatch.
 public enum Persona: String, Codable, Sendable, CaseIterable {
     case chrome, firefox, native, none
 

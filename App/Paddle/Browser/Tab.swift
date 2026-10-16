@@ -190,11 +190,11 @@ final class Tab: Identifiable {
 
     // MARK: - Wake / sleep
 
-    /// Creates the web view if the tab is asleep, restoring its page and history. An extension page needs that
-    /// extension's own configuration; until its extension has loaded (startup, Reload Extensions) the wake is
-    /// deferred and nil comes back. If the extension isn't loaded at all, an ordinary web view shows an error page.
-    /// An ordinary web view's first page waits for the block lists (`WebEnvironment.blockersReady`, at most 3 s
-    /// after startup); the web view comes back at once.
+    /// Creates the web view if the tab is asleep, restoring page and history. An extension page needs that
+    /// extension's configuration; until it has loaded (startup, Reload Extensions) the wake is deferred and
+    /// returns nil. If the extension isn't loaded at all, an ordinary web view shows an error page. An
+    /// ordinary web view's first page waits for the block lists (`WebEnvironment.blockersReady`, at most
+    /// 3 s after startup); the web view itself comes back at once.
     @discardableResult
     func wake() -> WKWebView? {
         // Every path that wants the page live (selecting it, navigating it, extension calls) comes through here.
@@ -260,12 +260,10 @@ final class Tab: Identifiable {
         let gate = AppModel.shared.web.blockersReady
         let started = ContinuousClock.now
         Task { [weak self] in
-            // Startup cost of this wait, to measure later. Cold (WebKit compiles every changed list): about 3.7 s for
-            // EasyList + EasyPrivacy (measured 2026-10-12), so the 3 s gate cap ends this wait and the page loads
-            // unblocked, then reloads once when the lists land (`AppModel.start`). Warm (cached lists): 58 ms before
-            // scriptlets, about 310 ms measured 2026-10-12 with scriptlets on. To measure: this log's "first page load
-            // waited" line, "startup block lists installed in" (WebEnvironment) and the "compiled" lines (none on a warm
-            // start), all in subsystem com.walker.Paddle.
+            // Cold compile (EasyList + EasyPrivacy, 2026-10-12): ~3.7 s, so the 3 s gate cap ends this wait
+            // and the page loads unblocked, then reloads once (`AppModel.start`). Warm cache: 58 ms before
+            // scriptlets, ~310 ms with them on (same date). Logs: this "first page load waited" line,
+            // "startup block lists installed in" (WebEnvironment), and "compiled" (none on a warm start).
             await gate.wait()
             let waited = (ContinuousClock.now - started).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
             Self.log.info("first page load waited \(waited, privacy: .public) for the block lists (\(gate.isReady ? "installed" : "timed out", privacy: .public))")

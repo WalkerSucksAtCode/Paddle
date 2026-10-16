@@ -7,7 +7,7 @@ public struct TabSnapshot: Sendable, Equatable {
     public var isAwake: Bool
     public var isSelected: Bool
     public var isPinned: Bool
-    /// Playing audio or video, or using the camera or microphone. Never put to sleep.
+    /// Audio, video, camera or mic. Never put to sleep.
     public var isBusy: Bool
     /// When this tab's process started using at least the CPU limit without a break; nil when under it or unknown.
     public var cpuBusySince: Date?
@@ -65,11 +65,10 @@ public struct TabSleepPolicy: Sendable, Equatable {
         )
     }
 
-    /// Background tabs to freeze now, least recently used first. Freezing is the first stage, before any sleep: a
-    /// frozen tab is still awake and keeps its page, so it can still be put to sleep later by `tabsToSleep`.
-    /// Only tabs idle for `freezeAfter` qualify, and they get the same protections as sleep: never the selected tab,
-    /// never a busy tab, never a pinned tab unless `sleepPinnedTabs`. Tabs in `discard` are left out because the caller
-    /// is about to put them to sleep (the second stage) instead.
+    /// Background tabs to freeze now, least recently used first. Freeze is the first stage: the tab stays
+    /// awake and keeps its page, so `tabsToSleep` can still sleep it later. Same protections as sleep: never
+    /// selected, never busy, never pinned unless `sleepPinnedTabs`. Only tabs idle for `freezeAfter`.
+    /// Tabs in `discard` are skipped because the caller is about to sleep them.
     /// - Parameter discard: the tabs `tabsToSleep` chose for this sweep.
     public func tabsToFreeze(_ tabs: [TabSnapshot], now: Date, excluding discard: Set<UUID>) -> [UUID] {
         guard freezeAfter > 0 else { return [] }

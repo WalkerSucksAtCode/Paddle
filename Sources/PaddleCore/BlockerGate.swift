@@ -1,10 +1,10 @@
 import Foundation
 
-/// Startup without an unblocked gap: windows open at once, but a tab's first page load waits until the content
-/// blockers are installed, or `timeout` has passed, whichever comes first. Lists still compiling after the timeout
-/// install as they finish; pages that loaded before that reload once (`UnblockedReload`).
+/// Startup without an unblocked gap: windows open at once, but a tab's first page waits until blockers
+/// are installed or `timeout` elapses. Lists still compiling after timeout install as they finish;
+/// pages that loaded earlier reload once (`UnblockedReload`).
 ///
-/// The timeout starts with `start()` or the first `wait()`, so a gate nobody starts still opens for its waiters.
+/// The timeout starts on `start()` or the first `wait()`, so an unused gate still opens for its waiters.
 @MainActor
 public final class BlockerGate {
     public enum State: Equatable, Sendable {

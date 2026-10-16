@@ -87,11 +87,6 @@ public enum ScriptletParser {
         return map
     }()
 
-    /// Whether `line` is a scriptlet line at all (so the block-list converter leaves it to this parser).
-    public static func isScriptletLine(_ line: String) -> Bool {
-        line.contains("##+js(") || line.contains("#@#+js(")
-    }
-
     /// Parses one line; nil when it isn't a scriptlet line. `trusted`: the list may use `trusted-*` scriptlets.
     public static func parse(_ rawLine: String, trusted: Bool = false) -> Outcome? {
         let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -252,11 +247,10 @@ public struct ScriptletRule: Equatable, Hashable, Sendable {
 }
 
 public enum ScriptletSet {
-    /// Every scriptlet the lists ask for, after their exceptions (from any of the lists, as uBO applies them):
-    /// - `#@#+js(name, args)` on domains stops that exact scriptlet there; with no domains, everywhere.
+    /// Scriptlets the lists ask for, after exceptions (as uBO applies them, across lists):
+    /// - `#@#+js(name, args)` on domains stops that exact scriptlet there; no domains: everywhere.
     /// - `#@#+js()` on domains stops every scriptlet there.
-    /// Lines with the same scriptlet and arguments (and the same excludes) merge into one rule, so a scriptlet
-    /// named by a hundred site lines is one user script. `lists`: each list's text and whether it is trusted.
+    /// Same name, arguments and excludes merge into one rule. `lists`: each list's text and whether it is trusted.
     public static func rules(from lists: [(text: String, trusted: Bool)]) -> (rules: [ScriptletRule], summaries: [ScriptletSummary]) {
         var lines: [ScriptletLine] = []
         var exceptions: [ScriptletLine] = []

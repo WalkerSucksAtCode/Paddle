@@ -16,7 +16,6 @@ final class LoadedExtension: Identifiable {
     let name: String
     /// `runtime.id` and the context's `uniqueIdentifier` (its storage is keyed by it).
     let id: String
-    /// The browser it runs as.
     let persona: Persona
     /// `ExtensionIdentity.identifier(forFolder:salt:)`: the private id every persona starts from.
     let saltedID: String
@@ -50,7 +49,6 @@ final class LoadedExtension: Identifiable {
     /// Bumped when WebKit reports a change to this extension's action as the toolbar shows it; only its own
     /// buttons redraw.
     var actionGeneration = 0
-    /// The host (of one profile) that runs it.
     @ObservationIgnored weak var host: ExtensionHost?
 
     init(name: String, setup: ExtensionHost.CompatSetup, entry: ExtensionEntry, manifest: ExtensionManifest, webExtension: WKWebExtension,
@@ -87,11 +85,11 @@ final class LoadedExtension: Identifiable {
     var version: String { ExtensionPermissionText.sanitize(webExtension.displayVersion ?? webExtension.version ?? "", max: 24) }
 }
 
-/// Runs WebExtensions from `extensions/` for one profile on WebKit's own extension support: permission decisions,
-/// the profile's `WKWebExtensionController`, and the window and tab bookkeeping WebKit needs. Each profile has its own
-/// host (`AppModel.extensions(for:)`), so an extension's storage, sign-ins, answers, popups and background pages are
-/// that profile's alone; the folders, updates, overlays and salt are shared (`ExtensionShared`). The controller exists
-/// only once some extension is allowed to run; an empty folder starts none of WebKit's extension machinery.
+/// WebExtensions from `extensions/` for one profile: permission decisions, that profile's
+/// `WKWebExtensionController`, and the window/tab bookkeeping WebKit needs. Each profile has its own
+/// host (`AppModel.extensions(for:)`), so storage, sign-ins, answers, popups and backgrounds are
+/// per-profile; folders, updates, overlays and salt are shared (`ExtensionShared`). No controller
+/// until some extension is allowed; an empty folder starts none of WebKit's extension machinery.
 @Observable
 final class ExtensionHost {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")

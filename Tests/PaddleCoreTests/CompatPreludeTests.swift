@@ -3,8 +3,8 @@ import JavaScriptCore
 @testable import PaddleCore
 import Testing
 
-/// The v2 prelude run headless in JavaScriptCore against a stand-in for WebKit's extension namespace. Real WebKit
-/// behaviour (namespace rebuilding, service workers, popups) is wave 4c-3's live check.
+/// v2 prelude, headless in JavaScriptCore against a stand-in for WebKit's extension namespace.
+/// Real WebKit (namespace rebuild, service workers, popups) is wave 4c-3's live check.
 struct CompatPreludeTests {
     static let manifest = #"{"manifest_version":3,"name":"T","version":"1","permissions":["storage","tabs","favicon","notifications"],"optional_permissions":["cookies"],"background":{"service_worker":"sw.js"},"action":{"default_popup":"popup.html"}}"#
 

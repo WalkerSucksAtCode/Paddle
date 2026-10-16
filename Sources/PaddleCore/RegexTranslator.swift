@@ -1,9 +1,8 @@
 import Foundation
 
-/// Translates the regular expression of an Adblock Plus regex rule (`/banner\d+\.js/`) into WebKit url-filters.
-/// WebKit's url-filter is a restricted regex: literal ASCII, `.`, character classes, groups and `* + ?`, with `^`
-/// and `$` only at the ends. This rewrites what has an exact equivalent and refuses the rest, never widening or
-/// narrowing what the rule matches:
+/// Translates an Adblock Plus regex rule (`/banner\d+\.js/`) into WebKit url-filters.
+/// WebKit's url-filter is a restricted regex: literal ASCII, `.`, character classes, groups and `* + ?`,
+/// with `^` and `$` only at the ends. Rewrites only exact equivalents; never widens or narrows a match:
 /// - `\d` `\D` `\w` `\W` become character classes; other escapes of punctuation become the literal character.
 /// - Inside a class, a `-` next to `\d` or `\w` (or first or last) is a literal hyphen, as JavaScript reads it.
 /// - `{n}`, `{n,m}` and `{n,}` are written out (`a{2,3}` → `aaa?`), at most `maxRepetitions` copies per atom.

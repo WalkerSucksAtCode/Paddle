@@ -2,8 +2,8 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Advanced: developer tools and the user agent suffix, the control bridge, then the file itself: keys Paddle ignores, problems in
-/// values it reads, and Tidy for keys that only repeat a default.
+/// Settings > Advanced: developer tools, user-agent suffix, the control bridge, then the file:
+/// keys Paddle ignores, problems in values it reads, and Tidy for keys that only repeat a default.
 struct AdvancedPane: View {
     let model: SettingsModel
     @State private var removal: Removal?

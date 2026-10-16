@@ -149,12 +149,12 @@ final class WebEnvironment {
     }
 
     /// WebKit features Paddle turns on that WebKit ships off:
-    /// - `requestIdleCallback`, which Chrome and Firefox ship and extensions (Proton Pass's form detector) and some
-    ///   sites call without a fallback (the extension prelude has a stand-in);
-    /// - `HiddenPageDOMTimerThrottlingAutoIncreases`, so timers in hidden pages are throttled harder the longer
-    ///   they stay hidden (WebKit already throttles them; this lets the interval grow);
-    /// - `AllowsPictureInPictureMediaPlayback` and `VideoPresentationManagerEnabled`, which picture-in-picture needs
-    ///   together: without both, `requestPictureInPicture()` fails with NotSupportedError (measured 2026-10).
+    /// - `requestIdleCallback` — Chrome/Firefox ship it; extensions (Proton Pass form detector) and
+    ///   some sites call it with no fallback (the prelude has a stand-in);
+    /// - `HiddenPageDOMTimerThrottlingAutoIncreases` — hidden-page timers throttle harder the longer
+    ///   they stay hidden (WebKit already throttles; this lets the interval grow);
+    /// - `AllowsPictureInPictureMediaPlayback` and `VideoPresentationManagerEnabled` together, or
+    ///   `requestPictureInPicture()` fails with NotSupportedError (measured 2026-10).
     /// Private `_setEnabled:forFeature:`, guarded (`WebFeatureToggles`); without it nothing changes.
     private static func enableWebFeatures(_ preferences: WKPreferences) {
         WebFeatureToggles.enable(enabledFeatures, in: preferences)
@@ -258,18 +258,16 @@ final class WebEnvironment {
     /// The block-list load before this one, so loads run one at a time in order.
     @ObservationIgnored private var blockerLoadTail: Task<Void, Never>?
 
-    /// Installs compiled block lists: the downloaded file of each list in `config.filterLists`, then
-    /// `user-filters.txt`. Other files in `filters/` (lists since removed from config) are left on disk and not
-    /// used, so a removed list stops blocking at the next reload. Lists already compiled for the same file
-    /// contents load from cache in milliseconds; changed or new lists convert and compile in parallel in the
-    /// background, each installed as soon as it compiles, their selectors first checked by a `SelectorValidator`
-    /// that lives only for this call. A list whose file is still missing starts from its bundled snapshot
-    /// (`BundledFilterSnapshots`). Every list gets a status line, including empty and failed ones. The `@@` and
-    /// `#@#` lines of `user-filters.txt`, and an exception for each site with `contentBlocking: false`, are appended
-    /// to every list (`SharedExceptions`), since WebKit applies an exception only within its own list; the cache key
-    /// carries their fingerprint, so changing them recompiles every list. Each list also gets the other lists' `@@`
-    /// network exceptions, as uBlock Origin applies them, and a digest of the other lists' text in its key, so updating
-    /// one list recompiles the rest. Opens `blockersReady` when done.
+    /// Installs compiled block lists: each `config.filterLists` file, then `user-filters.txt`. Other files
+    /// in `filters/` stay on disk unused, so a removed list stops blocking at the next reload. Unchanged
+    /// lists load from cache; new or changed ones convert and compile in parallel, each installed as soon
+    /// as it compiles, selectors first checked by a `SelectorValidator` that lives only for this call. A
+    /// missing file starts from its bundled snapshot (`BundledFilterSnapshots`). Every list gets a status
+    /// line, empty and failed included. User `@@` / `#@#` and `contentBlocking: false` hosts are appended
+    /// to every list (`SharedExceptions`); WebKit applies exceptions only inside one list, and the cache
+    /// key carries their fingerprint. Each list also gets the others' `@@` network exceptions (as uBO
+    /// does) and a digest of the others' text in its key, so updating one recompiles the rest. Opens
+    /// `blockersReady` when done.
     func loadContentBlockers() async {
         let previous = blockerLoadTail
         let load = Task {

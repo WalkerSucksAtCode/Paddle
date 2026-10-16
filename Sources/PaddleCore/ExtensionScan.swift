@@ -13,16 +13,17 @@ public struct ExtensionEntry: Sendable, Equatable {
     }
 }
 
-/// Finds unpacked extensions in a directory.
+/// Unpacked extensions in a directory.
 public enum ExtensionScan {
-    /// Lists the extensions in `directory`, sorted by folder name, plus a one-line problem for every folder or file
-    /// that looks like an attempt but isn't loadable (keyed by its name).
+    /// Extensions in `directory`, sorted by folder name, plus a one-line problem for each unloadable
+    /// folder or file (keyed by name).
     ///
-    /// - A folder with `manifest.json` at its top is an extension; otherwise a folder with exactly one subfolder
-    ///   holding `manifest.json` (the usual unzip layout) uses that subfolder.
-    /// - Names starting with `.` or `_` are skipped. `.zip` and `.crx` files get a problem; other files are ignored.
-    /// - `root` is absolute with symlinks resolved (a relative URL traps `WKWebExtension.init`). A symlinked folder
-    ///   is fine unless its resolved path equals or contains one of `forbiddenRoots` (pass the home and support folders).
+    /// - A folder with `manifest.json` at its top is an extension; else a folder with exactly one
+    ///   subfolder holding `manifest.json` (usual unzip layout) uses that subfolder.
+    /// - Names starting with `.` or `_` are skipped. `.zip` and `.crx` get a problem; other files ignored.
+    /// - `root` is absolute with symlinks resolved (a relative URL traps `WKWebExtension.init`). A
+    ///   symlink is fine unless its resolved path equals or contains a `forbiddenRoots` entry (pass
+    ///   home and support).
     public static func scan(
         _ directory: URL, forbiddenRoots: [URL], fileManager: FileManager = .default
     ) -> (entries: [ExtensionEntry], problems: [String: String]) {

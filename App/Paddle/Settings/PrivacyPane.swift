@@ -2,8 +2,7 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Privacy & Blocking: ad and tracker blocking with its filter lists, your own rules, how long
-/// history is kept, and the website data sites have stored.
+/// Settings > Privacy & Blocking: ads/trackers, filter lists, your rules, history retention, website data.
 struct PrivacyPane: View {
     let model: SettingsModel
     @State private var showingWebsiteData = false

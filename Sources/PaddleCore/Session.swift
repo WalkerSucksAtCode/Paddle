@@ -1,7 +1,6 @@
 import Foundation
 
-/// Saved browsing session, restored at launch. Tabs come back asleep except the selected one,
-/// so restoring 50 tabs costs one web process, not 50.
+/// Saved session, restored at launch. Tabs come back asleep except the selected one (one web process).
 public struct SessionRecord: Codable, Sendable, Equatable {
     public var windows: [WindowRecord]
 

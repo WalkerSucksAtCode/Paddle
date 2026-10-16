@@ -1,9 +1,9 @@
 import PaddleCore
 import SwiftUI
 
-/// Settings > Tabs & Memory: when background tabs sleep, the toolbar readout, and a live memory readout. The
-/// readout measures every 5 s only while this pane is on screen (its `.task` ends when the pane is switched away,
-/// the Settings tab is left or the window closes), so it works with `showTabMemory` off and costs nothing otherwise.
+/// Settings > Tabs & Memory: when background tabs sleep, the toolbar readout, and a live memory
+/// readout. Sampled every 5 s only while this pane is on screen (`.task` ends on pane switch, tab
+/// leave, or window close), so it works with `showTabMemory` off and costs nothing otherwise.
 struct TabsMemoryPane: View {
     let model: SettingsModel
 

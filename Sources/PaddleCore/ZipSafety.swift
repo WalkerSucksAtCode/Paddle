@@ -1,9 +1,9 @@
 import Foundation
 
-/// Checks a ZIP archive's central directory before anything unpacks it, and the unpacked folder after. An archive
-/// is refused on anything unusual: ZIP64, split archives, encryption, compression other than stored or deflate,
-/// links and special files, names that could land outside the destination or collide on a case-insensitive disk,
-/// and local headers that don't agree with the central directory.
+/// ZIP central directory before unpack, and the unpacked folder after. Refused: ZIP64, split archives,
+/// encryption, compression other than stored/deflate, links and special files, names that could land
+/// outside the destination or collide on a case-insensitive disk, and local headers that disagree with
+/// the central directory.
 public enum ZipSafety {
     /// One file or folder in the archive.
     public struct Entry: Sendable, Equatable {

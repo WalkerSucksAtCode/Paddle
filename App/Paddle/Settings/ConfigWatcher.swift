@@ -24,14 +24,14 @@ struct ConfigStamp: Equatable {
     }
 }
 
-/// Watches config.json while a Settings tab shows, with events from both watches debounced by 300 ms:
-/// - the support folder's descriptor, for atomic replaces (Paddle's own `.atomic` write, most editors), which swap
+/// Watches config.json while a Settings tab shows; both watches debounce 300 ms:
+/// - the support folder, for atomic replaces (Paddle's `.atomic` write, most editors), which swap
 ///   the file out from under a file watch;
-/// - config.json's own descriptor (the symlink's target when it is one) for write, extend and attribute changes,
-///   because editors such as VS Code and Cursor save in place, which doesn't touch the folder. After a delete or
-///   rename the descriptor follows the old file, so it is re-opened on whatever the path holds now.
-/// Settings also re-reads when its browser window becomes key. `cancel()` (or deinit) closes both descriptors and drops
-/// any pending callback.
+/// - config.json itself (the symlink target) for write, extend and attribute changes — VS Code and
+///   Cursor save in place and don't touch the folder. After a delete or rename the descriptor
+///   follows the old file, so it is re-opened on whatever the path holds now.
+/// Settings also re-reads when its window becomes key. `cancel()` / deinit close both descriptors
+/// and drop any pending callback.
 final class ConfigWatcher {
     private var folder: (any DispatchSourceFileSystemObject)?
     private var file: (any DispatchSourceFileSystemObject)?

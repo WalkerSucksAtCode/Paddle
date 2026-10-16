@@ -28,8 +28,8 @@ public enum ConfigWriteError: Error, Equatable, Sendable {
     case invalidResult(String)
 }
 
-/// Edits `config.json` the way a person would: only the keys being changed move, every other byte stays, so hand
-/// edits, comments-free formatting and keys Paddle doesn't know survive a Settings change.
+/// Only the changed keys move; every other byte stays, so hand formatting and unknown keys survive a
+/// Settings write.
 public enum ConfigFile {
     /// Every key's default, as `encoded()` writes it. A value equal to this is left out of the file.
     public static let defaults: [String: JSONValue] = {

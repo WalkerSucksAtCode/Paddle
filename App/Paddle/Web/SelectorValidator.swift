@@ -1,15 +1,13 @@
 import os
 import WebKit
 
-/// Checks CSS selectors with WebKit's own parser before they go into a content rule list. WebKit silently drops a
-/// `css-display-none` rule when one member of its selector list is invalid, taking the valid chunk-mates with
-/// it, and `document.querySelector` throws on exactly the selectors the rule compiler rejects (probe p2 of the
-/// weak-spot research: 43 of 43 rejects agree, 300 of 300 accepts agree).
+/// WebKit's parser, before selectors go into a content rule list. WebKit silently drops a whole
+/// `css-display-none` rule when one selector is invalid, and `document.querySelector` throws on exactly
+/// the selectors the compiler rejects (probe p2: 43/43 rejects, 300/300 accepts).
 ///
-/// One windowless web view, made on first use and never navigated: `querySelector` runs against its initial
-/// empty document. Used only while a changed list compiles (`WebEnvironment.loadContentBlockers`), then
-/// released; its WebContent process exits with it (a CLI probe saw the pid gone 0.3 s after the view was
-/// dropped). Any failure accepts every selector, which is the unvalidated conversion.
+/// One windowless web view, made on first use, never navigated. Lives only while a changed list
+/// compiles (`WebEnvironment.loadContentBlockers`); its WebContent process exits with it (CLI probe:
+/// pid gone 0.3 s after drop). Any failure accepts every selector (the unvalidated conversion).
 @MainActor
 final class SelectorValidator {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "web")

@@ -3,14 +3,13 @@ import os
 import PaddleCore
 import WebKit
 
-/// Paddle's side of the compatibility bus: the native-messaging host `ExtensionCompat.busID`, answered inside Paddle.
-/// No process is ever launched. Any other application id, on either path (`runtime.sendNativeMessage` and
-/// `runtime.connectNative`), gets Chrome's "Specified native messaging host not found."
+/// Compatibility bus: native-messaging host `ExtensionCompat.busID`, answered inside Paddle. No process
+/// is launched. Any other app id, on `sendNativeMessage` or `connectNative`, gets Chrome's "Specified
+/// native messaging host not found."
 ///
-/// Requests are `{v: 1, op, args, from}`; the context always comes from WebKit's delegate call, never from the
-/// payload. Limits: 8 MB per request, 200 operations a second per extension (requests and port messages together),
-/// 10 s per operation. Ops for now: `ping`, which proves a round trip and reports what Paddle runs the extension as.
-/// The shims arrive in later waves.
+/// Requests are `{v: 1, op, args, from}`; the context comes from WebKit's delegate, never the payload.
+/// Limits: 8 MB per request, 200 ops/s per extension (requests and port messages), 10 s per op.
+/// Ops: `ping` (round trip + which persona). More shims later.
 final class CompatBus {
     static let notFoundMessage = "Specified native messaging host not found."
     nonisolated static let errorDomain = "com.walker.Paddle.CompatBus"

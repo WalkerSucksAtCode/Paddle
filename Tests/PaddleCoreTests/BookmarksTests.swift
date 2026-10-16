@@ -433,7 +433,7 @@ struct BookmarksTests {
         #expect(parsed.bar.isEmpty)
     }
 
-    // MARK: Review fixes
+    // MARK: Lenient decode
 
     @Test func decodeIsLenientAboutIDAndTitle() throws {
         let news = try BookmarkTree.decode(Data(#"{"bar":[{"title":"News","url":"https://n.example/"}]}"#.utf8))

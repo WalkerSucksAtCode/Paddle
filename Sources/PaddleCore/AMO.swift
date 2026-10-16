@@ -2,15 +2,15 @@ import CryptoKit
 import Foundation
 import Security
 
-/// addons.mozilla.org installs, pure parts: the API lookup (`apiURL`, `decodeAddon`), the download's checks
-/// (`isAllowedAMODownload`, `checkDownload`), the gecko id in `manifest.json` (`manifestNamesGUID`) and the package's
-/// signature (`verifySignature`). Nothing here touches the network; `StoreInstaller` makes the requests.
+/// AMO install checks (no network; `StoreInstaller` fetches): lookup (`apiURL`, `decodeAddon`),
+/// download (`isAllowedAMODownload`, `checkDownload`), gecko id (`manifestNamesGUID`) and signature
+/// (`verifySignature`).
 ///
-/// The signature is checked as Firefox checks an add-on: every file is listed in `META-INF/manifest.mf` with a SHA-256
-/// digest; the manifest's digest is in `META-INF/mozilla.sf`; and `META-INF/mozilla.rsa` is a detached CMS signature over
-/// the `.sf` by one certificate whose common name is the add-on's guid. Whether that certificate chains to Mozilla's root
-/// is checked only when a root is passed in: the app passes `bundledRootCertificate()`. Without one a package is
-/// `.unverifiedChain`: its hash and signature are checked, its certificate is not.
+/// Signature as Firefox checks it: every file listed in `META-INF/manifest.mf` with SHA-256; that
+/// digest in `META-INF/mozilla.sf`; `META-INF/mozilla.rsa` a detached CMS signature over the `.sf` by
+/// a certificate whose CN is the add-on's guid. Chain-to-Mozilla is checked only when a root is
+/// passed (`bundledRootCertificate()`). Without one the package is `.unverifiedChain`: hash and
+/// signature checked, certificate not.
 public enum AMO {
     /// The only hosts a lookup, a download or a redirect may use.
     static let hosts: Set<String> = ["addons.mozilla.org", "addons.cdn.mozilla.net"]

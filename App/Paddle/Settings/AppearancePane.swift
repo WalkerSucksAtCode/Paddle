@@ -2,8 +2,8 @@ import PaddleCore
 import AppKit
 import SwiftUI
 
-/// Settings > Appearance: light or dark, tab layout, the size of Paddle's own text, page zoom and minimum font size,
-/// and the accessibility options.
+/// Settings > Appearance: light/dark, tab layout, chrome text size, page zoom, minimum font size,
+/// accessibility.
 struct AppearancePane: View {
     let model: SettingsModel
     @Environment(\.colorScheme) private var colorScheme

@@ -3,9 +3,9 @@ import Foundation
 import PaddleCore
 import SwiftUI
 
-/// Settings' view of `config.json`: what the panes show, the bytes their edits are based on, and the banner. Lives
-/// only while a Settings tab shows (`SettingsTabView`). Every save goes through `AppModel.writeConfig`, which refuses to
-/// overwrite a key that changed on disk since `base` was read.
+/// Settings' view of `config.json`: the values the panes show, the bytes their edits are based on,
+/// and the banner. Lives only while a Settings tab shows (`SettingsTabView`). Saves go through
+/// `AppModel.writeConfig`, which refuses a key that changed on disk since `base` was read.
 @Observable
 final class SettingsModel {
     enum Banner: Equatable {

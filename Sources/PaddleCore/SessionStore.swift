@@ -1,10 +1,10 @@
 import CryptoKit
 import Foundation
 
-/// session.json plus each tab's back/forward state in its own file, `sessions/<tab id>.state`. session.json holds
-/// only small records that name those files, so a save rewrites it in a few KB and writes a state file only when
-/// its bytes changed: a sleeping tab's state never changes, so it is never rewritten. State files no tab names are
-/// deleted. A session.json from before, with the states inline, loads as is and is rewritten in this form.
+/// session.json plus each tab's back/forward state in `sessions/<tab id>.state`. session.json is small
+/// records that name those files: a save rewrites it in a few KB and writes a state file only when its
+/// bytes changed (a sleeping tab's state never does). Unnamed state files are deleted. An older
+/// session.json with inline states still loads, then is rewritten in this form.
 public struct SessionStore {
     public let file: URL
     public let stateDirectory: URL

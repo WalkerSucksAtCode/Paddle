@@ -1,7 +1,7 @@
 import Foundation
 
-/// What Paddle does on one host: its `sites` settings (longest matching host suffix first, per field, as
-/// `PaddleConfig.siteSettings(forHost:)` merges them) with Paddle's default filled in for every field left unset.
+/// Effective settings for one host: `sites` merged longest suffix first per field
+/// (`PaddleConfig.siteSettings(forHost:)`), with Paddle's default for every unset field.
 public struct SitePolicy: Sendable, Equatable {
     /// Page zoom as a factor; 1 is 100 %.
     public var zoom: Double
@@ -55,22 +55,19 @@ extension PaddleConfig {
         SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom)
     }
 
-    /// Hosts of `sites` keys with `contentBlocking: false`, for the block lists' site exceptions
-    /// (`SharedExceptions`) and the scriptlets' excludes: normalized (`normalizedHost`), deduplicated, and only
-    /// keys that are plain hosts, so both see the same hosts and a key like `host:8080` or `*` is left out rather than
-    /// matching nothing or everything. An exception covers the host's subdomains too, so a subdomain entry setting
-    /// `contentBlocking: true` under such a key can't turn blocking back on there.
+    /// Hosts with `sites.<host>.contentBlocking: false`, for block-list exceptions (`SharedExceptions`) and
+    /// scriptlet excludes. Normalized, deduplicated, plain hosts only (`host:8080` and `*` are left out).
+    /// An exception covers subdomains, so a child `contentBlocking: true` cannot turn blocking back on.
     public var blockingOffHosts: [String] {
         let hosts = sites.filter { $0.value.contentBlocking == false }.keys.map(PaddleConfig.normalizedHost)
         return Set(hosts).filter(PaddleConfig.isPlainHost).sorted()
     }
 
-    /// Notification answers the `sites` settings fix in advance, for WebKit's permission lookup on page load
-    /// (`_WKWebsiteDataStoreDelegate`'s `notificationPermissionsForWebsiteDataStore:`): `true` for `allow`, `false` for
-    /// `deny`, keyed by origin (`https://example.com` and `http://example.com`, for each plain host with an entry). A
-    /// host's value is its own effective `notifications`, so a subdomain entry wins over its parent's. `ask` gives no
-    /// key: WebKit then reports the permission as default and asks through the UI delegate. Subdomains that only a
-    /// parent entry covers are not listed; WebKit looks up exact origins.
+    /// Fixed notification answers for WebKit's page-load lookup
+    /// (`notificationPermissionsForWebsiteDataStore:`): `true`/`false` for allow/deny, keyed by
+    /// `https://` and `http://` origin per plain host. Effective value, so a subdomain entry wins.
+    /// `ask` is omitted: WebKit reports default and asks through the UI delegate. Parent-only
+    /// subdomains are not listed; WebKit looks up exact origins.
     public var notificationPermissions: [String: Bool] {
         let hosts = Set(sites.keys.map(PaddleConfig.normalizedHost)).filter(PaddleConfig.isPlainHost)
         var answers: [String: Bool] = [:]
@@ -93,10 +90,10 @@ extension PaddleConfig {
             && host.allSatisfy { ($0.isASCII && ($0.isLetter || $0.isNumber)) || $0 == "." || $0 == "-" }
     }
 
-    /// The `sites` key a zoom change on `host` is remembered under: the most specific entry that already sets a zoom
-    /// (so a zoom set for `example.com` is changed for the whole domain), else an entry for the host itself, else the
-    /// host without a leading `www.` (so `www.example.com` and `example.com` share it). Keys come back as written
-    /// in the file, so the edit replaces that entry rather than adding a second spelling of it.
+    /// The `sites` key a zoom change on `host` writes: the most specific entry that already sets zoom
+    /// (so `example.com` covers the whole domain), else the host itself, else the host without `www.`
+    /// (`www.example.com` and `example.com` share it). Returned as written in the file, so the edit
+    /// replaces that entry instead of adding a second spelling.
     public func zoomKey(forHost host: String) -> String {
         let normalized = PaddleConfig.normalizedHost(host)
         let keys = siteSettingsKeys(forHost: normalized)

@@ -31,7 +31,7 @@ public struct ExtensionInstalls: Codable, Sendable, Equatable {
         firstSeen[folder] == nil ? "install" : nil
     }
 
-    /// Records the first run; later calls keep the first date. Returns whether anything changed.
+    /// Records the first run; later calls keep the first date.
     @discardableResult
     public mutating func markSeen(folder: String, now: Date) -> Bool {
         guard firstSeen[folder] == nil else { return false }
@@ -40,7 +40,6 @@ public struct ExtensionInstalls: Codable, Sendable, Equatable {
     }
 
     /// Drops folders that are gone from `extensions/`, so one put back later counts as a new install, as in Chrome.
-    /// Returns whether anything changed.
     @discardableResult
     public mutating func prune(keeping folders: Set<String>) -> Bool {
         let before = firstSeen.count

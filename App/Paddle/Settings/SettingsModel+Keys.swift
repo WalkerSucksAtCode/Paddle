@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Saving and checking one top-level key, for the panes that edit plain values (General, Tabs & Memory, Privacy).
 extension SettingsModel {
-    /// Saves one top-level key. A value equal to its default removes the key from config.json (`ConfigFile.apply`).
+    /// A value equal to its default removes the key from config.json (`ConfigFile.apply`).
     func saveKey(_ key: PaddleConfig.CodingKeys, _ value: JSONValue) async {
         await save([ConfigChange(key.rawValue, value)])
     }
@@ -35,7 +35,6 @@ struct ConfigIssueList: View {
     }
 }
 
-/// A caption under a control, in the secondary style the panes share.
 struct SettingsCaption: View {
     let text: String
 

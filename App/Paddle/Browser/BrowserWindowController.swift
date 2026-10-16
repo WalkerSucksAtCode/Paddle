@@ -403,11 +403,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleOpenLinkPreviewAsTab(_ sender: Any?) { model.openPreviewAsTab(split: false) }
     @objc func paddleCloseLinkPreview(_ sender: Any?) { model.closePreview() }
 
-    /// Escape closes the preview only when the page didn't use the key, so a site's own dialogs keep their Escape;
-    /// hence no menu key and no key monitor, which would see the key before the page. WKWebView hands a key event
-    /// the page didn't handle back to AppKit (`keyDown` up the responder chain from the web view), and NSWindow
-    /// turns Escape into `cancelOperation:`. NSWindow has its own `cancelOperation:` and comes before this controller
-    /// in the chain, so `BrowserWindow` passes both on to here first. Returns whether a preview closed.
+    /// Escape closes the preview only when the page didn't use the key, so a site's dialogs keep Escape.
+    /// No menu key and no key monitor — those would see the key before the page. WKWebView hands an
+    /// unhandled key back to AppKit; NSWindow turns Escape into `cancelOperation:`. NSWindow's own
+    /// `cancelOperation:` comes first in the chain, so `BrowserWindow` forwards both here first.
     @discardableResult
     func closePreviewOnEscape() -> Bool {
         guard model.preview != nil else { return false }
@@ -452,17 +451,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// The mouse's side buttons (3 back, 4 forward) go back and forward on mouse-up, as in Chrome; the trackpad's
-/// two-finger swipe already does (`allowsBackForwardNavigationGestures`). Both the down and the up are swallowed so
-/// the page doesn't react too. Other buttons, middle-click included (the tab strip closes tabs with it), pass through.
+/// Side buttons (3 back, 4 forward) go back/forward on mouse-up, as in Chrome. The trackpad swipe
+/// already does (`allowsBackForwardNavigationGestures`). Both down and up are swallowed so the page
+/// doesn't react. Other buttons, middle-click included (the strip closes tabs with it), pass through.
 ///
-/// Control shortcuts without Command go to the menu first, as Safari does: a focused web view keeps them otherwise.
-/// Ctrl-Tab is AppKit's keyboard-focus key, which the web view passed on to the key view loop (focus jumped to the
-/// address field), and ⌃1-⌃9 (the spaces) never reached the Tabs menu while a page had focus. A control key no menu
-/// item uses (⌃A in a text field) still reaches the page.
+/// Control shortcuts without Command go to the menu first, as Safari does; a focused web view would
+/// keep them otherwise. Ctrl-Tab is AppKit's focus key (it jumped to the address field), and ⌃1–⌃9
+/// never reached the Tabs menu while a page had focus. A control key no menu item uses (⌃A in a
+/// field) still reaches the page.
 ///
-/// Extension commands (manifest `commands`) don't come through here: `ExtensionHost` runs them before dispatch,
-/// before the page sees the key, unless one of Paddle's menu items uses that key.
+/// Extension commands don't come through here: `ExtensionHost` runs them before dispatch, before the
+/// page sees the key, unless a Paddle menu item uses that key.
 final class BrowserWindow: NSWindow {
     override func sendEvent(_ event: NSEvent) {
         if event.type == .otherMouseDown || event.type == .otherMouseUp, event.buttonNumber == 3 || event.buttonNumber == 4,

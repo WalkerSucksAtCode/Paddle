@@ -1,8 +1,7 @@
 import Foundation
 
-/// A user script loaded from the `userscripts` folder. Understands the common Greasemonkey/Tampermonkey
-/// header (`@name`, `@match`, `@include`, `@exclude`, `@run-at`, `@noframes`, `@inject-into`).
-/// A file without a header runs on every page. `GM_*` APIs are not provided.
+/// A script from `userscripts/`. Greasemonkey/Tampermonkey header (`@name`, `@match`, `@include`,
+/// `@exclude`, `@run-at`, `@noframes`, `@inject-into`). No header: runs on every page. No `GM_*`.
 public struct UserScript: Sendable, Equatable {
     public enum RunAt: String, Sendable {
         case documentStart = "document-start"

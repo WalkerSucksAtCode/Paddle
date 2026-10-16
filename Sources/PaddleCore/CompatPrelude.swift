@@ -105,13 +105,11 @@ public struct CompatPlan: Codable, Sendable, Equatable {
     }
 }
 
-/// The v2 compatibility prelude: the persona (globals, `navigator`, persona-only members) and the wave-2 JS
-/// stand-ins. Globals: the chrome persona defines `browser` as a non-configurable `undefined` and pins `chrome` in
-/// every world (the form E11 verified); the firefox persona pins both in the full kind only and leaves a content
-/// world's globals as WebKit made them.
+/// v2 compatibility prelude: persona (globals, `navigator`, persona-only members) and wave-2 JS
+/// stand-ins. Chrome: `browser` is non-configurable `undefined`, `chrome` pinned in every world
+/// (E11). Firefox: pins both in the full kind only; a content world's globals stay as WebKit made them.
 ///
-/// The wave-2 rows of the plan's §5 each run in their own try/catch, so one failing section can't stop the
-/// background (E24).
+/// Each wave-2 §5 row is in its own try/catch, so one failing section can't stop the background (E24).
 /// Shipped as Swift text, written into the overlay at every load.
 public enum CompatPrelude {
     /// The prelude for `plan`. `none` gets the wave 4b prelude (`ExtensionCompat.prelude`) for either kind;

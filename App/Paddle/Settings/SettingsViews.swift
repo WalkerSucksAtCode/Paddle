@@ -33,7 +33,6 @@ enum SettingsPane: String, CaseIterable {
         }
     }
 
-    /// The address of this pane's tab.
     var url: URL { URL(string: "paddle://settings/\(rawValue)")! }
 
     /// The pane Settings opens on when none is named: the one shown last, General before any.
@@ -50,17 +49,17 @@ enum SettingsPane: String, CaseIterable {
             "homepage", "newTabPage", "new tab page", "start page", "new windows", "new tabs", "search engine",
             "searchTemplate", "searchSuggestTemplate", "search suggestions", "address", "showFullAddress",
             "bookmarks bar", "default browser",
-            "new tab page", "pinned sites", "speed dial", "frequently visited", "newTabFrequentSites",
+            "pinned sites", "speed dial", "frequently visited", "newTabFrequentSites",
         ]
         case .appearance: [
-            "appearance", "theme", "dark mode", "light mode", "text size", "font size", "zoom", "contrast", "high contrast",
+            "theme", "dark mode", "light mode", "text size", "font size", "zoom", "contrast", "high contrast",
             "motion", "transparency", "accessibility", "tab layout", "vertical tabs", "sidebar", "tabLayout",
             "highContrastTabs", "themes", "color", "colour", "accent", "accent color", "tint", "chrome tint", "tint strength", "palette",
-            "open themes folder", "theme", "accentColor", "chromeTint", "chromeTintStrength", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
+            "open themes folder", "accentColor", "chromeTint", "chromeTintStrength", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion",
             "reduceTransparency", "default zoom", "minimum font size", "reduce motion", "reduce transparency",
         ]
         case .profiles: [
-            "profile", "profiles", "work", "personal", "container", "containers", "accounts", "separate cookies", "logins",
+            "profile", "work", "personal", "container", "containers", "accounts", "separate cookies", "logins",
             "new window in profile", "symbol",
         ]
         case .tabsMemory: [
@@ -83,7 +82,7 @@ enum SettingsPane: String, CaseIterable {
             "compatibility", "reload", "options", "extensionToolbar", "toolbar button", "pin", "pinned", "hide", "puzzle",
         ]
         case .shortcuts: [
-            "keyboard", "keys", "key bindings", "shortcut", "shortcuts", "command", "menu", "defaults",
+            "keyboard", "keys", "key bindings", "shortcut", "command", "menu", "defaults",
         ]
         case .advanced: [
             "developer", "developerTools", "user agent", "userAgentSuffix", "config.json", "problems", "unknown keys",

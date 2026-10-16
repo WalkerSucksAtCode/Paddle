@@ -3,24 +3,21 @@ import os
 import PaddleCore
 import WebKit
 
-/// Updates the extensions that came from a store, from that store (`extension-sources.json`). Chrome Web Store: Google's
-/// update check names the newest version; addons.mozilla.org: the add-on's lookup does. A newer package is downloaded and
-/// checked as an install checks it (`StoreInstaller.fetchChrome` and `fetchAddon`), and used only when its manifest names
-/// the version the store gave and that version is newer than the installed one. Then:
-/// - when it asks for nothing the user hasn't granted (`ExtensionPermissionDiff.asks`) and its certificate chain is verified,
-///   it replaces the installed copy and reloads;
-/// - otherwise the installed copy keeps running, the new copy waits in `extensions/.staged-<folder>/`, and the update alert
-///   names what it asks for. Allow swaps it in and grants those; Don't Allow discards it, and that version is not asked
-///   about again (`ExtensionSources.Record.declinedVersion`).
-/// Each extension is checked once a day (`ExtensionUpdatePolicy`), at launch and from the hourly sweep while
-/// `extensionUpdates` is on. Extensions > Check for Extension Updates checks them all at once, whatever that setting says.
+/// Store updates (`extension-sources.json`). Chrome: Google's update check; AMO: the add-on lookup.
+/// A newer package is fetched and checked like an install (`StoreInstaller.fetchChrome` / `fetchAddon`),
+/// and used only when its manifest names the store's version and that version is newer. Then:
+/// - nothing new asked (`ExtensionPermissionDiff.asks`) and the cert chain verified: replace and reload;
+/// - otherwise the installed copy keeps running, the new one waits in `extensions/.staged-<folder>/`,
+///   and the alert names what it asks. Allow swaps it in; Don't Allow discards it and that version is
+///   not asked again (`ExtensionSources.Record.declinedVersion`).
+/// Once a day (`ExtensionUpdatePolicy`), at launch and the hourly sweep while `extensionUpdates` is on.
+/// Extensions > Check for Extension Updates checks them all now, setting or not.
 @Observable
 final class ExtensionUpdater {
     static let shared = ExtensionUpdater()
 
     /// The last result per folder, shown in the Extensions menu. Replaced as each folder is checked.
     private(set) var statuses: [String: String] = [:]
-    /// A check is running.
     private(set) var checking = false
     @ObservationIgnored private var lastSweep = Date.distantPast
     @ObservationIgnored private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")

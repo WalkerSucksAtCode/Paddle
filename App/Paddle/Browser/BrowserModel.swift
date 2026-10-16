@@ -71,7 +71,6 @@ final class BrowserModel {
     /// Bumped by Find… on a Settings tab: the Settings search field takes focus and selects its text.
     var settingsSearchFocusRequest = 0
 
-    /// The address-bar dropdown.
     let suggestions = AddressSuggestions()
 
     /// Search Tabs… (Shift-Cmd-A): the popover on the tab strip.
@@ -1096,7 +1095,6 @@ final class BrowserModel {
 
     /// Takes `tab` out for another window. It keeps its web view, history and state. A selected tab hands the
     /// selection to its neighbour; a window left empty stays open for the caller to close once the tab has arrived.
-    /// Returns the tab's old index.
     func detach(_ tab: Tab) -> Int? {
         if tab === previewSource { closePreview() }
         guard let index = tabs.firstIndex(where: { $0 === tab }) else {

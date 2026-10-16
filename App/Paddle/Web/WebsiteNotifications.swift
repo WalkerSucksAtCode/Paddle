@@ -5,16 +5,15 @@ import PaddleCore
 import UserNotifications
 import WebKit
 
-/// Website notifications (the `Notification` API) through macOS Notification Center. Private SPI, so every call
-/// checks `responds(to:)` first and degrades to nothing.
+/// Website `Notification` API via macOS Notification Center. Private SPI: every call checks
+/// `responds(to:)` and degrades to nothing.
 ///
-/// A page's notification reaches Paddle by one of two WebKit paths, and both end in `post`. A service-worker
-/// (persistent) notification comes to the default data store's `_WKWebsiteDataStoreDelegate` (`showNotification:`).
-/// A page (non-persistent) notification goes to the notification provider of the process pool the page runs on: WebKit
-/// sends it nowhere else, and its default does nothing. `providePageNotifications(on:isPrivate:)` installs that provider
-/// through WebKit's C API (`PageNotificationProvider`). The permission a page starts with comes from
-/// `notificationPermissions` on both paths. The permission prompt itself is `TabWebDelegate`'s UI delegate method. This
-/// object is also the `UNUserNotificationCenter` delegate, so a click brings the site's tab forward.
+/// Two WebKit paths, both end in `post`. Persistent (service worker): the default store's
+/// `_WKWebsiteDataStoreDelegate` (`showNotification:`). Page (non-persistent): the process pool's
+/// notification provider — WebKit sends it nowhere else, and the default does nothing.
+/// `providePageNotifications(on:isPrivate:)` installs that provider (`PageNotificationProvider` C API).
+/// Starting permission is `notificationPermissions` on both paths; the prompt is `TabWebDelegate`.
+/// This object is also the `UNUserNotificationCenter` delegate, so a click brings the site's tab forward.
 @MainActor
 final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = WebsiteNotifications()

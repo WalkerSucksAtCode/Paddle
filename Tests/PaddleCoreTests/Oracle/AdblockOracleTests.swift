@@ -2,17 +2,15 @@ import Foundation
 @testable import PaddleCore
 import Testing
 
-/// Opt-in oracle: Paddle's ad-blocking converter against uBlock Origin's recorded decisions.
+/// Opt-in oracle: Paddle's converter against uBlock Origin's recorded decisions.
 ///
-/// Run: `PADDLE_ORACLE=1 swift test --filter AdblockOracle`. Optional: `PADDLE_ORACLE_DIR` (data directory, default
-/// `build/oracle` in the repo) and `PADDLE_ORACLE_LIMIT` (rows to run, default all). The full report goes to
-/// `<data directory>/report.txt`.
+/// Run: `PADDLE_ORACLE=1 swift test --filter AdblockOracle`. Optional: `PADDLE_ORACLE_DIR` (default
+/// `build/oracle`) and `PADDLE_ORACLE_LIMIT` (rows; default all). Report: `<data directory>/report.txt`.
 ///
-/// WebKit applies each content-rule list on its own; as in the app, each list is converted with the other's `@@`
-/// exceptions, so one list's exception still cancels the other's block. A request counts as blocked by Paddle when
-/// either list blocks it.
+/// WebKit applies each list on its own; as in the app, each list is converted with the other's `@@`
+/// exceptions, so one list's exception still cancels the other's block. Paddle blocks if either list does.
 ///
-/// Disagreement is reported, not failed. The test fails when the data is missing, or when the token index disagrees
+/// Disagreement is reported, not failed. Fails if the data is missing, or if the token index disagrees
 /// with brute force on the first 300 rows.
 struct AdblockOracleTests {
     static let header = "url\tsourceUrl\ttype\tblocked\tfilter"

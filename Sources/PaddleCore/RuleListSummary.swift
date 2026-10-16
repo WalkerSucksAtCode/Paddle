@@ -1,8 +1,8 @@
 import Foundation
 
-/// What one block list turned into: how many WebKit rules, and which lines were left out. Saved next to the
-/// compiled list as `compiled-rules/<identifier>.json`, so a list loaded from cache reports the same counts as
-/// a fresh compile. `statusLine` is the text the Content Blocking status shows.
+/// One block list after conversion: WebKit rule count and which lines were left out. Saved next to
+/// the compiled list as `compiled-rules/<identifier>.json`, so a cache hit reports the same counts.
+/// `statusLine` is the Content Blocking status text.
 public struct RuleListSummary: Codable, Sendable, Equatable {
     /// WebKit rules after conversion (cosmetic rules are chunked, so this is not a line count).
     public var ruleCount: Int

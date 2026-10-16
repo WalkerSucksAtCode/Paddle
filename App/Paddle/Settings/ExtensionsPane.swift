@@ -2,13 +2,12 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Extensions: every folder in `extensions/`, running or not, as one row each (icon, name, version and status,
-/// and the `extensions` load switch). Each row's Details disclosure, collapsed by default and remembered per folder for
-/// this session only, holds the folder, memory, answers, the `extensionCompat` `private` switch for private windows,
-/// compatibility notes and the folder actions. Also `extensionsInPrivate`, and the folder and reload actions. Memory is
-/// measured every 5 s only while the pane is shown. It shows the profile of the window it is in: the default profile's switches
-/// are config.json's, another profile's are its own in profiles.json, and the private-window switches appear only for
-/// the default profile, whose extensions private windows run.
+/// Settings > Extensions: one row per folder in `extensions/` (icon, name, version, status, load
+/// switch). Details (collapsed, remembered per folder this session) holds the folder, memory,
+/// answers, `extensionCompat.private`, compatibility notes and folder actions. Also
+/// `extensionsInPrivate` and folder/reload actions. Memory sampled every 5 s only while shown.
+/// Follows the window's profile: default switches are config.json, others are profiles.json;
+/// private-window switches only on the default profile (the one private windows run).
 struct ExtensionsPane: View {
     let model: SettingsModel
     @State private var memory = ExtensionMemory()

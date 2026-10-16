@@ -3,15 +3,13 @@ import os
 import PaddleCore
 import WebKit
 
-/// Shows an extension's popup: WebKit's own `NSPopover` for the action (it holds the popup web view and sizes
-/// itself to the page), anchored to that extension's toolbar button. One popup is on screen at a time. The popover
-/// window is made key with the popup web view as first responder, so its fields take typing and the Edit menu's
-/// cut, copy and paste reach it through the responder chain.
+/// Extension popup: WebKit's `NSPopover` for the action (owns the popup web view, sizes to the page),
+/// anchored to that extension's toolbar button. One at a time. The popover window is made key with the
+/// popup web view as first responder, so fields take typing and Edit menu cut/copy/paste reach it.
 ///
-/// A popup shows only for a user action: Paddle's own button, menu item or key command for that extension (noted
-/// by `noteUserAction` just before `performAction`), or a gesture WebKit saw in the action's tab. An extension's
-/// `action.openPopup()` from a timer is refused, so it can't take the keyboard from the page or close another
-/// extension's popup.
+/// Only a user action: Paddle's button, menu item or key command (`noteUserAction` just before
+/// `performAction`), or a gesture WebKit saw in the action's tab. `action.openPopup()` from a timer
+/// is refused, so it can't steal the keyboard or close another popup.
 final class ExtensionPopupPresenter {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
     /// How long a Paddle user action counts for the popup request it starts.

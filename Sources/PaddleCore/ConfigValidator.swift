@@ -1,6 +1,6 @@
 import Foundation
 
-/// One thing wrong with a config value, in words someone can act on.
+/// A bad config value, in words someone can act on.
 public struct ConfigIssue: Sendable, Equatable, Identifiable {
     public enum Severity: Sendable, Equatable {
         /// Paddle can't use the value: Settings refuses to save that key until it is fixed.

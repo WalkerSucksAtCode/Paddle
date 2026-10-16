@@ -47,7 +47,7 @@ public enum BrowserEpoch {
     }
 }
 
-/// Reads another browser's history database. Each format is a separate query, assumed from the browsers' schemas:
+/// Another browser's history DB. Each format is a separate query, from the browsers' schemas:
 ///
 /// - Chrome `History`: `urls(id, url, title)` and `visits(url → urls.id, visit_time, transition)`; `visit_time` is
 ///   microseconds since 1601-01-01 UTC, and `transition & 0xFF == 1` is a typed address.

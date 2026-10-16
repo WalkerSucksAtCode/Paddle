@@ -184,7 +184,6 @@ final class AddressSuggestions {
     }
 }
 
-/// The dropdown under the address field.
 struct SuggestionList: View {
     let suggestions: AddressSuggestions
     let choose: (Suggestion) -> Void

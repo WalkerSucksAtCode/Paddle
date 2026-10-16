@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// What `ExtensionOverlay.make` built.
 public struct ExtensionOverlayResult: Equatable, Sendable {
     /// Absolute root of the patched clone; what `WKWebExtension` is loaded from.
     public let root: URL
@@ -71,14 +70,10 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
     }
 }
 
-/// A patched clone of an extension folder, one per extension under `extension-overlays/`. Made with `clonefile`,
-/// which on the same APFS volume costs almost no disk or time; where cloning isn't possible (the folder sits on
-/// another volume through a symlink, or on a volume without clones) it is a full copy, and the status line says so.
-/// It is kept between loads while the source folder is unchanged and remade when anything in it changes. Edits to
-/// the user's folder never reach it and patching it never touches the user's folder. The extension's identity,
-/// permission record and storage stay keyed by the original folder name; only the load path changes.
-///
-/// Pure file work with no shared state: safe to call off the main actor.
+/// Patched clone of an extension folder under `extension-overlays/`. `clonefile` on the same APFS
+/// volume; otherwise a full copy (status line says so). Kept while the source is unchanged, remade
+/// when it changes. Never writes the user's folder; identity, permissions and storage stay keyed by
+/// the original folder name. No shared state: safe off the main actor.
 public enum ExtensionOverlay {
     public enum MakeError: Error, Equatable, LocalizedError {
         case badName(String)
@@ -109,10 +104,9 @@ public enum ExtensionOverlay {
     static let maxPages = 2_000
     static let maxPageBytes = 5_000_000
 
-    /// Builds the overlay for the extension at `source` as `overlays/<name>/`, or keeps the one already there when
-    /// the source is unchanged. Returns nil, after removing any stale overlay of that name, when the extension needs
-    /// none. Throws when the manifest can't be read or the clone or patch fails; the caller then loads the original
-    /// folder.
+    /// Overlay at `overlays/<name>/`, or the existing one if the source is unchanged. Nil (and any stale
+    /// overlay of that name removed) when the extension needs none. Throws if the manifest can't be read or
+    /// the clone/patch fails; the caller then loads the original folder.
     ///
     /// - `plan` nil or persona `none`: the wave 4b overlay (none for a Safari build, or one with nowhere to put the
     ///   prelude).

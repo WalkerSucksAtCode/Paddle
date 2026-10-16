@@ -3,14 +3,14 @@ import ObjectiveC
 import PaddleCore
 import WebKit
 
-/// The user scripts that run list scriptlets (`ScriptletSet` rules, Paddle's own code from `ScriptletLibrary`), in
-/// the page world at document start, in every frame.
+/// List scriptlets (`ScriptletSet` / `ScriptletLibrary`) as page-world document-start user scripts,
+/// every frame.
 ///
-/// A rule with sites becomes one script WebKit injects only into pages of those sites, through the private
-/// match-pattern initializer of `WKUserScript`: a page pays only for its own site's scriptlets (measured at about
-/// +6 MB per web process for 6,600 such scripts, against +46 MB for one script holding them all). Rules for `site.*`
-/// entities, which match patterns can't express, share one dispatcher script that checks the hostname itself; so does
-/// every rule if the initializer is missing. Sites with `contentBlocking: false` are excluded from all of them.
+/// A rule with sites becomes one script WebKit injects only on those sites (private match-pattern
+/// `WKUserScript` init): a page pays only for its own scriptlets (~+6 MB per process for 6,600 scripts,
+/// vs +46 MB for one combined script). `site.*` entities, which match patterns can't express, share a
+/// dispatcher that checks the hostname; so does every rule if that initializer is missing.
+/// `contentBlocking: false` sites are excluded from all of them.
 enum Scriptlets {
     struct Built {
         var scripts: [WKUserScript] = []

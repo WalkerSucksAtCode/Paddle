@@ -1,7 +1,6 @@
 import Foundation
 
-/// Turns whatever was typed into the address field into a URL: a real address when it looks like one,
-/// otherwise a search using the configured template (`%s` is replaced by the query).
+/// Address-bar input to a URL: a real address when it looks like one, otherwise a search (`%s` = query).
 public struct AddressResolver: Sendable {
     public var searchTemplate: String
 

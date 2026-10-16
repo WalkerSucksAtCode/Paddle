@@ -16,10 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var started = false
     private var pendingURLs: [URL] = []
 
-    /// Another Paddle with this bundle id that was already running (a second copy of the app, such as a development
-    /// build next to the installed one). Two copies would share Application Support: each one's start-up tidy-up
-    /// deletes block lists the other is compiling (so the next launch recompiles them for 20-30 s), and both write the
-    /// session, history and config. This one hands its links to the running copy and quits before touching any of it.
+    /// Another Paddle with this bundle id already running (e.g. a debug build next to the installed
+    /// one). Two copies share Application Support: each start-up tidy deletes lists the other is
+    /// compiling (next launch recompiles for 20–30 s), and both write session, history and config.
+    /// This copy hands its links to the running one and quits before touching any of that.
     private var runningCopy: NSRunningApplication?
 
     func applicationWillFinishLaunching(_ notification: Notification) {

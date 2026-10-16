@@ -25,13 +25,12 @@ public enum FaviconPicker {
     /// Icons are refetched after this long.
     static let maxAge: TimeInterval = 7 * 86_400
 
-    /// Best icon URL for showing at 16 pt on a 2x screen (32 px). Order: a declared square size of at least 32
-    /// on an icon or shortcut icon link (the smallest such size wins, so 32 or 48 beat 192); then a `rel` of icon
-    /// or shortcut icon without sizes; then the largest apple-touch-icon; then the first usable candidate. SVG
-    /// icons are skipped (WebKit's image loader, which Paddle fetches icons with, decodes bitmaps only). Relative
-    /// hrefs resolve against `pageURL` (a `<base>` element is the caller's problem). Only http(s) and `data:image/`
-    /// hrefs are usable. With no usable candidate, falls back to `/favicon.ico` on the page's host (nil without an
-    /// http(s) host).
+    /// Best icon URL at 16 pt on a 2x screen (32 px). Order: smallest declared square size ≥32 on an
+    /// icon/shortcut-icon link (32 or 48 beat 192); then icon/shortcut-icon with no sizes; then the
+    /// largest apple-touch-icon; then the first usable candidate. SVG skipped (WebKit's image loader
+    /// decodes bitmaps only). Relative hrefs resolve against `pageURL` (`<base>` is the caller's
+    /// problem). Only http(s) and `data:image/`. No usable candidate → `/favicon.ico` on the page's
+    /// host (nil without an http(s) host).
     public static func bestIcon(_ candidates: [IconCandidate], pageURL: URL) -> URL? {
         let usable: [(candidate: IconCandidate, url: URL, sizes: [Int])] = candidates.compactMap { candidate in
             guard let url = resolve(candidate.href, against: pageURL), withoutFragment(url) != withoutFragment(pageURL),

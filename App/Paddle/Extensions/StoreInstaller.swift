@@ -2,14 +2,12 @@ import AppKit
 import os
 import PaddleCore
 
-/// Installs extensions from the Chrome Web Store and addons.mozilla.org (Extensions > Install from Link…, or the bar on
-/// a store page). A Chrome package comes from Google's update service and passes Google's Web Store signature and the
-/// developer's key (`CRX3.verify`). An add-on is looked up on addons.mozilla.org, its file checked against the lookup's
-/// SHA-256, and its signature checked (`AMO.verifySignature`). Both then check the ZIP (`ZipSafety`), unpack and check it
-/// (`StoreInstall.unpack`), swap it into `extensions/`, record it in `extension-sources.json`, and hand over to
-/// `ExtensionHost`, which loads it and asks for its permissions as for any folder. Anything that fails a check is refused
-/// and nothing is left behind. Newer versions of these installs come from `ExtensionUpdater`, which uses the same downloads,
-/// checks and `place`.
+/// Install from the Chrome Web Store or AMO (Extensions > Install from Link…, or the bar on a store
+/// page). Chrome: Google's update service, then `CRX3.verify` (Web Store signature and developer key).
+/// AMO: lookup, SHA-256 of the file, `AMO.verifySignature`. Both then `ZipSafety`, `StoreInstall.unpack`,
+/// swap into `extensions/`, record in `extension-sources.json`, and hand to `ExtensionHost` (load +
+/// permission prompt). A failed check leaves nothing behind. Updates reuse the same downloads, checks
+/// and `place` (`ExtensionUpdater`).
 @Observable
 final class StoreInstaller {
     static let shared = StoreInstaller()

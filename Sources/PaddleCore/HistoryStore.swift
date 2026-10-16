@@ -76,12 +76,10 @@ public struct HistoryImportSummary: Sendable, Equatable {
     }
 }
 
-/// Ranks history pages for address-bar suggestions, in the spirit of Firefox's "frecency".
-///
-/// `score = (visitCount + 2 * typedCount) * bucket(age of lastVisit)`, where the bucket weight is
-/// 100 for up to 4 days old, 70 up to 14 days, 50 up to 31 days, 30 up to 90 days and 10 beyond that.
-/// A page typed into the address bar counts three times as much as one reached by a link, and
-/// recent pages outweigh old ones.
+/// Address-bar ranking, Firefox-style frecency:
+/// `score = (visitCount + 2 * typedCount) * bucket(age of lastVisit)`.
+/// Buckets: 100 ≤4 days, 70 ≤14, 50 ≤31, 30 ≤90, 10 after. A typed address counts three times a
+/// link visit; recent pages outweigh old ones.
 public enum Frecency {
     public static func score(visitCount: Int, typedCount: Int, lastVisit: Date, now: Date) -> Double {
         let weight = Double(max(0, visitCount) + 2 * max(0, typedCount))

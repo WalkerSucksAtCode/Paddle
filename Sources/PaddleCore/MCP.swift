@@ -1,6 +1,5 @@
 import Foundation
 
-/// One tool the MCP server offers: its name, what it does, and a JSON Schema for its arguments.
 public struct MCPTool: Sendable, Equatable {
     public var name: String
     public var description: String
@@ -13,7 +12,6 @@ public struct MCPTool: Sendable, Equatable {
     }
 }
 
-/// One piece of a tool result.
 public enum MCPContent: Sendable, Equatable {
     case text(String)
     case image(base64: String, mimeType: String)
@@ -26,7 +24,7 @@ public enum MCPContent: Sendable, Equatable {
     }
 }
 
-/// What a tool call returns. `isError` tells the model the call failed (as opposed to a protocol error).
+/// `isError` tells the model the call failed (as opposed to a protocol error).
 public struct MCPToolResult: Sendable, Equatable {
     public var content: [MCPContent]
     public var isError: Bool
@@ -40,8 +38,8 @@ public struct MCPToolResult: Sendable, Equatable {
     public static func error(_ text: String) -> MCPToolResult { MCPToolResult(content: [.text(text)], isError: true) }
 }
 
-/// A minimal MCP server over JSON-RPC 2.0, one message per line: initialize, ping, tools/list and tools/call.
-/// It knows nothing about browsers; `handle` hands each tool call to a closure.
+/// JSON-RPC 2.0 MCP, one message per line: initialize, ping, tools/list, tools/call.
+/// Browser-agnostic; `handle` hands each tool call to a closure.
 public struct MCPServerCore: Sendable {
     /// Protocol revisions this server answers with, newest first.
     public static let supportedVersions = ["2025-06-18", "2025-03-26", "2024-11-05"]

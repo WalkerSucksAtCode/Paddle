@@ -943,11 +943,10 @@ final class AppModel {
         return !host.isVisible(front, to: context)
     }
 
-    /// Opens Settings as a tab (Paddle > Settings…, ⌘, and typed settings addresses): a window of the front window's
-    /// profile that already has a settings tab shows it, a normal window first and the front one preferred; else the
-    /// front window opens one after its selected tab. Only the same profile: Settings' Extensions, Sites and session
-    /// answers are the profile's, so a Work window must not land on a Personal window's Settings. `pane` nil opens the
-    /// pane shown last.
+    /// Opens Settings as a tab (Paddle > Settings…, ⌘,, typed settings addresses). Reuses a Settings tab
+    /// in a window of the front window's profile (normal first, front preferred); else the front window
+    /// opens one after its selected tab. Same profile only: Extensions, Sites and session answers are
+    /// per-profile. `pane` nil opens the last pane.
     func showSettings(pane: SettingsPane? = nil) {
         let chosen = pane ?? SettingsPane.remembered
         SettingsPane.remembered = chosen

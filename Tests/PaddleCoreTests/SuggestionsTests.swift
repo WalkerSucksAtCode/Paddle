@@ -7,7 +7,6 @@ struct SuggestionsTests {
         SuggestionSource(kind: kind, title: title, url: url, score: score)
     }
 
-    /// A history page.
     func page(_ title: String, _ url: String, score: Double = 0) -> SuggestionSource {
         page(.history, title, url, score: score)
     }
