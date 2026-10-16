@@ -197,11 +197,9 @@ struct TabButton: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
-                        // Alongside the tab's own click, so a single click still selects at once.
-                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                            model.select(tab)
-                            model.renamingTabID = tab.id
-                        })
+                        // A double-click renames (`TabDragController` sees it on the mouse-down). Not a SwiftUI
+                        // double-tap gesture: that holds every single click on the title back by the double-click
+                        // interval (measured: ~350 ms per switch).
                 }
                 Spacer(minLength: 0)
                 if audio != .none {
@@ -277,7 +275,10 @@ struct TabButton: View {
         }
         .splitBracket(model.splitSide(of: tab), vertical: false, ink: theme?.text ?? .primary)
         .contentShape(Rectangle())
-        .onTapGesture { model.select(tab) }
+        .onTapGesture {
+            SwitchTrace.tapped(tab)
+            model.select(tab)
+        }
         // A middle click closes the tab, as in other browsers.
         .overlay(MiddleClickCatcher { model.close(tab) })
         // With keyboard navigation on (System Settings > Keyboard), Tab reaches each tab; Space or Return selects it.

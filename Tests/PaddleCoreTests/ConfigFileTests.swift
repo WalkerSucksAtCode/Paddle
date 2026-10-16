@@ -62,8 +62,8 @@ struct ConfigFileTests {
     }
 
     @Test func defaultValueRemovesTheKey() throws {
-        #expect(try applied([ConfigChange("maxAwakeTabs", 2)], to: "{\n  \"maxAwakeTabs\": 4\n}\n") == "{}\n")
-        #expect(try applied([ConfigChange("maxAwakeTabs", 2)], to: "{\n  \"homepage\": \"x\",\n  \"maxAwakeTabs\": 4\n}\n")
+        #expect(try applied([ConfigChange("maxAwakeTabs", 8)], to: "{\n  \"maxAwakeTabs\": 4\n}\n") == "{}\n")
+        #expect(try applied([ConfigChange("maxAwakeTabs", 8)], to: "{\n  \"homepage\": \"x\",\n  \"maxAwakeTabs\": 4\n}\n")
             == "{\n  \"homepage\": \"x\"\n}\n")
         #expect(try applied([ConfigChange("tabSleepAfterMinutes", 5.0)], to: "{\n  \"tabSleepAfterMinutes\": 30,\n  \"homepage\": \"x\"\n}\n")
             == "{\n  \"homepage\": \"x\"\n}\n")
@@ -133,7 +133,7 @@ struct ConfigFileTests {
 
     @Test func emptyFileBecomesAnObject() throws {
         #expect(try applied([ConfigChange("maxAwakeTabs", 4)], to: "") == "{\n  \"maxAwakeTabs\": 4\n}\n")
-        #expect(try applied([ConfigChange("maxAwakeTabs", 2)], to: "") == "")
+        #expect(try applied([ConfigChange("maxAwakeTabs", 8)], to: "") == "")
         #expect(try applied([ConfigChange("maxAwakeTabs", 4)], to: "{}\n") == "{\n  \"maxAwakeTabs\": 4\n}\n")
     }
 
@@ -213,7 +213,7 @@ struct ConfigFileTests {
         #expect(try applied([ConfigChange("maxAwakeTabs", 4)], to: dup) == "{\n  \"maxAwakeTabs\" : 4,\n  \"homepage\" : \"x\"\n}\n")
         #expect(try applied([ConfigChange("maxAwakeTabs", nil)], to: dup) == "{\n  \"homepage\" : \"x\"\n}\n")
         #expect(try applied([ConfigChange("homepage", "y")], to: dup) == "{\n  \"maxAwakeTabs\" : 10,\n  \"homepage\" : \"y\",\n  \"maxAwakeTabs\": 6\n}\n")
-        let tidy = try ConfigFile.tidy(data("{\"maxAwakeTabs\": 2, \"maxAwakeTabs\": 6, \"homepage\": \"x\"}")).get()
+        let tidy = try ConfigFile.tidy(data("{\"maxAwakeTabs\": 8, \"maxAwakeTabs\": 6, \"homepage\": \"x\"}")).get()
         #expect(tidy.removed == [["maxAwakeTabs"]])
         #expect(text(tidy.data) == "{\"homepage\": \"x\"}")
     }

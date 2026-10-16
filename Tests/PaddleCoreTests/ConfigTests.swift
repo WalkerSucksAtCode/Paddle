@@ -27,8 +27,8 @@ struct ConfigTests {
         #expect(issues.count == 1)
         #expect(issues.first?.path == ["maxAwakeTabs"])
         #expect(issues.first?.severity == .warning)
-        #expect(issues.first?.message == "Expected a whole number. Paddle uses the default, 2, until this is fixed.")
-        #expect(try PaddleConfig.decode(Data(#"{"maxAwakeTabs": "four"}"#.utf8)).maxAwakeTabs == 2)
+        #expect(issues.first?.message == "Expected a whole number. Paddle uses the default, 8, until this is fixed.")
+        #expect(try PaddleConfig.decode(Data(#"{"maxAwakeTabs": "four"}"#.utf8)).maxAwakeTabs == 8)
     }
 
     @Test func cpuSleepPercentDefaultsToThirtyAndWrongTypeFallsBack() throws {

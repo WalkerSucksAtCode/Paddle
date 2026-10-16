@@ -107,6 +107,7 @@
 		FDC90932F86D725BD45855F4 /* ControlBridgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F965A2C39359669A792EB86C /* ControlBridgeViews.swift */; };
 		FE12BC6E783E07434A5D7A59 /* SiteSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD90D6D847CB211120DC3AF6 /* SiteSecurityView.swift */; };
 		FE6DF0EBFBC6A3FBA6012A89 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8128DC91A624CFEB3A367FD9 /* Space.swift */; };
+		FEB96A235C39935BF193278E /* SwitchTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6ADFDF7E68B5075CD6E0DDB /* SwitchTrace.swift */; };
 		FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42172FC8B6D57C89A373242D /* WebContainer.swift */; };
 		FF9E9EBD94A357A87FF343EE /* SplitPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B9CE107A939CB32C813FD0 /* SplitPanes.swift */; };
 /* End PBXBuildFile section */
@@ -215,6 +216,7 @@
 		ADA58B4D797F83211511883E /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
 		B4AC197DD8EEDFE2EE7ECA58 /* SettingsBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsBanner.swift; sourceTree = "<group>"; };
 		B638B1EE7C20C00722F34C1E /* ExtensionAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionAdapters.swift; sourceTree = "<group>"; };
+		B6ADFDF7E68B5075CD6E0DDB /* SwitchTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchTrace.swift; sourceTree = "<group>"; };
 		BDB45BBE62413E30D184AA5E /* BookmarkStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStore.swift; sourceTree = "<group>"; };
 		BDF03CF8C915E7FA432F7B4C /* ReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderView.swift; sourceTree = "<group>"; };
 		C35942D5DECDC242D193A6BA /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
@@ -356,6 +358,7 @@
 				30A5BBA0BDC54F65E89FA044 /* NewTabStore.swift */,
 				9876CA38653BAEDD29A0EE0E /* ProfileStore.swift */,
 				8128DC91A624CFEB3A367FD9 /* Space.swift */,
+				B6ADFDF7E68B5075CD6E0DDB /* SwitchTrace.swift */,
 				796C7AE983E4F84683CFAFB2 /* Tab.swift */,
 				37018AF63521DBC068EE5C08 /* TabGroup.swift */,
 			);
@@ -668,6 +671,7 @@
 				FF9E9EBD94A357A87FF343EE /* SplitPanes.swift in Sources */,
 				AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */,
 				7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */,
+				FEB96A235C39935BF193278E /* SwitchTrace.swift in Sources */,
 				11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */,
 				3748FD296EF9B8B3FC20D1F3 /* TabDragging.swift in Sources */,
 				C5855246A4598259AFFA4707 /* TabGroup.swift in Sources */,

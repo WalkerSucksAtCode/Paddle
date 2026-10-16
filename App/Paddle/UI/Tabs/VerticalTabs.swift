@@ -269,7 +269,10 @@ private struct SidebarTabBehavior: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
-            .onTapGesture { model.select(tab) }
+            .onTapGesture {
+                SwitchTrace.tapped(tab)
+                model.select(tab)
+            }
             // A middle click closes the tab, as in other browsers.
             .overlay(MiddleClickCatcher { model.close(tab) })
             .focusable(interactions: .activate)
@@ -400,11 +403,7 @@ private struct SidebarTabRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .foregroundStyle(!tab.isAsleep || isSelected ? .primary : .secondary)
-                        // Alongside the row's own click, so a single click still selects at once.
-                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                            model.select(tab)
-                            model.renamingTabID = tab.id
-                        })
+                        // A double-click renames (`TabDragController`); see `TabButton`.
                 }
                 Spacer(minLength: 0)
                 if audio != .none {

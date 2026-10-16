@@ -57,8 +57,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var tabFreezeAfterMinutes: Double
     /// Background tabs idle longer than this are put to sleep (their web process exits). 0 disables idle sleep.
     public var tabSleepAfterMinutes: Double
-    /// At most this many tabs stay awake at once. The one you're looking at and the one you just left stay; further
-    /// background tabs sleep, least recently used first. 0 disables the cap.
+    /// At most this many tabs stay awake at once, across windows. The most recently used stay; further background
+    /// tabs sleep, least recently used first. 0 disables the cap.
     public var maxAwakeTabs: Int
     /// Pinned tabs never sleep unless this is true.
     public var sleepPinnedTabs: Bool
@@ -203,7 +203,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         historyDays: Int = 365,
         tabFreezeAfterMinutes: Double = 2,
         tabSleepAfterMinutes: Double = 5,
-        maxAwakeTabs: Int = 2,
+        maxAwakeTabs: Int = 8,
         sleepPinnedTabs: Bool = false,
         cpuSleepPercent: Int = 30,
         sessionHistoryTabs: Int = 30,

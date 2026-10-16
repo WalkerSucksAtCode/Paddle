@@ -258,6 +258,7 @@ final class BrowserModel {
         selectedID = tab.id
         if let group = group(of: tab), group.isCollapsed { group.isCollapsed = false }
         tab.lastActive = now
+        let state = tab.webView == nil ? "cold: page created" : tab.isFrozen ? "frozen: resumed" : "live"
         tab.wake()
         // The other side of a split is on screen too.
         if let partner = partner(of: tab) {
@@ -279,6 +280,7 @@ final class BrowserModel {
         findNoMatch = false
         controller?.focusWebView()
         AppModel.shared.sessionChanged()
+        if previous !== tab { SwitchTrace.activated(tab, state: state) }
     }
 
     func select(index: Int) {

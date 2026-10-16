@@ -100,8 +100,9 @@ struct MountedWebPages: NSViewRepresentable {
             }
             context.coordinator.suspended.removeAll()
         }
-        if context.coordinator.front != selectedID, selectedID != nil {
-            tabs.first { $0.id == selectedID }?.browser?.controller?.focusWebView()
+        if context.coordinator.front != selectedID, selectedID != nil, let shown = tabs.first(where: { $0.id == selectedID }) {
+            shown.browser?.controller?.focusWebView()
+            SwitchTrace.shown(shown)
         }
         context.coordinator.front = selectedID
     }

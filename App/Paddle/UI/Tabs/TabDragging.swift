@@ -128,7 +128,15 @@ final class TabDragController: NSObject, NSDraggingSource {
     private func handle(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown:
-            pending = anchor(at: event).map { ($0, event.locationInWindow) }
+            SwitchTrace.mouseDown = event.timestamp
+            // A double-click on a tab renames it (pinned tabs show no title, so they don't).
+            if event.clickCount == 2, let tab = anchor(at: event, clicks: 2)?.tab, !tab.isPinned, let browser = tab.browser {
+                pending = nil
+                browser.select(tab)
+                browser.renamingTabID = tab.id
+                return
+            }
+            pending = anchor(at: event, clicks: 1).map { ($0, event.locationInWindow) }
         case .leftMouseDragged:
             guard let pending else { return }
             let moved = hypot(event.locationInWindow.x - pending.start.x, event.locationInWindow.y - pending.start.y)
@@ -140,8 +148,8 @@ final class TabDragController: NSObject, NSDraggingSource {
         }
     }
 
-    private func anchor(at event: NSEvent) -> TabDragAnchorView? {
-        guard let window = event.window, event.clickCount == 1 else { return nil }
+    private func anchor(at event: NSEvent, clicks: Int) -> TabDragAnchorView? {
+        guard let window = event.window, event.clickCount == clicks else { return nil }
         return anchors.allObjects.first { anchor in
             anchor.window === window && anchor.enabled && anchor.tab != nil
                 && anchor.convert(anchor.bounds, to: nil).contains(event.locationInWindow)
