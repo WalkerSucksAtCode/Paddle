@@ -39,6 +39,14 @@ struct GeneralPane: View {
                 .help("newTabFrequentSites in config.json. A Frequently visited row on the New Tab page, from history; never in private windows.")
                 .disabled(model.controlsDisabled)
             }
+            Section("Downloads") {
+                Toggle("Always ask where to save each file", isOn: Binding(
+                    get: { model.file.askWhereToDownload },
+                    set: { value in Task { await model.saveKey(.askWhereToDownload, .bool(value)) } }
+                ))
+                .help("askWhereToDownload in config.json. Prompts for a destination before downloading instead of saving straight to ~/Downloads.")
+                .disabled(model.controlsDisabled)
+            }
         }
     }
 }

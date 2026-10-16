@@ -114,6 +114,8 @@ final class Tab: Identifiable {
     var isPDF = false
     /// Whether the translation popover is presented for this tab.
     var showTranslatePopover = false
+    /// Whether the QR code popover is presented for this tab.
+    var showQRCodePopover = false
     @ObservationIgnored private var committedErrorPage = false
     @ObservationIgnored private var isProcessTerminated = false
     @ObservationIgnored private var selectionWaiters: [CheckedContinuation<Bool, Never>] = []

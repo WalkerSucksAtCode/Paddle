@@ -484,6 +484,7 @@ final class AppModel {
             case .developerTools: old.developerTools != new.developerTools
             case .httpsOnly: old.httpsOnly != new.httpsOnly
             case .newTabFrequentSites: old.newTabFrequentSites != new.newTabFrequentSites
+            case .askWhereToDownload: old.askWhereToDownload != new.askWhereToDownload
             case .appearance: old.appearance != new.appearance
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
             case .theme: old.theme != new.theme

@@ -37,6 +37,7 @@
 		42D28E30C000EE2D21CEB1E2 /* Glyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA6FEB74A284AD57FB757A0 /* Glyph.swift */; };
 		445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */; };
 		45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEA8DA57CE8927AE3C65953 /* ConfigWatcher.swift */; };
+		4AA08457CE19272FA55E10C9 /* QRCodePopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DECE214886B5C86F7BA89B2 /* QRCodePopover.swift */; };
 		4BBC5398DF7F6A4E9CACAA4A /* ExtensionUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */; };
 		4C889CE5BD9BEDF6DFC3860C /* ExtensionShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69054BABA706ABC56F8274A1 /* ExtensionShared.swift */; };
 		4EC203CCBE4EA078557D477C /* SettingsModel+Keys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69D00D63F94925290CC4D169 /* SettingsModel+Keys.swift */; };
@@ -181,6 +182,7 @@
 		74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralPane.swift; sourceTree = "<group>"; };
 		7879E7929052FF11CD3E3F68 /* ExtensionsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsPane.swift; sourceTree = "<group>"; };
 		796C7AE983E4F84683CFAFB2 /* Tab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tab.swift; sourceTree = "<group>"; };
+		7DECE214886B5C86F7BA89B2 /* QRCodePopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCodePopover.swift; sourceTree = "<group>"; };
 		7EE304A3A835594677036488 /* ProcessMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessMemory.swift; sourceTree = "<group>"; };
 		8128DC91A624CFEB3A367FD9 /* Space.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Space.swift; sourceTree = "<group>"; };
 		8488DDEB21AAB3C480FC2F0F /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -313,6 +315,7 @@
 				A0562CFD09A0530167FD11F4 /* MediaControlsPopover.swift */,
 				3485769C1E48286709A33E89 /* NewTabPage.swift */,
 				22F4A5F2E7709D55FB100130 /* PDFToolbarHUD.swift */,
+				7DECE214886B5C86F7BA89B2 /* QRCodePopover.swift */,
 				BDF03CF8C915E7FA432F7B4C /* ReaderView.swift */,
 				363706E78DC3798367BDF4F7 /* ResponsivePage.swift */,
 				FD90D6D847CB211120DC3AF6 /* SiteSecurityView.swift */,
@@ -624,6 +627,7 @@
 				6586727AB93F08CFD0663919 /* ProcessMemory.swift in Sources */,
 				35ACF14660C77EC9F5FBB560 /* ProfileStore.swift in Sources */,
 				12E9E8382945B14350692D32 /* ProfilesPane.swift in Sources */,
+				4AA08457CE19272FA55E10C9 /* QRCodePopover.swift in Sources */,
 				6C8D7572F5B67720705C1C5E /* ReaderView.swift in Sources */,
 				3106F3F88D970440807CBE4F /* ResponsivePage.swift in Sources */,
 				746D8AE754715FD5F613325D /* Scriptlets.swift in Sources */,

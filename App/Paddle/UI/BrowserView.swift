@@ -446,6 +446,42 @@ private struct NavigationBar: View {
                 .help("Open in Preview.app")
                 .accessibilityLabel("PDF Document")
             }
+            if let tab, let webView = tab.webView, !tab.isPDF, !addressFocused {
+                let zoom = webView.pageZoom
+                if abs(zoom - 1.0) > 0.01 {
+                    Button {
+                        model.controller?.paddleActualSize(nil)
+                    } label: {
+                        Text("\(Int(round(zoom * 100)))%")
+                            .chromeFont(size: 10, weight: .bold)
+                            .monospacedDigit()
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(theme?.accent?.opacity(0.18) ?? Color.accentColor.opacity(0.18)))
+                            .foregroundStyle(theme?.accent ?? Color.accentColor)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Reset Zoom to 100% (⌘0)")
+                    .accessibilityLabel("Zoom \(Int(round(zoom * 100))) percent. Click to reset to 100 percent.")
+                }
+            }
+            if let tab, let url = tab.url, !tab.isPDF, !addressFocused {
+                Button {
+                    tab.showQRCodePopover.toggle()
+                } label: {
+                    Image(systemName: "qrcode")
+                        .chromeFont(size: 12)
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .help("Create QR Code for this Page")
+                .accessibilityLabel("Page QR Code")
+                .popover(isPresented: Bindable(tab).showQRCodePopover, arrowEdge: .bottom) {
+                    QRCodePopover(url: url, title: tab.title)
+                }
+            }
             if let url = tab?.url, HistoryStore.isRecordable(url), !addressFocused {
                 let bookmarked = app.bookmarks.isBookmarked(url)
                 Button {
@@ -567,19 +603,49 @@ private struct NavigationBar: View {
         }
     }
 
+    private var overallDownloadFraction: Double {
+        let active = app.downloads.items.filter { $0.state == .running }
+        guard !active.isEmpty else { return 0 }
+        let total = active.reduce(0.0) { $0 + $1.fraction }
+        return total / Double(active.count)
+    }
+
     private var downloadsButton: some View {
         Button {
             model.downloadsVisible.toggle()
         } label: {
-            Glyph(name: "surf-download", size: 16, active: app.downloads.activeCount > 0)
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
+            ZStack {
+                if app.downloads.activeCount > 0 {
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
+                        .frame(width: 18, height: 18)
+                    Circle()
+                        .trim(from: 0, to: max(0.08, overallDownloadFraction))
+                        .stroke(theme?.accent ?? Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .frame(width: 18, height: 18)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeInOut(duration: 0.2), value: overallDownloadFraction)
+                    Image(systemName: "arrow.down")
+                        .chromeFont(size: 8, weight: .bold)
+                        .foregroundStyle(theme?.accent ?? Color.accentColor)
+                } else {
+                    Glyph(name: "surf-download", size: 16, active: false)
+                        .frame(width: 26, height: 26)
+                }
+            }
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help("Downloads")
+        .help(app.downloads.activeCount > 0 ? "Downloading (\(app.downloads.activeCount))" : "Downloads (⌥⌘L)")
         .accessibilityLabel("Downloads")
         .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
             DownloadsView(store: app.downloads).systemText()
+        }
+        .onChange(of: app.downloads.downloadStartedTime) { _, started in
+            if started != nil {
+                model.downloadsVisible = true
+            }
         }
     }
 

@@ -44,10 +44,12 @@ final class DownloadStore {
     @ObservationIgnored private lazy var delegate = DownloadDelegate(store: self)
 
     var activeCount: Int { items.filter { $0.state == .running }.count }
+    var downloadStartedTime: Date?
 
     /// The list lives in memory only; Paddle keeps no download history on disk, private or not.
     func track(_ download: WKDownload, isPrivate: Bool) {
         let item = DownloadItem(download: download, isPrivate: isPrivate)
+        downloadStartedTime = Date()
         download.delegate = delegate
         // Progress KVO can fire on any thread, so this closure is explicitly non-isolated and hops to main. It fires
         // for every chunk received; the coalescer turns that into at most four updates a second, each reading the
@@ -163,7 +165,18 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String) async -> URL? {
         guard let store else { return nil }
-        let destination = store.uniqueDestination(for: suggestedFilename)
+        let destination: URL
+        if AppModel.shared.config.askWhereToDownload {
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = suggestedFilename
+            panel.canCreateDirectories = true
+            panel.isExtensionHidden = false
+            let result = await panel.begin()
+            guard result == .OK, let chosen = panel.url else { return nil }
+            destination = chosen
+        } else {
+            destination = store.uniqueDestination(for: suggestedFilename)
+        }
         if let item = store.item(for: download) {
             item.filename = destination.lastPathComponent
             item.destination = destination

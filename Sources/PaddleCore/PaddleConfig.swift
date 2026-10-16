@@ -134,6 +134,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var httpsOnly: Bool
     /// Show a Frequently visited row on the New Tab page, from history (never in private windows).
     public var newTabFrequentSites: Bool
+    /// Prompt for a destination folder for each download instead of saving directly to ~/Downloads.
+    public var askWhereToDownload: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -168,7 +170,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs, linkPreview
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
-        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites
+        case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload
         case appearance, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -202,6 +204,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools: Bool = true,
         httpsOnly: Bool = true,
         newTabFrequentSites: Bool = true,
+        askWhereToDownload: Bool = false,
         appearance: AppearanceMode = .system,
         highContrastTabs: Bool = false,
         theme: String = "default",
@@ -249,6 +252,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.developerTools = developerTools
         self.httpsOnly = httpsOnly
         self.newTabFrequentSites = newTabFrequentSites
+        self.askWhereToDownload = askWhereToDownload
         self.appearance = appearance
         self.highContrastTabs = highContrastTabs
         self.theme = theme
@@ -304,6 +308,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         developerTools = c.decodeValue(.developerTools, d.developerTools, issues)
         httpsOnly = c.decodeValue(.httpsOnly, d.httpsOnly, issues)
         newTabFrequentSites = c.decodeValue(.newTabFrequentSites, d.newTabFrequentSites, issues)
+        askWhereToDownload = c.decodeValue(.askWhereToDownload, d.askWhereToDownload, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
         theme = c.decodeValue(.theme, d.theme, issues)

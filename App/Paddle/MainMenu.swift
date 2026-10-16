@@ -56,6 +56,7 @@ enum MainMenu {
         add(file, "savePage", "Save Page As…", #selector(BrowserWindowController.paddleSavePage(_:)), "s")
         add(file, "exportPDF", "Export as PDF…", #selector(BrowserWindowController.paddleExportPDF(_:)), "")
         add(file, "openInPreview", "Open in Preview", #selector(BrowserWindowController.paddleOpenInPreview(_:)), "")
+        add(file, "createQRCode", "Create QR Code…", #selector(BrowserWindowController.paddleCreateQRCode(_:)), "")
         add(file, "print", "Print…", #selector(BrowserWindowController.paddlePrint(_:)), "p")
         let share = add(file, "sharePage", "Share…", #selector(BrowserWindowController.paddleShare(_:)), "")
         let shareSubmenu = NSMenu(title: "Share")
@@ -71,6 +72,7 @@ enum MainMenu {
         edit.addItem(.separator())
         add(edit, "cut", "Cut", #selector(NSText.cut(_:)), "x")
         add(edit, "copy", "Copy", #selector(NSText.copy(_:)), "c")
+        add(edit, "copyLinkToHighlight", "Copy Link to Highlight", #selector(BrowserWindowController.paddleCopyLinkToHighlight(_:)), "c", [.command, .shift])
         add(edit, "paste", "Paste", #selector(NSText.paste(_:)), "v")
         add(edit, "pasteAndMatchStyle", "Paste and Match Style", #selector(NSTextView.pasteAsPlainText(_:)), "v", [.command, .option, .shift])
         add(edit, "selectAll", "Select All", #selector(NSText.selectAll(_:)), "a")
@@ -80,6 +82,7 @@ enum MainMenu {
         add(edit, "findPrevious", "Find Previous", #selector(BrowserWindowController.paddleFindPrevious(_:)), "g", [.command, .shift])
         add(edit, "useSelectionForFind", "Use Selection for Find", #selector(BrowserWindowController.paddleUseSelectionForFind(_:)), "e")
         add(edit, "jumpToSelection", "Jump to Selection", #selector(BrowserWindowController.paddleJumpToSelection(_:)), "j")
+        add(edit, "searchSelectedText", "Search with Search Engine", #selector(BrowserWindowController.paddleSearchSelectedText(_:)), "f", [.command, .shift])
 
         let view = submenu(main, "View")
         add(view, "reload", "Reload Page", #selector(BrowserWindowController.paddleReload(_:)), "r")

@@ -307,6 +307,47 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         tab.showTranslatePopover.toggle()
     }
 
+    /// Edit > Copy Link to Highlight: copies a URL with a text fragment for the selected text.
+    @objc func paddleCopyLinkToHighlight(_ sender: Any?) {
+        guard let tab, let url = tab.url, let webView = tab.webView else { return }
+        webView.evaluateJavaScript("window.getSelection().toString()", in: nil, in: .defaultClient) { result in
+            guard case .success(let val) = result,
+                  let text = val as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            var allowed = CharacterSet.urlQueryAllowed
+            allowed.remove(charactersIn: "-,")
+            let encoded = clean.addingPercentEncoding(withAllowedCharacters: allowed) ?? clean
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false) ?? URLComponents()
+            components.fragment = ":~:text=" + encoded
+            if let fragmentURL = components.url {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(fragmentURL.absoluteString, forType: .string)
+                AccessibilityNotification.Announcement("Link to highlight copied").post()
+            }
+        }
+    }
+
+    /// Edit > Search with [Engine]…: searches for selected text in a new tab.
+    @objc func paddleSearchSelectedText(_ sender: Any?) {
+        guard let tab, let webView = tab.webView else { return }
+        webView.evaluateJavaScript("window.getSelection().toString()", in: nil, in: .defaultClient) { [weak self] result in
+            guard let self, case .success(let val) = result,
+                  let text = val as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            let resolver = AddressResolver(searchTemplate: AppModel.shared.config.searchTemplate)
+            if let searchURL = resolver.searchURL(for: text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                _ = self.model.newTab(url: searchURL, select: true, after: tab)
+            }
+        }
+    }
+
+    /// File > Create QR Code…: presents the QR code popover for the active tab.
+    @objc func paddleCreateQRCode(_ sender: Any?) {
+        guard let tab, tab.url != nil else { return }
+        tab.showQRCodePopover.toggle()
+    }
+
     /// A file name from the page title (or host), without characters Finder or the shell trip over.
     private static func fileName(for tab: Tab) -> String {
         let raw = tab.title.isEmpty ? (tab.url?.host() ?? "Page") : tab.title
@@ -640,8 +681,9 @@ extension BrowserWindowController: NSMenuItemValidation {
             menuItem.title = tab?.readerArticle != nil ? "Hide Reader" : "Show Reader"
             return tab != nil && (tab?.isReaderAvailable == true || tab?.readerArticle != nil)
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
-             #selector(paddleTranslatePage(_:)), #selector(paddleViewSource(_:)),
-             #selector(paddleTogglePictureInPicture(_:)):
+             #selector(paddleTranslatePage(_:)), #selector(paddleCopyLinkToHighlight(_:)),
+             #selector(paddleSearchSelectedText(_:)), #selector(paddleCreateQRCode(_:)),
+             #selector(paddleViewSource(_:)), #selector(paddleTogglePictureInPicture(_:)):
             return canActOnPage
         case #selector(paddleOpenInPreview(_:)):
             return tab?.isPDF == true || tab?.url?.pathExtension.lowercased() == "pdf"
