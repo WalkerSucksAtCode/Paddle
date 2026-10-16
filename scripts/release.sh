@@ -257,8 +257,14 @@ if [[ $INSTALL -eq 1 ]]; then
 
   # Gatekeeper's verdict on the installed copy. An unnotarized build is rejected here but still opens locally,
   # because a locally built copy carries no quarantine flag; say so instead of passing silently.
+  # The exit code is caught inside the substitution: with errtrace on, a bare failing spctl in $(...) fires the ERR
+  # trap (a false "FAIL: install") before an outer `||` could handle it.
   GK_RC=0
-  GK_OUT="$(spctl -a -vv "$INSTALL_PATH" 2>&1)" || GK_RC=$?
+  GK_OUT="$(spctl -a -vv "$INSTALL_PATH" 2>&1 || echo "__spctl_rc=$?")"
+  if [[ "$GK_OUT" == *"__spctl_rc="* ]]; then
+    GK_RC="${GK_OUT##*__spctl_rc=}"
+    GK_OUT="${GK_OUT%__spctl_rc=*}"
+  fi
   echo "$GK_OUT"
   if [[ $GK_RC -eq 0 ]]; then
     GK_NOTE="Gatekeeper accepts it"
