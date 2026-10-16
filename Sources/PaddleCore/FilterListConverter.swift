@@ -33,7 +33,7 @@ public enum FilterListConverter {
     public static let maxRulesPerList = 150_000
     /// Part of the compiled-list cache key. Bump it whenever the JSON for the same list text changes, so lists
     /// compiled by the previous converter are recompiled instead of loaded from WebKit's cache.
-    public static let converterVersion = 6
+    public static let converterVersion = 7
 
     public struct Result: Sendable {
         public var json: String
@@ -545,6 +545,14 @@ public enum FilterListConverter {
         // has no `|`, so it becomes "a separator and anything after it, or nothing", then the end.
         let separatorEnds = !anchoredEnd && p.hasSuffix("^")
         if separatorEnds { p = p.dropLast() }
+        // `||host^` (about 99,000 of EasyList + EasyPrivacy's 112,000 network rules) needs no end case: WebKit
+        // normalizes every http(s) URL to have a path, so a `/` or `:` always follows the host. The optional
+        // `(separator.*)?$` tail on that many rules made the compiled lists 74 MB instead of 43 MB and cost ~250 ms of
+        // first paint on a news page (2026-10-16, measured in a bare WKWebView with only the network rules).
+        if separatorEnds, out.hasPrefix("^[a-z]"), plainHost(p) != nil {
+            for ch in p { out += ch == "." ? "\\." : String(ch) }
+            return out + separator
+        }
 
         for ch in p {
             switch ch {

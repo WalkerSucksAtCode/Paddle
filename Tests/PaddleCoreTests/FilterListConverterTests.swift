@@ -363,6 +363,21 @@ struct FilterListConverterTests {
         #expect(FilterListConverter.urlFilter("/x.js^|") == "/x\\.js[^a-z0-9_.%-]$")
     }
 
+    /// `||host^` ends at the separator, with no `.*)?$` tail: WebKit's URLs always have a path after the host, and
+    /// that tail on ~99,000 rules made the compiled lists nearly twice as large and page loads slower.
+    @Test func hostRuleEndsAtSeparator() {
+        let filter = FilterListConverter.urlFilter("||ads.example.com^")!
+        #expect(filter == "^[a-z][a-z0-9+.-]*://([^/]*\\.)?ads\\.example\\.com[^a-z0-9_.%-]")
+        #expect(filterMatches(filter, "https://ads.example.com/"))
+        #expect(filterMatches(filter, "https://cdn.ads.example.com:8443/x.js"))
+        #expect(filterMatches(filter, "http://ads.example.com/?q=1"))
+        #expect(!filterMatches(filter, "https://ads.example.com.evil.test/"))
+        #expect(!filterMatches(filter, "https://ads.example.community/"))
+        #expect(!filterMatches(filter, "https://notads.example.com/"))
+        // A path or wildcard after the host still matches the end of the URL.
+        #expect(FilterListConverter.urlFilter("||cacheserve.*^")!.hasSuffix(".*)?$"))
+    }
+
     /// The real proof: WebKit itself accepts the generated JSON.
     @MainActor
     @Test func webKitCompilesOutput() async throws {
