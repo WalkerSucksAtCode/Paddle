@@ -629,6 +629,41 @@ final class Tab: Identifiable {
         set(webView, Self.setPageMutedSelector, MediaMutedState.settingAudio(isMuted, in: current))
     }
 
+    // MARK: - Picture in Picture
+
+    /// Toggles Picture in Picture for any playing HTML5 video on this tab's page.
+    func togglePictureInPicture() {
+        guard let webView, isAwake, !isShowingErrorPage else { return }
+        Task { @MainActor in
+            let script = """
+            (async () => {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                    return true;
+                }
+                const videos = Array.from(document.querySelectorAll('video'));
+                if (!videos.length) return false;
+                const playing = videos.find(v => !v.paused && !v.ended && v.readyState > 1)
+                             || videos.find(v => !v.paused)
+                             || videos.slice().sort((a,b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight))[0];
+                if (!playing) return false;
+                if (playing.disablePictureInPicture) {
+                    playing.disablePictureInPicture = false;
+                }
+                await playing.requestPictureInPicture();
+                return true;
+            })()
+            """
+            _ = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
+        }
+    }
+
+    /// Certificate details of the TLS connection, or nil for non-HTTPS pages.
+    var certificateInfo: CertificateInfo? {
+        guard let webView, let trust = webView.serverTrust else { return nil }
+        return CertificateInfo.read(from: trust)
+    }
+
     // MARK: - Site settings
 
     /// The site of a web page (http or https) showing in an ordinary web view; nil for extension pages and others.

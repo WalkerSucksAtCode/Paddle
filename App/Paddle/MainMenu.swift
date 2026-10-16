@@ -89,6 +89,7 @@ enum MainMenu {
         add(view, "showDownloads", "Show Downloads", #selector(BrowserWindowController.paddleShowDownloads(_:)), "l", [.command, .option])
         view.addItem(.separator())
         add(view, "viewSource", "View Source", #selector(BrowserWindowController.paddleViewSource(_:)), "u", [.command, .option])
+        add(view, "togglePictureInPicture", "Picture in Picture", #selector(BrowserWindowController.paddleTogglePictureInPicture(_:)), "p", [.command, .control])
         view.addItem(.separator())
         add(view, "fullScreen", "Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control])
 

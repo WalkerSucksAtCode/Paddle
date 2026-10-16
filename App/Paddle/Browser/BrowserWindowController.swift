@@ -290,6 +290,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         Task { await model.viewSource(of: tab) }
     }
 
+    /// View > Picture in Picture (⌃⌘P): pops any playing HTML5 video into a floating Picture-in-Picture window.
+    @objc func paddleTogglePictureInPicture(_ sender: Any?) {
+        guard canActOnPage, let tab else { return }
+        tab.togglePictureInPicture()
+    }
+
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
@@ -526,7 +532,8 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleToggleMute(_:)):
             menuItem.title = tab?.isMuted == true ? "Unmute Tab" : "Mute Tab"
             return tab != nil && Tab.supportsMuting
-        case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleViewSource(_:)):
+        case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleViewSource(_:)),
+             #selector(paddleTogglePictureInPicture(_:)):
             return canActOnPage
         case #selector(paddleReload(_:)), #selector(paddleHardReload(_:)), #selector(paddleStop(_:)),
              #selector(paddleZoomIn(_:)), #selector(paddleZoomOut(_:)), #selector(paddleActualSize(_:)),

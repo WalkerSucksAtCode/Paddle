@@ -295,6 +295,7 @@ private struct NavigationBar: View {
     @State private var addressSelection: TextSelection?
     /// Set while Paddle itself writes an inline completion, so that edit isn't treated as typing.
     @State private var applyingCompletion = false
+    @State private var showSecurityPopover = false
 
     private var tab: Tab? { model.selectedTab }
 
@@ -348,14 +349,7 @@ private struct NavigationBar: View {
 
     private var addressField: some View {
         HStack(spacing: 6) {
-            Image(systemName: addressIcon)
-                .chromeFont(size: 11)
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-                .accessibilityLabel("Connection")
-                .accessibilityValue(securityDescription ?? "")
-                .accessibilityHidden(securityDescription == nil)
-                .help(securityDescription ?? "")
+            securityIcon
             TextField("Search or enter address", text: $model.addressText, selection: $addressSelection)
                 .textFieldStyle(.plain)
                 .chromeFont(size: 13)
@@ -470,6 +464,50 @@ private struct NavigationBar: View {
         case "https": return tab?.isSecure == true ? "lock.fill" : "lock.open"
         case "http": return "exclamationmark.triangle"
         default: return "magnifyingglass"
+        }
+    }
+
+    @ViewBuilder
+    private var securityIcon: some View {
+        let isWeb = tab?.url.flatMap { $0.scheme?.lowercased() }.map { $0 == "http" || $0 == "https" } ?? false
+        if isWeb && !addressFocused {
+            Button {
+                showSecurityPopover.toggle()
+            } label: {
+                Image(systemName: addressIcon)
+                    .chromeFont(size: 11)
+                    .foregroundStyle(securityIconColor)
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Connection security and site settings")
+            .accessibilityValue(securityDescription ?? "")
+            .help(securityDescription ?? "Connection security and permissions")
+            .popover(isPresented: $showSecurityPopover, arrowEdge: .bottom) {
+                if let tab {
+                    SiteSecurityView(tab: tab, model: model, app: app)
+                        .systemText()
+                }
+            }
+        } else {
+            Image(systemName: addressIcon)
+                .chromeFont(size: 11)
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+                .accessibilityLabel("Connection")
+                .accessibilityValue(securityDescription ?? "")
+                .accessibilityHidden(securityDescription == nil)
+                .help(securityDescription ?? "")
+        }
+    }
+
+    private var securityIconColor: Color {
+        guard let url = tab?.url else { return .secondary }
+        switch url.scheme?.lowercased() {
+        case "https": return tab?.isSecure == true ? .secondary : .orange
+        case "http": return .red
+        default: return .secondary
         }
     }
 

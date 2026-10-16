@@ -12,6 +12,8 @@ struct TabContextMenu: View {
         Button("Duplicate Tab") { model.duplicate(tab) }
         Button(tab.isMuted ? "Unmute Tab" : "Mute Tab") { model.toggleMute(tab) }
             .disabled(!Tab.supportsMuting)
+        Button("Picture in Picture") { tab.togglePictureInPicture() }
+            .disabled(!tab.isAwake || tab.isShowingErrorPage)
         Button("Put Tab to Sleep") { model.sleep(tab) }
             .disabled(!tab.isAwake || model.isVisible(tab))
         if model.split(of: tab) != nil {

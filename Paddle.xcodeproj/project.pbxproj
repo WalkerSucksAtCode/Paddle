@@ -95,6 +95,7 @@
 		F5BFE827260C731264C4F715 /* WebInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74ED21DEB238D504EB6834C7 /* WebInspector.swift */; };
 		F99206FE17D134F5D7D59D28 /* SettingsBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4AC197DD8EEDFE2EE7ECA58 /* SettingsBanner.swift */; };
 		FDC90932F86D725BD45855F4 /* ControlBridgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F965A2C39359669A792EB86C /* ControlBridgeViews.swift */; };
+		FE12BC6E783E07434A5D7A59 /* SiteSecurityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD90D6D847CB211120DC3AF6 /* SiteSecurityView.swift */; };
 		FE6DF0EBFBC6A3FBA6012A89 /* Space.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8128DC91A624CFEB3A367FD9 /* Space.swift */; };
 		FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42172FC8B6D57C89A373242D /* WebContainer.swift */; };
 		FF9E9EBD94A357A87FF343EE /* SplitPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14B9CE107A939CB32C813FD0 /* SplitPanes.swift */; };
@@ -216,6 +217,7 @@
 		F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeSocketServer.swift; sourceTree = "<group>"; };
 		F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressSuggestions.swift; sourceTree = "<group>"; };
 		F965A2C39359669A792EB86C /* ControlBridgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlBridgeViews.swift; sourceTree = "<group>"; };
+		FD90D6D847CB211120DC3AF6 /* SiteSecurityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteSecurityView.swift; sourceTree = "<group>"; };
 		FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPrompts.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -302,6 +304,7 @@
 				5CFE8B96C6FDD7CBF4318B8F /* LinkPreview.swift */,
 				3485769C1E48286709A33E89 /* NewTabPage.swift */,
 				363706E78DC3798367BDF4F7 /* ResponsivePage.swift */,
+				FD90D6D847CB211120DC3AF6 /* SiteSecurityView.swift */,
 				EC4ED3DF4697D613FB8552FB /* SpaceViews.swift */,
 				14B9CE107A939CB32C813FD0 /* SplitPanes.swift */,
 				363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */,
@@ -621,6 +624,7 @@
 				5C478FFBF2FEFB8939B4F03F /* SettingsViews.swift in Sources */,
 				8996CB86020598BC61B32AF1 /* ShortcutRecorder.swift in Sources */,
 				3B65193D181EA4FA135659EA /* ShortcutsPane.swift in Sources */,
+				FE12BC6E783E07434A5D7A59 /* SiteSecurityView.swift in Sources */,
 				0F6E165D6ACF3FF836033255 /* SitesPane.swift in Sources */,
 				FE6DF0EBFBC6A3FBA6012A89 /* Space.swift in Sources */,
 				2C05F8ADBEB03CE596832645 /* SpaceViews.swift in Sources */,
