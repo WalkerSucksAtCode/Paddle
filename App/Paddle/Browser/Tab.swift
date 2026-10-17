@@ -502,7 +502,10 @@ final class Tab: Identifiable {
         audioObserver?.invalidate()
         audioObserver = nil
         isPlayingAudio = false
-        webView.stopLoading()
+        // WebKit raises NSInternalInconsistencyException ("The WKWebView is suspended") from `stopLoading` on a frozen
+        // page. Thrown through the sweep's Task it corrupts Swift's executor tracking and crashes Paddle minutes later
+        // in an unrelated actor check. A frozen page never loads (`freeze()` skips loading pages), so nothing to stop.
+        if !isFrozen && !suspendRequested { webView.stopLoading() }
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.removeFromSuperview()
