@@ -257,7 +257,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// Whether the site at `url` may show notifications now: its `sites` setting is allow, or it is `ask` and this run's
     /// answer was yes.
-    private func isAllowed(_ url: URL) -> Bool {
+    func isAllowed(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), let host = Self.host(of: url) else { return false }
         let app = AppModel.shared
         switch app.config.sitePolicy(forHost: host).notifications {

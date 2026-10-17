@@ -15,6 +15,8 @@ public struct SitePolicy: Sendable, Equatable {
     public var httpsOnly: Bool
     /// True lets the host's pages open windows without a click.
     public var popups: Bool
+    /// Whether this host's background tabs freeze; `auto` follows the global rules.
+    public var freeze: SiteSettings.Freeze
 
     /// Paddle's defaults: 100 %, JavaScript on, media may autoplay muted (Safari's "Stop media with sound"),
     /// blocking on, location and notifications asked once per site per session.
@@ -30,6 +32,7 @@ public struct SitePolicy: Sendable, Equatable {
         notifications = settings.notifications ?? .ask
         httpsOnly = settings.httpsOnly ?? true
         popups = settings.popups ?? false
+        freeze = settings.freeze ?? .auto
     }
 
     /// The smallest and largest zoom Zoom In / Zoom Out reach, and their step.
@@ -121,7 +124,7 @@ extension PaddleConfig {
 extension SiteSettings {
     /// The field names as config.json writes them.
     public enum Field: String, Sendable, CaseIterable {
-        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly, popups
+        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly, popups, freeze
     }
 
     /// A `sites` entry as it is in the file (`existing`, nil when there is none) with one field set to `value`, or
@@ -146,6 +149,7 @@ extension SiteSettings {
         case .notifications: return .string(d.notifications.rawValue)
         case .httpsOnly: return .bool(d.httpsOnly)
         case .popups: return .bool(d.popups)
+        case .freeze: return .string(d.freeze.rawValue)
         }
     }
 }

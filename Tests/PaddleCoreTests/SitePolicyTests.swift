@@ -127,4 +127,15 @@ struct SitePolicyTests {
         answers.forget(SessionPermissions.Answer(site: "files.test", kind: .downloads, allowed: true))
         #expect(answers.all.map(\.site) == ["https://maps.test:443"])
     }
+
+    @Test func freezeIsPerSiteWithAutoDefault() throws {
+        #expect(SitePolicy.defaults.freeze == .auto)
+        let config = try PaddleConfig.decode(Data(#"{"sites": {"slack.com": {"freeze": "never"}, "app.slack.com": {"freeze": "always"}}}"#.utf8))
+        #expect(config.sitePolicy(forHost: "slack.com").freeze == .never)
+        #expect(config.sitePolicy(forHost: "x.slack.com").freeze == .never)
+        #expect(config.sitePolicy(forHost: "app.slack.com").freeze == .always)
+        #expect(config.sitePolicy(forHost: "example.com").freeze == .auto)
+        #expect(SiteSettings.entry(nil, setting: .freeze, to: .string("auto")) == nil)
+        #expect(SiteSettings.entry(nil, setting: .freeze, to: .string("never")) == ["freeze": "never"])
+    }
 }

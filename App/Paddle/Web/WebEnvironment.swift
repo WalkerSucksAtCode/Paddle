@@ -54,6 +54,7 @@ final class WebEnvironment {
     @ObservationIgnored private var scriptletScripts: [WKUserScript] = []
     /// `paddlePageScript` is added once. `removeAllUserScripts` does not remove it.
     @ObservationIgnored private var didInstallPageScriptBridge = false
+    @ObservationIgnored private var didInstallPageWorkMonitor = false
     private(set) var isUpdatingFilters = false
 
     /// `Version/27.0 Safari/605.1.15` from the installed Safari, so sites treat Paddle as Safari.
@@ -374,6 +375,18 @@ final class WebEnvironment {
     func reloadUserScripts() {
         installPageScriptBridge()
         contentController.removeAllUserScripts()
+
+        // Tells the sleep sweep about uploads and unsaved changes (`keepPageWorkRunning`). Pages loaded while it was
+        // off report nothing until they load again.
+        if config.keepPageWorkRunning {
+            if !didInstallPageWorkMonitor {
+                didInstallPageWorkMonitor = true
+                contentController.add(PageWorkMonitor.shared, contentWorld: .page, name: PageWorkScript.handlerName)
+            }
+            contentController.addUserScript(WKUserScript(
+                source: PageWorkScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page
+            ))
+        }
 
         contentController.addUserScript(WKUserScript(
             source: Self.xrayBridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page

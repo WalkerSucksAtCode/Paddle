@@ -19,6 +19,16 @@ struct TabsMemoryPane: View {
                     }
                 }
                 .help("tabFreezeAfterMinutes in config.json (0 = off)")
+                Toggle("Keep uploads and unsaved changes running", isOn: Binding(
+                    get: { model.file.keepPageWorkRunning },
+                    set: { value in Task { await model.saveKey(.keepPageWorkRunning, .bool(value)) } }
+                ))
+                .help("keepPageWorkRunning in config.json. A tab uploading a file never freezes or sleeps; one with unsaved changes doesn't sleep for being idle. Pages already open pick it up when they next load.")
+                Toggle("Keep sites that can notify you live", isOn: Binding(
+                    get: { model.file.keepNotifyingSitesLive },
+                    set: { value in Task { await model.saveKey(.keepNotifyingSitesLive, .bool(value)) } }
+                ))
+                .help("keepNotifyingSitesLive in config.json. Sites allowed to show notifications don't freeze or sleep for being idle, so messages keep arriving. Settings > Sites sets Freeze per site.")
                 SleepAfterRows(model: model)
                 MaxAwakeRow(model: model)
                 Toggle("Let pinned tabs sleep", isOn: Binding(
@@ -44,7 +54,7 @@ struct TabsMemoryPane: View {
                     }
                 }
                 .help("sessionHistoryTabs in config.json: other tabs reopen at next launch on their page, with no Back history")
-                SettingsCaption("A frozen tab keeps its page and stops running it, and shows again instantly with no reload. A sleeping tab's web process exits, and it reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake. A background tab that keeps a CPU core busy also sleeps.")
+                SettingsCaption("A frozen tab keeps its page and stops running it, and shows again instantly with no reload. A sleeping tab's web process exits, and it reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake. Uploads, unsaved changes and sites that can notify you are kept running while their switches are on, and Settings > Sites can set Freeze to Never or Always for one site. A background tab that keeps a CPU core busy also sleeps.")
             }
             .disabled(model.controlsDisabled)
 

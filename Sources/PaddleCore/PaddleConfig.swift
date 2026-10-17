@@ -65,6 +65,12 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// A background tab whose web process keeps at least this percent of one CPU core busy for 3 minutes in a row
     /// sleeps, as an idle one does, so a page that spins in the background doesn't run all day. 0 turns it off.
     public var cpuSleepPercent: Int
+    /// A background tab that is uploading a file never freezes or sleeps (memory pressure aside), and one whose page
+    /// asks before you leave it (unsaved changes) never sleeps on the idle or CPU rules. Off, page work doesn't count.
+    public var keepPageWorkRunning: Bool
+    /// A site allowed to show notifications never freezes and never sleeps on the idle rule, so its messages keep
+    /// arriving. A `sites` entry's `freeze` overrides it either way. Off, those sites freeze like any other.
+    public var keepNotifyingSitesLive: Bool
     /// Tabs whose back/forward history the saved session keeps: the most recently used ones, plus pinned tabs. The
     /// others come back on their page with no Back history.
     public var sessionHistoryTabs: Int
@@ -184,7 +190,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, sessionHistoryTabs, linkPreview, resumeMediaOnSelect, speculativeLoading
+        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, keepPageWorkRunning, keepNotifyingSitesLive, sessionHistoryTabs, linkPreview, resumeMediaOnSelect, speculativeLoading
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
@@ -206,6 +212,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         maxAwakeTabs: Int = 8,
         sleepPinnedTabs: Bool = false,
         cpuSleepPercent: Int = 30,
+        keepPageWorkRunning: Bool = true,
+        keepNotifyingSitesLive: Bool = true,
         sessionHistoryTabs: Int = 30,
         linkPreview: Bool = true,
         resumeMediaOnSelect: Bool = false,
@@ -261,6 +269,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
         self.cpuSleepPercent = cpuSleepPercent
+        self.keepPageWorkRunning = keepPageWorkRunning
+        self.keepNotifyingSitesLive = keepNotifyingSitesLive
         self.sessionHistoryTabs = sessionHistoryTabs
         self.linkPreview = linkPreview
         self.resumeMediaOnSelect = resumeMediaOnSelect
@@ -324,6 +334,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         maxAwakeTabs = c.decodeValue(.maxAwakeTabs, d.maxAwakeTabs, issues)
         sleepPinnedTabs = c.decodeValue(.sleepPinnedTabs, d.sleepPinnedTabs, issues)
         cpuSleepPercent = c.decodeValue(.cpuSleepPercent, d.cpuSleepPercent, issues)
+        keepPageWorkRunning = c.decodeValue(.keepPageWorkRunning, d.keepPageWorkRunning, issues)
+        keepNotifyingSitesLive = c.decodeValue(.keepNotifyingSitesLive, d.keepNotifyingSitesLive, issues)
         sessionHistoryTabs = c.decodeValue(.sessionHistoryTabs, d.sessionHistoryTabs, issues)
         linkPreview = c.decodeValue(.linkPreview, d.linkPreview, issues)
         resumeMediaOnSelect = c.decodeValue(.resumeMediaOnSelect, d.resumeMediaOnSelect, issues)

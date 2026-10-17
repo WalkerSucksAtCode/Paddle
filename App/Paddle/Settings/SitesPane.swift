@@ -81,12 +81,17 @@ struct SitesPane: View {
                     toggle(row, .popups, isOn: row.policy.popups, label: "Pop-ups")
                 }
                 .width(56)
-                TableColumn("Location") { row in locationPicker(row) }
-                    .width(74)
-                TableColumn("Notifications") { row in notificationsPicker(row) }
-                    .width(92)
-                TableColumn("User agent") { row in userAgentPicker(row) }
-                    .width(90)
+                // A second group: one table builder block type-checks at most ten columns.
+                Group {
+                    TableColumn("Location") { row in locationPicker(row) }
+                        .width(74)
+                    TableColumn("Notifications") { row in notificationsPicker(row) }
+                        .width(92)
+                    TableColumn("Freeze") { row in freezePicker(row) }
+                        .width(74)
+                    TableColumn("User agent") { row in userAgentPicker(row) }
+                        .width(90)
+                }
             }
             // No striped placeholder rows below the last site.
             .alternatingRowBackgrounds(.disabled)
@@ -243,6 +248,20 @@ struct SitesPane: View {
         .help("Ask asks once per site per session. Allowed notifications appear in macOS Notification Center. " + source(row, .notifications))
     }
 
+    private func freezePicker(_ row: SiteRow) -> some View {
+        Picker("Freeze for \(row.key)", selection: Binding(
+            get: { row.policy.freeze },
+            set: { set(.freeze, .string($0.rawValue), on: row) }
+        )) {
+            Text("Auto").tag(SiteSettings.Freeze.auto)
+            Text("Never").tag(SiteSettings.Freeze.never)
+            Text("Always").tag(SiteSettings.Freeze.always)
+        }
+        .labelsHidden()
+        .disabled(model.controlsDisabled)
+        .help("Whether this site's background tabs freeze. Auto: like any tab, except a site allowed to notify stays live. Never: keeps running and doesn't sleep for being idle. Always: freezes even if it can notify. " + source(row, .freeze))
+    }
+
     /// Default (Safari's), Chrome, Firefox, Custom (a hand-written string; shown only when set), or Custom… to type one.
     private func userAgentPicker(_ row: SiteRow) -> some View {
         let value = row.userAgent?.value
@@ -328,6 +347,7 @@ struct SitesPane: View {
         case .notifications: return entry.notifications != nil
         case .httpsOnly: return entry.httpsOnly != nil
         case .popups: return entry.popups != nil
+        case .freeze: return entry.freeze != nil
         }
     }
 

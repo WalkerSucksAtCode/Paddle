@@ -2,7 +2,7 @@ import Foundation
 
 /// Per-site settings from the `sites` key of `config.json`, keyed by host suffix like `siteUserAgents`:
 /// `"sites": {"example.com": {"zoom": 1.25, "javaScript": false, "autoplay": "muted", "contentBlocking": false,
-/// "location": "deny", "notifications": "allow", "httpsOnly": false}}`. Every field is optional; a missing field means Paddle's default for
+/// "location": "deny", "notifications": "allow", "httpsOnly": false, "freeze": "never"}}`. Every field is optional; a missing field means Paddle's default for
 /// that host. User agents stay in `siteUserAgents`.
 public struct SiteSettings: Codable, Sendable, Equatable {
     public enum Autoplay: String, Codable, Sendable, CaseIterable {
@@ -13,6 +13,13 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     /// `deny` answer without a prompt.
     public enum Permission: String, Codable, Sendable, CaseIterable {
         case ask, allow, deny
+    }
+
+    /// Whether this site's background tabs freeze. `auto` follows the global rules (a site allowed to notify stays
+    /// live while `keepNotifyingSitesLive` is on); `never` keeps them running and out of idle sleep; `always` lets them
+    /// freeze even when they may notify. Sound, the camera, the mic and uploads still keep a tab running either way.
+    public enum Freeze: String, Codable, Sendable, CaseIterable {
+        case auto, never, always
     }
 
     /// Page zoom as a factor; 1 is 100 %.
@@ -33,6 +40,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     /// True lets pages on this site open windows without a click (pop-ups). Unset or false: a window a script opens
     /// on its own may still download a file, but a page in it is blocked, with a Pop-up blocked button to open it.
     public var popups: Bool?
+    /// Whether background tabs on this site freeze (see `Freeze`).
+    public var freeze: Freeze?
 
     public init(
         zoom: Double? = nil,
@@ -42,7 +51,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         location: Permission? = nil,
         notifications: Permission? = nil,
         httpsOnly: Bool? = nil,
-        popups: Bool? = nil
+        popups: Bool? = nil,
+        freeze: Freeze? = nil
     ) {
         self.zoom = zoom
         self.javaScript = javaScript
@@ -52,12 +62,13 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         self.notifications = notifications
         self.httpsOnly = httpsOnly
         self.popups = popups
+        self.freeze = freeze
     }
 
     /// True when no field is set, so the entry says nothing and can be dropped.
     public var isEmpty: Bool {
         zoom == nil && javaScript == nil && autoplay == nil && contentBlocking == nil && location == nil
-            && notifications == nil && httpsOnly == nil && popups == nil
+            && notifications == nil && httpsOnly == nil && popups == nil && freeze == nil
     }
 
     /// `other` laid over self: every field `other` sets replaces the one here.
@@ -70,7 +81,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
             location: other.location ?? location,
             notifications: other.notifications ?? notifications,
             httpsOnly: other.httpsOnly ?? httpsOnly,
-            popups: other.popups ?? popups
+            popups: other.popups ?? popups,
+            freeze: other.freeze ?? freeze
         )
     }
 }

@@ -74,6 +74,8 @@ final class AppModel {
     @ObservationIgnored private var sweepTimer: Timer?
     /// Each awake tab's CPU use between sweeps, for the CPU-based sleep (`cpuSleepPercent`).
     @ObservationIgnored private var cpuUsage = CPUUsageTracker()
+    /// The last "kept running" line the sweep logged, so it logs only when that changes.
+    @ObservationIgnored private var lastKeptRunning = ""
     /// Open readouts that want the 5 s sampler even with `showTabMemory` off (Activity, Settings' memory pane).
     @ObservationIgnored private var memoryReaders = 0
     /// Activation and window-occlusion observers that start and stop the sampler.
@@ -450,7 +452,7 @@ final class AppModel {
                 }
             }
         }
-        if !keys.isDisjoint(with: [.tabFreezeAfterMinutes, .tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs, .cpuSleepPercent]) {
+        if !keys.isDisjoint(with: [.tabFreezeAfterMinutes, .tabSleepAfterMinutes, .maxAwakeTabs, .sleepPinnedTabs, .cpuSleepPercent, .keepPageWorkRunning, .keepNotifyingSitesLive]) {
             sweepSleepingTabs()
         }
     }
@@ -469,6 +471,8 @@ final class AppModel {
             case .maxAwakeTabs: old.maxAwakeTabs != new.maxAwakeTabs
             case .sleepPinnedTabs: old.sleepPinnedTabs != new.sleepPinnedTabs
             case .cpuSleepPercent: old.cpuSleepPercent != new.cpuSleepPercent
+            case .keepPageWorkRunning: old.keepPageWorkRunning != new.keepPageWorkRunning
+            case .keepNotifyingSitesLive: old.keepNotifyingSitesLive != new.keepNotifyingSitesLive
             case .sessionHistoryTabs: old.sessionHistoryTabs != new.sessionHistoryTabs
             case .linkPreview: old.linkPreview != new.linkPreview
             case .resumeMediaOnSelect: old.resumeMediaOnSelect != new.resumeMediaOnSelect
@@ -1299,6 +1303,18 @@ final class AppModel {
         return PowerConditions(lowPowerMode: info.isLowPowerModeEnabled, thermal: thermal)
     }
 
+    /// Whether `tab`'s site should keep running in the background: its `sites` entry says `freeze: never`, or it is
+    /// `auto` and the site may show notifications while `keepNotifyingSitesLive` is on. Private windows never show
+    /// notifications, so there only `never` counts.
+    func staysLive(_ tab: Tab) -> Bool {
+        guard let url = tab.url, let host = url.host(), url.scheme == "https" || url.scheme == "http" else { return false }
+        switch config.sitePolicy(forHost: host).freeze {
+        case .never: return true
+        case .always: return false
+        case .auto: return config.keepNotifyingSitesLive && !tab.isPrivate && WebsiteNotifications.shared.isAllowed(url)
+        }
+    }
+
     func sweepSleepingTabs(memoryPressure: Bool = false) {
         let policy = effectiveSleepPolicy
         Task {
@@ -1340,9 +1356,11 @@ final class AppModel {
                 }
             }
             cpuUsage.retain(sampling ? Set(tabs.filter(\.isAwake).map(\.id)) : [])
+            let pageWork = config.keepPageWorkRunning
             let snapshots = tabs.map { tab in
-                // The idle clock starts when playback, capture or the popup ends, not when the tab was last viewed.
-                if busy.contains(tab.id) { tab.lastActive = now }
+                let uploading = pageWork && tab.isUploading
+                // The idle clock starts when playback, capture, an upload or the popup ends, not when the tab was last viewed.
+                if busy.contains(tab.id) || uploading { tab.lastActive = now }
                 return TabSnapshot(
                     id: tab.id, lastActive: tab.lastActive, isAwake: tab.isAwake,
                     isSelected: selected.contains(tab.id), isPinned: tab.isPinned, isBusy: busy.contains(tab.id),
@@ -1350,8 +1368,17 @@ final class AppModel {
                     cpuBusySince: sampling ? cpuUsage.busySince(tab.id).map { max($0, tab.lastActive) } : nil,
                     isFrozen: tab.isFrozen,
                     // A shared process stays up after this tab sleeps, so it doesn't count as memory this sleep frees.
-                    footprint: tab.sharesProcess ? 0 : (tab.memoryBytes ?? 0)
+                    footprint: tab.sharesProcess ? 0 : (tab.memoryBytes ?? 0),
+                    isUploading: uploading, guardsUnload: pageWork && tab.guardsUnload, staysLive: staysLive(tab)
                 )
+            }
+            let kept = [
+                (snapshots.filter(\.isUploading).count, "uploading"), (snapshots.filter(\.guardsUnload).count, "unsaved changes"),
+                (snapshots.filter { $0.isAwake && $0.staysLive }.count, "live site"),
+            ].filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }.joined(separator: ", ")
+            if kept != lastKeptRunning {
+                lastKeptRunning = kept
+                log.info("kept running: \(kept.isEmpty ? "none" : kept, privacy: .public)")
             }
             let ids = Set(policy.tabsToSleep(snapshots, now: now, memoryPressure: memoryPressure))
             // Freezing is the first stage: an idle tab keeps its page, stopped, before any sleep. Freezing is skipped

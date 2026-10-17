@@ -497,6 +497,7 @@ final class Tab: Identifiable {
         isReaderAvailable = false
         pendingOwnPage = nil
         resumeSelectionWaiters(false)
+        pageWork = [:]
         observations.forEach { $0.invalidate() }
         observations = []
         audioObserver?.invalidate()
@@ -607,6 +608,7 @@ final class Tab: Identifiable {
         let own = pendingOwnPage
         pendingOwnPage = nil
         commitCount += 1
+        pageWork = [:]
         committedErrorPage = own == .error
         if own == nil { sourceHTML = nil }
         // Extension pages and Paddle's own pages get no block lists, so they never need the reload.
@@ -761,6 +763,21 @@ final class Tab: Identifiable {
         selectionWaiters = []
         waiters.forEach { $0.resume(returning: selected) }
     }
+
+    /// What one frame of the page reported through `PageWorkScript`.
+    struct PageWork: Equatable {
+        var uploading: Bool
+        var guardsUnload: Bool
+        var isIdle: Bool { !uploading && !guardsUnload }
+    }
+
+    /// `PageWorkScript` reports by frame, kept only while a frame has something to report. Cleared when the main frame
+    /// commits a new page and when the tab sleeps.
+    @ObservationIgnored var pageWork: [String: PageWork] = [:]
+    /// A frame of this page is uploading a file.
+    var isUploading: Bool { pageWork.values.contains(where: \.uploading) }
+    /// A frame of this page asks before it is left (unsaved changes).
+    var guardsUnload: Bool { pageWork.values.contains(where: \.guardsUnload) }
 
     /// Making sound or using camera/mic: never put to sleep (`MediaActivity`). Where WebKit's sound flag can't be
     /// observed, any media playing counts, which takes a round trip to the page.

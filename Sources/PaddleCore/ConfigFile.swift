@@ -52,6 +52,7 @@ public enum ConfigFile {
         "notifications": .string(SitePolicy.defaults.notifications.rawValue),
         "httpsOnly": .bool(SitePolicy.defaults.httpsOnly),
         "popups": .bool(SitePolicy.defaults.popups),
+        "freeze": .string(SitePolicy.defaults.freeze.rawValue),
     ]
 
     /// `disk` with `changes` applied, where `base` is what the editor read before the user made them.

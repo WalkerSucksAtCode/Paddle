@@ -84,6 +84,7 @@ enum SettingsPane: String, CaseIterable {
             "tabFreezeAfterMinutes", "tabSleepAfterMinutes",
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
             "awake", "linkPreview", "link preview", "audio", "resumeMediaOnSelect", "play the tab",
+            "upload", "uploads", "unsaved", "keepPageWorkRunning", "notifications", "live", "keepNotifyingSitesLive",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
@@ -92,7 +93,7 @@ enum SettingsPane: String, CaseIterable {
         ]
         case .sites: [
             "site", "zoom", "JavaScript", "autoplay", "location", "notifications", "camera", "microphone", "downloads", "blocking",
-            "user agent", "siteUserAgents", "sitePersonas", "persona", "clear data", "permissions", "this session",
+            "user agent", "siteUserAgents", "sitePersonas", "persona", "clear data", "permissions", "this session", "freeze", "keep live",
         ]
         case .extensions: [
             "addons", "extensionsInPrivate", "extensionCompat", "private windows", "permissions", "folder", "memory",

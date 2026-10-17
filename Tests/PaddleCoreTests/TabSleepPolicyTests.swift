@@ -109,6 +109,56 @@ struct TabSleepPolicyTests {
         #expect(TabSleepPolicy(config: config).freezeAfter == 0)
     }
 
+    // MARK: - Page work and live sites
+
+    func working(_ minutesAgo: Double, uploading: Bool = false, guardsUnload: Bool = false, live: Bool = false,
+                 cpuBusyMinutes: Double? = nil) -> TabSnapshot {
+        var snapshot = tab(minutesAgo, cpuBusyMinutes: cpuBusyMinutes)
+        snapshot.isUploading = uploading
+        snapshot.guardsUnload = guardsUnload
+        snapshot.staysLive = live
+        return snapshot
+    }
+
+    @Test func uploadingAndLiveTabsNeverFreezeButUnsavedChangesDo() {
+        let policy = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 0, sleepPinnedTabs: false, freezeAfter: 2 * 60)
+        let plain = working(5), uploading = working(5, uploading: true), unsaved = working(5, guardsUnload: true)
+        let live = working(5, live: true)
+        #expect(policy.tabsToFreeze([plain, uploading, unsaved, live], now: now, excluding: []) == [plain.id, unsaved.id])
+    }
+
+    @Test func uploadingTabSurvivesEveryRuleButMemoryPressure() {
+        let policy = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 1, sleepPinnedTabs: false, cpuPercent: 30)
+        let selected = tab(0, selected: true)
+        let uploading = working(90, uploading: true, cpuBusyMinutes: 10)
+        #expect(policy.tabsToSleep([selected, uploading], now: now).isEmpty)
+        #expect(policy.tabsToSleep([selected, uploading], now: now, memoryPressure: true) == [uploading.id])
+    }
+
+    @Test func unsavedChangesSkipIdleAndCPUButNotTheCap() {
+        let idleAndCPU = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 0, sleepPinnedTabs: false, cpuPercent: 30)
+        let unsaved = working(90, guardsUnload: true, cpuBusyMinutes: 10)
+        #expect(idleAndCPU.tabsToSleep([unsaved], now: now).isEmpty)
+        let cap = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 1, sleepPinnedTabs: false)
+        #expect(cap.tabsToSleep([tab(0, selected: true), unsaved], now: now) == [unsaved.id])
+    }
+
+    @Test func liveSiteSkipsIdleSleepOnly() {
+        let idle = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 0, sleepPinnedTabs: false)
+        #expect(idle.tabsToSleep([working(90, live: true)], now: now).isEmpty)
+        let cpu = working(90, live: true, cpuBusyMinutes: 10)
+        #expect(cpuOnly.tabsToSleep([cpu], now: now) == [cpu.id])
+        let cap = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 1, sleepPinnedTabs: false)
+        let live = working(90, live: true)
+        #expect(cap.tabsToSleep([tab(0, selected: true), live], now: now) == [live.id])
+    }
+
+    @Test func pageWorkKeysDefaultOnAndDecode() throws {
+        #expect(PaddleConfig().keepPageWorkRunning && PaddleConfig().keepNotifyingSitesLive)
+        let config = try PaddleConfig.decode(Data(#"{"keepPageWorkRunning": false, "keepNotifyingSitesLive": false}"#.utf8))
+        #expect(!config.keepPageWorkRunning && !config.keepNotifyingSitesLive)
+    }
+
     // MARK: - CPU
 
     /// Idle sleep and the cap off, so only the CPU rule can sleep these tabs.

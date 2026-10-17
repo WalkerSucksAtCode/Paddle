@@ -16,10 +16,19 @@ public struct TabSnapshot: Sendable, Equatable {
     /// Physical footprint of this tab's own WebContent process, in bytes. 0 when unknown, or when another tab shares
     /// the process (sleeping this tab would not end it). Memory pressure discards the largest of these first.
     public var footprint: UInt64
+    /// Uploading a file. Never frozen, and never put to sleep except under memory pressure.
+    public var isUploading: Bool
+    /// The page asks before it is left (unsaved changes). Freezing keeps the page, so it may freeze; it doesn't sleep on
+    /// the idle or CPU rules, which would lose the changes. The awake-tab cap and memory pressure still apply.
+    public var guardsUnload: Bool
+    /// A site that should keep running: allowed to notify, or set to never freeze. Not frozen, and not put to sleep for
+    /// being idle; the CPU rule, the cap and memory pressure still apply.
+    public var staysLive: Bool
 
     public init(
         id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool, cpuBusySince: Date? = nil,
-        isFrozen: Bool = false, footprint: UInt64 = 0
+        isFrozen: Bool = false, footprint: UInt64 = 0, isUploading: Bool = false, guardsUnload: Bool = false,
+        staysLive: Bool = false
     ) {
         self.id = id
         self.lastActive = lastActive
@@ -30,6 +39,9 @@ public struct TabSnapshot: Sendable, Equatable {
         self.cpuBusySince = cpuBusySince
         self.isFrozen = isFrozen
         self.footprint = footprint
+        self.isUploading = isUploading
+        self.guardsUnload = guardsUnload
+        self.staysLive = staysLive
     }
 }
 
@@ -71,21 +83,25 @@ public struct TabSleepPolicy: Sendable, Equatable {
 
     /// Background tabs to freeze now, least recently used first. Freeze is the first stage: the tab stays
     /// awake and keeps its page, so `tabsToSleep` can still sleep it later. Same protections as sleep: never
-    /// selected, never busy, never pinned unless `sleepPinnedTabs`. Only tabs idle for `freezeAfter`.
+    /// selected, never busy, uploading or staying live, never pinned unless `sleepPinnedTabs`. Only tabs idle for
+    /// `freezeAfter`.
     /// Tabs in `discard` are skipped because the caller is about to sleep them.
     /// - Parameter discard: the tabs `tabsToSleep` chose for this sweep.
     public func tabsToFreeze(_ tabs: [TabSnapshot], now: Date, excluding discard: Set<UUID>) -> [UUID] {
         guard freezeAfter > 0 else { return [] }
         return tabs
             .filter {
-                $0.isAwake && !$0.isFrozen && !$0.isSelected && !$0.isBusy && (sleepPinnedTabs || !$0.isPinned)
-                    && !discard.contains($0.id) && now.timeIntervalSince($0.lastActive) >= freezeAfter
+                $0.isAwake && !$0.isFrozen && !$0.isSelected && !$0.isBusy && !$0.isUploading && !$0.staysLive
+                    && (sleepPinnedTabs || !$0.isPinned) && !discard.contains($0.id)
+                    && now.timeIntervalSince($0.lastActive) >= freezeAfter
             }
             .sorted { $0.lastActive < $1.lastActive }
             .map(\.id)
     }
 
-    /// Tabs to put to sleep now. A frozen tab is awake, so it is eligible like any other.
+    /// Tabs to put to sleep now. A frozen tab is awake, so it is eligible like any other. Outside memory pressure an
+    /// uploading tab never sleeps, a tab guarding unsaved changes skips the idle and CPU rules, and a live site skips
+    /// the idle rule.
     /// Idle, CPU and cap victims stay least-recently-used, so the tab you just left is the one the cap keeps.
     /// - Parameter memoryPressure: the system reported memory pressure; every eligible tab sleeps, largest footprint
     ///   first (an unknown or shared footprint sorts with the oldest).
@@ -101,17 +117,18 @@ public struct TabSleepPolicy: Sendable, Equatable {
             }.map(\.id)
         }
 
+        let working = eligible.filter { !$0.isUploading }
         var chosen: [UUID] = []
         var chosenSet: Set<UUID> = []
         if sleepAfter > 0 {
-            for tab in eligible where now.timeIntervalSince(tab.lastActive) >= sleepAfter {
+            for tab in working where !tab.guardsUnload && !tab.staysLive && now.timeIntervalSince(tab.lastActive) >= sleepAfter {
                 chosen.append(tab.id)
                 chosenSet.insert(tab.id)
             }
         }
 
         if cpuPercent > 0 {
-            for tab in eligible where !chosenSet.contains(tab.id) {
+            for tab in working where !tab.guardsUnload && !chosenSet.contains(tab.id) {
                 guard let busySince = tab.cpuBusySince, now.timeIntervalSince(busySince) >= Self.cpuSustain else { continue }
                 chosen.append(tab.id)
                 chosenSet.insert(tab.id)
@@ -120,7 +137,7 @@ public struct TabSleepPolicy: Sendable, Equatable {
 
         if maxAwakeTabs > 0 {
             var awake = tabs.filter(\.isAwake).count - chosen.count
-            for tab in eligible where awake > maxAwakeTabs && !chosenSet.contains(tab.id) {
+            for tab in working where awake > maxAwakeTabs && !chosenSet.contains(tab.id) {
                 chosen.append(tab.id)
                 chosenSet.insert(tab.id)
                 awake -= 1
