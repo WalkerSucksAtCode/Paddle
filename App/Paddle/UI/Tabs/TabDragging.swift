@@ -93,6 +93,32 @@ final class TabDragAnchorView: NSView {
     }
 }
 
+/// A view's strip or sidebar item as a drop target: an invisible view the size of the item, taking no clicks, that
+/// `TabDragController` finds under the pointer. A tab let go on it joins the view (`BrowserModel.addToView`).
+final class ViewDropAnchorView: NSView {
+    weak var model: BrowserModel?
+    var viewID: UUID?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { TabDragController.shared.register(view: self) }
+    }
+}
+
+struct ViewDropAnchor: NSViewRepresentable {
+    let model: BrowserModel
+    let viewID: UUID
+
+    func makeNSView(context: Context) -> ViewDropAnchorView { ViewDropAnchorView() }
+
+    func updateNSView(_ view: ViewDropAnchorView, context: Context) {
+        view.model = model
+        view.viewID = viewID
+    }
+}
+
 /// Runs tab drags. Inside a tab strip the drag is an ordinary drag and drop (the strips' drop destinations reorder
 /// and re-dock). Once the pointer leaves every strip, the tab moves to a new window that follows the pointer (the
 /// only tab of a window moves that window instead); bringing it over a strip again hides that window so the strip
@@ -102,6 +128,10 @@ final class TabDragController: NSObject, NSDraggingSource {
     static let shared = TabDragController()
 
     private var anchors = NSHashTable<TabDragAnchorView>.weakObjects()
+    private var viewAnchors = NSHashTable<ViewDropAnchorView>.weakObjects()
+    /// The view (in the drag's own window) the tab would join when let go over its strip item.
+    private weak var viewDropModel: BrowserModel?
+    private var viewDropID: UUID?
     private var monitor: Any?
     private var pending: (anchor: TabDragAnchorView, start: NSPoint)?
 
@@ -124,6 +154,10 @@ final class TabDragController: NSObject, NSDraggingSource {
     /// The drag image is the ghost tab (over a strip), not the empty one (while the window follows the pointer).
     private var showsGhost = true
     private var ghost: NSImage?
+
+    func register(view anchor: ViewDropAnchorView) {
+        viewAnchors.add(anchor)
+    }
 
     func register(_ anchor: TabDragAnchorView) {
         anchors.add(anchor)
@@ -210,6 +244,13 @@ final class TabDragController: NSObject, NSDraggingSource {
     private func moved(_ session: NSDraggingSession, to point: NSPoint) {
         guard let tab, let browser = tab.browser else { return }
         let overStrip = stripWindow(at: point)
+        // Over a view's item in its own window's strip: it joins the view (no insertion bar).
+        if let overStrip, floating == nil, let view = viewItem(in: overStrip, at: point, dragging: tab) {
+            showSlot(nil)
+            showViewDrop(view, in: overStrip.model)
+            return
+        }
+        showViewDrop(nil, in: nil)
         showSlot(overStrip.map { ($0, slot(in: $0, at: point)) })
         if let floating {
             guard let window = floating.window else { return }
@@ -277,6 +318,28 @@ final class TabDragController: NSObject, NSDraggingSource {
         return (id, edge)
     }
 
+    /// The view whose item is under `point` in `window`'s strip or sidebar, when `tab` (of that window, not pinned,
+    /// not in it) can join it.
+    private func viewItem(in window: BrowserWindowController, at point: NSPoint, dragging tab: Tab) -> BrowserModel.Split? {
+        let model = window.model
+        guard tab.browser === model, !tab.isPinned else { return nil }
+        for anchor in viewAnchors.allObjects {
+            guard anchor.model === model, let id = anchor.viewID, let anchorWindow = anchor.window, anchorWindow === window.window,
+                  anchorWindow.convertToScreen(anchor.convert(anchor.bounds, to: nil)).contains(point),
+                  let view = model.view(id: id), !view.contains(tab), view.layout.count < model.maxPanes else { continue }
+            return view
+        }
+        return nil
+    }
+
+    /// Highlights `view`'s item in `model`'s window, or removes the highlight.
+    private func showViewDrop(_ view: BrowserModel.Split?, in model: BrowserModel?) {
+        if let viewDropModel, viewDropModel !== model || view == nil { viewDropModel.viewDropTargetID = nil }
+        viewDropModel = view == nil ? nil : model
+        viewDropID = view?.id
+        if let view, let model, model.viewDropTargetID != view.id { model.viewDropTargetID = view.id }
+    }
+
     /// Shows the pane highlight in `window` (removing it from the window that had it), or removes it.
     private func showPane(_ drop: (UUID, PaneEdge?)?, in window: BrowserWindowController?) {
         if let paneWindow, paneWindow !== window || drop == nil { paneWindow.model.paneDropHint = nil }
@@ -319,6 +382,8 @@ final class TabDragController: NSObject, NSDraggingSource {
         showSlot(nil)
         let pane = paneWindow.flatMap { window in paneTarget.map { (window, $0) } }
         showPane(nil, in: nil)
+        let joining = viewDropModel.flatMap { model in viewDropID.flatMap(model.view(id:)).map { (model, $0) } }
+        showViewDrop(nil, in: nil)
         defer {
             tab = nil
             floating = nil
@@ -338,6 +403,11 @@ final class TabDragController: NSObject, NSDraggingSource {
         }
         // A group label took it (SwiftUI's drop): its handler moved the tab.
         if !operation.isEmpty { return }
+        // Let go over a view's strip item in its own window: it joins the view.
+        if floating == nil, let tab, let (model, view) = joining, tab.browser === model {
+            model.addToView(tab, view)
+            return
+        }
         // Let go over a pane of its own window, never torn off: it goes there.
         if floating == nil, let tab, let (window, drop) = pane, tab.browser === window.model,
            let target = window.model.tabs.first(where: { $0.id == drop.id }) {

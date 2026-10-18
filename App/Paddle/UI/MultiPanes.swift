@@ -33,6 +33,8 @@ struct MultiPanes<Pane: View>: View {
                             .id(tab.id)
                             .frame(width: frame.width, height: frame.height)
                             .position(x: frame.midX, y: frame.midY)
+                            // Its address suggestions hang over the panes below.
+                            .zIndex(model.editingPaneID == tab.id ? 1 : 0)
                     }
                     ForEach(split.layout.dividers(in: rect, gap: PaneMetrics.gap), id: \.path) { divider in
                         PaneDividerView(model: model, split: split, divider: divider)
@@ -76,6 +78,8 @@ private struct PaneFrame<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             PaneBar(model: model, tab: tab, focused: focused)
+                // Over the page, so its suggestions show on top of it.
+                .zIndex(1)
             content
         }
         // Inside the pane's frame, by brightness alone: a dark ring with a light one inside it, so it shows on light
@@ -131,25 +135,59 @@ private struct PaneBar: View {
                     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { return }
                     if model.selectedID != tab.id { model.select(tab, focusPage: false) }
-                    model.navigate(text)
+                    // The highlighted suggestion (the top row is what was typed), as in the window's field.
+                    if model.suggestions.isVisible, let row = model.suggestions.highlightedRow {
+                        model.open(row)
+                    } else {
+                        model.navigate(text)
+                    }
+                    model.suggestions.dismiss()
                     editing = false
                 }
                 .onChange(of: editing) { _, now in
                     if now {
                         // The keyboard stays in this field: selecting a tab otherwise hands it to the page.
                         if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+                        model.editingPaneID = tab.id
                         DispatchQueue.main.async { if editing { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) } }
                     } else {
+                        if model.editingPaneID == tab.id {
+                            model.editingPaneID = nil
+                            model.suggestions.dismiss()
+                        }
                         draft = shownAddress
                     }
                 }
+                // Typing shows the window's suggestions under this field: open tabs, history, search phrases.
+                .onChange(of: draft) { _, text in
+                    if editing, text != shownAddress { model.suggestions.update(for: text, in: model) }
+                }
+                .onKeyPress(.downArrow) { moveHighlight(by: 1) }
+                .onKeyPress(.upArrow) { moveHighlight(by: -1) }
                 .onChange(of: shownAddress) { _, new in if !editing { draft = new } }
                 .onChange(of: model.paneAddressFocusRequest) { if focused { editing = true } }
                 .onAppear { draft = shownAddress }
-                // Escape gives up the edit: the field shows the page's address again.
+                // The first Escape closes the suggestions, the next gives up the edit.
                 .onExitCommand {
+                    if model.suggestions.isVisible, model.editingPaneID == tab.id {
+                        model.suggestions.dismiss()
+                        return
+                    }
                     draft = shownAddress
                     editing = false
+                }
+                .overlay(alignment: .topLeading) {
+                    if editing, model.editingPaneID == tab.id, model.suggestions.isVisible {
+                        SuggestionList(suggestions: model.suggestions) { row in
+                            model.open(row)
+                            model.suggestions.dismiss()
+                            editing = false
+                        }
+                        .systemText()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(minWidth: 340, alignment: .top)
+                        .offset(y: 26)
+                    }
                 }
                 .accessibilityLabel("Address of \(tab.displayTitle)")
                 .padding(.horizontal, 4)
@@ -172,6 +210,12 @@ private struct PaneBar: View {
         .overlay(alignment: .bottom) {
             TabProgressBar(tab: tab, accent: theme?.accent ?? Color.accentColor, reducesMotion: AppModel.shared.reducesMotion)
         }
+    }
+
+    private func moveHighlight(by delta: Int) -> KeyPress.Result {
+        guard model.suggestions.isVisible, model.editingPaneID == tab.id else { return .ignored }
+        model.suggestions.moveHighlight(by: delta)
+        return .handled
     }
 
     private func button(_ symbol: String, _ help: String, enabled: Bool, action: @escaping () -> Void) -> some View {

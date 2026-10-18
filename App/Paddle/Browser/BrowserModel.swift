@@ -839,6 +839,10 @@ final class BrowserModel {
 
     /// Incremented to put the keyboard in the focused pane's address field (⌘L in a multi view).
     var paneAddressFocusRequest = 0
+    /// The pane whose address field is being edited: its suggestions show, and it draws above the other panes.
+    var editingPaneID: UUID?
+    /// The view a dragged tab would join when let go (over its strip or sidebar item).
+    var viewDropTargetID: UUID?
     /// The view whose Rename View popover is open in the strip or sidebar.
     var renamingViewID: UUID?
 
@@ -857,6 +861,18 @@ final class BrowserModel {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         splits[at].layout.name = trimmed.isEmpty ? nil : String(trimmed.prefix(60))
         AppModel.shared.sessionChanged()
+    }
+
+    /// A tab dropped on a view's strip item: it joins the view, taking half of the largest pane (split along that
+    /// pane's longer side). False when it can't: in the view already, pinned, another space, or the view is full.
+    @discardableResult
+    func addToView(_ tab: Tab, _ split: Split) -> Bool {
+        guard !split.contains(tab), split.layout.count < maxPanes else { return false }
+        let area = paneArea.size == .zero ? CGSize(width: 1200, height: 800) : paneArea.size
+        let frames = split.layout.frames(in: CGRect(origin: .zero, size: area), gap: PaneMetrics.gap)
+        guard let (id, frame) = frames.max(by: { $0.value.width * $0.value.height < $1.value.width * $1.value.height }),
+              let target = tabs.first(where: { $0.id.uuidString == id }) else { return false }
+        return dropTab(tab, onto: target, edge: frame.width >= frame.height ? .right : .bottom)
     }
 
     /// Shows `split` with its most recently used pane focused.

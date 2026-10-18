@@ -57,6 +57,14 @@ struct ViewStripButton: View {
         .onHover { hovering = $0 }
         .contextMenu { ViewMenu(split: split, model: model) }
         .viewRenamePopover(split: split, model: model)
+        // A tab dragged here joins the view.
+        .background(ViewDropAnchor(model: model, viewID: split.id))
+        .overlay {
+            if model.viewDropTargetID == split.id {
+                RoundedRectangle(cornerRadius: 7).strokeBorder(theme?.accent ?? Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .help("\(model.displayName(of: split)): " + model.panes(of: split).map(\.displayTitle).joined(separator: ", "))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("View \(model.displayName(of: split)), \(split.layout.count) tabs")
@@ -122,6 +130,14 @@ struct ViewSidebarRow: View {
         .onHover { hovering = $0 }
         .contextMenu { ViewMenu(split: split, model: model) }
         .viewRenamePopover(split: split, model: model)
+        // A tab dragged here joins the view.
+        .background(ViewDropAnchor(model: model, viewID: split.id))
+        .overlay {
+            if model.viewDropTargetID == split.id {
+                RoundedRectangle(cornerRadius: 7).strokeBorder(theme?.accent ?? Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .help("\(model.displayName(of: split)): " + model.panes(of: split).map(\.displayTitle).joined(separator: ", "))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("View \(model.displayName(of: split)), \(split.layout.count) tabs")
