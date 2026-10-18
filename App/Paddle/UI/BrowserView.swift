@@ -342,15 +342,20 @@ private struct NavigationBar: View {
     @State private var showSecurityPopover = false
 
     private var tab: Tab? { model.selectedTab }
+    /// A multi view shows: each pane has its own back, forward, reload and address field (`PaneBar`), so the
+    /// window's are left out.
+    private var inView: Bool { tab.map { model.split(of: $0) != nil } ?? false }
 
     var body: some View {
         HStack(spacing: 4) {
-            iconButton("chevron.left", help: "Back", enabled: tab?.canGoBack == true) { tab?.webView?.goBack() }
-            iconButton("chevron.right", help: "Forward", enabled: tab?.canGoForward == true) { tab?.webView?.goForward() }
-            iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil && tab?.settingsPane == nil) {
-                if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.reload() }
+            if !inView {
+                iconButton("chevron.left", help: "Back", enabled: tab?.canGoBack == true) { tab?.webView?.goBack() }
+                iconButton("chevron.right", help: "Forward", enabled: tab?.canGoForward == true) { tab?.webView?.goForward() }
+                iconButton(tab?.isLoading == true ? "xmark" : "arrow.clockwise", help: tab?.isLoading == true ? "Stop" : "Reload", enabled: tab?.url != nil && tab?.settingsPane == nil) {
+                    if tab?.isLoading == true { tab?.webView?.stopLoading() } else { tab?.reload() }
+                }
             }
-            if app.config.showHomeButton {
+            if app.config.showHomeButton, !inView {
                 iconButton("house", help: "Home", enabled: true) {
                     model.navigate(model.config.homepage)
                 }
@@ -371,9 +376,13 @@ private struct NavigationBar: View {
                     .help("Profile: \(profile.name)")
             }
             BridgeIndicator()
-            addressField
-                .padding(.horizontal, 4)
-                .frame(minWidth: 140)
+            if inView {
+                Spacer(minLength: 8)
+            } else {
+                addressField
+                    .padding(.horizontal, 4)
+                    .frame(minWidth: 140)
+            }
             HStack(spacing: 2) {
                 if let tab { PopupBlockedButton(tab: tab) }
                 MediaControlsButton(app: app, model: model)
@@ -395,7 +404,7 @@ private struct NavigationBar: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 38)
-        .overlay(alignment: .bottom) { progressBar }
+        .overlay(alignment: .bottom) { if !inView { progressBar } }
     }
 
     private var addressField: some View {
@@ -753,7 +762,7 @@ private struct FindBar: View {
     }
 }
 
-private struct TabProgressBar: View {
+struct TabProgressBar: View {
     let tab: Tab
     let accent: Color
     let reducesMotion: Bool

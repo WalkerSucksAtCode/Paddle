@@ -2,9 +2,8 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// The content area of a multi view: each tab's page in its pane of the layout (`PaneLayout.frames`), a title bar on
-/// each (drag it to move the pane, × takes the tab out of the view), dividers between them, a ring on the focused
-/// one, and where a dragged tab would land. When a pane would be smaller than `minimumPane`, only the focused one
+/// The content area of a multi view: each tab's page in its pane of the layout (`PaneLayout.frames`) under the pane's
+/// own toolbar (`PaneBar`), dividers between them, a ring on the focused one, and where a dragged tab would land. When a pane would be smaller than `minimumPane`, only the focused one
 /// shows (the layout is kept).
 struct MultiPanes<Pane: View>: View {
     let model: BrowserModel
@@ -56,6 +55,8 @@ struct MultiPanes<Pane: View>: View {
 enum PaneMetrics {
     /// The gap of chrome between panes, which is also the divider's hit area.
     static let gap: CGFloat = 6
+    /// The height of a pane's own toolbar (`PaneBar`).
+    static let barHeight: CGFloat = 30
     static let minimumPane = CGSize(width: 260, height: 160)
 
     /// A pane would be under `minimumPane`, so only the focused one shows.
@@ -64,47 +65,17 @@ enum PaneMetrics {
     }
 }
 
-/// One pane: a title bar over the page, and the focused pane's ring.
+/// One pane: its bar over the page, and the focused pane's ring.
 private struct PaneFrame<Content: View>: View {
     let model: BrowserModel
     let tab: Tab
     let focused: Bool
     let ring: Bool
     let content: Content
-    @Environment(\.chromeTheme) private var theme
-
-    static var titleHeight: CGFloat { 24 }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                FaviconView(url: tab.url, size: 12)
-                Text(tab.displayTitle)
-                    .chromeFont(size: 11, weight: focused ? .semibold : .regular)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundStyle(focused ? .primary : .secondary)
-                Spacer(minLength: 4)
-                Button {
-                    model.removeFromView(tab)
-                } label: {
-                    Image(systemName: "xmark").chromeFont(size: 9, weight: .semibold)
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Remove from View: the tab stays in the strip")
-                .accessibilityLabel("Remove \(tab.displayTitle) from the view")
-            }
-            .padding(.horizontal, 8)
-            .frame(height: Self.titleHeight)
-            .frame(maxWidth: .infinity)
-            .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
-            .contentShape(Rectangle())
-            .onTapGesture { model.select(tab) }
-            // Drag the title bar to move the pane onto another, or out to the strip.
-            .modifier(TabDrag(tab: tab, enabled: true, strip: false))
+            PaneBar(model: model, tab: tab, focused: focused)
             content
         }
         // Inside the pane's frame, by brightness alone: a dark ring with a light one inside it, so it shows on light
@@ -120,6 +91,100 @@ private struct PaneFrame<Content: View>: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(focused ? "Focused pane, \(tab.displayTitle)" : "Pane, \(tab.displayTitle)")
+    }
+}
+
+/// A pane's own toolbar: the site icon (drag it to move the pane), back, forward, reload, an address field that
+/// navigates this pane, and × (Remove from View). Typing in the field focuses the pane; Return goes there through the
+/// window's address handling (search, typed addresses, settings links). ⌘L lands in the focused pane's field.
+private struct PaneBar: View {
+    let model: BrowserModel
+    let tab: Tab
+    let focused: Bool
+    @State private var draft = ""
+    @FocusState private var editing: Bool
+    @Environment(\.chromeTheme) private var theme
+
+    private var shownAddress: String { tab.url.map(BrowserModel.displayString) ?? "" }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            FaviconView(url: tab.url, size: 12)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+                .help("Drag to move this pane")
+                .modifier(TabDrag(tab: tab, enabled: true, strip: false))
+            button("chevron.left", "Back", enabled: tab.canGoBack) { tab.webView?.goBack() }
+            button("chevron.right", "Forward", enabled: tab.canGoForward) { tab.webView?.goForward() }
+            button(tab.isLoading ? "xmark" : "arrow.clockwise", tab.isLoading ? "Stop" : "Reload", enabled: tab.url != nil && tab.settingsPane == nil) {
+                if tab.isLoading { tab.webView?.stopLoading() } else { tab.reload() }
+            }
+            TextField("Address", text: $draft, prompt: Text("Search or enter address"))
+                .textFieldStyle(.plain)
+                .chromeFont(size: 12)
+                .lineLimit(1)
+                .focused($editing)
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(editing ? 0.10 : 0.06)))
+                .onSubmit {
+                    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { return }
+                    if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+                    model.navigate(text)
+                    editing = false
+                }
+                .onChange(of: editing) { _, now in
+                    if now {
+                        // The keyboard stays in this field: selecting a tab otherwise hands it to the page.
+                        if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+                        DispatchQueue.main.async { if editing { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) } }
+                    } else {
+                        draft = shownAddress
+                    }
+                }
+                .onChange(of: shownAddress) { _, new in if !editing { draft = new } }
+                .onChange(of: model.paneAddressFocusRequest) { if focused { editing = true } }
+                .onAppear { draft = shownAddress }
+                // Escape gives up the edit: the field shows the page's address again.
+                .onExitCommand {
+                    draft = shownAddress
+                    editing = false
+                }
+                .accessibilityLabel("Address of \(tab.displayTitle)")
+                .padding(.horizontal, 4)
+            Button {
+                model.removeFromView(tab)
+            } label: {
+                Image(systemName: "xmark").chromeFont(size: 9, weight: .semibold)
+                    .frame(width: 20, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Remove from View: the tab stays, in the view's menu in the strip")
+            .accessibilityLabel("Remove \(tab.displayTitle) from the view")
+        }
+        .padding(.horizontal, 4)
+        .frame(height: PaneMetrics.barHeight)
+        .frame(maxWidth: .infinity)
+        .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
+        .overlay(alignment: .bottom) {
+            TabProgressBar(tab: tab, accent: theme?.accent ?? Color.accentColor, reducesMotion: AppModel.shared.reducesMotion)
+        }
+    }
+
+    private func button(_ symbol: String, _ help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .chromeFont(size: 11, weight: .medium)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(!enabled)
+        .help(help)
+        .accessibilityLabel("\(help), \(tab.displayTitle)")
     }
 }
 
@@ -210,78 +275,5 @@ struct SinglePaneTarget: ViewModifier {
                 }
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.paneArea = $0 }
         }
-    }
-}
-
-/// The view's bracket in the tab strip (underline) or sidebar (leading edge): the first tab's piece opens toward the
-/// rest, the last's closes it, and the ones between are straight, so the run reads as one shape.
-nonisolated struct SplitBracket: Shape {
-    let piece: SplitSide
-    let vertical: Bool
-
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        let tick: CGFloat = 4
-        if vertical {
-            let x = r.minX + 1.5
-            switch piece {
-            case .first:
-                p.move(to: CGPoint(x: x + tick, y: r.minY + 3)); p.addLine(to: CGPoint(x: x, y: r.minY + 3)); p.addLine(to: CGPoint(x: x, y: r.maxY + 1))
-            case .middle:
-                p.move(to: CGPoint(x: x, y: r.minY - 1)); p.addLine(to: CGPoint(x: x, y: r.maxY + 1))
-            case .last:
-                p.move(to: CGPoint(x: x, y: r.minY - 1)); p.addLine(to: CGPoint(x: x, y: r.maxY - 3)); p.addLine(to: CGPoint(x: x + tick, y: r.maxY - 3))
-            }
-        } else {
-            let y = r.maxY + 3
-            switch piece {
-            case .first:
-                p.move(to: CGPoint(x: r.minX + 3, y: y - tick)); p.addLine(to: CGPoint(x: r.minX + 3, y: y)); p.addLine(to: CGPoint(x: r.maxX + 1, y: y))
-            case .middle:
-                p.move(to: CGPoint(x: r.minX - 1, y: y)); p.addLine(to: CGPoint(x: r.maxX + 1, y: y))
-            case .last:
-                p.move(to: CGPoint(x: r.minX - 1, y: y)); p.addLine(to: CGPoint(x: r.maxX - 3, y: y)); p.addLine(to: CGPoint(x: r.maxX - 3, y: y - tick))
-            }
-        }
-        return p
-    }
-}
-
-extension View {
-    /// The view's bracket on a strip tab or sidebar row that is in a multi view.
-    @ViewBuilder
-    func splitBracket(_ piece: SplitSide?, vertical: Bool, ink: Color) -> some View {
-        if let piece {
-            overlay {
-                SplitBracket(piece: piece, vertical: vertical)
-                    .stroke(ink.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                    .allowsHitTesting(false)
-            }
-        } else {
-            self
-        }
-    }
-}
-
-/// Where a tab sits in its multi view's run in the strip.
-enum SplitSide { case first, middle, last }
-
-extension BrowserModel {
-    /// Where `tab` is in its multi view's run of strip tabs, nil when it is in none.
-    func splitSide(of tab: Tab) -> SplitSide? {
-        guard let split = split(of: tab) else { return nil }
-        let members = Set(split.tabIDs)
-        let run = tabs.filter { members.contains($0.id) }
-        if run.first === tab { return .first }
-        if run.last === tab { return .last }
-        return .middle
-    }
-
-    /// What VoiceOver adds for a tab in a multi view.
-    func spokenSplit(of tab: Tab, after state: String) -> String {
-        let others = others(of: tab)
-        guard !others.isEmpty else { return state }
-        let phrase = "in a view with " + others.map(\.displayTitle).joined(separator: ", ")
-        return state.isEmpty ? phrase : "\(state), \(phrase)"
     }
 }

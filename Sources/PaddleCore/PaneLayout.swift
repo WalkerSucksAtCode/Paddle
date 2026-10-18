@@ -50,6 +50,8 @@ public struct PaneLayout: Equatable, Sendable {
     public static let ratioRange: ClosedRange<Double> = 0.15...0.85
 
     public private(set) var root: PaneNode
+    /// The view's name in the tab strip, set by Rename View; nil shows the focused pane's site.
+    public var name: String?
 
     public init?(root: PaneNode) {
         guard let root = Self.cleaned(root), root.tabs.count >= 2, root.tabs.count <= Self.maxPanes,
@@ -69,6 +71,12 @@ public struct PaneLayout: Equatable, Sendable {
     }
 
     public var tabs: [String] { root.tabs }
+    /// The same layout without a name.
+    public var unnamed: PaneLayout {
+        var copy = self
+        copy.name = nil
+        return copy
+    }
     public var count: Int { tabs.count }
     public func contains(_ id: String) -> Bool { tabs.contains(id) }
     public var isFull: Bool { count >= Self.maxPanes }
@@ -125,7 +133,9 @@ public struct PaneLayout: Equatable, Sendable {
         guard let layout else { return nil }
         let names = layout.tabs.compactMap(rename)
         guard Set(names).count == names.count else { return nil }
-        return PaneLayout(root: Self.mapTabs(layout.root) { rename($0) ?? $0 })
+        var renamed = PaneLayout(root: Self.mapTabs(layout.root) { rename($0) ?? $0 })
+        renamed?.name = name
+        return renamed
     }
 
     /// Sets the ratio of the split at `path`, clamped to `ratioRange`. False for a path that isn't a split.
@@ -349,16 +359,28 @@ extension PaneNode: Codable {
     }
 }
 
+/// The root node's object, with the view's `name` beside its keys when it has one.
 extension PaneLayout: Codable {
+    private enum NameKey: String, CodingKey { case name }
+
     public init(from decoder: Decoder) throws {
         let node = try PaneNode(from: decoder)
-        guard let layout = PaneLayout(root: node) else {
+        guard var layout = PaneLayout(root: node) else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "not 2 to \(Self.maxPanes) distinct tabs"))
         }
+        let c = try decoder.container(keyedBy: NameKey.self)
+        let name = ((try? c.decodeIfPresent(String.self, forKey: .name)) ?? nil)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        layout.name = name?.isEmpty == false ? String(name!.prefix(60)) : nil
         self = layout
     }
 
-    public func encode(to encoder: Encoder) throws { try root.encode(to: encoder) }
+    public func encode(to encoder: Encoder) throws {
+        try root.encode(to: encoder)
+        if let name {
+            var c = encoder.container(keyedBy: NameKey.self)
+            try c.encode(name, forKey: .name)
+        }
+    }
 
     /// A saved layout against the window's tabs now: tabs that are gone taken out (their siblings take the space);
     /// nil when fewer than two are left.

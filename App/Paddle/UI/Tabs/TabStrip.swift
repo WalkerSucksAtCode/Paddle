@@ -12,23 +12,34 @@ struct TabStrip: View {
     private let leadingInset: CGFloat = 78
     private var pinnedWidth: CGFloat { 40 * scale }
 
-    /// One thing in the strip: a group's label or a tab. The tabs of a collapsed group are left out.
+    /// One thing in the strip: a group's label, a multi view (in place of its tabs) or a tab. The tabs of a
+    /// collapsed group are left out.
     private struct StripItem: Identifiable {
         var group: TabGroup?
+        var view: BrowserModel.Split?
         var tab: Tab?
-        var id: UUID { group?.id ?? tab?.id ?? UUID() }
+        var id: UUID { group?.id ?? view?.id ?? tab?.id ?? UUID() }
     }
 
-    /// The strip in order: a label before each group's first tab, and no tabs of collapsed groups.
+    /// The strip in order: a label before each group's first tab, one item for each multi view where its first tab
+    /// is, and no tabs of collapsed groups.
     private var stripItems: [StripItem] {
         var items: [StripItem] = []
         var lastGroup: UUID?
+        var shownViews = Set<UUID>()
+        func add(_ tab: Tab) {
+            if let view = model.split(of: tab) {
+                if shownViews.insert(view.id).inserted { items.append(StripItem(view: view)) }
+            } else {
+                items.append(StripItem(tab: tab))
+            }
+        }
         for tab in model.tabs {
             if let group = model.group(of: tab) {
                 if group.id != lastGroup { items.append(StripItem(group: group)) }
-                if !group.isCollapsed { items.append(StripItem(tab: tab)) }
+                if !group.isCollapsed { add(tab) }
             } else {
-                items.append(StripItem(tab: tab))
+                add(tab)
             }
             lastGroup = tab.groupID
         }
@@ -43,10 +54,10 @@ struct TabStrip: View {
         GeometryReader { geometry in
             let items = stripItems
             let pinnedCount = CGFloat(model.tabs.filter(\.isPinned).count)
-            let shownUnpinned = CGFloat(items.filter { $0.tab.map { !$0.isPinned } ?? false }.count)
+            let shownUnpinned = CGFloat(items.filter { $0.view != nil || ($0.tab.map { !$0.isPinned } ?? false) }.count)
             let labelsWidth = items.reduce(CGFloat(0)) { $0 + ($1.group.map(labelWidth) ?? 0) }
             let switcherWidth = model.spaces.count > 1 ? SpaceSwitcher.width * scale + 4 : 0
-            let available = geometry.size.width - leadingInset - switcherWidth - 44 - pinnedCount * (pinnedWidth + 2) - labelsWidth - 2 * CGFloat(items.filter { $0.tab == nil }.count)
+            let available = geometry.size.width - leadingInset - switcherWidth - 44 - pinnedCount * (pinnedWidth + 2) - labelsWidth - 2 * CGFloat(items.filter { $0.group != nil }.count)
             let width = shownUnpinned == 0 ? 0 : min(240 * scale, max(TabButton.alwaysCloseWidth * scale, available / shownUnpinned - 2))
             let tabsWidth = pinnedCount * pinnedWidth + shownUnpinned * width + labelsWidth + 2 * max(0, CGFloat(items.count) - 1)
 
@@ -66,6 +77,9 @@ struct TabStrip: View {
                             ForEach(items) { item in
                                 if let group = item.group {
                                     TabGroupLabel(group: group, model: model)
+                                } else if let view = item.view {
+                                    ViewStripButton(split: view, model: model, width: width)
+                                        .transition(.opacity)
                                 } else if let tab = item.tab {
                                     TabButton(tab: tab, model: model, group: model.group(of: tab), isRenaming: model.renamingTabID == tab.id,
                                               width: tab.isPinned ? pinnedWidth : width)
@@ -92,7 +106,9 @@ struct TabStrip: View {
                     // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
                     .onChange(of: model.selectedID) { _, id in
                         guard let id else { return }
-                        withAnimation(reducesMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(id) }
+                        // A tab in a multi view is shown by the view's item.
+                        let shown = model.tabs.first { $0.id == id }.flatMap(model.split(of:))?.id ?? id
+                        withAnimation(reducesMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(shown) }
                     }
                 }
                 Button {
@@ -183,13 +199,6 @@ struct TabButton: View {
         HStack(spacing: 6) {
             icon
             if !tab.isPinned {
-                if model.splitSide(of: tab) == .first, !model.others(of: tab).isEmpty {
-                    let others = model.others(of: tab)
-                    Image(systemName: others.count == 1 ? "rectangle.split.2x1" : "rectangle.split.2x2")
-                        .chromeFont(size: 10)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("In a view with \(others.map(\.displayTitle).joined(separator: ", "))")
-                }
                 if isRenaming {
                     TabRenameField(tab: tab, model: model)
                 } else {
@@ -274,7 +283,6 @@ struct TabButton: View {
                     .padding(.horizontal, 3)
             }
         }
-        .splitBracket(model.splitSide(of: tab), vertical: false, ink: theme?.text ?? .primary)
         .contentShape(Rectangle())
         .onTapGesture {
             SwitchTrace.tapped(tab)
@@ -368,7 +376,7 @@ struct TabButton: View {
 
     /// The state, plus the group the tab is in.
     private var spokenValue: String {
-        let state = model.spokenSplit(of: tab, after: Self.spokenState(tab, audio: audio))
+        let state = Self.spokenState(tab, audio: audio)
         guard let group else { return state }
         let name = group.name.isEmpty ? "Unnamed" : group.name
         return state.isEmpty ? "in group \(name)" : "\(state), in group \(name)"

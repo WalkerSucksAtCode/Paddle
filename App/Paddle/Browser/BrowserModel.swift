@@ -292,16 +292,17 @@ final class BrowserModel {
         return index
     }
 
-    func select(_ tab: Tab) {
+    /// `focusPage` false leaves the keyboard where it is (a pane's address field taking a click).
+    func select(_ tab: Tab, focusPage: Bool = true) {
         // A tab of another space: show that space first.
         if !tabs.contains(where: { $0 === tab }), let home = stashedSpace(of: tab) {
             switchToSpace(home.id, selecting: tab)
             return
         }
-        activate(tab, previous: selectedTab)
+        activate(tab, previous: selectedTab, focusPage: focusPage)
     }
 
-    private func activate(_ tab: Tab, previous: Tab?) {
+    private func activate(_ tab: Tab, previous: Tab?, focusPage: Bool = true) {
         // Selecting any tab but the one under the preview closes it (another tab, a space switch, a popup).
         if preview != nil, tab !== previewSource { closePreview() }
         let now = Date()
@@ -337,7 +338,7 @@ final class BrowserModel {
             syncAddress()
         }
         findNoMatch = false
-        controller?.focusWebView()
+        if focusPage { controller?.focusWebView() }
         AppModel.shared.sessionChanged()
         if previous !== tab { SwitchTrace.activated(tab, state: state) }
     }
@@ -835,6 +836,37 @@ final class BrowserModel {
     /// Where a tab being dragged over the content area would land: a pane and an edge (nil: the middle, a swap or
     /// replace). The content area draws it.
     var paneDropHint: (target: UUID, edge: PaneEdge?)?
+
+    /// Incremented to put the keyboard in the focused pane's address field (⌘L in a multi view).
+    var paneAddressFocusRequest = 0
+    /// The view whose Rename View popover is open in the strip or sidebar.
+    var renamingViewID: UUID?
+
+    /// What the strip calls `split`: its name, else the focused (or most recently used) pane's site.
+    func displayName(of split: Split) -> String {
+        if let name = split.layout.name { return name }
+        let shown = panes(of: split)
+        guard let lead = shown.first(where: { $0.id == selectedID }) ?? shown.max(by: { $0.lastActive < $1.lastActive }) else { return "View" }
+        if let host = lead.url?.host(), !host.isEmpty { return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host }
+        return lead.displayTitle
+    }
+
+    /// Rename View: `name` empty or blank goes back to the site.
+    func renameView(_ split: Split, to name: String) {
+        guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        splits[at].layout.name = trimmed.isEmpty ? nil : String(trimmed.prefix(60))
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Shows `split` with its most recently used pane focused.
+    func selectView(_ split: Split) {
+        guard let lead = panes(of: split).max(by: { $0.lastActive < $1.lastActive }) else { return }
+        select(lead)
+    }
+
+    /// The view `id` names, in this space.
+    func view(id: UUID) -> Split? { splits.first { $0.id == id } }
 
     /// The multi view `tab` is in; the active space's only.
     func split(of tab: Tab) -> Split? {
@@ -1525,7 +1557,12 @@ final class BrowserModel {
         addressText = selectedTab?.url.map(Self.displayString) ?? ""
     }
 
+    /// ⌘L and New Tab: the window's address field, or in a multi view the focused pane's.
     func focusAddress() {
+        if let selected = selectedTab, split(of: selected) != nil {
+            paneAddressFocusRequest += 1
+            return
+        }
         focusAddressRequest += 1
     }
 

@@ -126,9 +126,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         guard model.paneFrames.count > 1, model.preview == nil, let window, event.window === window, let root = window.contentView else { return }
         let local = root.convert(event.locationInWindow, from: nil)
         let point = root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
-        // The title bar has its own buttons (× must not move the focus first); a tap on its title selects by itself.
+        // The pane's bar has its own controls (× must not move the focus first); its address field focuses by itself.
         guard let hit = model.paneFrames.first(where: { key, frame in
-                  key != model.selectedID && frame.contains(point) && point.y > frame.minY + 24
+                  key != model.selectedID && frame.contains(point) && point.y > frame.minY + PaneMetrics.barHeight
               })?.key,
               let tab = model.tabs.first(where: { $0.id == hit }) else { return }
         DispatchQueue.main.async { [weak self] in self?.model.select(tab) }

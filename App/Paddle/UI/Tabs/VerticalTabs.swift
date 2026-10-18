@@ -31,11 +31,13 @@ struct VerticalTabsSidebar: View {
     /// One row of the list: a group's header or a tab (with its group, looked up once for the whole list).
     private enum Item: Identifiable {
         case group(TabGroup, count: Int)
+        case view(BrowserModel.Split, group: TabGroup?)
         case tab(Tab, group: TabGroup?)
 
         var id: UUID {
             switch self {
             case .group(let group, _): group.id
+            case .view(let view, _): view.id
             case .tab(let tab, _): tab.id
             }
         }
@@ -48,12 +50,21 @@ struct VerticalTabsSidebar: View {
         for tab in model.tabs { if let id = tab.groupID { counts[id, default: 0] += 1 } }
         var items: [Item] = []
         var lastGroup: UUID?
+        var shownViews = Set<UUID>()
+        // A multi view is one row where its first tab is.
+        func add(_ tab: Tab, _ group: TabGroup?) {
+            if let view = model.split(of: tab) {
+                if shownViews.insert(view.id).inserted { items.append(.view(view, group: group)) }
+            } else {
+                items.append(.tab(tab, group: group))
+            }
+        }
         for tab in model.tabs where !tab.isPinned {
             if let id = tab.groupID, let group = groupsByID[id] {
                 if id != lastGroup { items.append(.group(group, count: counts[id] ?? 0)) }
-                if !group.isCollapsed { items.append(.tab(tab, group: group)) }
+                if !group.isCollapsed { add(tab, group) }
             } else {
-                items.append(.tab(tab, group: nil))
+                add(tab, nil)
             }
             lastGroup = tab.groupID
         }
@@ -168,6 +179,9 @@ struct VerticalTabsSidebar: View {
                         case .group(let group, let count):
                             SidebarGroupHeader(group: group, count: count, model: model, iconsOnly: collapsed)
                                 .id(item.id)
+                        case .view(let view, _):
+                            ViewSidebarRow(split: view, model: model, iconsOnly: collapsed)
+                                .id(item.id)
                         case .tab(let tab, let group):
                             SidebarTabRow(tab: tab, model: model, group: group, isRenaming: model.renamingTabID == tab.id, iconsOnly: collapsed)
                                 .id(item.id)
@@ -183,7 +197,9 @@ struct VerticalTabsSidebar: View {
             // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
             .onChange(of: model.selectedID) { _, id in
                 guard let id else { return }
-                withAnimation(reducesMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(id) }
+                // A tab in a multi view is shown by the view's item.
+                let shown = model.tabs.first { $0.id == id }.flatMap(model.split(of:))?.id ?? id
+                withAnimation(reducesMotion ? nil : .easeOut(duration: 0.15)) { proxy.scrollTo(shown) }
             }
         }
     }
@@ -316,7 +332,7 @@ private struct SidebarTabBehavior: ViewModifier {
     }
 
     private var spokenValue: String {
-        let state = model.spokenSplit(of: tab, after: TabButton.spokenState(tab, audio: audio))
+        let state = TabButton.spokenState(tab, audio: audio)
         guard let group else { return state }
         let name = group.name.isEmpty ? "Unnamed" : group.name
         return state.isEmpty ? "in group \(name)" : "\(state), in group \(name)"
@@ -392,13 +408,6 @@ private struct SidebarTabRow: View {
         HStack(spacing: 8) {
             TabStateIcon(tab: tab, audioBadge: iconsOnly)
             if !iconsOnly {
-                if model.splitSide(of: tab) == .first, !model.others(of: tab).isEmpty {
-                    let others = model.others(of: tab)
-                    Image(systemName: others.count == 1 ? "rectangle.split.2x1" : "rectangle.split.2x2")
-                        .chromeFont(size: 10)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel("In a view with \(others.map(\.displayTitle).joined(separator: ", "))")
-                }
                 if isRenaming {
                     TabRenameField(tab: tab, model: model)
                 } else {
@@ -456,7 +465,6 @@ private struct SidebarTabRow: View {
             }
         }
         .padding(.leading, group != nil && !iconsOnly ? 10 : 0)
-        .splitBracket(model.splitSide(of: tab), vertical: true, ink: theme?.text ?? .primary)
         .modifier(SidebarTabBehavior(
             tab: tab, model: model, group: group, isRenaming: isRenaming, inlineRename: !iconsOnly,
             tooltip: TabButton.tooltip(tab, audio: audio, memory: hoverMemory)

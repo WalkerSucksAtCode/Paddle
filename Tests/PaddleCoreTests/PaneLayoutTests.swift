@@ -129,4 +129,18 @@ struct PaneLayoutTests {
         #expect(l.mapped { $0 == "a" ? $0 : nil } == nil)
         #expect(l.mapped { _ in "same" } == nil)
     }
+
+    @Test func nameIsSavedAndKeptThroughEdits() throws {
+        var l = try layout()
+        l.name = "Research"
+        l.insert("c", at: "b", edge: .bottom)
+        let back = try JSONDecoder().decode(PaneLayout.self, from: JSONEncoder().encode(l))
+        #expect(back.name == "Research" && back == l)
+        #expect(l.removing("c")?.name == "Research")
+        #expect(l.mapped { $0.uppercased() }?.name == "Research")
+        let blank = try JSONDecoder().decode(PaneLayout.self, from: Data(#"{"name":"  ","first":{"tab":"a"},"second":{"tab":"b"}}"#.utf8))
+        #expect(blank.name == nil)
+        let unnamed = try layout()
+        #expect(!String(decoding: try JSONEncoder().encode(unnamed), as: UTF8.self).contains("name"))
+    }
 }

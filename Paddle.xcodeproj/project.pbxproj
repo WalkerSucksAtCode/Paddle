@@ -62,6 +62,7 @@
 		6C8D7572F5B67720705C1C5E /* ReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDF03CF8C915E7FA432F7B4C /* ReaderView.swift */; };
 		71DD83DB9877EB04B0FBE55C /* PDFToolbarHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22F4A5F2E7709D55FB100130 /* PDFToolbarHUD.swift */; };
 		746D8AE754715FD5F613325D /* Scriptlets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */; };
+		7705A324728754EEC878C999 /* ViewItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED9B208736D3CD78F794EA09 /* ViewItems.swift */; };
 		7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622C488303FD517D47056F39 /* StoreInstaller.swift */; };
 		82D2196BCAE45461C6DEEDFD /* PrivacySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7ED48B391F11998BD4520C /* PrivacySettings.swift */; };
 		8682F6C461619D04A7436F15 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 482A1E734550D576E90F7F71 /* Assets.xcassets */; };
@@ -241,6 +242,7 @@
 		EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPSOnlyNotice.swift; sourceTree = "<group>"; };
 		EC4ED3DF4697D613FB8552FB /* SpaceViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceViews.swift; sourceTree = "<group>"; };
 		ED225DB33CB74BED30E47DCE /* ControlBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlBridge.swift; sourceTree = "<group>"; };
+		ED9B208736D3CD78F794EA09 /* ViewItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewItems.swift; sourceTree = "<group>"; };
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
 		F09575E91B2DFAA356C42768 /* ControlBridge+Tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControlBridge+Tools.swift"; sourceTree = "<group>"; };
 		F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeSocketServer.swift; sourceTree = "<group>"; };
@@ -454,6 +456,7 @@
 				8DF14F2DBAEEBAABD0ED0C61 /* TabMenus.swift */,
 				02550A60C504642F9EFF0FFD /* TabStrip.swift */,
 				91D871296CDB0946EFB78E2D /* VerticalTabs.swift */,
+				ED9B208736D3CD78F794EA09 /* ViewItems.swift */,
 				8AA4E6D2C4A45F579B5857E2 /* WindowChrome.swift */,
 			);
 			path = Tabs;
@@ -702,6 +705,7 @@
 				0CF43FCD9929F0D48DC6C8DA /* ToolbarMenu.swift in Sources */,
 				B778B37FBC0B67633F253D8E /* TranslatePopover.swift in Sources */,
 				C0C5FE889892AFC3C059A05B /* VerticalTabs.swift in Sources */,
+				7705A324728754EEC878C999 /* ViewItems.swift in Sources */,
 				FF747FA089745F3FE52DA3CB /* WebContainer.swift in Sources */,
 				CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */,
 				F5BFE827260C731264C4F715 /* WebInspector.swift in Sources */,
