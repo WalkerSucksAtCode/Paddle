@@ -16,6 +16,11 @@ struct NewTabPage: View {
     private var showsFrequent: Bool { model.config.newTabFrequentSites && !model.isPrivate }
     private var showsNotifications: Bool { model.config.newTabNotifications && !model.isPrivate }
     private var inbox: NotificationInbox { .shared }
+    /// The inbox without the sites hidden from New Tab (`newTabHiddenNotifications`).
+    private var shownNotifications: [NotificationInbox.Entry] {
+        let hidden = Set(model.config.newTabHiddenNotifications.map { $0.lowercased() })
+        return inbox.entries.filter { !hidden.contains($0.host.lowercased()) }
+    }
     private var feeds: FeedStore { .shared }
 
     var body: some View {
@@ -56,8 +61,8 @@ struct NewTabPage: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            if showsNotifications, !inbox.entries.isEmpty {
-                                NotificationsSection(inbox: inbox)
+                            if showsNotifications, !shownNotifications.isEmpty {
+                                NotificationsSection(inbox: inbox, entries: shownNotifications, hidden: model.config.newTabHiddenNotifications)
                             }
                             if !model.config.newTabFeeds.isEmpty, !model.isPrivate {
                                 NewsSection(feeds: feeds, model: model)
@@ -111,9 +116,11 @@ struct NewTabPage: View {
 // MARK: - Notifications and News
 
 /// This run's website notifications, newest first: the site, the title and a line of the body. A click shows the
-/// site's tab as clicking the notification does.
+/// site's tab as clicking the notification does; right-click hides the site from New Tab.
 private struct NotificationsSection: View {
     let inbox: NotificationInbox
+    let entries: [NotificationInbox.Entry]
+    let hidden: [String]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -128,7 +135,7 @@ private struct NotificationsSection: View {
                     .chromeFont(size: 11)
             }
             VStack(spacing: 0) {
-                ForEach(inbox.entries.prefix(8)) { entry in
+                ForEach(entries.prefix(8)) { entry in
                     Button {
                         WebsiteNotifications.shared.showSite(origin: entry.origin)
                     } label: {
@@ -153,7 +160,13 @@ private struct NotificationsSection: View {
                     }
                     .buttonStyle(.plain)
                     .help("Show \(entry.host)")
-                    if entry != inbox.entries.prefix(8).last { Divider().padding(.leading, 12) }
+                    .contextMenu {
+                        Button("Hide \(entry.host) from New Tab") {
+                            Task { await AppModel.shared.writeConfigKey(.newTabHiddenNotifications, .array((hidden + [entry.host]).map { .string($0) })) }
+                        }
+                        Button("Remove This One") { inbox.remove(entry) }
+                    }
+                    if entry != entries.prefix(8).last { Divider().padding(.leading, 12) }
                 }
             }
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
@@ -189,6 +202,13 @@ private struct NewsSection: View {
                         model.selectedTab?.load(item.link)
                     } label: {
                         VStack(alignment: .leading, spacing: 6) {
+                            if let image = item.image {
+                                FeedThumbnail(url: image, feeds: feeds)
+                                    .frame(height: 112 * scale)
+                                    .frame(maxWidth: .infinity)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .padding(.bottom, 2)
+                            }
                             Text(item.title)
                                 .chromeFont(size: 13, weight: .medium)
                                 .lineLimit(3)
@@ -211,6 +231,26 @@ private struct NewsSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A story's picture, filling its frame (cropped), loaded when the card appears; a plain tint until then or if it
+/// can't be loaded.
+private struct FeedThumbnail: View {
+    let url: URL
+    let feeds: FeedStore
+    @State private var image: NSImage?
+
+    var body: some View {
+        Color.primary.opacity(0.06)
+            .overlay {
+                if let image {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                }
+            }
+            .clipped()
+            .accessibilityHidden(true)
+            .task(id: url) { image = await feeds.image(for: url, maxPixel: 640) }
     }
 }
 

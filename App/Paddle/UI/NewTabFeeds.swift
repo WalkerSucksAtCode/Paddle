@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import ImageIO
 import os
 import PaddleCore
 
@@ -135,6 +137,31 @@ final class FeedStore {
         } catch {
             return .failure(FeedError(message: error.localizedDescription))
         }
+    }
+
+    // MARK: - Pictures
+
+    @ObservationIgnored private let images = NSCache<NSURL, NSImage>()
+    private static let maxImageBytes = 3 * 1024 * 1024
+
+    /// A story's picture, fetched like the feeds (no cookies), at most 3 MB, scaled down to `maxPixel` on its longer
+    /// side and kept in memory for this run. Nil when it can't be had.
+    func image(for url: URL, maxPixel: CGFloat) async -> NSImage? {
+        if let cached = images.object(forKey: url as NSURL) { return cached }
+        var request = URLRequest(url: url)
+        request.setValue("image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await Self.session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              data.count <= Self.maxImageBytes,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+              ] as CFDictionary) else { return nil }
+        let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        images.setObject(image, forKey: url as NSURL)
+        return image
     }
 
     private func loadCache(feeds: [String]) {

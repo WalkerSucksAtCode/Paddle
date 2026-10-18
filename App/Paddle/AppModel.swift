@@ -605,6 +605,7 @@ final class AppModel {
             case .newTabExtension: old.newTabExtension != new.newTabExtension
             case .newTabFeeds: old.newTabFeeds != new.newTabFeeds
             case .newTabNotifications: old.newTabNotifications != new.newTabNotifications
+            case .newTabHiddenNotifications: old.newTabHiddenNotifications != new.newTabHiddenNotifications
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

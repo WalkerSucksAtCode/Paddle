@@ -83,7 +83,20 @@ struct GeneralPane: View {
                 ConfigToggle("Show frequently visited sites", .newTabFrequentSites, \.newTabFrequentSites, model: model,
                              help: "A Frequently visited row on the New Tab page, from history; never in private windows.")
                 ConfigToggle("Show website notifications", .newTabNotifications, \.newTabNotifications, model: model,
-                             help: "The notifications sites sent since Paddle opened, newest first. Kept in memory only; never private windows'.")
+                             help: "The notifications sites sent since Paddle opened, newest first. Kept in memory only; never private windows'. Right-click one on New Tab to hide its site.")
+                ForEach(model.file.newTabHiddenNotifications, id: \.self) { host in
+                    LabeledContent {
+                        Button("Show") {
+                            let rest = model.file.newTabHiddenNotifications.filter { $0 != host }
+                            Task { await model.saveKey(.newTabHiddenNotifications, .array(rest.map { .string($0) })) }
+                        }
+                        .disabled(model.controlsDisabled)
+                    } label: {
+                        Text(host)
+                        Text("Hidden from New Tab's notifications").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .help("newTabHiddenNotifications in config.json. Its banners still show; Settings > Sites decides those.")
+                }
                 FeedRows(model: model)
             }
             Section("Trackpad & Keyboard") {

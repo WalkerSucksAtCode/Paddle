@@ -216,6 +216,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabFeeds: [String]
     /// New Tab lists the website notifications of this run (never private windows'), newest first.
     public var newTabNotifications: Bool
+    /// Hosts whose notifications New Tab leaves out (their banners still show; `sites.<host>.notifications` decides those).
+    public var newTabHiddenNotifications: [String]
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -253,7 +255,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -312,6 +314,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabExtension: String = "",
         newTabFeeds: [String] = [],
         newTabNotifications: Bool = false,
+        newTabHiddenNotifications: [String] = [],
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -385,6 +388,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.newTabExtension = newTabExtension
         self.newTabFeeds = newTabFeeds
         self.newTabNotifications = newTabNotifications
+        self.newTabHiddenNotifications = newTabHiddenNotifications
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -466,6 +470,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabExtension = c.decodeValue(.newTabExtension, d.newTabExtension, issues)
         newTabFeeds = c.decodeStrings(.newTabFeeds, d.newTabFeeds, issues)
         newTabNotifications = c.decodeValue(.newTabNotifications, d.newTabNotifications, issues)
+        newTabHiddenNotifications = c.decodeStrings(.newTabHiddenNotifications, d.newTabHiddenNotifications, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)

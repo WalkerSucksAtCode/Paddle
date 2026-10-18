@@ -10,14 +10,18 @@ public struct FeedItem: Codable, Equatable, Sendable, Identifiable {
     public var published: Date?
     /// The feed's own title (the site's name), or its host when it has none.
     public var source: String
+    /// The story's picture: the feed's thumbnail or image enclosure, else the first image in its text. https only
+    /// (an http address is upgraded).
+    public var image: URL?
 
     public var id: String { link.absoluteString }
 
-    public init(title: String, link: URL, published: Date?, source: String) {
+    public init(title: String, link: URL, published: Date?, source: String, image: URL? = nil) {
         self.title = title
         self.link = link
         self.published = published
         self.source = source
+        self.image = image
     }
 }
 
@@ -37,7 +41,7 @@ public enum FeedParser {
         let source = delegate.feedTitle.isEmpty ? (base.host() ?? base.absoluteString) : delegate.feedTitle
         let items = delegate.entries.compactMap { entry -> FeedItem? in
             guard !entry.title.isEmpty, let link = entry.link else { return nil }
-            return FeedItem(title: entry.title, link: link, published: entry.date, source: source)
+            return FeedItem(title: entry.title, link: link, published: entry.date, source: source, image: entry.image ?? entry.inlineImage)
         }
         return (source, sortedNewestFirst(items))
     }
@@ -79,6 +83,29 @@ public enum FeedParser {
         return nil
     }
 
+    /// The first `<img src>` in an entry's HTML, resolved against `base` (https only).
+    static func firstImage(inHTML html: String, base: URL) -> URL? {
+        guard let regex = try? NSRegularExpression(pattern: #"<img\b[^>]*>"#, options: [.caseInsensitive]) else { return nil }
+        for match in regex.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
+            guard let r = Range(match.range, in: html), let src = attribute("src", in: String(html[r])) else { continue }
+            if let url = imageURL(decodeEntities(src), base: base) { return url }
+        }
+        return nil
+    }
+
+    /// `raw` as an image address Paddle may fetch: absolute, https (http is upgraded), not a data: URL.
+    static func imageURL(_ raw: String, base: URL) -> URL? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let absolute = URL(string: trimmed, relativeTo: base)?.absoluteURL,
+              var components = URLComponents(url: absolute, resolvingAgainstBaseURL: true) else { return nil }
+        switch components.scheme?.lowercased() {
+        case "https": break
+        case "http": components.scheme = "https"
+        default: return nil
+        }
+        return components.url
+    }
+
     private static func decodeEntities(_ text: String) -> String {
         text.replacingOccurrences(of: "&amp;", with: "&").replacingOccurrences(of: "&quot;", with: "\"")
             .replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&lt;", with: "<")
@@ -116,6 +143,10 @@ public enum FeedParser {
             var title = ""
             var link: URL?
             var date: Date?
+            /// From `media:thumbnail`, `media:content`, an image enclosure or `itunes:image`.
+            var image: URL?
+            /// The first image in the entry's description or content, used when it has no `image`.
+            var inlineImage: URL?
         }
 
         let base: URL
@@ -135,6 +166,9 @@ public enum FeedParser {
             path.append(element)
             text = ""
             if element == "item" || element == "entry" { current = Entry() }
+            if current != nil, current?.image == nil, let src = Self.imageAttribute(element, attributes) {
+                current?.image = FeedParser.imageURL(src, base: base)
+            }
             // Atom: <link href> (rel absent or "alternate").
             if element == "link", current != nil, let href = attributes["href"] {
                 let rel = attributes["rel"]?.lowercased() ?? "alternate"
@@ -161,6 +195,8 @@ public enum FeedParser {
                 case "guid": if current?.link == nil, let url = resolve(text) { current?.link = url }
                 case "pubdate", "published", "updated", "dc:date", "date":
                     if current?.date == nil { current?.date = FeedParser.date(text) }
+                case "description", "content:encoded", "content", "summary":
+                    if current?.inlineImage == nil { current?.inlineImage = FeedParser.firstImage(inHTML: text, base: base) }
                 case "item", "entry":
                     if let entry = current { entries.append(entry) }
                     current = nil
@@ -169,6 +205,29 @@ public enum FeedParser {
             } else if element == "title", feedTitle.isEmpty, path.count <= 3 {
                 feedTitle = FeedParser.plainText(text)
             }
+        }
+
+        /// The picture an element names: `media:thumbnail url`, `media:content url` of an image, an image
+        /// `enclosure` (RSS `url`, Atom `link rel="enclosure" href`) or `itunes:image href`.
+        static func imageAttribute(_ element: String, _ attributes: [String: String]) -> String? {
+            let type = attributes["type"]?.lowercased() ?? ""
+            switch element {
+            case "media:thumbnail": return attributes["url"]
+            case "media:content":
+                let medium = attributes["medium"]?.lowercased() ?? ""
+                let looksLikeImage = medium == "image" || type.hasPrefix("image/")
+                    || (medium.isEmpty && type.isEmpty && attributes["url"].map(isImagePath) == true)
+                return looksLikeImage ? attributes["url"] : nil
+            case "enclosure": return type.hasPrefix("image/") ? attributes["url"] : nil
+            case "link": return attributes["rel"]?.lowercased() == "enclosure" && type.hasPrefix("image/") ? attributes["href"] : nil
+            case "itunes:image": return attributes["href"]
+            default: return nil
+            }
+        }
+
+        private static func isImagePath(_ url: String) -> Bool {
+            let path = (URL(string: url)?.path() ?? url).lowercased()
+            return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"].contains { path.hasSuffix($0) }
         }
 
         private func resolve(_ raw: String) -> URL? {

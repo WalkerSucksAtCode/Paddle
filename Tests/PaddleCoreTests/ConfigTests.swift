@@ -25,7 +25,7 @@ struct ConfigTests {
         #expect(!config.tabKeyHighlightsLinks)
         #expect(!config.contactAutofill)
         #expect(config.newTabExtension.isEmpty)
-        #expect(config.newTabFeeds.isEmpty && !config.newTabNotifications)
+        #expect(config.newTabFeeds.isEmpty && !config.newTabNotifications && config.newTabHiddenNotifications.isEmpty)
     }
 
     @Test func browsingBehaviourKeysDecodeAndUnknownWordsFallBack() throws {
