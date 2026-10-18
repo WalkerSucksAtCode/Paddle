@@ -213,6 +213,8 @@ struct DownloadsView: View {
     let store: DownloadStore
     /// The window's privacy: a normal window doesn't list private downloads.
     let isPrivate: Bool
+    /// The window's profile's folder (`downloadFolder` may be set per profile).
+    var folder: URL = DownloadStore.folder
     @Environment(\.chromeScale) private var scale
 
     private var listed: [DownloadItem] { store.items(forPrivateWindow: isPrivate) }
@@ -236,7 +238,7 @@ struct DownloadsView: View {
                 Text("No downloads this session.").chromeFont(size: 11).foregroundStyle(.secondary)
             }
             Divider()
-            Button("Open Downloads Folder") { NSWorkspace.shared.open(DownloadStore.folder) }
+            Button("Open Downloads Folder") { NSWorkspace.shared.open(folder) }
                 .buttonStyle(.borderless)
                 .chromeFont(size: 12)
         }

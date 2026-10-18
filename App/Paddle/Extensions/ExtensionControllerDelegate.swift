@@ -42,7 +42,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
     ) async throws -> (any WKWebExtensionTab)? {
         guard let host else { throw PaddleExtensionError.noWindow }
         if let url = configuration.url { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
-        let url = configuration.url ?? app.newTabPageURL
+        let url = configuration.url ?? app.newTabPageURL(for: host.profileID)
         let target = (configuration.window as? ExtensionWindow)?.controller ?? app.frontExtensionWindow(for: extensionContext)
         guard let target else {
             let window = app.openWindow(url: url, profile: host.profileID)
@@ -73,7 +73,7 @@ final class ExtensionControllerDelegate: NSObject, WKWebExtensionControllerDeleg
         let urls = configuration.tabURLs
         for url in urls { try PaddleExtensionError.checkOpenable(url, for: extensionContext) }
         let window = moving.isEmpty
-            ? app.openWindow(url: urls.first ?? app.newTabPageURL, isPrivate: configuration.shouldBePrivate, profile: host.profileID)
+            ? app.openWindow(url: urls.first ?? app.newTabPageURL(for: host.profileID), isPrivate: configuration.shouldBePrivate, profile: host.profileID)
             : app.openWindow(isPrivate: configuration.shouldBePrivate, moving: moving)
         for url in moving.isEmpty ? Array(urls.dropFirst()) : urls { window.model.newTab(url: url, select: false) }
         let frame = configuration.frame

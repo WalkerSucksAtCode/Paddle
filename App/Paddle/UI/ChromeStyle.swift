@@ -40,10 +40,13 @@ struct ResolvedChromeTheme: Equatable {
 
     /// Nil when the theme, accent and tint change nothing.
     /// A window's `spaceTint` replaces the app's tint for that window.
-    init?(app: AppModel, dark: Bool, spaceTint: ColorPreset? = nil) {
-        let palette = app.activeTheme?.palette(dark: dark)
-        let tint = spaceTint?.color ?? app.tintChoice.color
-        let strength = spaceTint.map { app.effectiveTintStrength(dark: dark, tint: $0.color) } ?? app.effectiveTintStrength(dark: dark)
+    /// `profile`'s config may set its own theme, accent and tint.
+    init?(app: AppModel, dark: Bool, spaceTint: ColorPreset? = nil, profile: ProfileID = ProfileStore.defaultID) {
+        let config = app.config(for: profile)
+        let palette = app.activeTheme(in: config)?.palette(dark: dark)
+        let tint = spaceTint?.color ?? app.tintChoice(in: config).color
+        let strength = spaceTint.map { app.effectiveTintStrength(dark: dark, tint: $0.color, in: config) }
+            ?? app.effectiveTintStrength(dark: dark, in: config)
         func surface(_ base: PaddleCore.RGBColor?) -> (solid: Color?, overlay: Color?) {
             guard let tint, strength > 0 else { return (base.map { Color(rgb: $0) }, nil) }
             guard let base else { return (nil, Color(rgb: tint).opacity(strength)) }
@@ -58,7 +61,7 @@ struct ResolvedChromeTheme: Equatable {
         selectedTab = palette?.selectedTab.map { Color(rgb: $0) }
         text = palette?.text.map { Color(rgb: $0) }
         secondaryText = palette?.secondaryText.map { Color(rgb: $0) }
-        let accentRGB = app.accentChoice.color ?? palette?.accent
+        let accentRGB = app.accentChoice(in: config).color ?? palette?.accent
         accent = accentRGB.map { Color(rgb: $0) }
         onAccent = accentRGB.map { Color(rgb: $0.bestText()) }
         newTabBackground = palette?.newTabBackground.map { Color(rgb: $0) }

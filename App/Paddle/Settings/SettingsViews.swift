@@ -23,7 +23,7 @@ enum SettingsPane: String, CaseIterable {
         switch self {
         case .general: "Home page, search engine, start page, and download preferences."
         case .appearance: "Themes, custom theme builder, colors, text size, and accessibility options."
-        case .profiles: "Manage separate container profiles, cookies, and browsing data."
+        case .profiles: "Separate cookies, history and extensions per profile, and each profile's own settings."
         case .tabsMemory: "Tab freezing, automatic memory sleep, and background performance."
         case .privacy: "Ad and tracker blocking, filter lists, HTTPS upgrades, and browsing history."
         case .sites: "Per-site permissions for zoom, JavaScript, autoplay, location, and camera."
@@ -77,7 +77,7 @@ enum SettingsPane: String, CaseIterable {
         ]
         case .profiles: [
             "profile", "work", "personal", "container", "containers", "accounts", "separate cookies", "logins",
-            "new window in profile", "symbol",
+            "new window in profile", "symbol", "rename", "override", "overrides", "per profile", "profile settings", "global",
         ]
         case .tabsMemory: [
             "tabs", "memory", "sleep", "freeze", "frozen", "background tabs", "pinned tabs", "sleepPinnedTabs",

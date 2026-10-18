@@ -13,6 +13,13 @@ final class AppModel {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "app")
 
     private(set) var config = PaddleConfig()
+    /// config.json's bytes as last read or written: what each profile's settings are laid over.
+    @ObservationIgnored private var configBytes = Data()
+    /// Each profile's config: config.json with the profile's profiles.json `settings` over it (`ProfileOverrides`).
+    /// Only profiles that set something are here; the others run on `config`.
+    private(set) var profileConfigs: [ProfileID: PaddleConfig] = [:]
+    /// What didn't apply from each profile's settings: keys a profile can't set, and values of the wrong type.
+    private(set) var profileConfigProblems: [ProfileID: [String]] = [:]
     /// Set when config.json doesn't parse at all (invalid JSON, or a top level that isn't an object); Paddle keeps
     /// running on the previous config.
     private(set) var configError: String?
@@ -122,27 +129,35 @@ final class AppModel {
     // MARK: - Themes
 
     /// The theme `theme` names, or nil for Default (and for an id that isn't there).
-    var activeTheme: ChromeTheme? {
-        config.theme == "default" ? nil : themes.theme(id: config.theme)
-    }
+    var activeTheme: ChromeTheme? { activeTheme(in: config) }
     /// The accent override (`accentColor`); automatic follows the theme, then the system.
-    var accentChoice: ColorChoice { ColorChoice(configValue: config.accentColor, automaticValue: "system") ?? .automatic }
+    var accentChoice: ColorChoice { accentChoice(in: config) }
     /// The tint over the strip and toolbar (`chromeTint`).
-    var tintChoice: ColorChoice { ColorChoice(configValue: config.chromeTint, automaticValue: "none") ?? .automatic }
+    var tintChoice: ColorChoice { tintChoice(in: config) }
     /// `chromeTintStrength` as 0...1, before any cap.
     var tintStrength: Double { config.chromeTintStrength / 100 }
+
+    /// The same for a window's profile, which may set its own theme, accent and tint.
+    func activeTheme(in config: PaddleConfig) -> ChromeTheme? {
+        config.theme == "default" ? nil : themes.theme(id: config.theme)
+    }
+    func accentChoice(in config: PaddleConfig) -> ColorChoice { ColorChoice(configValue: config.accentColor, automaticValue: "system") ?? .automatic }
+    func tintChoice(in config: PaddleConfig) -> ColorChoice { ColorChoice(configValue: config.chromeTint, automaticValue: "none") ?? .automatic }
 
     /// The tint strength actually used in light or dark: `tintStrength`, lowered until the text of the theme (or the
     /// default look) stays readable on both the tab strip and the toolbar. 0 when there is no tint. A theme that sets a
     /// background but not a text color is capped with the default look's text, an approximation of what is drawn.
-    func effectiveTintStrength(dark: Bool) -> Double {
-        guard let tint = tintChoice.color else { return 0 }
-        return effectiveTintStrength(dark: dark, tint: tint)
+    func effectiveTintStrength(dark: Bool, in config: PaddleConfig? = nil) -> Double {
+        let config = config ?? self.config
+        guard let tint = tintChoice(in: config).color else { return 0 }
+        return effectiveTintStrength(dark: dark, tint: tint, in: config)
     }
 
     /// The same cap for a given tint color, such as a space's.
-    func effectiveTintStrength(dark: Bool, tint: PaddleCore.RGBColor) -> Double {
-        let palette = activeTheme?.palette(dark: dark)
+    func effectiveTintStrength(dark: Bool, tint: PaddleCore.RGBColor, in config: PaddleConfig? = nil) -> Double {
+        let config = config ?? self.config
+        let tintStrength = config.chromeTintStrength / 100
+        let palette = activeTheme(in: config)?.palette(dark: dark)
         let text = palette?.text ?? DefaultChromeColors.text(dark: dark)
         let secondary = palette?.secondaryText ?? DefaultChromeColors.secondary(dark: dark)
         let bases = [palette?.tabStrip, palette?.toolbar].map { $0 ?? DefaultChromeColors.base(dark: dark) }
@@ -200,6 +215,7 @@ final class AppModel {
         Paths.ensure()
         if let loaded = readConfig() { config = loaded }
         profiles.load()
+        rebuildProfileConfigs()
         openHistory()
         bookmarks.load()
         newTab.load()
@@ -275,7 +291,9 @@ final class AppModel {
     /// the read: they use their defaults and are kept in `configWarnings`.
     private func readConfig() -> PaddleConfig? {
         do {
-            let decoded = try Self.decodeConfigFile(Self.readConfigFile(Paths.config))
+            let data = try Self.readConfigFile(Paths.config)
+            let decoded = try Self.decodeConfigFile(data)
+            configBytes = data
             configError = nil
             setConfigWarnings(decoded.issues)
             return decoded.config
@@ -375,6 +393,7 @@ final class AppModel {
         }
         let stamp = ConfigStamp(url)
         if let stamp { lastConfigWrite = (stamp, data) }
+        configBytes = data
         log.info("config.json written: \(changes.map { $0.path.joined(separator: ".") }.joined(separator: ", "), privacy: .public)")
         configError = nil
         setConfigWarnings(new.issues)
@@ -391,6 +410,61 @@ final class AppModel {
         }
     }
 
+    /// The config windows of `profile` run with: its own settings over config.json, or `config` when it sets none.
+    func config(for profile: ProfileID) -> PaddleConfig { profileConfigs[profile] ?? config }
+
+    /// Recomputes `profileConfigs` from config.json's bytes and profiles.json; returns the profiles whose config
+    /// changed. A config.json that can't be read keeps the profiles' previous configs.
+    @discardableResult
+    func rebuildProfileConfigs() -> Set<ProfileID> {
+        // `configBytes` is the last config.json that read, so a broken file still lets profile edits apply.
+        var configs: [ProfileID: PaddleConfig] = [:]
+        var problems: [ProfileID: [String]] = [:]
+        for profile in profiles.all where !profile.settings.isEmpty {
+            let dropped = ProfileOverrides.sanitized(profile.settings).dropped
+            var notes = dropped.map { "\($0) can't be set per profile; config.json's value applies" }
+            if let effective = try? ProfileOverrides.effectiveConfig(globalData: configBytes, overrides: profile.settings) {
+                if effective.config != config { configs[profile.id] = effective.config }
+                notes += effective.issues.map { "\($0.path.joined(separator: ".")): \($0.message)" }
+            }
+            if !notes.isEmpty {
+                problems[profile.id] = notes
+                for note in notes { log.error("profiles.json \(profile.id, privacy: .public): \(note, privacy: .public)") }
+            }
+        }
+        let ids = Set(configs.keys).union(profileConfigs.keys)
+        let changed = Set(ids.filter { configs[$0] != profileConfigs[$0] })
+        profileConfigs = configs
+        if profileConfigProblems != problems { profileConfigProblems = problems }
+        return changed
+    }
+
+    /// A profile's settings changed in profiles.json (Settings > Profiles, or Reload Config): what config.json's
+    /// `apply` does for the keys a profile can set. The chrome (theme, tint) follows by observation.
+    func profileConfigsChanged(_ changed: Set<ProfileID>, from old: [ProfileID: PaddleConfig] = [:], reloading: Bool = false) async {
+        guard !changed.isEmpty || reloading else { return }
+        // Only the work a changed key needs (a run of zoom steps or an edit shouldn't rebuild scripts each time).
+        func differs<V: Equatable>(_ value: (PaddleConfig) -> V) -> Bool {
+            reloading || changed.contains { value(old[$0] ?? config) != value(config(for: $0)) }
+        }
+        if differs(\.keepPageWorkRunning) { web.reloadUserScripts() }
+        if differs(\.historyDays) { openHistory() }
+        if differs(\.sites) { applySiteZoom() }
+        if differs({ TabSleepPolicy(config: $0) }) || differs(\.keepPageWorkRunning) || differs(\.keepNotifyingSitesLive) || differs(\.sites) {
+            sweepSleepingTabs()
+        }
+    }
+
+    /// Settings > Profiles changed an override (or a profile was deleted): rebuild, then apply what changed.
+    func profileSettingsEdited() {
+        let old = profileConfigs
+        let changed = rebuildProfileConfigs()
+        Task { await profileConfigsChanged(changed, from: old) }
+    }
+
+    /// Some profile keeps uploads and unsaved changes running, so pages need the page-work script (it is shared).
+    var anyProfileKeepsPageWork: Bool { config.keepPageWorkRunning || profileConfigs.values.contains(where: \.keepPageWorkRunning) }
+
     /// Runs Paddle with `new`, doing for each key that changed what that key needs. `reloading` (Reload Config)
     /// treats every key as changed, so user scripts, block lists, extension folders and history retention are all
     /// re-read even when config.json itself didn't change.
@@ -399,6 +473,9 @@ final class AppModel {
         let keys = reloading ? Set(PaddleConfig.CodingKeys.allCases) : changed
         let old = config
         config = new
+        let oldProfiles = profileConfigs
+        let profilesChanged = rebuildProfileConfigs()
+        if !profilesChanged.isEmpty, keys.isEmpty { await profileConfigsChanged(profilesChanged, from: oldProfiles) }
         guard !keys.isEmpty else { return }
 
         // Every key: the web environment keeps its own copy (user agents, inspector, block lists). This also
@@ -534,6 +611,23 @@ final class AppModel {
     /// disk now (other members, unknown ones included, stay). A value equal to Paddle's default removes the field,
     /// and an entry left empty is removed. `key` is a `sites` key as written in the file, or a new host.
     @discardableResult
+    /// Whether `profile`'s own settings set `field` for the `sites` key `key`.
+    func profileSetsSiteField(_ field: SiteSettings.Field, forKey key: String, profile: ProfileID) -> Bool {
+        guard case .object(let sites)? = profiles.profile(id: profile).settings[ProfileOverrides.sitesKey] else { return false }
+        return sites[key]?.objectValue?[field.rawValue] != nil
+    }
+
+    /// A site setting changed from a window of `profile` (the site popover, Allow Pop-ups): into the profile's own
+    /// settings when it already sets that field for the site, else into config.json as `writeSiteSetting`.
+    @discardableResult
+    func writeSiteSetting(_ field: SiteSettings.Field, _ value: JSONValue?, forKey key: String, profile: ProfileID) async -> Bool {
+        if profileSetsSiteField(field, forKey: key, profile: profile) {
+            return profiles.setOverride([ProfileOverrides.sitesKey, key, field.rawValue], to: value, for: profile)
+        }
+        if case .written = await writeSiteSetting(field, value, forKey: key) { return true }
+        return false
+    }
+
     func writeSiteSetting(_ field: SiteSettings.Field, _ value: JSONValue?, forKey key: String) async -> ConfigWriteResult {
         let disk: Data
         let existing: JSONValue?
@@ -601,8 +695,9 @@ final class AppModel {
 
     /// The zoom a page on `host` opens at: `sites` in ordinary windows; in private ones what was set there this
     /// run, falling back to `sites`.
-    func siteZoom(forHost host: String, isPrivate: Bool) -> Double {
+    func siteZoom(forHost host: String, isPrivate: Bool, profile: ProfileID = ProfileStore.defaultID) -> Double {
         if isPrivate, let zoom = privateZooms[config.zoomKey(forHost: host)] { return zoom }
+        let config = config(for: profile)
         return pendingZooms[config.zoomKey(forHost: host)] ?? config.sitePolicy(forHost: host).zoom
     }
 
@@ -612,19 +707,30 @@ final class AppModel {
     /// Remembers a zoom set with Zoom In / Zoom Out / Actual Size on `host`: in a private window for this run only,
     /// else in `sites.<key>.zoom` (`PaddleConfig.zoomKey`), written once the keys stop for a second so a run of
     /// steps is one write. Other tabs on the site follow when config.json is applied.
-    func rememberZoom(_ zoom: Double, forHost host: String, isPrivate: Bool) {
+    func rememberZoom(_ zoom: Double, forHost host: String, isPrivate: Bool, profile: ProfileID = ProfileStore.defaultID) {
         let key = config.zoomKey(forHost: host)
         let zoom = SitePolicy.normalizedZoom(zoom)
         if isPrivate {
             privateZooms[key] = zoom
             return
         }
+        // A profile that sets its own zoom for the site keeps it in its settings, not in config.json; same one-second
+        // wait, so a run of steps is one profiles.json write.
+        let profileKey = config(for: profile).zoomKey(forHost: host)
+        let ownedByProfile = profileSetsSiteField(.zoom, forKey: profileKey, profile: profile)
         pendingZooms[key] = zoom
         pendingZoomWrites[key]?.cancel()
         pendingZoomWrites[key] = Task {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
             pendingZoomWrites[key] = nil
+            if ownedByProfile {
+                if !profiles.setOverride([ProfileOverrides.sitesKey, profileKey, "zoom"], to: .number(zoom), for: profile) {
+                    log.error("zoom not remembered: profiles.json can't be written")
+                }
+                if pendingZoomWrites[key] == nil { pendingZooms[key] = nil }
+                return
+            }
             // The default zoom needs no entry: remove the site's own, if any. Another zoom is written unless already there.
             if zoom == config.defaultZoom {
                 if config.sites[key]?.zoom != nil { await writeSiteSetting(.zoom, nil, forKey: key) }
@@ -673,6 +779,7 @@ final class AppModel {
         newTab.load()
         profiles.load()
         profilesReloaded()
+        await profileConfigsChanged(rebuildProfileConfigs(), reloading: true)
         // A hand edit of a profile's `extensions` in profiles.json.
         for host in profileExtensionHosts.values { await host.reconcile(config: config) }
         guard showAlert else { return }
@@ -729,8 +836,11 @@ final class AppModel {
 
     // MARK: - History
 
-    /// History is being recorded: historyDays is above 0.
-    var historyEnabled: Bool { config.historyDays > 0 }
+    /// History is being recorded in some profile: historyDays (config.json's, or a profile's own) is above 0.
+    var historyEnabled: Bool { historyEnabled(for: ProfileStore.defaultID) || profileConfigs.values.contains { $0.historyDays > 0 } }
+
+    /// `profile` records history: its historyDays is above 0.
+    func historyEnabled(for profile: ProfileID) -> Bool { config(for: profile).historyDays > 0 }
 
     /// Where a profile's history database is.
     func historyPath(for profile: ProfileID) -> URL {
@@ -741,14 +851,14 @@ final class AppModel {
     /// or the database can't be opened.
     func history(for profile: ProfileID) -> HistoryStore? {
         // A stale id (a profile removed from profiles.json) never creates profiles/<id>/history.sqlite again.
-        guard historyEnabled, profile == ProfileStore.defaultID || profiles.contains(profile) else { return nil }
+        guard historyEnabled(for: profile), profile == ProfileStore.defaultID || profiles.contains(profile) else { return nil }
         if let store = histories[profile] { return store }
         do {
             let url = historyPath(for: profile)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             let store = try HistoryStore(path: url.path)
             histories[profile] = store
-            prune(store)
+            prune(store, profile: profile)
             return store
         } catch {
             log.error("history unavailable: \(error.localizedDescription, privacy: .public)")
@@ -766,11 +876,11 @@ final class AppModel {
     /// are; Clear History still empties them); else the default profile's history opens and every open one is pruned.
     private func openHistory() {
         defer { historyGeneration += 1 }
-        guard historyEnabled else {
-            histories = [:]
-            newTab.forgetFrequentSites()
-            return
+        for profile in histories.keys where !historyEnabled(for: profile) {
+            histories[profile] = nil
+            newTab.forgetFrequentSites(profile: profile)
         }
+        if !historyEnabled { newTab.forgetFrequentSites() }
         _ = history(for: ProfileStore.defaultID)
         pruneHistory()
     }
@@ -781,12 +891,12 @@ final class AppModel {
     /// and daily from the sweep timer.
     private func pruneHistory() {
         lastHistoryPrune = Date()
-        histories.values.forEach(prune)
+        for (profile, store) in histories { prune(store, profile: profile) }
     }
 
-    private func prune(_ history: HistoryStore) {
+    private func prune(_ history: HistoryStore, profile: ProfileID) {
         do {
-            try history.prune(olderThan: Date().addingTimeInterval(-Double(config.historyDays) * 86_400))
+            try history.prune(olderThan: Date().addingTimeInterval(-Double(config(for: profile).historyDays) * 86_400))
         } catch {
             log.error("history prune failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -809,7 +919,7 @@ final class AppModel {
     func importHistory(_ visits: [ImportedVisit], profile: ProfileID) async throws -> HistoryImportSummary? {
         guard let history = history(for: profile) else { return nil }
         defer { historyGeneration += 1 }
-        let cutoff = Date().addingTimeInterval(-Double(config.historyDays) * 86_400)
+        let cutoff = Date().addingTimeInterval(-Double(config(for: profile).historyDays) * 86_400)
         var total = HistoryImportSummary()
         for start in stride(from: 0, to: visits.count, by: 20_000) {
             total.add(try history.importVisits(Array(visits[start..<min(start + 20_000, visits.count)]), notBefore: cutoff))
@@ -925,7 +1035,7 @@ final class AppModel {
             } else if let url {
                 controller.model.newTab(url: url)
             } else {
-                let home = URL(string: config.homepage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+                let home = URL(string: controller.model.config.homepage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
                 controller.model.newTab(url: home)
                 if home == nil { controller.model.focusAddress() }
             }
@@ -1024,8 +1134,11 @@ final class AppModel {
     var allTabs: [Tab] { windows.flatMap { $0.model.allTabs } }
 
     /// `newTabPage` from config.json; nil for about:blank (an empty tab).
-    var newTabPageURL: URL? {
-        URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+    var newTabPageURL: URL? { newTabPageURL(for: ProfileStore.defaultID) }
+
+    /// `profile`'s `newTabPage`; nil for about:blank.
+    func newTabPageURL(for profile: ProfileID) -> URL? {
+        URL(string: config(for: profile).newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
     }
 
     // MARK: - Session
@@ -1280,6 +1393,9 @@ final class AppModel {
     /// The sleep policy now: the configured values, tightened while Low Power Mode or heat constrains power.
     var effectiveSleepPolicy: TabSleepPolicy { TabSleepPolicy(config: config).adjusted(for: power) }
 
+    /// The sleep policy for a profile's tabs: its own timers (`profileConfigs`), tightened the same way.
+    func sleepPolicy(for profile: ProfileID) -> TabSleepPolicy { TabSleepPolicy(config: config(for: profile)).adjusted(for: power) }
+
     /// Re-reads Low Power Mode and the thermal state; when power becomes constrained, sweeps at once.
     func updatePower() {
         let now = Self.readPowerConditions()
@@ -1323,6 +1439,7 @@ final class AppModel {
     /// notifications, so there only `never` counts.
     func staysLive(_ tab: Tab) -> Bool {
         guard let url = tab.url, let host = url.host(), url.scheme == "https" || url.scheme == "http" else { return false }
+        let config = config(for: tab.profileID)
         switch config.sitePolicy(forHost: host).freeze {
         case .never: return true
         case .always: return false
@@ -1348,8 +1465,11 @@ final class AppModel {
             // A tab is sampled only when it could be judged: not selected, not playing, and not sharing its process with
             // another tab, whose CPU time would be counted twice. Any sweep that doesn't sample drops every clock, so the
             // next sample doesn't average over a gap and start one too early.
+            // Each profile's tabs follow its own timers and CPU limit; the awake-tab cap spans every window.
+            let policies = Dictionary(Set(tabs.map(\.profileID)).map { ($0, sleepPolicy(for: $0)) }, uniquingKeysWith: { a, _ in a })
+            let limits = policies.mapValues { $0.cpuPercent / 100 }
             let limit = policy.cpuPercent / 100
-            let sampling = limit > 0 && !memoryPressure
+            let sampling = limits.values.contains { $0 > 0 } && !memoryPressure
             var shares: [UUID: Double] = [:]
             if sampling {
                 let awake = tabs.filter(\.isAwake)
@@ -1364,15 +1484,15 @@ final class AppModel {
                     if selected.contains(tab.id) || busy.contains(tab.id) || tabsPerProcess[pid, default: 0] > 1 {
                         cpuUsage.reset(tab.id)
                     } else if let share = cpuUsage.record(
-                        tab.id, pid: pid, cpuSeconds: ProcessMemory.cpuSeconds(of: pid), at: now, limit: limit
+                        tab.id, pid: pid, cpuSeconds: ProcessMemory.cpuSeconds(of: pid), at: now, limit: limits[tab.profileID] ?? limit
                     ) {
                         shares[tab.id] = share
                     }
                 }
             }
             cpuUsage.retain(sampling ? Set(tabs.filter(\.isAwake).map(\.id)) : [])
-            let pageWork = config.keepPageWorkRunning
             let snapshots = tabs.map { tab in
+                let pageWork = config(for: tab.profileID).keepPageWorkRunning
                 let uploading = pageWork && tab.isUploading
                 // The idle clock starts when playback, capture, an upload or the popup ends, not when the tab was last viewed.
                 if busy.contains(tab.id) || uploading { tab.lastActive = now }
@@ -1395,10 +1515,14 @@ final class AppModel {
                 lastKeptRunning = kept
                 log.info("kept running: \(kept.isEmpty ? "none" : kept, privacy: .public)")
             }
-            let ids = Set(policy.tabsToSleep(snapshots, now: now, memoryPressure: memoryPressure))
             // Freezing is the first stage: an idle tab keeps its page, stopped, before any sleep. Freezing is skipped
             // under memory pressure, where the sweep discards. It runs even when nothing sleeps this time.
-            let freezeIDs = memoryPressure ? [] : policy.tabsToFreeze(snapshots, now: now, excluding: ids)
+            let profileOf = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0.profileID) })
+            let groups = Dictionary(grouping: snapshots) { profileOf[$0.id] ?? ProfileStore.defaultID }
+                .map { (policy: policies[$0.key] ?? policy, tabs: $0.value) }
+            let decided = policy.decide(groups, now: now, memoryPressure: memoryPressure)
+            let ids = Set(decided.sleep)
+            let freezeIDs = decided.freeze
             if !freezeIDs.isEmpty {
                 let freezing = Set(freezeIDs)
                 var froze = 0

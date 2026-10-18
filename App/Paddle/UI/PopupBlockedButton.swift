@@ -43,7 +43,7 @@ struct PopupBlockedButton: View {
                     showing = false
                     Task {
                         let app = AppModel.shared
-                        _ = await app.writeSiteSetting(.popups, .bool(true), forKey: app.config.siteKey(forHost: host))
+                        await app.writeSiteSetting(.popups, .bool(true), forKey: tab.config.siteKey(forHost: host), profile: tab.profileID)
                         urls.forEach(open)
                     }
                 }

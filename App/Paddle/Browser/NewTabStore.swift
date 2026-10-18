@@ -80,7 +80,7 @@ final class NewTabStore {
 
     /// The frequent sites last computed for `profile`, minus anything pinned or hidden since. Instant: no database access.
     func cachedFrequentSites(profile: ProfileID) -> [HistoryEntry] {
-        guard AppModel.shared.historyEnabled else { return [] }
+        guard AppModel.shared.historyEnabled(for: profile) else { return [] }
         let excluded = excludedFrequentHosts
         return (frequentCache[profile] ?? []).filter { NewTabSites.siteHost($0.url).map { !excluded.contains($0) } ?? false }
     }

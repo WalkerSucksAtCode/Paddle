@@ -290,9 +290,9 @@ extension ControlBridge {
 
     /// open_url with "in": "preview": the window's link preview over its selected tab. Never opens a window.
     private func openPreview(_ url: URL, scheme: String, _ args: [String: JSONValue]) throws -> MCPToolResult {
-        guard AppModel.shared.config.linkPreview else { throw BridgeToolError("link preview is off (linkPreview in config.json)") }
         guard ["http", "https"].contains(scheme) else { throw BridgeToolError("a preview shows only http and https addresses") }
         let model = try window(args).model
+        guard model.config.linkPreview else { throw BridgeToolError("link preview is off (linkPreview in config.json or the window's profile)") }
         guard let source = model.selectedTab else { throw BridgeToolError("the window has no selected tab") }
         model.openPreview(url, from: source)
         guard model.preview != nil else { throw BridgeToolError("the preview didn't open") }

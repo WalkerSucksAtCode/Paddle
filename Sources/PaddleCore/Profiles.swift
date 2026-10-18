@@ -44,17 +44,21 @@ public struct Profile: Codable, Sendable, Equatable, Identifiable {
     /// Extension folder name -> on. Another profile starts with none; the default profile ignores this and uses
     /// config.json's `extensions`.
     public var extensions: [String: Bool]
+    /// The profile's own config.json values (`ProfileOverrides`); a key not here is config.json's. Kept as written,
+    /// keys a profile can't set included, so a hand edit isn't lost; only the allowed ones apply.
+    public var settings: [String: JSONValue]
 
-    public init(id: String, name: String, symbol: ProfileSymbol = .person, extensions: [String: Bool] = [:]) {
+    public init(id: String, name: String, symbol: ProfileSymbol = .person, extensions: [String: Bool] = [:], settings: [String: JSONValue] = [:]) {
         self.id = id
         self.name = name
         self.symbol = symbol
         self.extensions = extensions
+        self.settings = settings
     }
 
     public var isDefault: Bool { id == ProfilesFile.defaultID }
 
-    private enum CodingKeys: String, CodingKey { case id, name, symbol, extensions }
+    private enum CodingKeys: String, CodingKey { case id, name, symbol, extensions, settings }
 
     /// Lenient, for hand-edited files: `id` is required; an unknown or missing symbol is Person, a missing name
     /// stays empty (the file drops it unless it is the default profile), bad extension flags are skipped.
@@ -68,6 +72,17 @@ public struct Profile: Codable, Sendable, Equatable, Identifiable {
             for (folder, flag) in raw { if let value = flag.value { flags[folder] = value } }
         }
         extensions = flags
+        settings = (try? c.decodeIfPresent([String: JSONValue].self, forKey: .settings)) ?? [:]
+    }
+
+    /// `settings` is left out while empty, so profiles.json stays as it was for a profile without overrides.
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(symbol, forKey: .symbol)
+        try c.encode(extensions, forKey: .extensions)
+        if !settings.isEmpty { try c.encode(settings, forKey: .settings) }
     }
 }
 
@@ -170,6 +185,16 @@ public struct ProfilesFile: Codable, Sendable, Equatable {
     public mutating func remove(id: String) -> Bool {
         guard id != Self.defaultID, let index = profiles.firstIndex(where: { $0.id == id }) else { return false }
         profiles.remove(at: index)
+        return true
+    }
+
+    /// Sets one override of a profile (`ProfileOverrides.setting`); nil `value` removes it. False for an unknown id or
+    /// a path a profile can't set.
+    @discardableResult
+    public mutating func setOverride(_ path: [String], to value: JSONValue?, for id: String) -> Bool {
+        guard let index = profiles.firstIndex(where: { $0.id == id }),
+              let updated = ProfileOverrides.setting(profiles[index].settings, path: path, to: value) else { return false }
+        profiles[index].settings = updated
         return true
     }
 

@@ -297,8 +297,8 @@ final class BrowserImportModel {
         }
         if summary.beforeRetention > 0 {
             lines.append(ImportReportLine(
-                kind: .unchanged, title: "\(Self.visits(summary.beforeRetention)) older than your \(app.config.historyDays)-day history limit, skipped",
-                detail: "historyDays in config.json sets the limit."))
+                kind: .unchanged, title: "\(Self.visits(summary.beforeRetention)) older than your \(app.config(for: profile).historyDays)-day history limit, skipped",
+                detail: "historyDays in config.json (or the profile's own settings) sets the limit."))
         }
         let notWeb = read.skippedNotWeb + summary.notRecordable
         if notWeb > 0 {

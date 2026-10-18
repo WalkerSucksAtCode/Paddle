@@ -13,7 +13,7 @@ struct NewTabPage: View {
     @Environment(\.chromeScale) private var scale
     @Environment(\.chromeTheme) private var theme
 
-    private var showsFrequent: Bool { app.config.newTabFrequentSites && !model.isPrivate }
+    private var showsFrequent: Bool { model.config.newTabFrequentSites && !model.isPrivate }
 
     var body: some View {
         let sites = app.newTab.sites
@@ -66,7 +66,7 @@ struct NewTabPage: View {
         .onDisappear { frequentTask?.cancel() }
         .onChange(of: app.newTab.sites) { refreshFrequent() }
         .onChange(of: app.newTab.hiddenFrequent) { refreshFrequent() }
-        .onChange(of: app.config.newTabFrequentSites) { refreshFrequent() }
+        .onChange(of: model.config.newTabFrequentSites) { refreshFrequent() }
     }
 
     /// Shows the cached row now, then replaces it with a fresh query's result. A newer refresh cancels the older one;

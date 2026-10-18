@@ -340,7 +340,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             guard let self, case .success(let val) = result,
                   let text = val as? String,
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            let resolver = AddressResolver(searchTemplate: AppModel.shared.config.searchTemplate)
+            let resolver = AddressResolver(searchTemplate: self.model.config.searchTemplate)
             if let searchURL = resolver.searchURL(for: text.trimmingCharacters(in: .whitespacesAndNewlines)) {
                 _ = self.model.newTab(url: searchURL, select: true, after: tab)
             }
@@ -378,7 +378,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     /// View > Show Downloads (⌥⌘L): the downloads popover, or the download folder when this window's list is empty.
     @objc func paddleShowDownloads(_ sender: Any?) {
         if AppModel.shared.downloads.items(forPrivateWindow: model.isPrivate).isEmpty {
-            NSWorkspace.shared.open(DownloadStore.folder)
+            NSWorkspace.shared.open(DownloadStore.folder(using: model.config))
         } else {
             model.downloadsVisible = true
         }

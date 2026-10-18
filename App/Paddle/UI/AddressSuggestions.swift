@@ -53,7 +53,7 @@ final class AddressSuggestions {
         // New text starts at the top row; only arriving search phrases keep a moved highlight.
         highlighted = 0
         rebuild()
-        if Self.mayAskSearchEngine(query, previous: previous) {
+        if Self.mayAskSearchEngine(query, previous: previous, searchTemplate: browser.config.searchTemplate) {
             fetchPhrases(for: query)
         } else {
             fetch?.cancel()
@@ -64,8 +64,8 @@ final class AddressSuggestions {
 
     /// Only what would be searched anyway, typed a key or two at a time, goes to the search engine: never an
     /// address, a path, anything with credentials, or a paste (which might be a password or token).
-    private static func mayAskSearchEngine(_ query: String, previous: String) -> Bool {
-        guard primaryRow(for: query).kind == .search,
+    private static func mayAskSearchEngine(_ query: String, previous: String, searchTemplate: String) -> Bool {
+        guard primaryRow(for: query, searchTemplate: searchTemplate).kind == .search,
               !query.contains("://"), !query.contains("@"),
               !query.hasPrefix("/"), !query.hasPrefix("~") else { return false }
         let typed = query.count <= 2
@@ -106,7 +106,7 @@ final class AddressSuggestions {
 
     private func rebuild() {
         let previous = highlightedRow?.id
-        let primary = Self.primaryRow(for: fieldText)
+        let primary = Self.primaryRow(for: fieldText, searchTemplate: (browser?.config ?? AppModel.shared.config).searchTemplate)
         // At most 6 pages, so search phrases always keep their rows.
         let ranked = SuggestionRanker.suggestions(for: text, pages: pages, searchPhrases: phrases, limit: 14, maxSearch: 4)
             // A history row for the very page the top row opens is redundant; an open tab of it is not.
@@ -130,7 +130,7 @@ final class AddressSuggestions {
         let target: URL? = if let url = row.url {
             URL(string: url)
         } else if let query = row.query {
-            AddressResolver(searchTemplate: AppModel.shared.config.searchTemplate).searchURL(for: query)
+            AddressResolver(searchTemplate: (browser?.config ?? AppModel.shared.config).searchTemplate).searchURL(for: query)
         } else {
             nil
         }
@@ -143,7 +143,7 @@ final class AddressSuggestions {
 
     private func fetchPhrases(for query: String) {
         fetch?.cancel()
-        let template = AppModel.shared.config.searchSuggestTemplate
+        let template = (browser?.config ?? AppModel.shared.config).searchSuggestTemplate
         guard !template.isEmpty, let url = SearchSuggestions.requestURL(template: template, query: query) else {
             phrases = []
             return
@@ -189,7 +189,7 @@ final class AddressSuggestions {
 
     /// What pressing Return does with the text: open Settings for a settings address, go to it when it looks like
     /// an address, otherwise search.
-    private static func primaryRow(for text: String) -> Suggestion {
+    private static func primaryRow(for text: String, searchTemplate template: String) -> Suggestion {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         // Kept as a `.url` row: `BrowserModel.open(_:)` parses its url back into a SettingsLink.
         if let link = SettingsLink.parse(query) {
@@ -199,7 +199,6 @@ final class AddressSuggestions {
                 detail: "Opens Settings", url: query, query: nil
             )
         }
-        let template = AppModel.shared.config.searchTemplate
         let resolver = AddressResolver(searchTemplate: template)
         if let url = resolver.resolve(query), url != resolver.searchURL(for: query) {
             return Suggestion(kind: .url, title: SuggestionRanker.displayURL(url.absoluteString), detail: "", url: url.absoluteString, query: nil)

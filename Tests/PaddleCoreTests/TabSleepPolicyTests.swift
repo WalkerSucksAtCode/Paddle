@@ -243,6 +243,41 @@ struct TabSleepPolicyTests {
         #expect(PowerConditions(lowPowerMode: true, thermal: .serious).reason == "Low Power Mode and the Mac running hot")
         #expect(PowerConditions(thermal: .critical).reason == "the Mac running very hot")
     }
+
+    @Test func eachGroupUsesItsOwnTimersAndTheCapSpansAll() {
+        let global = TabSleepPolicy(sleepAfter: 60 * 60, maxAwakeTabs: 3, sleepPinnedTabs: false, freezeAfter: 0)
+        let work = TabSleepPolicy(sleepAfter: 10 * 60, maxAwakeTabs: 0, sleepPinnedTabs: false, freezeAfter: 2 * 60)
+        let personalIdle = tab(20)
+        let workIdle = tab(20)
+        let workFresh = tab(3)
+        let personal = [personalIdle, tab(1), tab(2, selected: true)]
+        let result = global.decide([(global, personal), (work, [workIdle, workFresh])], now: now)
+        // Work's 10-minute timer sleeps its idle tab; Personal's hour doesn't. Then 4 awake > 3: the oldest left goes.
+        #expect(Set(result.sleep) == [workIdle.id, personalIdle.id])
+        #expect(result.freeze == [workFresh.id])
+    }
+
+    @Test func pinnedTabsFollowTheirOwnGroupUnderTheCapAndPressure() {
+        let keepsPinned = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: 1, sleepPinnedTabs: false)
+        var letsPinnedSleep = keepsPinned
+        letsPinnedSleep.sleepPinnedTabs = true
+        let selected = tab(0, selected: true)
+        let pinnedHere = tab(50, pinned: true)
+        let pinnedThere = tab(40, pinned: true)
+        let groups = [(policy: keepsPinned, tabs: [selected, pinnedHere]), (policy: letsPinnedSleep, tabs: [pinnedThere])]
+        // 3 awake > 1: only the pinned tab whose own profile lets pinned tabs sleep can go.
+        #expect(keepsPinned.decide(groups, now: now).sleep == [pinnedThere.id])
+        #expect(keepsPinned.decide(groups, now: now, memoryPressure: true).sleep == [pinnedThere.id])
+    }
+
+    @Test func oneGroupMatchesTheSinglePolicy() {
+        let policy = TabSleepPolicy(sleepAfter: 30 * 60, maxAwakeTabs: 2, sleepPinnedTabs: false, freezeAfter: 5 * 60)
+        let tabs = [tab(45), tab(20), tab(10), tab(1), tab(0, selected: true)]
+        let result = policy.decide([(policy, tabs)], now: now)
+        let sleep = policy.tabsToSleep(tabs, now: now)
+        #expect(result.sleep == sleep)
+        #expect(result.freeze == policy.tabsToFreeze(tabs, now: now, excluding: Set(sleep)))
+    }
 }
 
 struct CPUUsageTrackerTests {

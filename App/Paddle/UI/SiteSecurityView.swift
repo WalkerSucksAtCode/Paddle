@@ -143,7 +143,10 @@ struct SiteSecurityView: View {
     // MARK: - Site Permissions
 
     private var permissionsSection: some View {
-        let policy = app.config.sitePolicy(forHost: host)
+        // The window's profile may set its own values for this site; changes go where the value comes from.
+        let policy = tab.config.sitePolicy(forHost: host)
+        let key = tab.config.siteKey(forHost: host)
+        let profile = tab.profileID
         return VStack(alignment: .leading, spacing: 8) {
             Text("Permissions for this site")
                 .font(.system(size: 11, weight: .medium))
@@ -170,7 +173,7 @@ struct SiteSecurityView: View {
                 Picker("", selection: Binding(
                     get: { policy.location },
                     set: { value in
-                        Task { await app.writeSiteSetting(.location, .string(value.rawValue), forKey: host) }
+                        Task { await app.writeSiteSetting(.location, .string(value.rawValue), forKey: key, profile: profile) }
                     }
                 )) {
                     Text("Ask").tag(SiteSettings.Permission.ask)
@@ -190,7 +193,7 @@ struct SiteSecurityView: View {
                 Picker("", selection: Binding(
                     get: { policy.notifications },
                     set: { value in
-                        Task { await app.writeSiteSetting(.notifications, .string(value.rawValue), forKey: host) }
+                        Task { await app.writeSiteSetting(.notifications, .string(value.rawValue), forKey: key, profile: profile) }
                     }
                 )) {
                     Text("Ask").tag(SiteSettings.Permission.ask)
@@ -210,7 +213,7 @@ struct SiteSecurityView: View {
                 Picker("", selection: Binding(
                     get: { policy.autoplay },
                     set: { value in
-                        Task { await app.writeSiteSetting(.autoplay, .string(value.rawValue), forKey: host) }
+                        Task { await app.writeSiteSetting(.autoplay, .string(value.rawValue), forKey: key, profile: profile) }
                     }
                 )) {
                     Text("Muted").tag(SiteSettings.Autoplay.muted)
@@ -226,7 +229,7 @@ struct SiteSecurityView: View {
             Toggle(isOn: Binding(
                 get: { policy.javaScript },
                 set: { value in
-                    Task { await app.writeSiteSetting(.javaScript, .bool(value), forKey: host) }
+                    Task { await app.writeSiteSetting(.javaScript, .bool(value), forKey: key, profile: profile) }
                 }
             )) {
                 Label("JavaScript", systemImage: "applescript")

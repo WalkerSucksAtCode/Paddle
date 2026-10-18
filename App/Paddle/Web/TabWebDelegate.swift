@@ -85,7 +85,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             // Option-click (left button, which WebKit numbers 1): the link opens in the window's preview, any frame,
             // target=_blank too. Inside the preview it navigates the preview instead (no preview in a preview); a
             // target=_blank link there would otherwise become a tab.
-            if flags.contains(.option), navigationAction.buttonNumber == 1, AppModel.shared.config.linkPreview, Self.isWebPage(url) {
+            if flags.contains(.option), navigationAction.buttonNumber == 1, tab.config.linkPreview, Self.isWebPage(url) {
                 if !tab.isPreview {
                     browser.openPreview(url, from: tab)
                     return (.cancel, preferences)
@@ -118,7 +118,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
 
         if isMainFrame, let host = url.host() {
-            if Self.isWebPage(url) { Self.apply(AppModel.shared.config.sitePolicy(forHost: host), to: preferences) }
+            if Self.isWebPage(url) { Self.apply((tab?.config ?? AppModel.shared.config).sitePolicy(forHost: host), to: preferences) }
             return (applySiteUserAgent(for: host, navigationAction, preferences, in: webView) ? .allow : .cancel, preferences)
         }
         return (.allow, preferences)
@@ -131,7 +131,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let app = AppModel.shared
         guard let secure = HTTPSOnlyPolicy.upgrade(
             url, enabled: app.config.httpsOnly,
-            siteAllowsHTTP: !app.config.sitePolicy(forHost: host).httpsOnly,
+            siteAllowsHTTP: !tab.config.sitePolicy(forHost: host).httpsOnly,
             sessionExceptions: app.httpExceptions
         ) else { return false }
         let normalized = PaddleConfig.normalizedHost(host)
@@ -609,7 +609,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // or a site with `sites.<host>.popups: true`, opens a tab; anything else is probed (a download goes through,
         // a page waits behind the Pop-up blocked button).
         if WebEnvironment.allowsScriptWindows, tab.extensionPageID == nil, !Self.isUserInitiated(navigationAction),
-           !AppModel.shared.config.sitePolicy(forHost: webView.url?.host() ?? "").popups {
+           !tab.config.sitePolicy(forHost: webView.url?.host() ?? "").popups {
             guard let url = requestURL, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
                 Self.log.info("blocked script-opened window without an http(s) address")
                 return nil
@@ -684,7 +684,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let tab, !tab.isPreview else { return }
         let hit = element.responds(to: NSSelectorFromString("hitTestResult")) ? element.value(forKey: "hitTestResult") as? NSObject : nil
         let link = hit.flatMap { $0.responds(to: NSSelectorFromString("absoluteLinkURL")) ? $0.value(forKey: "absoluteLinkURL") as? URL : nil }
-        if let link, Self.isWebPage(link), AppModel.shared.config.linkPreview,
+        if let link, Self.isWebPage(link), tab.config.linkPreview,
            let index = menu.items.firstIndex(where: { $0.identifier == Self.openLinkInNewWindowItem }) {
             let item = NSMenuItem(title: "Preview Link", action: #selector(previewLink(_:)), keyEquivalent: "")
             item.target = self
@@ -851,7 +851,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard !isPrivate else { return false }
         let host = origin.host
         let allowed: Bool
-        switch AppModel.shared.config.sitePolicy(forHost: host).notifications {
+        switch (tab?.config ?? AppModel.shared.config).sitePolicy(forHost: host).notifications {
         case .allow: allowed = true
         case .deny: allowed = false
         case .ask:

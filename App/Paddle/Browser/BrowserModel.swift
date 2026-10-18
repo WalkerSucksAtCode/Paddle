@@ -209,7 +209,8 @@ final class BrowserModel {
         isPrivate ? "Private Window" : selectedTab?.displayTitle ?? "Paddle"
     }
 
-    private var config: PaddleConfig { AppModel.shared.config }
+    /// This window's profile's config (`AppModel.config(for:)`).
+    var config: PaddleConfig { AppModel.shared.config(for: profileID) }
 
     // MARK: - Opening and selecting
 

@@ -77,6 +77,15 @@ final class ProfileStore {
         save()
     }
 
+    /// Sets (or with nil removes) one of a profile's own settings (`ProfileOverrides`), then applies it.
+    @discardableResult
+    func setOverride(_ path: [String], to value: JSONValue?, for id: ProfileID) -> Bool {
+        guard loadError == nil, file.setOverride(path, to: value, for: id) else { return false }
+        save()
+        AppModel.shared.profileSettingsEdited()
+        return true
+    }
+
     /// Turns the extension in `folder` on or off for a non-default profile.
     func setExtension(folder: String, on: Bool, for id: ProfileID) {
         guard loadError == nil, file.setExtension(folder: folder, on: on, for: id) else { return }
@@ -105,6 +114,8 @@ final class ProfileStore {
         }
         file.remove(id: id)
         save()
+        // Its cached config (and its historyDays, which `historyEnabled` counts) goes too.
+        app.profileSettingsEdited()
         log.info("profile deleted")
         return true
     }

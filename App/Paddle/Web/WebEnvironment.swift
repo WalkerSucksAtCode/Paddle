@@ -378,7 +378,7 @@ final class WebEnvironment {
 
         // Tells the sleep sweep about uploads and unsaved changes (`keepPageWorkRunning`). Pages loaded while it was
         // off report nothing until they load again.
-        if config.keepPageWorkRunning {
+        if AppModel.shared.anyProfileKeepsPageWork {
             if !didInstallPageWorkMonitor {
                 didInstallPageWorkMonitor = true
                 contentController.add(PageWorkMonitor.shared, contentWorld: .page, name: PageWorkScript.handlerName)

@@ -147,6 +147,47 @@ public struct TabSleepPolicy: Sendable, Equatable {
         let order = Dictionary(uniqueKeysWithValues: eligible.enumerated().map { ($1.id, $0) })
         return chosen.sorted { order[$0, default: 0] < order[$1, default: 0] }
     }
+
+    /// One sweep over tabs that follow different policies (each profile's own timers): each group's tabs sleep and
+    /// freeze by their group's idle, CPU and pinned rules, then `self`'s `maxAwakeTabs` caps the awake tabs across
+    /// every group, as memory pressure does; both let a pinned tab go only when its own group's `sleepPinnedTabs`
+    /// allows it. With one group using `self` this is `tabsToSleep` plus `tabsToFreeze`.
+    public func decide(
+        _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool = false
+    ) -> (sleep: [UUID], freeze: [UUID]) {
+        let all = groups.flatMap(\.tabs)
+        // The cap and memory pressure span every group, but each group's own `sleepPinnedTabs` decides whether its
+        // pinned tabs may go: a pinned tab whose group lets pinned tabs sleep counts as unpinned there.
+        let spanning = groups.flatMap { group in
+            group.tabs.map { tab in
+                var tab = tab
+                if group.policy.sleepPinnedTabs { tab.isPinned = false }
+                return tab
+            }
+        }
+        var across = self
+        across.sleepPinnedTabs = false
+        if memoryPressure { return (across.tabsToSleep(spanning, now: now, memoryPressure: true), []) }
+        var chosen: Set<UUID> = []
+        for group in groups {
+            var own = group.policy
+            own.maxAwakeTabs = 0
+            chosen.formUnion(own.tabsToSleep(group.tabs, now: now))
+        }
+        if maxAwakeTabs > 0 {
+            let cap = TabSleepPolicy(sleepAfter: 0, maxAwakeTabs: maxAwakeTabs, sleepPinnedTabs: false)
+            let left = spanning.map { tab in
+                var tab = tab
+                if chosen.contains(tab.id) { tab.isAwake = false }
+                return tab
+            }
+            chosen.formUnion(cap.tabsToSleep(left, now: now))
+        }
+        let order = Dictionary(all.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let sleep = chosen.sorted { order[$0, default: 0] < order[$1, default: 0] }
+        let freeze = groups.flatMap { $0.policy.tabsToFreeze($0.tabs, now: now, excluding: chosen) }
+        return (sleep, freeze)
+    }
 }
 
 /// Per-tab CPU use between sleep sweeps, from each tab's WebContent process CPU time.

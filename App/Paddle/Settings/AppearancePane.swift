@@ -278,7 +278,7 @@ struct AppearancePane: View {
 
 /// The color well for a Custom accent or tint. Dragging in the color panel sends a change for every step, so the
 /// well shows a draft and writes config.json once the color has held for 0.4 s.
-private struct CustomColorWell: View {
+struct CustomColorWell: View {
     let title: String
     let saved: PaddleCore.RGBColor
     let save: (String) -> Void

@@ -31,7 +31,7 @@ struct BrowserView: View {
     private var vertical: Bool { app.config.tabLayout == .vertical }
 
     var body: some View {
-        let theme = ResolvedChromeTheme(app: app, dark: colorScheme == .dark, spaceTint: model.activeSpace.tint)
+        let theme = ResolvedChromeTheme(app: app, dark: colorScheme == .dark, spaceTint: model.activeSpace.tint, profile: model.profileID)
         Group {
             if vertical {
                 HStack(spacing: 0) {
@@ -175,7 +175,7 @@ struct BrowserView: View {
                 MountedWebPages(
                     tabs: model.mountedWebTabs,
                     selectedID: model.selectedTab?.hostsWebView == true ? model.selectedTab?.id : nil,
-                    resumeMediaOnSelect: AppModel.shared.config.resumeMediaOnSelect
+                    resumeMediaOnSelect: model.config.resumeMediaOnSelect
                 )
                 .overlay(alignment: .bottomLeading) {
                     if model.preview == nil, let tab = model.selectedTab, tab.hostsWebView {
@@ -353,7 +353,7 @@ private struct NavigationBar: View {
             }
             if app.config.showHomeButton {
                 iconButton("house", help: "Home", enabled: true) {
-                    model.navigate(app.config.homepage)
+                    model.navigate(model.config.homepage)
                 }
             }
             if model.isPrivate {
@@ -686,7 +686,7 @@ private struct NavigationBar: View {
         .help(activeDownloads > 0 ? "Downloading (\(activeDownloads))" : "Downloads (⌥⌘L)")
         .accessibilityLabel("Downloads")
         .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
-            DownloadsView(store: app.downloads, isPrivate: model.isPrivate).systemText()
+            DownloadsView(store: app.downloads, isPrivate: model.isPrivate, folder: DownloadStore.folder(using: model.config)).systemText()
         }
     }
 

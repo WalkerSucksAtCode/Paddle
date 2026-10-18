@@ -193,6 +193,8 @@ final class Tab: Identifiable {
     var extensionsAllowed: Bool { browser?.extensionsAllowed ?? !isPrivate }
     /// The profile of the window this tab is in (the default profile for a tab not in a window yet).
     var profileID: String { browser?.profileID ?? ProfileStore.defaultID }
+    /// The config this tab's profile runs with (`AppModel.config(for:)`).
+    var config: PaddleConfig { AppModel.shared.config(for: profileID) }
 
     /// The Settings pane this tab shows (`paddle://settings/<pane>`; bare `paddle://settings` is General). Nil for
     /// every other tab. A settings tab has no web view: it never wakes or sleeps, and SwiftUI draws it (`SettingsTabView`).
@@ -424,7 +426,7 @@ final class Tab: Identifiable {
             return NSColor(srgbRed: 0.094, green: 0.102, blue: 0.106, alpha: 1)
         }
         let dark = isDark
-        let rgb = AppModel.shared.activeTheme?.palette(dark: dark)?.newTabBackground ?? DefaultChromeColors.base(dark: dark)
+        let rgb = AppModel.shared.activeTheme(in: config)?.palette(dark: dark)?.newTabBackground ?? DefaultChromeColors.base(dark: dark)
         return NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
     }
 
@@ -911,7 +913,7 @@ final class Tab: Identifiable {
         guard let webView, !isSuspendedInWebKit else { return }
         let own = pendingOwnPage != nil || committedErrorPage || sourceHTML != nil
         let model = AppModel.shared
-        let zoom = own ? 1 : siteHost.map { model.siteZoom(forHost: $0, isPrivate: isPrivate) } ?? model.config.defaultZoom
+        let zoom = own ? 1 : siteHost.map { model.siteZoom(forHost: $0, isPrivate: isPrivate, profile: profileID) } ?? model.config.defaultZoom
         if webView.pageZoom != zoom { webView.pageZoom = zoom }
     }
 
@@ -922,7 +924,7 @@ final class Tab: Identifiable {
         let zoom = SitePolicy.normalizedZoom(zoom)
         webView.pageZoom = zoom
         guard let host = siteHost else { return }
-        AppModel.shared.rememberZoom(zoom, forHost: host, isPrivate: isPrivate)
+        AppModel.shared.rememberZoom(zoom, forHost: host, isPrivate: isPrivate, profile: profileID)
     }
 
     /// Whether website dark mode is currently active for this tab's site.

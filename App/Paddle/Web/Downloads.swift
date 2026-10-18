@@ -1,3 +1,4 @@
+import PaddleCore
 import AppKit
 import Foundation
 import os
@@ -58,8 +59,11 @@ final class DownloadStore {
     }
 
     /// `downloadFolder` from config.json (`~` expanded), or ~/Downloads when it is empty or not an existing folder.
-    static var folder: URL {
-        let configured = (AppModel.shared.config.downloadFolder as NSString).expandingTildeInPath
+    static var folder: URL { folder(using: AppModel.shared.config) }
+
+    /// `config`'s `downloadFolder`, as `folder` (a window's profile may set its own).
+    static func folder(using config: PaddleConfig) -> URL {
+        let configured = (config.downloadFolder as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
         if !configured.isEmpty, FileManager.default.fileExists(atPath: configured, isDirectory: &isDirectory), isDirectory.boolValue {
             return URL(fileURLWithPath: configured, isDirectory: true)
@@ -255,10 +259,12 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
         guard let store else { return nil }
         let item = store.item(for: download)
         let destination: URL
-        if AppModel.shared.config.askWhereToDownload {
+        // The window's profile may set its own folder and Ask (a private window's is the default profile's).
+        let config = item?.browser?.config ?? AppModel.shared.config
+        if config.askWhereToDownload {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = suggestedFilename
-            panel.directoryURL = DownloadStore.folder
+            panel.directoryURL = DownloadStore.folder(using: config)
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
             // A sheet on the window the download came from, so it can't open behind it.
@@ -287,7 +293,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
                 destination = chosen
             }
         } else {
-            destination = store.uniqueDestination(for: suggestedFilename)
+            destination = store.uniqueDestination(for: suggestedFilename, in: DownloadStore.folder(using: config))
         }
         Self.log.info("download started")
         if let item {
