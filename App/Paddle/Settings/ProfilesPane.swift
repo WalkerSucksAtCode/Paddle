@@ -81,33 +81,16 @@ private struct ProfileRow: View {
     private var store: ProfileStore { AppModel.shared.profiles }
 
     var body: some View {
-        HStack {
-            Image(systemName: profile.symbol.sfSymbol)
-                .frame(width: 20)
-                .accessibilityHidden(true)
-            TextField("Name", text: $name)
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .font(.headline)
-                .frame(maxWidth: 220)
-                .focused(focused, equals: profile.id)
-                .onSubmit(commit)
-                .accessibilityLabel("Profile name")
-                .help("The profile's name, saved when you press Return or leave the field. Two profiles can't share a name.")
-            Picker("Symbol", selection: Binding(
-                get: { profile.symbol },
-                set: { store.setSymbol($0, for: profile.id) }
-            )) {
-                ForEach(ProfileSymbol.allCases, id: \.self) { symbol in
-                    Label(symbol.displayName, systemImage: symbol.sfSymbol).tag(symbol)
-                }
+        // On one line when the card is wide enough, else the buttons under the name.
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                identity
+                Spacer()
+                buttons
             }
-            .labelsHidden()
-            .frame(width: 130)
-            Spacer()
-            Button("Open Window") { AppModel.shared.openWindow(profile: profile.id) }
-            if !profile.isDefault {
-                Button("Delete…", role: .destructive, action: onDelete)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack { identity }
+                HStack { buttons }
             }
         }
         .textCase(nil)
@@ -117,6 +100,38 @@ private struct ProfileRow: View {
         .onChange(of: profile.name) { name = profile.name }
         .onChange(of: focused.wrappedValue) { old, new in
             if old == profile.id, new != profile.id { commit() }
+        }
+    }
+
+    @ViewBuilder private var identity: some View {
+        Image(systemName: profile.symbol.sfSymbol)
+            .frame(width: 20)
+            .accessibilityHidden(true)
+        TextField("Name", text: $name)
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .font(.headline)
+            .frame(minWidth: 140, maxWidth: 220)
+            .focused(focused, equals: profile.id)
+            .onSubmit(commit)
+            .accessibilityLabel("Profile name")
+            .help("The profile's name, saved when you press Return or leave the field. Two profiles can't share a name.")
+        Picker("Symbol", selection: Binding(
+            get: { profile.symbol },
+            set: { store.setSymbol($0, for: profile.id) }
+        )) {
+            ForEach(ProfileSymbol.allCases, id: \.self) { symbol in
+                Label(symbol.displayName, systemImage: symbol.sfSymbol).tag(symbol)
+            }
+        }
+        .labelsHidden()
+        .frame(width: 130)
+    }
+
+    @ViewBuilder private var buttons: some View {
+        Button("Open Window") { AppModel.shared.openWindow(profile: profile.id) }
+        if !profile.isDefault {
+            Button("Delete…", role: .destructive, action: onDelete)
         }
     }
 

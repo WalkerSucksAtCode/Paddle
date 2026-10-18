@@ -127,6 +127,33 @@ struct AppearancePane: View {
 
     // MARK: - Theme
 
+    private var createThemeButton: some View {
+        Button("Create Custom Theme…") {
+            editingTheme = nil
+            showingThemeBuilder = true
+        }
+    }
+
+    /// Edit and Delete, for a custom theme only.
+    @ViewBuilder private var customThemeButtons: some View {
+        if let current = AppModel.shared.themes.available.first(where: { $0.id == model.file.theme }), !current.isBuiltIn {
+            Button("Edit Theme…") {
+                editingTheme = current
+                showingThemeBuilder = true
+            }
+            Button("Delete Theme", role: .destructive) {
+                deleteCustomTheme(id: current.id)
+            }
+        }
+    }
+
+    private var openThemesFolderButton: some View {
+        Button("Open Themes Folder") {
+            try? FileManager.default.createDirectory(at: Paths.themes, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(Paths.themes)
+        }
+    }
+
     private var themeSection: some View {
         let app = AppModel.shared
         return Section("Theme") {
@@ -141,23 +168,19 @@ struct AppearancePane: View {
                 }
             }
             .help("theme in config.json. Default keeps today's look; the others set the colors of the tab strip, toolbar, selected tab, text and New Tab page.")
-            HStack(spacing: 12) {
-                Button("Create Custom Theme…") {
-                    editingTheme = nil
-                    showingThemeBuilder = true
+            // On one line when the card is wide enough, else the custom theme's Edit and Delete on a second line.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    createThemeButton
+                    customThemeButtons
+                    openThemesFolderButton
                 }
-                if let current = app.themes.available.first(where: { $0.id == model.file.theme }), !current.isBuiltIn {
-                    Button("Edit Theme…") {
-                        editingTheme = current
-                        showingThemeBuilder = true
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        createThemeButton
+                        openThemesFolderButton
                     }
-                    Button("Delete Theme", role: .destructive) {
-                        deleteCustomTheme(id: current.id)
-                    }
-                }
-                Button("Open Themes Folder") {
-                    try? FileManager.default.createDirectory(at: Paths.themes, withIntermediateDirectories: true)
-                    NSWorkspace.shared.open(Paths.themes)
+                    HStack(spacing: 12) { customThemeButtons }
                 }
             }
             .help("themes/ in the config folder. Create, customize, or open themes/<name>.json files.")

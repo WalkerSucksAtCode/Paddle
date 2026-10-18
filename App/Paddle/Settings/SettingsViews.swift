@@ -47,9 +47,6 @@ enum SettingsPane: String, CaseIterable {
         }
     }
 
-    /// The pane is a full-width table rather than a `SettingsForm` column.
-    var showsTable: Bool { self == .sites || self == .shortcuts }
-
     var url: URL { URL(string: "paddle://settings/\(rawValue)")! }
 
     /// The pane Settings opens on when none is named: the one shown last, General before any.
@@ -161,9 +158,6 @@ struct SettingsPaneView: View {
         .padding(.horizontal, 28)
         .padding(.top, 20)
         .padding(.bottom, 6)
-        // Over a form the header lines up with its centred column; over a full-width table it stays at the left.
-        .frame(maxWidth: pane.showsTable ? .infinity : SettingsForm<EmptyView>.columnWidth)
-        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder private var content: some View {
@@ -202,19 +196,90 @@ struct SettingsDisclosure<Content: View>: View {
     }
 }
 
-/// The form style every pane uses: one grouped column, scrolling inside the pane. On a wide window the column stays
-/// at a readable width and centred (a grouped form would otherwise stretch its rows across the whole tab), so
-/// sections read top to bottom in one place rather than side by side.
+/// The form style every pane uses: one scroll view across the whole pane (so the wheel scrolls it anywhere), each
+/// `Section` a card of its own, the cards flowing into as many columns as the width holds. Each card is its own
+/// grouped form, so its rows keep a form's styling (switches, trailing values); the outer scroll view does the
+/// scrolling.
 struct SettingsForm<Content: View>: View {
     @ViewBuilder var content: Content
 
-    /// The widest the column grows.
-    static var columnWidth: CGFloat { 720 }
-
     var body: some View {
-        Form { content }
-            .formStyle(.grouped)
-            .frame(maxWidth: Self.columnWidth)
-            .frame(maxWidth: .infinity)
+        ScrollView {
+            MasonryLayout(minColumnWidth: 380, maxColumns: 4, spacing: 0) {
+                Group(sections: content) { sections in
+                    ForEach(sections.indices, id: \.self) { index in
+                        card(index, hasHeader: !sections[index].header.isEmpty)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 12)
+        }
+    }
+
+    /// The card for the section at `index`. The sections are picked inside the card's form, so they keep its
+    /// styling; picked outside it, toggles turn to checkboxes and values lose their trailing place.
+    private func card(_ index: Int, hasHeader: Bool) -> some View {
+        Form {
+            Group(sections: content) { sections in
+                if sections.indices.contains(index) {
+                    let section = sections[index]
+                    Section {
+                        section.content
+                    } header: {
+                        section.header
+                    } footer: {
+                        section.footer
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollDisabled(true)
+        .scrollContentBackground(.hidden)
+        // A grouped form keeps a clear inset above and below its section, more above when the section has no
+        // header; trimmed from the layout so the gap between cards is the same either way.
+        .padding(.top, hasHeader ? -10 : -24)
+        .padding(.bottom, -10)
+    }
+}
+
+/// Cards in columns, each stacked under the one above it in its column with no row alignment, so cards of different
+/// heights leave no holes. Card i goes in column i mod n, in reading order: placing by height instead would move
+/// every card below one that grows (a Details opening) to another column. The column count is as many
+/// `minColumnWidth` columns as the width holds, up to `maxColumns`.
+struct MasonryLayout: Layout {
+    var minColumnWidth: CGFloat
+    var maxColumns: Int
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minColumnWidth
+        return CGSize(width: width, height: frames(width: width, subviews: subviews).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let placed = frames(width: bounds.width, subviews: subviews)
+        for (subview, frame) in zip(subviews, placed.frames) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+    }
+
+    private func frames(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], height: CGFloat) {
+        let count = max(1, min(maxColumns, Int((width + spacing) / (minColumnWidth + spacing))))
+        let columnWidth = (width - spacing * CGFloat(count - 1)) / CGFloat(count)
+        var heights = Array(repeating: CGFloat(0), count: count)
+        var frames: [CGRect] = []
+        for (index, subview) in subviews.enumerated() {
+            let column = index % count
+            let height = subview.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height
+            let y = heights[column] == 0 ? 0 : heights[column] + spacing
+            frames.append(CGRect(x: CGFloat(column) * (columnWidth + spacing), y: y, width: columnWidth, height: height))
+            heights[column] = y + height
+        }
+        return (frames, heights.max() ?? 0)
     }
 }
