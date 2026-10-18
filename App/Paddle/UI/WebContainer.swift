@@ -1,3 +1,4 @@
+import os
 import AppKit
 import SwiftUI
 import WebKit
@@ -125,19 +126,20 @@ struct MountedWebPages: NSViewRepresentable {
             let gone = page.tab.webView == nil || page.tab.browser !== browser
                 || browser?.tabs.contains(where: { $0 === page.tab }) != true
             guard gone else { continue }
-            if page.suspended { page.tab.webView?.setAllMediaPlaybackSuspended(false, completionHandler: nil) }
+            if page.suspended, !page.tab.isSuspendedInWebKit { page.tab.webView?.setAllMediaPlaybackSuspended(false, completionHandler: nil) }
             coordinator.media[id] = nil
         }
         if resumeMediaOnSelect {
             for tab in tabs {
                 let suspend = tab.id != selectedID
-                guard coordinator.media[tab.id]?.suspended != suspend else { continue }
+                // A frozen page plays nothing and WebKit raises from the call; it is set once the page is live.
+                guard coordinator.media[tab.id]?.suspended != suspend, !tab.isSuspendedInWebKit else { continue }
                 tab.webView?.setAllMediaPlaybackSuspended(suspend, completionHandler: nil)
                 coordinator.media[tab.id] = (tab, suspend)
             }
         } else {
             // The option was on and paused these. Release them so a page can play on its own again.
-            for page in coordinator.media.values where page.suspended {
+            for page in coordinator.media.values where page.suspended && !page.tab.isSuspendedInWebKit {
                 page.tab.webView?.setAllMediaPlaybackSuspended(false, completionHandler: nil)
             }
             coordinator.media.removeAll()
@@ -148,6 +150,7 @@ struct MountedWebPages: NSViewRepresentable {
 
     final class Coordinator {
         static let presentationSelector = NSSelectorFromString("_doAfterNextPresentationUpdate:")
+        private static let log = Logger(subsystem: "com.walker.Paddle", category: "switch")
         /// How long the old page stays up when the new one never reports a presentation (a hung process, an
         /// occluded window); then the switch flips anyway, as it would without the private call.
         private static let presentationLimit: Duration = .milliseconds(300)
@@ -175,14 +178,24 @@ struct MountedWebPages: NSViewRepresentable {
                 presented.insert(key)
                 return
             }
-            let done: @Sendable @convention(block) () -> Void = { [weak self, weak tab] in
-                MainActor.assumeIsolated {
-                    guard let self, let tab, tab.container.superview === self.host else { return }
-                    self.presented.insert(ObjectIdentifier(tab.container))
+            // WebKit raises "The WKWebView is suspended" from this call on a frozen page (a hovered or Cmd-W
+            // successor tab can be frozen); it stays unpresented, and selecting it unfreezes it and waits then.
+            if tab.isSuspendedInWebKit { Self.log.info("mounted a suspended page: presentation check deferred") }
+            tab.whenLive {
+                let done: @Sendable @convention(block) () -> Void = { [weak self, weak tab] in
+                    MainActor.assumeIsolated {
+                        guard let self, let tab, tab.container.superview === self.host else { return }
+                        self.presented.insert(ObjectIdentifier(tab.container))
+                    }
                 }
+                Self.afterNextPresentation(webView, done)
             }
+        }
+
+        /// `-[WKWebView _doAfterNextPresentationUpdate:]`. Only on a page that isn't suspended (`Tab.whenLive`).
+        private static func afterNextPresentation(_ webView: WKWebView, _ block: @escaping @Sendable @convention(block) () -> Void) {
             typealias After = @convention(c) (WKWebView, Selector, @escaping @convention(block) () -> Void) -> Void
-            unsafeBitCast(webView.method(for: Self.presentationSelector), to: After.self)(webView, Self.presentationSelector, done)
+            unsafeBitCast(webView.method(for: presentationSelector), to: After.self)(webView, presentationSelector, block)
         }
         /// Pages whose media this view set, and whether it holds it paused.
         var media: [UUID: (tab: Tab, suspended: Bool)] = [:]
@@ -225,9 +238,8 @@ struct MountedWebPages: NSViewRepresentable {
                     self.finishWait(tab)
                 }
             }
-            typealias After = @convention(c) (WKWebView, Selector, @escaping @convention(block) () -> Void) -> Void
-            let after = unsafeBitCast(webView.method(for: Self.presentationSelector), to: After.self)
-            after(webView, Self.presentationSelector, presented)
+            // A frozen page is asked nothing; `presentationLimit` flips the switch either way.
+            tab.whenLive { Self.afterNextPresentation(webView, presented) }
             Task { [weak self, weak tab] in
                 try? await Task.sleep(for: Self.presentationLimit)
                 guard let self, let tab, self.generation == generation else { return }

@@ -151,6 +151,8 @@ struct MediaControlsPopover: View {
             }
         })()
         """
+        // The popover lists background tabs, which may be frozen; scripts raise on a suspended page.
+        tab.unfreeze()
         tab.webView?.evaluateJavaScript(script, in: nil, in: .defaultClient) { _ in }
     }
 }

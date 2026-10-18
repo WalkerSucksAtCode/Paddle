@@ -80,7 +80,9 @@ final class FaviconStore {
         }
         // Read from an isolated script world, out of the page's reach. The address comes from the document
         // itself, so a navigation starting meanwhile can't file this icon under another site.
-        guard let raw = try? await webView.callAsyncJavaScript(Self.pageScript, contentWorld: .defaultClient) as? String,
+        // The page may have frozen since it finished loading; scripts and the image loader raise on a suspended page.
+        guard Tab.owning(webView)?.isSuspendedInWebKit != true,
+              let raw = try? await webView.callAsyncJavaScript(Self.pageScript, contentWorld: .defaultClient) as? String,
               let page = try? JSONDecoder().decode(PageIcons.self, from: Data(raw.utf8)),
               let pageURL = URL(string: page.href), HistoryStore.isRecordable(pageURL),
               let key = FaviconPicker.cacheKey(for: pageURL) else { return }
@@ -217,6 +219,7 @@ final class FaviconStore {
     /// agent, so the page's is set instead.
     private static func load(_ url: URL, userAgent: String, in webView: WKWebView) async -> NSImage? {
         typealias Load = @convention(c) (WKWebView, Selector, NSURLRequest, CGSize, Int, @escaping @convention(block) (NSImage?, NSError?) -> Void) -> Void
+        guard Tab.owning(webView)?.isSuspendedInWebKit != true else { return nil }
         let load = unsafeBitCast(webView.method(for: loadSelector), to: Load.self)
         var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 15)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")

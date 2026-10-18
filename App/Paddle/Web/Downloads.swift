@@ -117,7 +117,9 @@ final class DownloadStore {
     func retry(_ item: DownloadItem) {
         // A form post (an export) isn't sent again behind the user's back.
         guard canRetry(item), let request = item.download.originalRequest,
-              let webView = item.download.webView ?? item.browser?.allTabs.lazy.compactMap(\.webView).first else { return }
+              // Not a frozen tab's: `startDownload` raises on a suspended page.
+              let webView = item.download.webView.flatMap({ Tab.owning($0)?.isSuspendedInWebKit == true ? nil : $0 })
+                ?? item.browser?.allTabs.lazy.filter({ !$0.isSuspendedInWebKit }).compactMap(\.webView).first else { return }
         let browser = item.browser
         let window = item.window
         let isPrivate = item.isPrivate

@@ -50,6 +50,8 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
         }
         running = true
         let note = job.note
+        // A queued job's page may have been frozen since; scripts raise on a suspended page.
+        Tab.owning(webView)?.unfreeze()
         webView.evaluateJavaScript(job.source, in: job.frame, in: .page) { result in
             if case .failure(let error) = result {
                 self.log.error("page script failed (\(note, privacy: .public)): \(error.localizedDescription, privacy: .public)")

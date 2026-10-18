@@ -43,6 +43,22 @@ final class Tab: Identifiable {
     /// A suspend was asked for and not undone: its answer may still be on the way, and `unfreeze()` must resume the
     /// page even before the answer lands.
     @ObservationIgnored private var suspendRequested = false
+    /// WebKit holds the page suspended: frozen, or a freeze asked for (WebKit suspends at the `_suspendPage:` call, not
+    /// at its answer, and resumes at the `_resumePage:` call; measured 2026-10-17). Meanwhile WebKit raises
+    /// NSInternalInconsistencyException ("The WKWebView is suspended"), which Swift can't catch, from loads, reload,
+    /// stopLoading, scripts, snapshots, the `pageZoom` setter, media calls and `_doAfterNextPresentationUpdate:`. Every
+    /// call that can reach a background tab checks this, or calls `unfreeze()` first.
+    var isSuspendedInWebKit: Bool { isFrozen || suspendRequested }
+
+    /// Runs `body` unless the page is suspended.
+    func whenLive(_ body: () -> Void) {
+        if !isSuspendedInWebKit { body() }
+    }
+
+    /// The tab whose web view this is, if any.
+    static func owning(_ webView: WKWebView) -> Tab? {
+        AppModel.shared.allTabs.first { $0.webView === webView }
+    }
     /// Using the camera or microphone. Such tabs never sleep.
     var isCapturing = false
     /// The page is making sound (WebKit's private `_isPlayingAudio`; stays false where that is missing).
@@ -450,6 +466,11 @@ final class Tab: Identifiable {
                 }
                 // The container is often given its size after the web view is created. Keep the cover on it.
                 if self.wakeCover?.frame != webView.frame { self.wakeCover?.frame = webView.frame }
+                // A background wake can be frozen by the sweep while the cover waits; snapshots raise then.
+                if self.isSuspendedInWebKit {
+                    self.endWakeCover()
+                    return
+                }
                 let config = WKSnapshotConfiguration()
                 config.snapshotWidth = 48
                 let image = try? await webView.takeSnapshot(configuration: config)
@@ -512,7 +533,7 @@ final class Tab: Identifiable {
         // WebKit raises NSInternalInconsistencyException ("The WKWebView is suspended") from `stopLoading` on a frozen
         // page. Thrown through the sweep's Task it corrupts Swift's executor tracking and crashes Paddle minutes later
         // in an unrelated actor check. A frozen page never loads (`freeze()` skips loading pages), so nothing to stop.
-        if !isFrozen && !suspendRequested { webView.stopLoading() }
+        if !isSuspendedInWebKit { webView.stopLoading() }
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.removeFromSuperview()
@@ -579,6 +600,9 @@ final class Tab: Identifiable {
         resume(webView, Self.resumeSelector) { resumed in
             if !resumed { Self.log.info("WebKit did not resume a frozen page") }
         }
+        // Zoom and dark mode changes skipped while it was frozen (`applySiteZoom`, `applySiteDarkMode`).
+        applySiteZoom()
+        applySiteDarkMode(systemIsDark: AppModel.shared.effectiveAppearanceIsDark)
     }
 
     /// Address bar, session restore and extension `tabs.update`. Crossing between an extension page and a web
@@ -727,7 +751,7 @@ final class Tab: Identifiable {
 
     /// Checks whether the loaded page is an article suitable for Reader Mode.
     func checkReaderAvailability() {
-        guard let webView, isAwake, !isShowingErrorPage, readerArticle == nil else {
+        guard let webView, isAwake, !isShowingErrorPage, readerArticle == nil, !isSuspendedInWebKit else {
             isReaderAvailable = false
             return
         }
@@ -790,8 +814,9 @@ final class Tab: Identifiable {
     /// observed, any media playing counts, which takes a round trip to the page.
     func isBusy() async -> Bool {
         guard let webView else { return false }
-        // A frozen page runs nothing, so it plays nothing; asking it would wait on a page that can't answer.
-        if isFrozen { return false }
+        // A frozen page runs nothing, so it plays nothing; asking it would wait on a page that can't answer, and
+        // WebKit raises from the call while a freeze is still in flight.
+        if isSuspendedInWebKit { return false }
         let observable = audioObserver != nil
         if MediaActivity.isBusy(isCapturing: isCapturing, isPlayingAudio: isPlayingAudio, playbackIsPlaying: false, audioIsObservable: observable) { return true }
         guard !observable else { return false }
@@ -838,6 +863,8 @@ final class Tab: Identifiable {
     /// Toggles Picture in Picture for any playing HTML5 video on this tab's page.
     func togglePictureInPicture() {
         guard let webView, isAwake, !isShowingErrorPage else { return }
+        // The tab menu and media popover can reach a frozen background tab.
+        unfreeze()
         Task { @MainActor in
             let script = """
             (async () => {
@@ -880,7 +907,8 @@ final class Tab: Identifiable {
     /// about:blank) and 100 % for Paddle's own pages, so the last site's zoom doesn't carry over. When a page commits and when `sites`
     /// changes.
     func applySiteZoom() {
-        guard let webView else { return }
+        // The setter raises on a suspended page; `unfreeze()` applies it.
+        guard let webView, !isSuspendedInWebKit else { return }
         let own = pendingOwnPage != nil || committedErrorPage || sourceHTML != nil
         let model = AppModel.shared
         let zoom = own ? 1 : siteHost.map { model.siteZoom(forHost: $0, isPrivate: isPrivate) } ?? model.config.defaultZoom
@@ -907,7 +935,8 @@ final class Tab: Identifiable {
     /// Updates this tab's dark mode state in the web view.
     func applySiteDarkMode(systemIsDark: Bool) {
         refreshPageBackdrop()
-        guard let webView, let host = siteHost else { return }
+        // Scripts raise on a suspended page; `unfreeze()` applies it.
+        guard let webView, !isSuspendedInWebKit, let host = siteHost else { return }
         let policy = AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: systemIsDark)
         let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(policy.darkMode ? "true" : "false")); }"
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
@@ -923,6 +952,7 @@ final class Tab: Identifiable {
             await AppModel.shared.writeSiteSetting(.darkMode, .bool(next), forKey: host)
         }
         guard let webView else { return }
+        unfreeze()
         let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(next ? "true" : "false")); }"
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
         refreshPageBackdrop()
