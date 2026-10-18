@@ -69,6 +69,12 @@ struct ExtensionsPane: View {
             }
             .disabled(model.controlsDisabled)
             }
+            if isDefaultProfile {
+                Section {
+                    ConfigToggle("Update store extensions automatically", .extensionUpdates, \.extensionUpdates, model: model,
+                                 help: "Checks extensions installed from the Chrome Web Store or addons.mozilla.org once a day. Extensions > Check for Extension Updates works either way.")
+                }
+            }
             Section {
                 LabeledContent("Extension pages' memory") {
                     Text(memory.total > 0 ? ProcessMemory.format(memory.total) : "None open now")

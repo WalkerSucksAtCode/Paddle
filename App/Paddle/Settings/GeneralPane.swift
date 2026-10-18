@@ -10,6 +10,51 @@ struct GeneralPane: View {
 
     var body: some View {
         SettingsForm {
+            Section("Startup & Windows") {
+                Picker("When Paddle opens", selection: Binding(
+                    get: { model.file.onLaunch },
+                    set: { value in Task { await model.saveKey(.onLaunch, .string(value.rawValue)) } }
+                )) {
+                    Text("Restore last session").tag(LaunchBehavior.restore)
+                    Text("Open a new window").tag(LaunchBehavior.newWindow)
+                }
+                .help("onLaunch in config.json. A new window replaces the saved session, pinned tabs included, once Paddle has started.")
+                Picker("Links from other apps open in", selection: Binding(
+                    get: { model.file.externalLinks },
+                    set: { value in Task { await model.saveKey(.externalLinks, .string(value.rawValue)) } }
+                )) {
+                    Text("A new tab").tag(ExternalLinkTarget.newTab)
+                    Text("A new window").tag(ExternalLinkTarget.newWindow)
+                    Text("The current tab").tag(ExternalLinkTarget.currentTab)
+                }
+                .help("externalLinks in config.json. Links from Mail, Messages and other apps; never in a private window.")
+                ConfigToggle("Ask before quitting", .askBeforeQuitting, \.askBeforeQuitting, model: model,
+                             help: "⌘Q asks first while a window is open.")
+                ConfigToggle("Ask before closing a window with several tabs", .askBeforeClosingWindow, \.askBeforeClosingWindow, model: model,
+                             help: "Closing a window that has more than one tab asks first.")
+            }
+            .disabled(model.controlsDisabled)
+            Section("Tabs") {
+                Picker("New tabs open", selection: Binding(
+                    get: { model.file.newTabPosition },
+                    set: { value in Task { await model.saveKey(.newTabPosition, .string(value.rawValue)) } }
+                )) {
+                    Text("At the end").tag(NewTabPosition.end)
+                    Text("Next to the current tab").tag(NewTabPosition.afterCurrent)
+                }
+                .help("newTabPosition in config.json. Where File > New Tab (⌘T) puts the tab. Links always open next to the tab they came from.")
+                Picker("After closing a tab, show", selection: Binding(
+                    get: { model.file.afterClosingTab },
+                    set: { value in Task { await model.saveKey(.afterClosingTab, .string(value.rawValue)) } }
+                )) {
+                    Text("The tab to the right").tag(TabCloseSelection.right)
+                    Text("The tab to the left").tag(TabCloseSelection.left)
+                    Text("The last tab used").tag(TabCloseSelection.lastUsed)
+                }
+                .help("afterClosingTab in config.json. A pop-up you haven't left still goes back to the tab that opened it.")
+                ConfigToggle("⌘-click opens links in the background", .openLinksInBackground, \.openLinksInBackground, model: model,
+                             help: "On, ⌘-click and middle-click open a tab behind this one and ⌘⇧-click brings it to the front; off, the other way round.")
+            }
             Section("Pages") {
                 PageRows(model: model, key: .homepage, title: "New windows open with")
                 PageRows(model: model, key: .newTabPage, title: "New tabs open with")
@@ -38,6 +83,14 @@ struct GeneralPane: View {
                 ))
                 .help("newTabFrequentSites in config.json. A Frequently visited row on the New Tab page, from history; never in private windows.")
                 .disabled(model.controlsDisabled)
+            }
+            Section("Trackpad & Keyboard") {
+                ConfigToggle("Swipe between pages", .swipeNavigation, \.swipeNavigation, model: model,
+                             help: "Two-finger swipe goes back and forward.")
+                ConfigToggle("Pinch to zoom", .pinchZoom, \.pinchZoom, model: model,
+                             help: "Pinch zooms the page in and out; ⌘+ and ⌘− work either way.")
+                ConfigToggle("Tab key highlights each item on a page", .tabKeyHighlightsLinks, \.tabKeyHighlightsLinks, model: model,
+                             help: "Tab moves through links as well as fields and buttons. Pages opened afterwards pick it up.")
             }
             Section("Downloads") {
                 LabeledContent("Save files to") {

@@ -74,12 +74,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return (.cancel, preferences)
         }
 
-        // Cmd-click or middle-click: background tab (Cmd-Shift-click: foreground). Only for real clicks; a page
-        // faking one just navigates, so it can't open tabs past the popup blocker.
+        // Cmd-click or middle-click: background tab (Cmd-Shift-click: foreground), the other way round when
+        // `openLinksInBackground` is off. Only for real clicks; a page faking one just navigates, so it can't open
+        // tabs past the popup blocker.
         if navigationAction.navigationType == .linkActivated, byUser, let tab, let browser = tab.browser {
             let flags = navigationAction.modifierFlags
             if flags.contains(.command) || navigationAction.buttonNumber == 4 {
-                browser.newTab(url: url, select: flags.contains(.shift), after: Self.anchor(for: tab, in: browser))
+                let select = flags.contains(.shift) == browser.config.openLinksInBackground
+                browser.newTab(url: url, select: select, after: Self.anchor(for: tab, in: browser))
                 return (.cancel, preferences)
             }
             // Option-click (left button, which WebKit numbers 1): the link opens in the window's preview, any frame,

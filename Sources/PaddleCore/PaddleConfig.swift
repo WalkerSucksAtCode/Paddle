@@ -9,6 +9,26 @@ public enum ExtensionToolbarPlacement: String, Codable, Sendable, CaseIterable {
 /// so a config file only needs the keys it changes. Each key decodes on its own: a value of the wrong type falls back
 /// to its default, an object key skips only the entry that is wrong and a list only the item, and
 /// `decodeReportingIssues` says which. Only invalid JSON, or a top level that isn't an object, refuses the whole file.
+/// What Paddle shows at launch: the windows and tabs of last time, or one new window.
+public enum LaunchBehavior: String, Codable, Sendable, CaseIterable {
+    case restore, newWindow
+}
+
+/// Where a tab opened with New Tab (⌘T) goes. Links always open next to the tab they came from.
+public enum NewTabPosition: String, Codable, Sendable, CaseIterable {
+    case end, afterCurrent
+}
+
+/// Which tab is selected after the selected tab closes (a popup the user hasn't left still returns to its opener).
+public enum TabCloseSelection: String, Codable, Sendable, CaseIterable {
+    case right, left, lastUsed
+}
+
+/// Where a link opened from another app (Mail, Messages, a terminal) goes.
+public enum ExternalLinkTarget: String, Codable, Sendable, CaseIterable {
+    case newTab, newWindow, currentTab
+}
+
 /// Where the tabs show: a strip above the toolbar, or a sidebar.
 public enum TabLayout: String, Codable, Sendable, CaseIterable {
     case horizontal, vertical
@@ -166,6 +186,28 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var showHomeButton: Bool
     /// Keep the Downloads button visible on the toolbar even when no downloads are active.
     public var alwaysShowDownloadsButton: Bool
+    /// What Paddle opens at launch.
+    public var onLaunch: LaunchBehavior
+    /// Where a New Tab (⌘T) goes.
+    public var newTabPosition: NewTabPosition
+    /// ⌘-click and middle-click open the link in a background tab (⌘⇧-click in front); off, the other way round.
+    public var openLinksInBackground: Bool
+    /// The tab selected after the selected tab closes.
+    public var afterClosingTab: TabCloseSelection
+    /// Ask before quitting while a window is open.
+    public var askBeforeQuitting: Bool
+    /// Ask before closing a window that has more than one tab.
+    public var askBeforeClosingWindow: Bool
+    /// Where links from other apps open.
+    public var externalLinks: ExternalLinkTarget
+    /// WebKit's fraudulent website warning (Safe Browsing).
+    public var fraudWarnings: Bool
+    /// Two-finger swipe goes back and forward.
+    public var swipeNavigation: Bool
+    /// Pinch zooms the page.
+    public var pinchZoom: Bool
+    /// The Tab key moves through links as well as form fields and buttons (Safari's ⌥Tab behaviour on Tab).
+    public var tabKeyHighlightsLinks: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -202,6 +244,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
+        case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -245,6 +289,17 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         alwaysShowTabCloseButtons: Bool = false,
         showHomeButton: Bool = false,
         alwaysShowDownloadsButton: Bool = false,
+        onLaunch: LaunchBehavior = .restore,
+        newTabPosition: NewTabPosition = .end,
+        openLinksInBackground: Bool = true,
+        afterClosingTab: TabCloseSelection = .right,
+        askBeforeQuitting: Bool = false,
+        askBeforeClosingWindow: Bool = false,
+        externalLinks: ExternalLinkTarget = .newTab,
+        fraudWarnings: Bool = true,
+        swipeNavigation: Bool = true,
+        pinchZoom: Bool = true,
+        tabKeyHighlightsLinks: Bool = false,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -303,6 +358,17 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.alwaysShowTabCloseButtons = alwaysShowTabCloseButtons
         self.showHomeButton = showHomeButton
         self.alwaysShowDownloadsButton = alwaysShowDownloadsButton
+        self.onLaunch = onLaunch
+        self.newTabPosition = newTabPosition
+        self.openLinksInBackground = openLinksInBackground
+        self.afterClosingTab = afterClosingTab
+        self.askBeforeQuitting = askBeforeQuitting
+        self.askBeforeClosingWindow = askBeforeClosingWindow
+        self.externalLinks = externalLinks
+        self.fraudWarnings = fraudWarnings
+        self.swipeNavigation = swipeNavigation
+        self.pinchZoom = pinchZoom
+        self.tabKeyHighlightsLinks = tabKeyHighlightsLinks
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -369,6 +435,17 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         alwaysShowTabCloseButtons = c.decodeValue(.alwaysShowTabCloseButtons, d.alwaysShowTabCloseButtons, issues)
         showHomeButton = c.decodeValue(.showHomeButton, d.showHomeButton, issues)
         alwaysShowDownloadsButton = c.decodeValue(.alwaysShowDownloadsButton, d.alwaysShowDownloadsButton, issues)
+        onLaunch = c.decodeValue(.onLaunch, d.onLaunch, issues)
+        newTabPosition = c.decodeValue(.newTabPosition, d.newTabPosition, issues)
+        openLinksInBackground = c.decodeValue(.openLinksInBackground, d.openLinksInBackground, issues)
+        afterClosingTab = c.decodeValue(.afterClosingTab, d.afterClosingTab, issues)
+        askBeforeQuitting = c.decodeValue(.askBeforeQuitting, d.askBeforeQuitting, issues)
+        askBeforeClosingWindow = c.decodeValue(.askBeforeClosingWindow, d.askBeforeClosingWindow, issues)
+        externalLinks = c.decodeValue(.externalLinks, d.externalLinks, issues)
+        fraudWarnings = c.decodeValue(.fraudWarnings, d.fraudWarnings, issues)
+        swipeNavigation = c.decodeValue(.swipeNavigation, d.swipeNavigation, issues)
+        pinchZoom = c.decodeValue(.pinchZoom, d.pinchZoom, issues)
+        tabKeyHighlightsLinks = c.decodeValue(.tabKeyHighlightsLinks, d.tabKeyHighlightsLinks, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)

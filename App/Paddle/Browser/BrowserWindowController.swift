@@ -144,6 +144,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         window.makeFirstResponder(nil)
     }
 
+    /// `askBeforeClosingWindow`: a window with more than one tab (any space) asks in a sheet first. Quitting and the
+    /// last tab closing (`close()`) don't come through here.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        let count = model.allTabs.count
+        guard model.config.askBeforeClosingWindow, count > 1 else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Close this window and its \(count) tabs?"
+        alert.informativeText = "Its tabs close with it."
+        alert.addButton(withTitle: "Close Window")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: sender) { response in
+            if response == .alertFirstButtonReturn { sender.close() }
+        }
+        return false
+    }
+
     func windowWillClose(_ notification: Notification) {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil

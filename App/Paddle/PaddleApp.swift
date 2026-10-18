@@ -71,11 +71,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         for host in AppModel.shared.extensionHosts { host.windowFocused(nil) }
     }
 
-    /// Quitting stops running downloads (Paddle doesn't resume them), so ask first.
+    /// Quitting stops running downloads (Paddle doesn't resume them), so ask first; with `askBeforeQuitting`, ask
+    /// anyway while a window is open (once: the downloads question covers it).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard runningCopy == nil else { return .terminateNow }
         let running = AppModel.shared.downloads.activeCount
-        guard running > 0 else { return .terminateNow }
+        guard running > 0 else {
+            let model = AppModel.shared
+            guard model.config.askBeforeQuitting, !model.windows.isEmpty else { return .terminateNow }
+            let alert = NSAlert()
+            alert.messageText = "Quit Paddle?"
+            alert.informativeText = model.config.onLaunch == .restore
+                ? "Your windows and tabs open again next time."
+                : "Your windows and tabs close; Paddle opens a new window next time."
+            alert.addButton(withTitle: "Quit")
+            alert.addButton(withTitle: "Cancel")
+            return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        }
         let alert = NSAlert()
         alert.messageText = running == 1 ? "A download is still in progress" : "\(running) downloads are still in progress"
         alert.informativeText = running == 1 ? "Quitting Paddle cancels it." : "Quitting Paddle cancels them."

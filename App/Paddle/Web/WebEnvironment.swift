@@ -138,7 +138,8 @@ final class WebEnvironment {
         }
         c.applicationNameForUserAgent = applicationName
         c.preferences.isElementFullscreenEnabled = true
-        c.preferences.isFraudulentWebsiteWarningEnabled = true
+        c.preferences.isFraudulentWebsiteWarningEnabled = config.fraudWarnings
+        c.preferences.tabFocusesLinks = config.tabKeyHighlightsLinks
         // Paddle blocks pop-ups itself when it can tell a click from a script (`TabWebDelegate` createWebViewWith,
         // `PopupProbe`), so a window a script opens to download a file still works. Without that private flag WebKit
         // keeps blocking them silently, as before.

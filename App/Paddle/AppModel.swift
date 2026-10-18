@@ -506,6 +506,16 @@ final class AppModel {
             // A tab's configuration copy shares the WKPreferences object, so this reaches pages already open.
             for tab in allTabs { tab.webView?.configuration.preferences.minimumFontSize = CGFloat(new.minimumFontSize) }
         }
+        if !keys.isDisjoint(with: [.fraudWarnings, .tabKeyHighlightsLinks]) {
+            // Shared WKPreferences, as minimumFontSize: pages already open follow.
+            for tab in allTabs {
+                tab.webView?.configuration.preferences.isFraudulentWebsiteWarningEnabled = new.fraudWarnings
+                tab.webView?.configuration.preferences.tabFocusesLinks = new.tabKeyHighlightsLinks
+            }
+        }
+        if !keys.isDisjoint(with: [.swipeNavigation, .pinchZoom]) {
+            for tab in allTabs { tab.applyGestures() }
+        }
         if keys.contains(.sites) || keys.contains(.defaultZoom) { applySiteZoom() }
         if keys.contains(.sites) || keys.contains(.darkMode) { applySiteDarkMode() }
         // Scriptlets come from the same list files, so they are rebuilt with the block lists.
@@ -580,6 +590,17 @@ final class AppModel {
             case .alwaysShowTabCloseButtons: old.alwaysShowTabCloseButtons != new.alwaysShowTabCloseButtons
             case .showHomeButton: old.showHomeButton != new.showHomeButton
             case .alwaysShowDownloadsButton: old.alwaysShowDownloadsButton != new.alwaysShowDownloadsButton
+            case .onLaunch: old.onLaunch != new.onLaunch
+            case .newTabPosition: old.newTabPosition != new.newTabPosition
+            case .openLinksInBackground: old.openLinksInBackground != new.openLinksInBackground
+            case .afterClosingTab: old.afterClosingTab != new.afterClosingTab
+            case .askBeforeQuitting: old.askBeforeQuitting != new.askBeforeQuitting
+            case .askBeforeClosingWindow: old.askBeforeClosingWindow != new.askBeforeClosingWindow
+            case .externalLinks: old.externalLinks != new.externalLinks
+            case .fraudWarnings: old.fraudWarnings != new.fraudWarnings
+            case .swipeNavigation: old.swipeNavigation != new.swipeNavigation
+            case .pinchZoom: old.pinchZoom != new.pinchZoom
+            case .tabKeyHighlightsLinks: old.tabKeyHighlightsLinks != new.tabKeyHighlightsLinks
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
@@ -1119,14 +1140,24 @@ final class AppModel {
     }
 
     /// Links from other apps open in a normal window, never a private one, as in Safari and Chrome.
+    /// `externalLinks` picks a new tab of the front window, a new window (the other links of the same batch become
+    /// its tabs) or the front window's selected tab (the first link; the rest become tabs).
     func open(_ urls: [URL]) {
+        var target = config.externalLinks == .newWindow ? nil : frontNormalWindow
+        var replaceSelected = config.externalLinks == .currentTab
         for url in urls {
-            if let front = frontNormalWindow {
-                front.model.newTab(url: url)
-                front.window?.makeKeyAndOrderFront(nil)
-            } else {
-                openWindow(url: url)
+            guard let front = target else {
+                target = openWindow(url: url)
+                replaceSelected = false
+                continue
             }
+            if replaceSelected, let tab = front.model.selectedTab {
+                tab.load(url)
+            } else {
+                front.model.newTab(url: url)
+            }
+            replaceSelected = false
+            front.window?.makeKeyAndOrderFront(nil)
         }
     }
 
@@ -1176,6 +1207,11 @@ final class AppModel {
 
     private func restoreSession() {
         defer { didRestore = true }
+        // `onLaunch` newWindow: the saved session is replaced by this launch's windows at the first save.
+        guard config.onLaunch == .restore else {
+            log.info("startup: onLaunch is newWindow, the saved session is not restored")
+            return
+        }
         guard let session = sessionStore.load() else {
             if FileManager.default.fileExists(atPath: sessionStore.badFile.path) {
                 log.error("session.json.bad is there: a saved session that didn't decode, kept with its tab histories")

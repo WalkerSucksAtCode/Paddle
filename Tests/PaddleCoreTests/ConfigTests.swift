@@ -13,6 +13,36 @@ struct ConfigTests {
         #expect(config.searchSuggestTemplate.contains("%s"))
     }
 
+    @Test func browsingBehaviourKeysDefaultToTodaysBehaviour() {
+        let config = PaddleConfig()
+        #expect(config.onLaunch == .restore)
+        #expect(config.newTabPosition == .end)
+        #expect(config.openLinksInBackground)
+        #expect(config.afterClosingTab == .right)
+        #expect(!config.askBeforeQuitting && !config.askBeforeClosingWindow)
+        #expect(config.externalLinks == .newTab)
+        #expect(config.fraudWarnings && config.swipeNavigation && config.pinchZoom)
+        #expect(!config.tabKeyHighlightsLinks)
+    }
+
+    @Test func browsingBehaviourKeysDecodeAndUnknownWordsFallBack() throws {
+        let json = #"{"onLaunch": "newWindow", "newTabPosition": "afterCurrent", "openLinksInBackground": false, "afterClosingTab": "lastUsed", "askBeforeQuitting": true, "askBeforeClosingWindow": true, "externalLinks": "currentTab", "fraudWarnings": false, "swipeNavigation": false, "pinchZoom": false, "tabKeyHighlightsLinks": true}"#
+        let config = try PaddleConfig.decode(Data(json.utf8))
+        #expect(config.onLaunch == .newWindow)
+        #expect(config.newTabPosition == .afterCurrent)
+        #expect(!config.openLinksInBackground)
+        #expect(config.afterClosingTab == .lastUsed)
+        #expect(config.askBeforeQuitting && config.askBeforeClosingWindow)
+        #expect(config.externalLinks == .currentTab)
+        #expect(!config.fraudWarnings && !config.swipeNavigation && !config.pinchZoom)
+        #expect(config.tabKeyHighlightsLinks)
+        #expect(try PaddleConfig.decode(config.encoded()) == config)
+
+        let (fallback, issues) = try PaddleConfig.decodeReportingIssues(Data(#"{"onLaunch": "sometimes", "externalLinks": 3}"#.utf8))
+        #expect(fallback.onLaunch == .restore && fallback.externalLinks == .newTab)
+        #expect(Set(issues.map(\.path)) == [["onLaunch"], ["externalLinks"]])
+    }
+
     @Test func roundTrips() throws {
         var config = PaddleConfig()
         config.shortcuts = ["newTab": "cmd+t"]

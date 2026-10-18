@@ -12,6 +12,10 @@ struct PrivacyPane: View {
             Section("Content blocking") {
                 BlockingRows(model: model)
             }
+            Section("Security") {
+                ConfigToggle("Warn when visiting a fraudulent website", .fraudWarnings, \.fraudWarnings, model: model,
+                             help: "WebKit's Safe Browsing check, as in Safari: a page reported for phishing or malware shows a warning first.")
+            }
             Section("Filter lists") {
                 FilterListRows(model: model)
             }

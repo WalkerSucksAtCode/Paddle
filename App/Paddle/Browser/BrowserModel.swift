@@ -225,9 +225,15 @@ final class BrowserModel {
     }
 
     /// New tab from the "new tab" command: the configured new-tab page, or empty with the address field focused.
+    /// `newTabPosition` afterCurrent puts it right after the selected tab (not as a link from it: no opener).
     func openNewTabPage() {
         let page = URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
-        newTab(url: page)
+        if config.newTabPosition == .afterCurrent, let current = selectedTab {
+            let tab = Tab(url: page, isPrivate: isPrivate)
+            insert(tab, after: current, select: true)
+        } else {
+            newTab(url: page)
+        }
         if page == nil { focusAddress() }
     }
 
@@ -395,7 +401,8 @@ final class BrowserModel {
             if returnToOpener ?? tab.returnsToOpener, let opener = tab.opener, tabs.contains(where: { $0 === opener }) {
                 select(opener)
             } else {
-                select(nearestVisibleTab(to: min(index, tabs.count - 1)))
+                let next = TabOrder.selectionAfterClosing(index, rule: config.afterClosingTab, lastActive: tabs.map(\.lastActive))
+                select(nearestVisibleTab(to: next ?? 0))
             }
         }
         AppModel.shared.sessionChanged()

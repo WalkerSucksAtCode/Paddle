@@ -369,6 +369,13 @@ final class Tab: Identifiable {
     }
 
     /// Adopts a web view, either one this tab made or one WebKit made for a popup. `extensionPageID`: the extension
+    /// `swipeNavigation` and `pinchZoom` on this tab's web view (or `webView`, one being attached).
+    func applyGestures(to view: WKWebView? = nil) {
+        guard let view = view ?? webView else { return }
+        view.allowsBackForwardNavigationGestures = config.swipeNavigation
+        view.allowsMagnification = config.pinchZoom
+    }
+
     /// whose page configuration the web view was made with, nil for an ordinary web view.
     func attach(_ webView: WKWebView, extensionPageID: String?) {
         self.extensionPageID = extensionPageID
@@ -379,8 +386,7 @@ final class Tab: Identifiable {
         }
         // Remote inspection (Safari's Develop menu) follows `developerTools`, extension pages included.
         webView.isInspectable = AppModel.shared.config.developerTools
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsMagnification = true
+        applyGestures(to: webView)
         let delegate = TabWebDelegate(tab: self)
         webView.navigationDelegate = delegate
         webView.uiDelegate = delegate

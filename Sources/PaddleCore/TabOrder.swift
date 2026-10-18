@@ -24,4 +24,18 @@ public enum TabOrder {
     public static func pinBoundary(_ pinnedFlags: [Bool]) -> Int {
         pinnedFlags.firstIndex(of: false) ?? pinnedFlags.count
     }
+
+    /// The index, among the tabs left after the one at `closed` was removed, to select next. `right` takes the tab
+    /// that moved into its slot (the one to its left when it was last), `left` the one before it (the first tab when
+    /// it was first), `lastUsed` the remaining tab with the latest `lastActive` (`lastActive` lists the remaining
+    /// tabs in order). Nil when none are left.
+    public static func selectionAfterClosing(_ closed: Int, rule: TabCloseSelection, lastActive: [Date]) -> Int? {
+        let count = lastActive.count
+        guard count > 0 else { return nil }
+        switch rule {
+        case .right: return min(max(closed, 0), count - 1)
+        case .left: return min(max(closed - 1, 0), count - 1)
+        case .lastUsed: return lastActive.indices.max { lastActive[$0] < lastActive[$1] }
+        }
+    }
 }

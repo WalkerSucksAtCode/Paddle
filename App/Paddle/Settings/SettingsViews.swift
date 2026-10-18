@@ -1,3 +1,4 @@
+import PaddleCore
 import SwiftUI
 
 /// Settings' panes, in sidebar order. Settings is a tab of a browser window (`SettingsTabView`), addressed as
@@ -21,7 +22,7 @@ enum SettingsPane: String, CaseIterable {
 
     var summary: String {
         switch self {
-        case .general: "Home page, search engine, start page, and download preferences."
+        case .general: "Startup, tabs, pages, search engine, trackpad, and download preferences."
         case .appearance: "Themes, custom theme builder, colors, text size, and accessibility options."
         case .profiles: "Separate cookies, history and extensions per profile, and each profile's own settings."
         case .tabsMemory: "Tab freezing, automatic memory sleep, and background performance."
@@ -64,6 +65,10 @@ enum SettingsPane: String, CaseIterable {
             "searchTemplate", "searchSuggestTemplate", "search suggestions", "address", "showFullAddress",
             "bookmarks bar", "default browser", "downloads", "download", "askWhereToDownload", "ask where to download",
             "pinned sites", "speed dial", "frequently visited", "newTabFrequentSites",
+            "startup", "launch", "onLaunch", "restore", "session", "quit", "askBeforeQuitting", "close window",
+            "askBeforeClosingWindow", "other apps", "externalLinks", "links", "new tab position", "newTabPosition",
+            "after closing", "afterClosingTab", "background", "cmd-click", "command-click", "openLinksInBackground",
+            "trackpad", "swipe", "swipeNavigation", "pinch", "pinchZoom", "keyboard", "tab key", "tabKeyHighlightsLinks",
         ]
         case .appearance: [
             "theme", "dark mode", "light mode", "text size", "font size", "zoom", "contrast", "high contrast",
@@ -89,7 +94,7 @@ enum SettingsPane: String, CaseIterable {
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
             "filterUpdateDays", "list updates", "scriptlets", "uBlock Origin", "EasyList", "my rules", "user-filters.txt",
-            "https", "httpsOnly", "secure connection", "speculativeLoading", "preconnect", "preload", "warm", "http", "history", "historyDays", "clear history", "cookies", "website data", "site storage",
+            "https", "httpsOnly", "secure connection", "security", "fraud", "phishing", "malware", "safe browsing", "fraudWarnings", "speculativeLoading", "preconnect", "preload", "warm", "http", "history", "historyDays", "clear history", "cookies", "website data", "site storage",
         ]
         case .sites: [
             "site", "zoom", "JavaScript", "autoplay", "location", "notifications", "camera", "microphone", "downloads", "blocking",
@@ -98,6 +103,7 @@ enum SettingsPane: String, CaseIterable {
         case .extensions: [
             "addons", "extensionsInPrivate", "extensionCompat", "private windows", "permissions", "folder", "memory",
             "compatibility", "reload", "options", "extensionToolbar", "toolbar button", "pin", "pinned", "hide", "puzzle",
+            "updates", "update", "extensionUpdates",
         ]
         case .shortcuts: [
             "keyboard", "keys", "key bindings", "shortcut", "command", "menu", "defaults",
@@ -281,5 +287,31 @@ struct MasonryLayout: Layout {
             heights[column] = y + height
         }
         return (frames, heights.max() ?? 0)
+    }
+}
+
+/// A switch for one true/false key of config.json; its help names the key, then says what it does.
+struct ConfigToggle: View {
+    let title: String
+    let key: PaddleConfig.CodingKeys
+    let value: KeyPath<PaddleConfig, Bool>
+    let model: SettingsModel
+    let help: String
+
+    init(_ title: String, _ key: PaddleConfig.CodingKeys, _ value: KeyPath<PaddleConfig, Bool>, model: SettingsModel, help: String) {
+        self.title = title
+        self.key = key
+        self.value = value
+        self.model = model
+        self.help = help
+    }
+
+    var body: some View {
+        Toggle(title, isOn: Binding(
+            get: { model.file[keyPath: value] },
+            set: { on in Task { await model.saveKey(key, .bool(on)) } }
+        ))
+        .help("\(key.rawValue) in config.json. \(help)")
+        .disabled(model.controlsDisabled)
     }
 }

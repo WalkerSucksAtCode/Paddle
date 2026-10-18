@@ -1,3 +1,4 @@
+import Foundation
 @testable import PaddleCore
 import Testing
 
@@ -52,5 +53,18 @@ struct TabOrderTests {
         #expect(TabOrder.pinBoundary([false, false]) == 0)
         #expect(TabOrder.pinBoundary([true, true]) == 2)
         #expect(TabOrder.pinBoundary([]) == 0)
+    }
+
+    @Test func selectionAfterClosingFollowsTheRule() {
+        let dates = (0..<3).map { Date(timeIntervalSince1970: Double($0)) }
+        // Closed the middle of four: three remain.
+        #expect(TabOrder.selectionAfterClosing(1, rule: .right, lastActive: dates) == 1)
+        #expect(TabOrder.selectionAfterClosing(1, rule: .left, lastActive: dates) == 0)
+        // Closed the last or the first.
+        #expect(TabOrder.selectionAfterClosing(3, rule: .right, lastActive: dates) == 2)
+        #expect(TabOrder.selectionAfterClosing(0, rule: .left, lastActive: dates) == 0)
+        let used = [dates[2], dates[0], dates[1]]
+        #expect(TabOrder.selectionAfterClosing(1, rule: .lastUsed, lastActive: used) == 0)
+        #expect(TabOrder.selectionAfterClosing(0, rule: .right, lastActive: []) == nil)
     }
 }
