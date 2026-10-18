@@ -49,12 +49,18 @@ public struct SpaceRecord: Codable, Sendable, Equatable {
     public var tabs: [TabRecord]
     public var selectedIndex: Int
     public var groups: [TabGroupRecord]
-    /// The space's split views. Older files have none.
+    /// The space's split views from before multi view; read and turned into `layouts`, written empty.
     public var splits: [SplitRecord]
+    /// The space's multi views. Older files have none.
+    public var layouts: [PaneLayout]
+
+    /// The multi views to restore: `layouts`, then each old split record as a layout.
+    public var allLayouts: [PaneLayout] { layouts + splits.map(PaneLayout.init(split:)) }
 
     public init(
         id: String = UUID().uuidString, name: String = SpaceRecord.mainName, symbol: SpaceSymbol = .home, tint: String? = nil,
-        tabs: [TabRecord] = [], selectedIndex: Int = 0, groups: [TabGroupRecord] = [], splits: [SplitRecord] = []
+        tabs: [TabRecord] = [], selectedIndex: Int = 0, groups: [TabGroupRecord] = [], splits: [SplitRecord] = [],
+        layouts: [PaneLayout] = []
     ) {
         self.id = id
         self.name = name
@@ -64,9 +70,10 @@ public struct SpaceRecord: Codable, Sendable, Equatable {
         self.selectedIndex = selectedIndex
         self.groups = groups
         self.splits = splits
+        self.layouts = layouts
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, symbol, tint, tabs, selectedIndex, groups, splits }
+    private enum CodingKeys: String, CodingKey { case id, name, symbol, tint, tabs, selectedIndex, groups, splits, layouts }
 
     /// Lenient, for hand-edited files: `id` is required; a missing name is "Main", an unknown symbol is Home, an
     /// unknown tint is none, and tabs or groups that don't decode are skipped.
@@ -81,6 +88,7 @@ public struct SpaceRecord: Codable, Sendable, Equatable {
         selectedIndex = (try? c.decodeIfPresent(Int.self, forKey: .selectedIndex)) ?? 0
         groups = Self.lossy(TabGroupRecord.self, in: c, forKey: .groups)
         splits = Self.lossy(SplitRecord.self, in: c, forKey: .splits)
+        layouts = Self.lossy(PaneLayout.self, in: c, forKey: .layouts)
     }
 
     private static func lossy<T: Decodable>(_ type: T.Type, in c: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> [T] {

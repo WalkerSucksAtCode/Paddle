@@ -26,10 +26,10 @@ final class Space: Identifiable {
     }
 
     /// The saved form, with the tabs and groups the caller supplies.
-    func record(tabs: [TabRecord] = [], selectedIndex: Int = 0, groups: [TabGroupRecord] = [], splits: [SplitRecord] = []) -> SpaceRecord {
+    func record(tabs: [TabRecord] = [], selectedIndex: Int = 0, groups: [TabGroupRecord] = [], layouts: [PaneLayout] = []) -> SpaceRecord {
         SpaceRecord(
             id: id, name: name, symbol: symbol, tint: tint?.rawValue, tabs: tabs, selectedIndex: selectedIndex, groups: groups,
-            splits: splits
+            layouts: layouts
         )
     }
 }

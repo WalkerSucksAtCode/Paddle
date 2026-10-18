@@ -106,10 +106,10 @@ extension ControlBridge {
                         "asleep": .bool(tab.isAsleep), "selected": .bool(tab.id == model.selectedID),
                         "space": .string(space.name),
                     ]
-                    if let split = model.split(of: tab), let partner = model.partner(of: tab) {
-                        entry["split"] = [
-                            "partner": .string(partner.id.uuidString),
-                            "side": .string(split.leftID == tab.id ? "left" : "right"),
+                    if let split = model.split(of: tab) {
+                        entry["view"] = [
+                            "with": .array(model.others(of: tab).map { .string($0.id.uuidString) }),
+                            "panes": .number(Double(split.layout.count)),
                             "focused": .bool(tab.id == model.selectedID),
                         ]
                     }

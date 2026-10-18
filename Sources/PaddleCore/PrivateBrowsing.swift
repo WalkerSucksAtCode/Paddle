@@ -15,7 +15,7 @@ extension WindowRecord {
     public static func saving<Tab>(
         _ tabs: [Tab], selected: (Tab) -> Bool, isSaved: (Tab) -> Bool, record: (Tab) -> TabRecord, frame: String?,
         groups: [TabGroupRecord] = [], profile: String? = nil, space: SpaceRecord? = nil, otherSpaces: [SpaceRecord] = [],
-        spaceIndex: Int? = nil, splits: [SplitRecord] = []
+        spaceIndex: Int? = nil, layouts: [PaneLayout] = []
     ) -> WindowRecord {
         var records: [TabRecord] = []
         var selectedIndex = 0
@@ -26,7 +26,7 @@ extension WindowRecord {
         let used = Set(records.compactMap(\.groupID))
         return WindowRecord(
             tabs: records, selectedIndex: selectedIndex, frame: frame, groups: groups.filter { used.contains($0.id) }, profile: profile,
-            space: space, otherSpaces: otherSpaces, spaceIndex: spaceIndex, splits: splits
+            space: space, otherSpaces: otherSpaces, spaceIndex: spaceIndex, layouts: layouts
         )
     }
 }

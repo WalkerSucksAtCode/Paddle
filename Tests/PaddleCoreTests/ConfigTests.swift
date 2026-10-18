@@ -26,6 +26,8 @@ struct ConfigTests {
         #expect(!config.contactAutofill)
         #expect(config.newTabExtension.isEmpty)
         #expect(config.newTabFeeds.isEmpty && !config.newTabNotifications && config.newTabHiddenNotifications.isEmpty)
+        #expect(config.multiViewMaxPanes == 4)
+        #expect(PaddleConfig(multiViewMaxPanes: 99).multiViewMaxPanes == PaneLayout.maxPanes)
     }
 
     @Test func browsingBehaviourKeysDecodeAndUnknownWordsFallBack() throws {

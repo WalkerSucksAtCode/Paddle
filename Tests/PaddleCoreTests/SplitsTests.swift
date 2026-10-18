@@ -8,37 +8,40 @@ struct SplitsTests {
         ids.map { SplitTab(id: $0, groupID: groups[$0], isPinned: pinned.contains($0)) }
     }
 
-    @Test func keepsAValidSplit() {
-        let split = SplitRecord(left: "a", right: "b", ratio: 0.4)
-        #expect(SplitRules.normalized(splits: [split], tabs: tabs("x", "a", "b", "y")) == [split])
+    private func pair(_ a: String, _ b: String) -> PaneLayout { PaneLayout(a, b)! }
+
+    @Test func keepsAValidLayoutInAnyStripOrder() {
+        var three = pair("a", "b")
+        three.insert("c", at: "a", edge: .bottom)
+        #expect(MultiViewRules.normalized(layouts: [three], tabs: tabs("x", "c", "b", "a", "y")) == [three])
     }
 
-    @Test func dropsMissingTab() {
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "a", right: "zz")], tabs: tabs("a", "b")).isEmpty)
+    @Test func dropsMissingAndPinnedTabsShrinkingTheLayout() {
+        var three = pair("a", "b")
+        three.insert("c", at: "b", edge: .right)
+        #expect(MultiViewRules.normalized(layouts: [three], tabs: tabs("a", "b")).first?.tabs == ["a", "b"])
+        #expect(MultiViewRules.normalized(layouts: [three], tabs: tabs("a", "b", "c", pinned: ["c"])).first?.tabs == ["a", "b"])
+        #expect(MultiViewRules.normalized(layouts: [pair("a", "zz")], tabs: tabs("a", "b")).isEmpty)
     }
 
-    @Test func dropsPinnedTab() {
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "a", right: "b")], tabs: tabs("a", "b", pinned: ["b"])).isEmpty)
+    @Test func keepsTheLongestRunOfNeighbours() {
+        var four = pair("a", "b")
+        four.insert("c", at: "b", edge: .right)
+        four.insert("d", at: "c", edge: .right)
+        // d was dragged away from the others.
+        #expect(MultiViewRules.normalized(layouts: [four], tabs: tabs("a", "b", "c", "x", "d")).first?.tabs == ["a", "b", "c"])
+        #expect(MultiViewRules.normalized(layouts: [pair("a", "c")], tabs: tabs("a", "b", "c")).isEmpty)
     }
 
-    @Test func dropsNonAdjacentOrReversed() {
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "a", right: "c")], tabs: tabs("a", "b", "c")).isEmpty)
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "b", right: "a")], tabs: tabs("a", "b")).isEmpty)
+    @Test func keepsTheFirstTabsGroup() {
+        let layout = pair("a", "b")
+        #expect(MultiViewRules.normalized(layouts: [layout], tabs: tabs("a", "b", groups: ["a": "g"])).isEmpty)
+        #expect(MultiViewRules.normalized(layouts: [layout], tabs: tabs("a", "b", groups: ["a": "g", "b": "g"])) == [layout])
     }
 
-    @Test func dropsDifferentGroups() {
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "a", right: "b")], tabs: tabs("a", "b", groups: ["a": "g"])).isEmpty)
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "a", right: "b")], tabs: tabs("a", "b", groups: ["a": "g", "b": "h"])).isEmpty)
-        let same = SplitRecord(left: "a", right: "b")
-        #expect(SplitRules.normalized(splits: [same], tabs: tabs("a", "b", groups: ["a": "g", "b": "g"])) == [same])
-    }
-
-    @Test func dropsReusedTabKeepingOrder() {
-        let first = SplitRecord(left: "a", right: "b")
-        let second = SplitRecord(left: "b", right: "c")
-        let third = SplitRecord(left: "c", right: "d")
-        #expect(SplitRules.normalized(splits: [first, second, third], tabs: tabs("a", "b", "c", "d")) == [first, third])
-        #expect(SplitRules.normalized(splits: [SplitRecord(left: "a", right: "a")], tabs: tabs("a")).isEmpty)
+    @Test func aTabBelongsToTheFirstLayoutOnly() {
+        let first = pair("a", "b"), second = pair("b", "c"), third = pair("c", "d")
+        #expect(MultiViewRules.normalized(layouts: [first, second, third], tabs: tabs("a", "b", "c", "d")) == [first, third])
     }
 
     @Test func ratioIsClampedOnDecode() throws {
@@ -61,6 +64,12 @@ struct SplitsTests {
         #expect(back == window)
         #expect(back.splits == [split])
         #expect(back.otherSpaces[0].splits.count == 1)
+        // Old split records come back as two-pane layouts, after any saved layouts.
+        #expect(back.allLayouts == [PaneLayout(split: split)])
+        let withLayout = WindowRecord(tabs: [], selectedIndex: 0, layouts: [pair("x", "y")])
+        let decoded = try JSONDecoder().decode(WindowRecord.self, from: JSONEncoder().encode(withLayout))
+        #expect(decoded.layouts == [pair("x", "y")] && decoded.splits.isEmpty)
+        #expect(other.allLayouts.first?.tabs == ["c", "d"])
         let old = try JSONDecoder().decode(WindowRecord.self, from: Data(#"{"tabs":[],"selectedIndex":0}"#.utf8))
         #expect(old.splits.isEmpty)
         let bad = try JSONDecoder().decode(WindowRecord.self, from: Data(#"{"tabs":[],"selectedIndex":0,"splits":[{"left":"a","right":"b"},{"x":1},5]}"#.utf8))

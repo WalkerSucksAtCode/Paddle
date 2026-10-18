@@ -66,7 +66,7 @@ struct BrowserView: View {
         // half-typed address.
         .onChange(of: vertical) { _, _ in
             DispatchQueue.main.async {
-                if model.visibleTabs.count == 2 { for tab in model.visibleTabs { tab.generation += 1 } }
+                if model.visibleTabs.count > 1 { for tab in model.visibleTabs { tab.generation += 1 } }
                 guard model.controller?.window?.isKeyWindow == true else { return }
                 model.controller?.focusWebView()
             }
@@ -162,10 +162,8 @@ struct BrowserView: View {
 
     @ViewBuilder
     private var splitOrSingle: some View {
-        if let selected = model.selectedTab, let split = model.split(of: selected), let partner = model.partner(of: selected) {
-            let selectedIsLeft = split.leftID == selected.id
-            SplitPanes(model: model, split: split, left: selectedIsLeft ? selected : partner, right: selectedIsLeft ? partner : selected,
-                       focused: selected) { tab, focused in
+        if let selected = model.selectedTab, let split = model.split(of: selected) {
+            MultiPanes(model: model, split: split, focused: selected) { tab, focused in
                 pane(tab, focused: focused)
             }
         } else {
@@ -199,11 +197,12 @@ struct BrowserView: View {
                         .background(Color(nsColor: .windowBackgroundColor))
                 }
             }
+            .modifier(SinglePaneTarget(model: model))
         }
     }
 
     private func settleSplit(old: [UUID], new: [UUID]) {
-        guard old.count == 2 || new.count == 2 else { return }
+        guard old.count > 1 || new.count > 1 else { return }
         DispatchQueue.main.async {
             for tab in model.visibleTabs { tab.generation += 1 }
         }

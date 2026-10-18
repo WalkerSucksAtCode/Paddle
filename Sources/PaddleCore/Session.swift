@@ -26,12 +26,15 @@ public struct WindowRecord: Codable, Sendable, Equatable {
     /// Where the active space sits among all the window's spaces (⌃1 is the first), so a relaunch keeps the order.
     /// Nil in older files: first.
     public var spaceIndex: Int?
-    /// The active space's split views (`SplitRecord`); the others' are in their `SpaceRecord`. Older files have none.
+    /// The active space's split views from before multi view; read and turned into `layouts`, written empty.
     public var splits: [SplitRecord]
+    /// The active space's multi views (`PaneLayout`); the others' are in their `SpaceRecord`. Older files have none.
+    public var layouts: [PaneLayout]
 
     public init(
         tabs: [TabRecord], selectedIndex: Int, frame: String? = nil, groups: [TabGroupRecord] = [], profile: String? = nil,
-        space: SpaceRecord? = nil, otherSpaces: [SpaceRecord] = [], spaceIndex: Int? = nil, splits: [SplitRecord] = []
+        space: SpaceRecord? = nil, otherSpaces: [SpaceRecord] = [], spaceIndex: Int? = nil, splits: [SplitRecord] = [],
+        layouts: [PaneLayout] = []
     ) {
         self.tabs = tabs
         self.selectedIndex = selectedIndex
@@ -42,12 +45,16 @@ public struct WindowRecord: Codable, Sendable, Equatable {
         self.otherSpaces = otherSpaces
         self.spaceIndex = spaceIndex
         self.splits = splits
+        self.layouts = layouts
     }
+
+    /// The multi views to restore: `layouts`, then each old split record as a layout.
+    public var allLayouts: [PaneLayout] { layouts + splits.map(PaneLayout.init(split:)) }
 
     /// Every tab of every space.
     public var allTabRecords: [TabRecord] { tabs + otherSpaces.flatMap(\.tabs) }
 
-    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups, profile, space, otherSpaces, spaceIndex, splits }
+    private enum CodingKeys: String, CodingKey { case tabs, selectedIndex, frame, groups, profile, space, otherSpaces, spaceIndex, splits, layouts }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -60,6 +67,7 @@ public struct WindowRecord: Codable, Sendable, Equatable {
         otherSpaces = ((try? c.decodeIfPresent([LossySpaceItem<SpaceRecord>].self, forKey: .otherSpaces)) ?? nil)?.compactMap(\.value) ?? []
         spaceIndex = (try? c.decodeIfPresent(Int.self, forKey: .spaceIndex)) ?? nil
         splits = ((try? c.decodeIfPresent([LossySpaceItem<SplitRecord>].self, forKey: .splits)) ?? nil)?.compactMap(\.value) ?? []
+        layouts = ((try? c.decodeIfPresent([LossySpaceItem<PaneLayout>].self, forKey: .layouts)) ?? nil)?.compactMap(\.value) ?? []
     }
 }
 

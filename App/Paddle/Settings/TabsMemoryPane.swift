@@ -68,6 +68,16 @@ struct TabsMemoryPane: View {
             }
             .disabled(model.controlsDisabled)
 
+            Section("Multi view") {
+                Picker("Most tabs in one view", selection: Binding(
+                    get: { model.file.multiViewMaxPanes },
+                    set: { value in Task { await model.saveKey(.multiViewMaxPanes, .number(Double(value))) } }
+                )) {
+                    ForEach(2...PaneLayout.maxPanes, id: \.self) { count in Text("\(count) tabs").tag(count) }
+                }
+                .help("multiViewMaxPanes in config.json. Every pane is a live page, so each one takes memory and CPU like a tab you're looking at. Views already bigger stay as they are.")
+                .disabled(model.controlsDisabled)
+            }
             Section("Link preview") {
                 Toggle("Preview links on ⌥-click", isOn: Binding(
                     get: { model.file.linkPreview },

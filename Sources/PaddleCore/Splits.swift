@@ -1,6 +1,7 @@
 import Foundation
 
-/// Two tabs shown side by side. Tabs are named by their session id (`TabRecord.id`).
+/// Two tabs shown side by side: the session form of split view before multi view (`PaneLayout`), still read from older
+/// files and turned into a layout (`PaneLayout(split:)`). Tabs are named by their session id (`TabRecord.id`).
 public struct SplitRecord: Codable, Sendable, Equatable {
     /// The range a divider can take: the left side's share of the width.
     public static let ratioRange: ClosedRange<Double> = 0.25...0.75
@@ -45,23 +46,38 @@ public struct SplitTab: Equatable, Sendable {
     }
 }
 
-/// Split view rules on the strip's order.
-public enum SplitRules {
-    /// `splits` without the ones that can't hold: a tab missing, pinned, the left not right before the right, the two
-    /// in different groups (or one in a group), or a tab already used by an earlier split. Order is kept.
-    public static func normalized(splits: [SplitRecord], tabs: [SplitTab]) -> [SplitRecord] {
+/// Multi view rules on the strip's order. A layout's tabs sit next to each other in the strip (in any order), none
+/// pinned, all in one group (or none). A tab that breaks that leaves its layout, and a layout left with fewer than two
+/// tabs ends.
+public enum MultiViewRules {
+    /// `layouts` without what can't hold. In each layout, tabs that are missing, pinned or already in an earlier
+    /// layout are taken out; of the rest, the tabs of the first one's group (in strip order) stay, and of those the
+    /// longest run of strip neighbours (the first on a tie). Order of layouts is kept.
+    public static func normalized(layouts: [PaneLayout], tabs: [SplitTab]) -> [PaneLayout] {
+        let index = Dictionary(tabs.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
         var used = Set<String>()
-        var result: [SplitRecord] = []
-        for split in splits {
-            guard split.left != split.right,
-                  let l = tabs.firstIndex(where: { $0.id == split.left }),
-                  let r = tabs.firstIndex(where: { $0.id == split.right }),
-                  r == l + 1, !tabs[l].isPinned, !tabs[r].isPinned,
-                  tabs[l].groupID == tabs[r].groupID,
-                  !used.contains(split.left), !used.contains(split.right) else { continue }
-            used.insert(split.left)
-            used.insert(split.right)
-            result.append(split)
+        var result: [PaneLayout] = []
+        for layout in layouts {
+            var candidates = layout.tabs.filter { id in
+                guard let i = index[id] else { return false }
+                return !tabs[i].isPinned && !used.contains(id)
+            }
+            candidates.sort { index[$0]! < index[$1]! }
+            if let first = candidates.first {
+                let group = tabs[index[first]!].groupID
+                candidates = candidates.filter { tabs[index[$0]!].groupID == group }
+            }
+            // Runs of strip neighbours.
+            var runs: [[String]] = []
+            for id in candidates {
+                if let last = runs.last?.last, index[id]! == index[last]! + 1 { runs[runs.count - 1].append(id) } else { runs.append([id]) }
+            }
+            let keep = Set(runs.max { $0.count < $1.count } ?? [])
+            var kept: PaneLayout? = layout
+            for id in layout.tabs where !keep.contains(id) { kept = kept?.removing(id) }
+            guard let kept, kept.count >= 2 else { continue }
+            used.formUnion(kept.tabs)
+            result.append(kept)
         }
         return result
     }

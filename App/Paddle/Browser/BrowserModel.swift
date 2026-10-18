@@ -41,8 +41,8 @@ final class BrowserModel {
     @ObservationIgnored private var hoverWork: DispatchWorkItem?
     /// The active space's tab groups. Each group's tabs are adjacent in `tabs`, and a group with no tabs is removed.
     var groups: [TabGroup] = []
-    /// The active space's split views. Each pairs two adjacent tabs of the same group (or none); `normalizeSplits` ends
-    /// the ones a change breaks.
+    /// The active space's multi views. Each one's tabs are adjacent in the strip, in one group (or none);
+    /// `normalizeSplits` takes out the tabs a change breaks away.
     private(set) var splits: [Split] = []
 
     /// The window's spaces in order, the active one included. A window starts with one, "Main".
@@ -72,8 +72,6 @@ final class BrowserModel {
     /// Where the address field and its suggestion list are, in the window's SwiftUI coordinates (top-left
     /// origin), for `BrowserWindowController`'s click-outside check.
     @ObservationIgnored var addressFieldFrame: CGRect = .zero
-    /// The unfocused side of a split in window coordinates (zero when not split or too narrow); a click in it focuses it.
-    @ObservationIgnored var splitUnfocusedFrame: CGRect = .zero
     @ObservationIgnored var suggestionsFrame: CGRect = .zero
     /// Incremented to ask the view to focus the address field.
     var focusAddressRequest = 0
@@ -280,13 +278,15 @@ final class BrowserModel {
         normalizeGroups()
     }
 
-    /// `index` (an insertion point in `list`) moved out of the middle of any split `tab` isn't part of, to just after it.
+    /// `index` (an insertion point in `list`) moved out of the middle of any multi view `tab` isn't part of, to just
+    /// after its tabs.
     private func outsideSplits(_ index: Int, in list: [Tab], moving tab: Tab) -> Int {
         guard split(of: tab) == nil else { return index }
         var index = index
-        for pair in splits {
-            guard let l = list.firstIndex(where: { $0.id == pair.leftID }), let r = list.firstIndex(where: { $0.id == pair.rightID }),
-                  r == l + 1, index > l, index <= r else { continue }
+        for view in splits {
+            let members = Set(view.tabIDs)
+            let spots = list.indices.filter { members.contains(list[$0].id) }
+            guard let l = spots.min(), let r = spots.max(), index > l, index <= r else { continue }
             index = r + 1
         }
         return index
@@ -319,10 +319,10 @@ final class BrowserModel {
         tab.lastActive = now
         let state = tab.webView == nil ? "cold: page created" : tab.isFrozen ? "frozen: resumed" : "live"
         tab.wake()
-        // The other side of a split is on screen too.
-        if let partner = partner(of: tab) {
-            partner.lastActive = now
-            partner.wake()
+        // The other panes of a multi view are on screen too.
+        for other in others(of: tab) {
+            other.lastActive = now
+            other.wake()
         }
         if previous !== tab { extensionHost?.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
@@ -561,11 +561,12 @@ final class BrowserModel {
         guard tab !== target, tab.isPinned == target.isPinned,
               let from = tabs.firstIndex(where: { $0 === tab }),
               let to = tabs.firstIndex(where: { $0 === target }) else { return false }
-        // Landing on a side of a split that `tab` isn't in goes to the pair's far edge, so the split stays whole.
+        // Landing on a tab of a multi view that `tab` isn't in goes to the view's far edge, so the view stays whole.
         var dest = to
-        if split(of: tab) == nil, let pair = split(of: target),
-           let l = tabs.firstIndex(where: { $0.id == pair.leftID }), let r = tabs.firstIndex(where: { $0.id == pair.rightID }) {
-            dest = from < to ? max(l, r) : min(l, r)
+        if split(of: tab) == nil, let view = split(of: target) {
+            let members = Set(view.tabIDs)
+            let spots = tabs.indices.filter { members.contains(tabs[$0].id) }
+            if let l = spots.min(), let r = spots.max() { dest = from < to ? r : l }
         }
         TabOrder.move(&tabs, from: from, onto: dest)
         tab.groupID = groupID
@@ -784,7 +785,7 @@ final class BrowserModel {
         withSpace(record.id) {
             tabs = restored
             groups = record.groups.compactMap(TabGroup.init(record:))
-            splits = Self.splits(from: record.splits, in: restored)
+            splits = Self.splits(from: record.allLayouts, in: restored)
             normalizeGroups()
             if restored.indices.contains(record.selectedIndex) { selectedID = restored[record.selectedIndex].id } else { selectedID = restored.last?.id }
         }
@@ -800,75 +801,191 @@ final class BrowserModel {
         if tabs.isEmpty { showSpaceWithTabs() }
     }
 
-    // MARK: - Split view
+    // MARK: - Multi view
 
-    /// Two adjacent tabs shown side by side. The selected one is the focused side.
+    /// Tabs shown at once, tiled (`PaneLayout`, naming tabs by `Tab.id`): split view's two side by side, or up to
+    /// `maxPanes`. Its tabs sit next to each other in the strip; the selected one is the focused pane.
     struct Split: Identifiable, Equatable {
-        let id = UUID()
-        var leftID: UUID
-        var rightID: UUID
-        /// The left side's share of the width (`SplitRecord.ratioRange`).
-        var ratio = 0.5
+        var id = UUID()
+        var layout: PaneLayout
 
-        /// The split with its tabs named by `Tab.id`, for the rules in PaddleCore.
-        var record: SplitRecord { SplitRecord(left: leftID.uuidString, right: rightID.uuidString, ratio: ratio) }
+        var tabIDs: [UUID] { layout.tabs.compactMap(UUID.init(uuidString:)) }
+        func contains(_ tab: Tab) -> Bool { layout.contains(tab.id.uuidString) }
     }
 
-    /// The split `tab` is in; the active space's only.
+    /// The most panes a multi view in this window may have (`multiViewMaxPanes`).
+    var maxPanes: Int { config.multiViewMaxPanes }
+
+    /// The content area in the window's content view (top-left origin), set by the content area as it lays out.
+    @ObservationIgnored var paneArea: CGRect = .zero
+
+    /// Where each pane is now, in the window's content view: the selected tab's view laid out in `paneArea` (only the
+    /// focused pane when one would be under `PaneMetrics.minimumPane`), or the single page. Worked out when asked, so
+    /// it always matches the layout. A click in an unfocused pane focuses it; a tab drag over one drops there.
+    var paneFrames: [UUID: CGRect] {
+        guard let selected = selectedTab, paneArea.width > 0 else { return [:] }
+        let local = CGRect(origin: .zero, size: paneArea.size)
+        guard let split = split(of: selected) else { return [selected.id: paneArea] }
+        let frames = split.layout.frames(in: local, gap: PaneMetrics.gap)
+        if PaneMetrics.isNarrow(frames) { return [selected.id: paneArea] }
+        return Dictionary(uniqueKeysWithValues: frames.compactMap { key, frame in
+            UUID(uuidString: key).map { ($0, frame.offsetBy(dx: paneArea.minX, dy: paneArea.minY)) }
+        })
+    }
+    /// Where a tab being dragged over the content area would land: a pane and an edge (nil: the middle, a swap or
+    /// replace). The content area draws it.
+    var paneDropHint: (target: UUID, edge: PaneEdge?)?
+
+    /// The multi view `tab` is in; the active space's only.
     func split(of tab: Tab) -> Split? {
-        splits.first { $0.leftID == tab.id || $0.rightID == tab.id }
+        splits.first { $0.contains(tab) }
     }
 
-    /// The other tab of `tab`'s split.
-    func partner(of tab: Tab) -> Tab? {
-        guard let split = split(of: tab) else { return nil }
-        let id = split.leftID == tab.id ? split.rightID : split.leftID
-        return tabs.first { $0.id == id }
+    /// `split`'s tabs in pane order (left to right, top to bottom).
+    func panes(of split: Split) -> [Tab] {
+        split.tabIDs.compactMap { id in tabs.first { $0.id == id } }
     }
 
-    /// The tabs on screen in left-to-right order: the selected tab and its partner, else just the selected one.
+    /// The other tabs of `tab`'s multi view, in pane order.
+    func others(of tab: Tab) -> [Tab] {
+        guard let split = split(of: tab) else { return [] }
+        return panes(of: split).filter { $0 !== tab }
+    }
+
+    /// The tabs on screen in pane order: the selected tab's multi view, else just the selected tab.
     var visibleTabs: [Tab] {
         guard let selected = selectedTab else { return [] }
-        guard let split = split(of: selected), let partner = partner(of: selected) else { return [selected] }
-        return split.leftID == selected.id ? [selected, partner] : [partner, selected]
+        guard let split = split(of: selected) else { return [selected] }
+        return panes(of: split)
     }
 
-    /// On screen: a side of what `visibleTabs` shows, or the link preview over it (so its dialogs show).
+    /// On screen: a pane of what `visibleTabs` shows, or the link preview over it (so its dialogs show).
     func isVisible(_ tab: Tab) -> Bool {
         tab === preview || visibleTabs.contains { $0 === tab }
     }
 
-    /// Splits `a` and `b`: `b` moves to just right of `a` (into `a`'s group, or none). Refused for pinned tabs, the same
-    /// tab, or tabs not both in this window's active space. Either tab's earlier split ends.
+    /// Shows `b` with `a`: in `a`'s multi view, to the right of `a`'s pane (when it has room), or as a new two-pane
+    /// view with `b` on the right. `b` leaves any other multi view and moves next to the others in the strip (into
+    /// their group). Refused for pinned tabs, the same tab, a full multi view, or tabs not both in this space.
     func makeSplit(_ a: Tab, with b: Tab) {
-        guard a !== b, !a.isPinned, !b.isPinned,
-              tabs.contains(where: { $0 === a }), let from = tabs.firstIndex(where: { $0 === b }) else { return }
-        splits.removeAll { $0.leftID == a.id || $0.rightID == a.id || $0.leftID == b.id || $0.rightID == b.id }
+        _ = dropTab(b, onto: a, edge: .right)
+    }
+
+    /// A tab let go over a pane (`edge` nil: its middle). On an edge, `tab` takes that side of `target`'s pane, which
+    /// becomes a multi view if it wasn't one. In the middle, two panes of one view swap, and a tab not shown yet
+    /// takes `target`'s place (which stays a tab). `tab` is selected. False when refused: the same tab, a pinned
+    /// one, one not in this space, or a full view.
+    @discardableResult
+    func dropTab(_ tab: Tab, onto target: Tab, edge: PaneEdge?) -> Bool {
+        guard tab !== target, !tab.isPinned, !target.isPinned,
+              tabs.contains(where: { $0 === tab }), tabs.contains(where: { $0 === target }) else { return false }
+        let tid = tab.id.uuidString, gid = target.id.uuidString
+        let existing = split(of: target)
+        var layout: PaneLayout
+        if let existing {
+            layout = existing.layout
+            if let edge {
+                if layout.contains(tid) {
+                    if layout.count > 2 {
+                        guard layout.move(tid, to: gid, edge: edge) else { return false }
+                    } else {
+                        guard let two = Self.twoPanes(tid, at: gid, edge: edge) else { return false }
+                        layout = two
+                    }
+                } else {
+                    guard layout.insert(tid, at: gid, edge: edge, limit: maxPanes) else { return false }
+                }
+            } else if layout.contains(tid) {
+                layout.swap(tid, gid)
+            } else {
+                guard layout.replace(gid, with: tid) else { return false }
+            }
+        } else {
+            guard let edge else {
+                select(tab)
+                return true
+            }
+            guard let two = Self.twoPanes(tid, at: gid, edge: edge) else { return false }
+            layout = two
+        }
         let before = tabs
-        tabs.remove(at: from)
-        b.groupID = a.groupID
-        let at = tabs.firstIndex { $0 === a } ?? tabs.count
-        tabs.insert(b, at: at + 1)
-        normalizeGroups()
-        splits.append(Split(leftID: a.id, rightID: b.id))
-        a.lastActive = Date()
-        a.wake()
-        b.lastActive = Date()
-        b.wake()
-        if selectedID != a.id && selectedID != b.id { select(a) }
+        // `tab` leaves any other multi view.
+        if let own = split(of: tab), own.id != existing?.id { setLayout(own.layout.removing(tid), for: own) }
+        if let existing { setLayout(layout, for: existing) } else { splits.append(Split(layout: layout)) }
+        gather(around: target, adding: tab)
         reportMoves(from: before)
+        for shown in visibleTabs(of: target) {
+            shown.lastActive = Date()
+            shown.wake()
+        }
+        select(tab)
+        AppModel.shared.sessionChanged()
+        return true
+    }
+
+    /// `new` on `edge` of `target`, the two alone.
+    private static func twoPanes(_ new: String, at target: String, edge: PaneEdge) -> PaneLayout? {
+        let axis: PaneAxis = edge == .left || edge == .right ? .horizontal : .vertical
+        let newFirst = edge == .left || edge == .top
+        return PaneLayout(root: .split(axis, ratio: 0.5, newFirst ? .tab(new) : .tab(target), newFirst ? .tab(target) : .tab(new)))
+    }
+
+    /// The tabs `target`'s multi view shows (or `target` alone).
+    private func visibleTabs(of target: Tab) -> [Tab] {
+        split(of: target).map(panes(of:)) ?? [target]
+    }
+
+    /// Moves `tab` next to the other tabs of `target`'s multi view in the strip (after the last of them), into their
+    /// group, so the rules hold.
+    private func gather(around target: Tab, adding tab: Tab) {
+        guard let split = split(of: target) else { return }
+        let members = Set(split.tabIDs)
+        tab.groupID = target.groupID
+        guard let from = tabs.firstIndex(where: { $0 === tab }) else { return }
+        tabs.remove(at: from)
+        let last = tabs.lastIndex { members.contains($0.id) && $0 !== tab } ?? (tabs.firstIndex { $0 === target } ?? tabs.count - 1)
+        tabs.insert(tab, at: min(last + 1, tabs.count))
+        normalizeGroups()
+    }
+
+    /// Replaces `split`'s layout, or ends it (nil).
+    private func setLayout(_ layout: PaneLayout?, for split: Split) {
+        guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        if let layout { splits[at].layout = layout } else { splits.remove(at: at) }
+    }
+
+    /// Takes `tab` out of its multi view, which closes up (or ends with one pane left); the tab stays in the strip,
+    /// moved to just after the view's other tabs so they stay together.
+    func removeFromView(_ tab: Tab) {
+        guard let split = split(of: tab) else { return }
+        let rest = split.layout.removing(tab.id.uuidString)
+        setLayout(rest, for: split)
+        if let rest {
+            let members = Set(rest.tabs.compactMap(UUID.init(uuidString:)))
+            let before = tabs
+            if let from = tabs.firstIndex(where: { $0 === tab }) {
+                tabs.remove(at: from)
+                let last = tabs.lastIndex { members.contains($0.id) } ?? from - 1
+                tabs.insert(tab, at: min(last + 1, tabs.count))
+                normalizeGroups()
+                reportMoves(from: before)
+            }
+        }
+        if selectedID == tab.id, let next = rest?.tabs.first.flatMap(UUID.init(uuidString:)).flatMap({ id in tabs.first { $0.id == id } }) {
+            select(next)
+        }
         AppModel.shared.sessionChanged()
     }
 
-    /// Ends the split `tab` is in; both tabs stay where they are.
+    /// Ends the multi view `tab` is in; its tabs stay where they are.
     func endSplit(of tab: Tab) {
         guard let split = split(of: tab) else { return }
         splits.removeAll { $0.id == split.id }
         AppModel.shared.sessionChanged()
     }
 
-    /// Tabs > Split View: ends the selected tab's split; else splits it with the next tab in the strip (not pinned, not
-    /// in a split, same group), or with a new New Tab page after it, which is then focused.
+    /// Tabs > Split View: ends the selected tab's multi view; else shows it with the next tab in the strip (not
+    /// pinned, not in a view, same group), or with a new New Tab page after it, which is then focused.
     func toggleSplitView() {
         guard let current = selectedTab else { return }
         if split(of: current) != nil {
@@ -880,6 +997,7 @@ final class BrowserModel {
             let next = tabs[index + 1]
             if !next.isPinned, next.groupID == current.groupID, split(of: next) == nil {
                 makeSplit(current, with: next)
+                select(current)
                 return
             }
         }
@@ -892,68 +1010,82 @@ final class BrowserModel {
         if page == nil { focusAddress() }
     }
 
-    /// Tabs > Swap Sides: the two tabs trade places; the focused tab stays focused.
+    /// Tabs > Swap Sides: in a two-pane view the two tabs trade panes and strip places; the focused tab stays focused.
     func swapSplitSides() {
-        guard let selected = selectedTab, let split = split(of: selected),
-              let l = tabs.firstIndex(where: { $0.id == split.leftID }), tabs.indices.contains(l + 1), tabs[l + 1].id == split.rightID,
-              let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        guard let selected = selectedTab, let split = split(of: selected), split.layout.count == 2,
+              case .split(let axis, let ratio, .tab(let first), .tab(let second)) = split.layout.root,
+              let l = tabs.firstIndex(where: { $0.id.uuidString == first }), let r = tabs.firstIndex(where: { $0.id.uuidString == second }) else { return }
         let before = tabs
-        tabs.swapAt(l, l + 1)
-        splits[at].leftID = split.rightID
-        splits[at].rightID = split.leftID
-        splits[at].ratio = SplitRecord.clamped(1 - split.ratio)
+        tabs.swapAt(l, r)
+        setLayout(PaneLayout(root: .split(axis, ratio: 1 - ratio, .tab(second), .tab(first))), for: split)
         reportMoves(from: before)
         AppModel.shared.sessionChanged()
     }
 
-    /// Tabs > Focus Other Side: selects the partner, which becomes the focused side.
+    /// Tabs > Focus Next Pane: the next pane of the selected tab's view, in pane order, round to the first.
     func focusOtherSplitSide() {
-        guard let selected = selectedTab, let partner = partner(of: selected) else { return }
-        select(partner)
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        let shown = panes(of: split)
+        guard let at = shown.firstIndex(where: { $0 === selected }), shown.count > 1 else { return }
+        select(shown[(at + 1) % shown.count])
     }
 
-    /// Moves the divider: `ratio` is the left side's share, kept within `SplitRecord.ratioRange`.
-    func setSplitRatio(_ ratio: Double, for split: Split) {
+    /// ⌘⌥ and an arrow: the pane next to the focused one that way.
+    func focusPane(toward edge: PaneEdge) {
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        let size = paneArea.size == .zero ? CGSize(width: 1200, height: 800) : paneArea.size
+        guard let id = split.layout.neighbor(of: selected.id.uuidString, toward: edge, in: CGRect(origin: .zero, size: size)),
+              let next = tabs.first(where: { $0.id.uuidString == id }) else { return }
+        select(next)
+    }
+
+    /// Moves a divider: `ratio` is the first side's share of the split at `path`, kept within `PaneLayout.ratioRange`.
+    func setSplitRatio(_ ratio: Double, at path: [Int], for split: Split) {
         guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
-        let clamped = SplitRecord.clamped(ratio)
-        guard splits[at].ratio != clamped else { return }
-        splits[at].ratio = clamped
+        var layout = splits[at].layout
+        guard layout.setRatio(ratio, at: path), layout != splits[at].layout else { return }
+        splits[at].layout = layout
         AppModel.shared.sessionChanged()
     }
 
-    /// Ends the splits the tab order no longer supports (a side closed, moved, pinned, regrouped or separated).
-    private func normalizeSplits() {
-        guard !splits.isEmpty else { return }
-        let kept = SplitRules.normalized(
-            splits: splits.map(\.record),
-            tabs: tabs.map { SplitTab(id: $0.id.uuidString, groupID: $0.groupID?.uuidString, isPinned: $0.isPinned) }
-        )
-        let keptLeft = Set(kept.map(\.left))
-        if kept.count != splits.count { splits = splits.filter { keptLeft.contains($0.leftID.uuidString) } }
+    /// View > Even Out Panes: every divider of the selected tab's view back to the middle.
+    func equalizePanes() {
+        guard let selected = selectedTab, let split = split(of: selected), let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        splits[at].layout.equalize()
+        AppModel.shared.sessionChanged()
     }
 
-    /// Session restore: the active space's saved splits, for tabs already in `tabs`.
-    func restoreSplits(_ records: [SplitRecord]) {
-        splits = Self.splits(from: records, in: tabs)
+    /// Makes the multi views fit the tab order again (a tab closed, moved away, pinned or regrouped leaves its view;
+    /// a view left with one tab ends). Ids are kept, so the panes stay as they are on screen.
+    private func normalizeSplits() {
+        guard !splits.isEmpty else { return }
+        let kept = MultiViewRules.normalized(
+            layouts: splits.map(\.layout),
+            tabs: tabs.map { SplitTab(id: $0.id.uuidString, groupID: $0.groupID?.uuidString, isPinned: $0.isPinned) }
+        )
+        guard kept != splits.map(\.layout) else { return }
+        splits = kept.map { layout in
+            let old = splits.first { $0.layout.tabs.contains(where: layout.tabs.contains) }
+            return Split(id: old?.id ?? UUID(), layout: layout)
+        }
+    }
+
+    /// Session restore: the active space's saved multi views, for tabs already in `tabs`.
+    func restoreSplits(_ layouts: [PaneLayout]) {
+        splits = Self.splits(from: layouts, in: tabs)
         normalizeSplits()
     }
 
-    /// Splits named by session id; the ones whose tabs aren't in `tabs` are skipped.
-    private static func splits(from records: [SplitRecord], in tabs: [Tab]) -> [Split] {
-        records.compactMap { record in
-            guard let left = tabs.first(where: { $0.sessionKey == record.left }),
-                  let right = tabs.first(where: { $0.sessionKey == record.right }) else { return nil }
-            return Split(leftID: left.id, rightID: right.id, ratio: record.ratio)
-        }
+    /// Layouts named by session id, renamed to tab ids; tabs that aren't in `tabs` are taken out.
+    private static func splits(from layouts: [PaneLayout], in tabs: [Tab]) -> [Split] {
+        let ids = Dictionary(tabs.map { ($0.sessionKey, $0.id.uuidString) }, uniquingKeysWith: { a, _ in a })
+        return layouts.compactMap { layout in layout.mapped { ids[$0] }.map { Split(layout: $0) } }
     }
 
-    /// The saved form of `splits`, naming tabs by session id. Splits with a tab that isn't saved (View Source) are skipped.
-    private static func records(of splits: [Split], in tabs: [Tab]) -> [SplitRecord] {
-        func key(_ id: UUID) -> String? { tabs.first { $0.id == id && $0.sourceHTML == nil }?.sessionKey }
-        return splits.compactMap { split in
-            guard let left = key(split.leftID), let right = key(split.rightID) else { return nil }
-            return SplitRecord(left: left, right: right, ratio: split.ratio)
-        }
+    /// The saved form of `splits`, naming tabs by session id. A tab that isn't saved (View Source) is left out.
+    private static func records(of splits: [Split], in tabs: [Tab]) -> [PaneLayout] {
+        let keys = Dictionary(tabs.filter { $0.sourceHTML == nil }.map { ($0.id.uuidString, $0.sessionKey) }, uniquingKeysWith: { a, _ in a })
+        return splits.compactMap { $0.layout.mapped { keys[$0] } }
     }
 
     // MARK: - Link preview
@@ -970,11 +1102,11 @@ final class BrowserModel {
     /// The tab under the preview, where its links and popups open and next to which it becomes a tab.
     @ObservationIgnored private(set) weak var previewSource: Tab?
 
-    /// Open in Split View is offered: the tab underneath is in this space, not pinned and not split already. The new
-    /// tab lands next to it in its group, so the split rules accept the pair.
+    /// Open in Split View is offered: the tab underneath is in this space, not pinned, and its multi view (if any)
+    /// has room. The new tab joins it, to the right of the tab underneath.
     var canSplitPreview: Bool {
         guard preview != nil, let source = previewSource, tabs.contains(where: { $0 === source }) else { return false }
-        return !source.isPinned && split(of: source) == nil
+        return !source.isPinned && (split(of: source).map { $0.layout.count < maxPanes } ?? true)
     }
 
     /// Shows `url` (http or https) in the preview over `source`, replacing any preview already open. It gets this
@@ -1437,12 +1569,12 @@ final class BrowserModel {
 
     /// This window for session.json, without View Source tabs. Private windows are never saved (`AppModel`).
     var record: WindowRecord {
-        func saved(_ tabs: [Tab], _ groups: [TabGroup], _ selectedID: UUID?, frame: String? = nil, space: SpaceRecord? = nil, others: [SpaceRecord] = [], spaceIndex: Int? = nil, splits: [SplitRecord] = []) -> WindowRecord {
+        func saved(_ tabs: [Tab], _ groups: [TabGroup], _ selectedID: UUID?, frame: String? = nil, space: SpaceRecord? = nil, others: [SpaceRecord] = [], spaceIndex: Int? = nil, layouts: [PaneLayout] = []) -> WindowRecord {
             WindowRecord.saving(
                 tabs, selected: { $0.id == selectedID }, isSaved: { $0.sourceHTML == nil }, record: \.record,
                 frame: frame, groups: groups.map(\.record),
                 profile: profileID == ProfileStore.defaultID ? nil : profileID, space: space, otherSpaces: others,
-                spaceIndex: spaceIndex, splits: splits
+                spaceIndex: spaceIndex, layouts: layouts
             )
         }
         var others: [SpaceRecord] = []
@@ -1451,14 +1583,14 @@ final class BrowserModel {
             let part = saved(stash.tabs, stash.groups, stash.selectedID)
             others.append(space.record(
                 tabs: part.tabs, selectedIndex: part.selectedIndex, groups: part.groups,
-                splits: Self.records(of: stash.splits, in: stash.tabs)
+                layouts: Self.records(of: stash.splits, in: stash.tabs)
             ))
         }
         return saved(
             tabs, groups, selectedID, frame: controller?.window.map { NSStringFromRect($0.frame) },
             space: activeSpace.record(), others: others,
             spaceIndex: spaces.count > 1 ? spaces.firstIndex { $0.id == activeSpaceID } : nil,
-            splits: Self.records(of: splits, in: tabs)
+            layouts: Self.records(of: splits, in: tabs)
         )
     }
 }

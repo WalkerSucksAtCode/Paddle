@@ -392,11 +392,12 @@ private struct SidebarTabRow: View {
         HStack(spacing: 8) {
             TabStateIcon(tab: tab, audioBadge: iconsOnly)
             if !iconsOnly {
-                if model.splitSide(of: tab) == .left, let other = model.partner(of: tab) {
-                    Image(systemName: "rectangle.split.2x1")
+                if model.splitSide(of: tab) == .first, !model.others(of: tab).isEmpty {
+                    let others = model.others(of: tab)
+                    Image(systemName: others.count == 1 ? "rectangle.split.2x1" : "rectangle.split.2x2")
                         .chromeFont(size: 10)
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("Split with \(other.displayTitle)")
+                        .accessibilityLabel("In a view with \(others.map(\.displayTitle).joined(separator: ", "))")
                 }
                 if isRenaming {
                     TabRenameField(tab: tab, model: model)

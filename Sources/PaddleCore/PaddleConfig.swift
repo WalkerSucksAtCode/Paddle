@@ -218,6 +218,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabNotifications: Bool
     /// Hosts whose notifications New Tab leaves out (their banners still show; `sites.<host>.notifications` decides those).
     public var newTabHiddenNotifications: [String]
+    /// The most tabs a multi view shows at once, 2 to `PaneLayout.maxPanes`.
+    public var multiViewMaxPanes: Int
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -255,7 +257,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, multiViewMaxPanes
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -315,6 +317,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabFeeds: [String] = [],
         newTabNotifications: Bool = false,
         newTabHiddenNotifications: [String] = [],
+        multiViewMaxPanes: Int = 4,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -389,6 +392,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.newTabFeeds = newTabFeeds
         self.newTabNotifications = newTabNotifications
         self.newTabHiddenNotifications = newTabHiddenNotifications
+        self.multiViewMaxPanes = min(max(multiViewMaxPanes, 2), PaneLayout.maxPanes)
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -471,6 +475,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabFeeds = c.decodeStrings(.newTabFeeds, d.newTabFeeds, issues)
         newTabNotifications = c.decodeValue(.newTabNotifications, d.newTabNotifications, issues)
         newTabHiddenNotifications = c.decodeStrings(.newTabHiddenNotifications, d.newTabHiddenNotifications, issues)
+        multiViewMaxPanes = min(max(c.decodeValue(.multiViewMaxPanes, d.multiViewMaxPanes, issues), 2), PaneLayout.maxPanes)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)

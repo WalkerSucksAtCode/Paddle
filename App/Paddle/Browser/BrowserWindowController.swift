@@ -71,7 +71,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             let tabs = restoredTabs(record.tabs)
             model.tabs.append(contentsOf: tabs)
             model.restoreGroups(record.groups)
-            model.restoreSplits(record.splits)
+            model.restoreSplits(record.allLayouts)
             let index = min(max(record.selectedIndex, 0), tabs.count - 1)
             if tabs.indices.contains(index) { model.select(tabs[index]) }
             model.finishRestore(activeSpaceIndex: record.spaceIndex)
@@ -119,16 +119,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// A click in the unfocused side of a split focuses that side. The click goes on to the page; the selection changes
+    /// A click in an unfocused pane of a multi view focuses it. The click goes on to the page; the selection changes
     /// on the next turn, so the page has already taken it.
     private func focusSplitSide(after event: NSEvent) {
-        let frame = model.splitUnfocusedFrame
-        // The preview's card covers both sides; a click on it is for the preview.
-        guard frame != .zero, model.preview == nil, let window, event.window === window, let root = window.contentView else { return }
+        // The preview's card covers the panes; a click on it is for the preview.
+        guard model.paneFrames.count > 1, model.preview == nil, let window, event.window === window, let root = window.contentView else { return }
         let local = root.convert(event.locationInWindow, from: nil)
         let point = root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
-        guard frame.contains(point) else { return }
-        DispatchQueue.main.async { [weak self] in self?.model.focusOtherSplitSide() }
+        // The title bar has its own buttons (× must not move the focus first); a tap on its title selects by itself.
+        guard let hit = model.paneFrames.first(where: { key, frame in
+                  key != model.selectedID && frame.contains(point) && point.y > frame.minY + 24
+              })?.key,
+              let tab = model.tabs.first(where: { $0.id == hit }) else { return }
+        DispatchQueue.main.async { [weak self] in self?.model.select(tab) }
     }
 
     /// A click outside the address field and its suggestions leaves the field, as a click on a web page does by
@@ -561,11 +564,25 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
     @objc func paddleEditSpace(_ sender: Any?) { model.editSpaceRequest += 1 }
 
-    // MARK: - Split view
+    // MARK: - Multi view
 
     @objc func paddleToggleSplitView(_ sender: Any?) { model.toggleSplitView() }
     @objc func paddleSwapSplitSides(_ sender: Any?) { model.swapSplitSides() }
     @objc func paddleFocusOtherSplitSide(_ sender: Any?) { model.focusOtherSplitSide() }
+    @objc func paddleFocusPaneLeft(_ sender: Any?) { model.focusPane(toward: .left) }
+    @objc func paddleFocusPaneRight(_ sender: Any?) { model.focusPane(toward: .right) }
+    @objc func paddleFocusPaneUp(_ sender: Any?) { model.focusPane(toward: .top) }
+    @objc func paddleFocusPaneDown(_ sender: Any?) { model.focusPane(toward: .bottom) }
+    @objc func paddleEvenOutPanes(_ sender: Any?) { model.equalizePanes() }
+    @objc func paddleRemoveFromView(_ sender: Any?) { if let tab = model.selectedTab { model.removeFromView(tab) } }
+
+    /// `screen` (a screen point) in the window's content view, top-left origin as SwiftUI's global frames; nil when
+    /// the window has no content view.
+    func contentPoint(fromScreen screen: NSPoint) -> CGPoint? {
+        guard let window, let root = window.contentView else { return nil }
+        let local = root.convert(window.convertPoint(fromScreen: screen), from: nil)
+        return root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
+    }
 
     // MARK: - Link preview
 
@@ -745,7 +762,11 @@ extension BrowserWindowController: NSMenuItemValidation {
             let split = tab.map { model.split(of: $0) != nil } ?? false
             menuItem.title = split ? "End Split View" : "Split View"
             return split || (tab.map { !$0.isPinned } ?? false)
-        case #selector(paddleSwapSplitSides(_:)), #selector(paddleFocusOtherSplitSide(_:)):
+        case #selector(paddleSwapSplitSides(_:)):
+            return tab.flatMap { model.split(of: $0) }?.layout.count == 2
+        case #selector(paddleFocusOtherSplitSide(_:)), #selector(paddleFocusPaneLeft(_:)), #selector(paddleFocusPaneRight(_:)),
+             #selector(paddleFocusPaneUp(_:)), #selector(paddleFocusPaneDown(_:)), #selector(paddleEvenOutPanes(_:)),
+             #selector(paddleRemoveFromView(_:)):
             return tab.map { model.split(of: $0) != nil } ?? false
         case #selector(paddleOpenLinkPreviewAsTab(_:)), #selector(paddleCloseLinkPreview(_:)):
             return model.preview != nil

@@ -1,5 +1,6 @@
 import AppKit
 import CoreTransferable
+import PaddleCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -29,21 +30,25 @@ extension TabDragPayload {
 struct TabDrag: ViewModifier {
     let tab: Tab
     let enabled: Bool
+    /// A tab in a strip or sidebar (its place counts for the insertion bar), not a pane's title bar.
+    var strip = true
 
     func body(content: Content) -> some View {
-        content.background(TabDragAnchor(tab: tab, enabled: enabled))
+        content.background(TabDragAnchor(tab: tab, enabled: enabled, strip: strip))
     }
 }
 
 private struct TabDragAnchor: NSViewRepresentable {
     let tab: Tab
     let enabled: Bool
+    let strip: Bool
 
     func makeNSView(context: Context) -> TabDragAnchorView { TabDragAnchorView() }
 
     func updateNSView(_ view: TabDragAnchorView, context: Context) {
         view.tab = tab
         view.enabled = enabled
+        view.isStrip = strip
     }
 }
 
@@ -78,6 +83,7 @@ struct TabDropBar: View {
 final class TabDragAnchorView: NSView {
     weak var tab: Tab?
     var enabled = true
+    var isStrip = true
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -112,6 +118,9 @@ final class TabDragController: NSObject, NSDraggingSource {
     /// The window whose strip shows the insertion bar, and the slot.
     private weak var target: BrowserWindowController?
     private var targetIndex: Int?
+    /// The pane of the drag's own window the tab would drop on (multi view), and on which edge (nil: the middle).
+    private weak var paneWindow: BrowserWindowController?
+    private var paneTarget: (id: UUID, edge: PaneEdge?)?
     /// The drag image is the ghost tab (over a strip), not the empty one (while the window follows the pointer).
     private var showsGhost = true
     private var ghost: NSImage?
@@ -215,8 +224,18 @@ final class TabDragController: NSObject, NSDraggingSource {
             setGhost(overStrip != nil, in: session)
             return
         }
-        guard overStrip == nil else { return }
-        // Out of every strip: tear off.
+        guard overStrip == nil else {
+            showPane(nil, in: nil)
+            return
+        }
+        // Over the page area of its own window: a pane takes it (multi view), shown by a highlight; no tear-off.
+        if let origin = browser.controller, let (id, edge) = pane(in: origin, at: point, dragging: tab) {
+            showPane((id, edge), in: origin)
+            return
+        }
+        showPane(nil, in: nil)
+        if let origin = browser.controller, let window = origin.window, window.frame.contains(point) { return }
+        // Out of every strip and its window: tear off.
         if browser.allTabs.count == 1 {
             floating = browser.controller
             floatingIsNew = false
@@ -244,6 +263,31 @@ final class TabDragController: NSObject, NSDraggingSource {
         }
     }
 
+    /// The pane under `point` in `window`'s page area and the drop edge there (`PaneLayout.dropEdge`), unless it is
+    /// `tab`'s own pane, it can't take `tab` (pinned, a full view's edge), or the link preview covers the area.
+    private func pane(in window: BrowserWindowController, at point: NSPoint, dragging tab: Tab) -> (UUID, PaneEdge?)? {
+        let model = window.model
+        guard model.preview == nil, !tab.isPinned, let local = window.contentPoint(fromScreen: point),
+              let (id, frame) = model.paneFrames.first(where: { $0.value.contains(local) }), id != tab.id,
+              let target = model.tabs.first(where: { $0.id == id }), !target.isPinned else { return nil }
+        let edge = PaneLayout.dropEdge(at: local, in: frame)
+        if let edge, let view = model.split(of: target), !view.contains(tab), view.layout.count >= model.maxPanes { return nil }
+        // The middle of a single page (no view) only selects the tab, which the strip does; leave it to tear-off rules.
+        if edge == nil, model.split(of: target) == nil { return nil }
+        return (id, edge)
+    }
+
+    /// Shows the pane highlight in `window` (removing it from the window that had it), or removes it.
+    private func showPane(_ drop: (UUID, PaneEdge?)?, in window: BrowserWindowController?) {
+        if let paneWindow, paneWindow !== window || drop == nil { paneWindow.model.paneDropHint = nil }
+        paneWindow = drop == nil ? nil : window
+        paneTarget = drop.map { (id: $0.0, edge: $0.1) }
+        if let drop, let window {
+            let current = window.model.paneDropHint
+            if current?.target != drop.0 || current?.edge != drop.1 { window.model.paneDropHint = (target: drop.0, edge: drop.1) }
+        }
+    }
+
     /// Moves the insertion bar to `slot` of `window`, or removes it.
     private func showSlot(_ slot: (BrowserWindowController, Int)?) {
         if let target, target !== slot?.0 { target.model.tabDropIndex = nil }
@@ -258,7 +302,7 @@ final class TabDragController: NSObject, NSDraggingSource {
         let model = window.model
         let vertical = AppModel.shared.config.tabLayout == .vertical
         let shown: [(tab: Tab, frame: NSRect)] = anchors.allObjects.compactMap { anchor in
-            guard let anchorTab = anchor.tab, anchorTab !== tab, let anchorWindow = anchor.window,
+            guard anchor.isStrip, let anchorTab = anchor.tab, anchorTab !== tab, let anchorWindow = anchor.window,
                   anchorWindow === window.window, model.tabs.contains(where: { $0 === anchorTab }) else { return nil }
             return (anchorTab, anchorWindow.convertToScreen(anchor.convert(anchor.bounds, to: nil)))
         }
@@ -273,6 +317,8 @@ final class TabDragController: NSObject, NSDraggingSource {
     private func ended(at point: NSPoint, operation: NSDragOperation) {
         let slot = target.flatMap { target in targetIndex.map { (target, $0) } }
         showSlot(nil)
+        let pane = paneWindow.flatMap { window in paneTarget.map { (window, $0) } }
+        showPane(nil, in: nil)
         defer {
             tab = nil
             floating = nil
@@ -292,6 +338,12 @@ final class TabDragController: NSObject, NSDraggingSource {
         }
         // A group label took it (SwiftUI's drop): its handler moved the tab.
         if !operation.isEmpty { return }
+        // Let go over a pane of its own window, never torn off: it goes there.
+        if floating == nil, let tab, let (window, drop) = pane, tab.browser === window.model,
+           let target = window.model.tabs.first(where: { $0.id == drop.id }) {
+            window.model.dropTab(tab, onto: target, edge: drop.edge)
+            return
+        }
         if let tab, let (destination, index) = slot {
             insert(tab, into: destination, at: index)
         }
