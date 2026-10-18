@@ -47,6 +47,9 @@ enum SettingsPane: String, CaseIterable {
         }
     }
 
+    /// The pane is a full-width table rather than a `SettingsForm` column.
+    var showsTable: Bool { self == .sites || self == .shortcuts }
+
     var url: URL { URL(string: "paddle://settings/\(rawValue)")! }
 
     /// The pane Settings opens on when none is named: the one shown last, General before any.
@@ -158,6 +161,9 @@ struct SettingsPaneView: View {
         .padding(.horizontal, 28)
         .padding(.top, 20)
         .padding(.bottom, 6)
+        // Over a form the header lines up with its centred column; over a full-width table it stays at the left.
+        .frame(maxWidth: pane.showsTable ? .infinity : SettingsForm<EmptyView>.columnWidth)
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder private var content: some View {
@@ -196,48 +202,19 @@ struct SettingsDisclosure<Content: View>: View {
     }
 }
 
-/// The form style every pane uses: grouped, scrolling inside the pane.
+/// The form style every pane uses: one grouped column, scrolling inside the pane. On a wide window the column stays
+/// at a readable width and centred (a grouped form would otherwise stretch its rows across the whole tab), so
+/// sections read top to bottom in one place rather than side by side.
 struct SettingsForm<Content: View>: View {
     @ViewBuilder var content: Content
 
-    /// From this width the sections flow into two columns. A grouped form never grows past about 700 pt, so a wide tab
-    /// would otherwise be mostly margin.
-    private var twoColumnWidth: CGFloat { 1100 }
+    /// The widest the column grows.
+    static var columnWidth: CGFloat { 720 }
 
     var body: some View {
-        GeometryReader { proxy in
-            if proxy.size.width >= twoColumnWidth {
-                HStack(alignment: .top, spacing: 0) {
-                    column(.left)
-                    column(.right)
-                }
-            } else {
-                Form { content }
-                    .formStyle(.grouped)
-            }
-        }
-    }
-
-    private enum Half { case left, right }
-
-    /// One column: its own grouped form holding half of the sections, the first half on the left so reading order
-    /// stays top to bottom, then left to right. The sections are picked inside the form, so they keep its styling
-    /// (switches, trailing values); taken out first, they would lose it.
-    private func column(_ half: Half) -> some View {
-        Form {
-            Group(sections: content) { sections in
-                let split = (sections.count + 1) / 2
-                ForEach(half == .left ? sections.prefix(split) : sections.dropFirst(split)) { section in
-                    Section {
-                        section.content
-                    } header: {
-                        section.header
-                    } footer: {
-                        section.footer
-                    }
-                }
-            }
-        }
-        .formStyle(.grouped)
+        Form { content }
+            .formStyle(.grouped)
+            .frame(maxWidth: Self.columnWidth)
+            .frame(maxWidth: .infinity)
     }
 }
