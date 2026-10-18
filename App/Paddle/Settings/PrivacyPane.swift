@@ -2,7 +2,8 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Privacy & Blocking: ads/trackers, filter lists, your rules, history retention, website data.
+/// Settings > Privacy & Blocking: ads/trackers, filter lists, your rules, history retention, website data, contact
+/// autofill.
 struct PrivacyPane: View {
     let model: SettingsModel
     @State private var showingWebsiteData = false
@@ -24,6 +25,9 @@ struct PrivacyPane: View {
             }
             Section("History") {
                 HistoryRows(model: model)
+            }
+            Section("Contact AutoFill") {
+                ContactAutofillRows(model: model)
             }
             Section("Website data") {
                 LabeledContent("Cookies, caches and site storage") {
@@ -485,6 +489,98 @@ private struct StatusDetails: View {
                 .textSelection(.enabled)
         }
         .font(font)
+    }
+}
+
+/// `contactAutofill` and the saved contact card: what it holds, Edit… and Remove….
+private struct ContactAutofillRows: View {
+    let model: SettingsModel
+    @State private var editing = false
+    @State private var confirmingRemove = false
+    private var store: ContactCardStore { .shared }
+
+    var body: some View {
+        ConfigToggle("Offer to fill contact info on forms", .contactAutofill, \.contactAutofill, model: model,
+                     help: "A Fill contact info button appears under name, email, phone and address fields. Pages opened afterwards get it.")
+        LabeledContent("Saved info") {
+            HStack {
+                Text(store.card?.summary ?? "None")
+                    .lineLimit(1).truncationMode(.tail)
+                    .foregroundStyle(.secondary)
+                Button("Edit…") { editing = true }
+                if store.card != nil {
+                    Button("Remove…", role: .destructive) { confirmingRemove = true }
+                }
+            }
+        }
+        .sheet(isPresented: $editing) { ContactCardSheet() }
+        .alert("Remove your saved contact info?", isPresented: $confirmingRemove) {
+            Button("Remove", role: .destructive) { store.remove() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It is deleted from your Keychain. Fields already filled on pages stay as they are.")
+        }
+        SettingsCaption("Kept in your login Keychain. A page gets nothing until you click Fill contact info, then only what its form has fields for, and only visible empty fields are filled. Passwords and cards stay with your password manager.")
+    }
+}
+
+/// Edits the contact card: typed, or copied from My Card in Contacts (asks for Contacts access the first time).
+private struct ContactCardSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = ContactCardStore.shared.card ?? ContactCard()
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Section("Name") {
+                    TextField("First name", text: $draft.givenName)
+                    TextField("Last name", text: $draft.familyName)
+                    TextField("Company", text: $draft.organization)
+                }
+                Section("Contact") {
+                    TextField("Email", text: $draft.email)
+                    TextField("Phone", text: $draft.phone)
+                }
+                Section("Address") {
+                    TextField("Street", text: $draft.addressLine1)
+                    TextField("Apartment, suite", text: $draft.addressLine2)
+                    TextField("City", text: $draft.city)
+                    TextField("State or region", text: $draft.region)
+                    TextField("ZIP or postal code", text: $draft.postalCode)
+                    TextField("Country", text: $draft.country)
+                }
+                if let problem {
+                    Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary) }
+                }
+            }
+            .formStyle(.grouped)
+            Divider()
+            HStack {
+                Button("Use My Contacts Card") { Task { await useMyCard() } }
+                    .help("Copies name, email, phone and the first address from My Card in Contacts. Nothing is saved until you press Save.")
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    if ContactCardStore.shared.save(draft) {
+                        dismiss()
+                    } else {
+                        problem = "The Keychain didn't save it. Try again."
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 460, height: 560)
+    }
+
+    private func useMyCard() async {
+        switch await ContactsImport.myCard() {
+        case .success(let card): draft = card; problem = nil
+        case .failure(let failure): problem = failure.message
+        }
     }
 }
 

@@ -208,6 +208,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var pinchZoom: Bool
     /// The Tab key moves through links as well as form fields and buttons (Safari's ⌥Tab behaviour on Tab).
     public var tabKeyHighlightsLinks: Bool
+    /// Offer to fill name, email, phone and address fields from the contact card kept in the Keychain. Off by default.
+    public var contactAutofill: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -245,7 +247,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -300,6 +302,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         swipeNavigation: Bool = true,
         pinchZoom: Bool = true,
         tabKeyHighlightsLinks: Bool = false,
+        contactAutofill: Bool = false,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -369,6 +372,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.swipeNavigation = swipeNavigation
         self.pinchZoom = pinchZoom
         self.tabKeyHighlightsLinks = tabKeyHighlightsLinks
+        self.contactAutofill = contactAutofill
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -446,6 +450,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         swipeNavigation = c.decodeValue(.swipeNavigation, d.swipeNavigation, issues)
         pinchZoom = c.decodeValue(.pinchZoom, d.pinchZoom, issues)
         tabKeyHighlightsLinks = c.decodeValue(.tabKeyHighlightsLinks, d.tabKeyHighlightsLinks, issues)
+        contactAutofill = c.decodeValue(.contactAutofill, d.contactAutofill, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)

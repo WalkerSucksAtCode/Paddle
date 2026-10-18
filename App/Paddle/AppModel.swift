@@ -601,6 +601,7 @@ final class AppModel {
             case .swipeNavigation: old.swipeNavigation != new.swipeNavigation
             case .pinchZoom: old.pinchZoom != new.pinchZoom
             case .tabKeyHighlightsLinks: old.tabKeyHighlightsLinks != new.tabKeyHighlightsLinks
+            case .contactAutofill: old.contactAutofill != new.contactAutofill
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

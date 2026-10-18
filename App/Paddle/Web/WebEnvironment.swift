@@ -55,6 +55,9 @@ final class WebEnvironment {
     /// `paddlePageScript` is added once. `removeAllUserScripts` does not remove it.
     @ObservationIgnored private var didInstallPageScriptBridge = false
     @ObservationIgnored private var didInstallPageWorkMonitor = false
+    @ObservationIgnored private var didInstallContactAutofill = false
+    /// Contact autofill's own world: its message handler is reachable only from here, never from the page.
+    private static let contactAutofillWorld = WKContentWorld.world(name: ContactAutofillScript.worldName)
     private(set) var isUpdatingFilters = false
 
     /// `Version/27.0 Safari/605.1.15` from the installed Safari, so sites treat Paddle as Safari.
@@ -392,6 +395,21 @@ final class WebEnvironment {
         contentController.addUserScript(WKUserScript(
             source: Self.xrayBridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page
         ))
+
+        // `contactAutofill`: the fill chip on name, email, phone and address fields. Pages loaded while it was off get
+        // it when they next load.
+        if config.contactAutofill {
+            if !didInstallContactAutofill {
+                didInstallContactAutofill = true
+                contentController.addScriptMessageHandler(
+                    ContactAutofillHandler.shared, contentWorld: Self.contactAutofillWorld, name: ContactAutofillScript.handlerName
+                )
+            }
+            contentController.addUserScript(WKUserScript(
+                source: ContactAutofillScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false,
+                in: Self.contactAutofillWorld
+            ))
+        }
 
         // First, so user scripts see the persona too. Private windows share this controller, so they get it as well.
         let persona = SitePersonaScript.source(for: config.sitePersonas)

@@ -67,6 +67,7 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `pinchZoom` | `true` | Pinch zooms the page. Settings > General |
 | `tabKeyHighlightsLinks` | `false` | The Tab key moves through links too, not only fields and buttons. Settings > General |
 | `fraudWarnings` | `true` | WebKit's fraudulent website warning (Safe Browsing), as in Safari. Settings > Privacy & Blocking |
+| `contactAutofill` | `false` | A Fill contact info button under name, email, phone and address fields fills the form's visible empty fields from your saved contact info: typed in Settings > Privacy & Blocking > Contact AutoFill or copied from My Card in Contacts, and kept in the login Keychain, not in this file. A page gets nothing until you click the button, and then only the kinds of field its form has. Never passwords or cards. Pages opened afterwards get it. Settings > Privacy & Blocking |
 | `tabLayout` | `"horizontal"` | `"vertical"` shows the tabs in a sidebar beside the page instead of a strip above the toolbar. View > Vertical Tabs, Settings > Appearance |
 | `appearance` | `"system"` | `"light"` or `"dark"` forces the windows (and the color scheme pages see) instead of following macOS. Settings > Appearance |
 | `darkMode` | `"off"` | Website dark mode: `"off"` (default), `"system"` (matches appearance) or `"always"`. Off leaves sites alone unless set in `sites`; per-site overrides can be toggled on any site. Settings > Appearance |

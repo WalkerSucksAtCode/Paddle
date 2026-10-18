@@ -39,6 +39,7 @@
 		42740581FC010E6931D6CAF0 /* TabStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02550A60C504642F9EFF0FFD /* TabStrip.swift */; };
 		42D28E30C000EE2D21CEB1E2 /* Glyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA6FEB74A284AD57FB757A0 /* Glyph.swift */; };
 		445C91F3D028B55D03058502 /* HistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */; };
+		44BA73E049480565EBFF9F62 /* ContactAutofill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16BFB45ACF93E74D21B96C92 /* ContactAutofill.swift */; };
 		45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FEA8DA57CE8927AE3C65953 /* ConfigWatcher.swift */; };
 		4AA08457CE19272FA55E10C9 /* QRCodePopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DECE214886B5C86F7BA89B2 /* QRCodePopover.swift */; };
 		4BBC5398DF7F6A4E9CACAA4A /* ExtensionUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */; };
@@ -153,6 +154,7 @@
 		11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePane.swift; sourceTree = "<group>"; };
 		14B9CE107A939CB32C813FD0 /* SplitPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitPanes.swift; sourceTree = "<group>"; };
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
+		16BFB45ACF93E74D21B96C92 /* ContactAutofill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactAutofill.swift; sourceTree = "<group>"; };
 		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		22F4A5F2E7709D55FB100130 /* PDFToolbarHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFToolbarHUD.swift; sourceTree = "<group>"; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
@@ -300,6 +302,7 @@
 		262F6F6BBABDFEAB73CA91F0 /* Web */ = {
 			isa = PBXGroup;
 			children = (
+				16BFB45ACF93E74D21B96C92 /* ContactAutofill.swift */,
 				02E7809C8918A663DD060962 /* DevelopMenu.swift */,
 				ADA58B4D797F83211511883E /* Downloads.swift */,
 				0F4F309759477C08BF952345 /* FaviconStore.swift */,
@@ -613,6 +616,7 @@
 				919F620EBA3AFF98602BB16D /* ChromeStyle.swift in Sources */,
 				2DC2C4B0EB7337CCBBADE0A1 /* CompatBus.swift in Sources */,
 				45529E4902C326BE5AE0A8E4 /* ConfigWatcher.swift in Sources */,
+				44BA73E049480565EBFF9F62 /* ContactAutofill.swift in Sources */,
 				F543A346BC3E6D4FC839F68C /* ControlBridge+Tools.swift in Sources */,
 				DFFF5C379772C15BCEDA71B3 /* ControlBridge.swift in Sources */,
 				FDC90932F86D725BD45855F4 /* ControlBridgeViews.swift in Sources */,

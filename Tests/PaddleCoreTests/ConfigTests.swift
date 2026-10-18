@@ -23,6 +23,7 @@ struct ConfigTests {
         #expect(config.externalLinks == .newTab)
         #expect(config.fraudWarnings && config.swipeNavigation && config.pinchZoom)
         #expect(!config.tabKeyHighlightsLinks)
+        #expect(!config.contactAutofill)
     }
 
     @Test func browsingBehaviourKeysDecodeAndUnknownWordsFallBack() throws {
