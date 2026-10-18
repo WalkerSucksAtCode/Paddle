@@ -59,6 +59,8 @@ enum PaneMetrics {
     static let gap: CGFloat = 6
     /// The height of a pane's own toolbar (`PaneBar`).
     static let barHeight: CGFloat = 30
+    /// A pane's corners: slightly rounded, like the Mac's windows and controls.
+    static let cornerRadius: CGFloat = 8
     static let minimumPane = CGSize(width: 260, height: 160)
 
     /// A pane would be under `minimumPane`, so only the focused one shows.
@@ -76,22 +78,26 @@ private struct PaneFrame<Content: View>: View {
     let content: Content
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius, style: .continuous)
         VStack(spacing: 0) {
             PaneBar(model: model, tab: tab, focused: focused)
-                // Over the page, so its suggestions show on top of it.
+                // Over the page, so its suggestions show on top of it (they aren't inside the page's clip).
                 .zIndex(1)
+            // The page is a card with slightly rounded corners under its bar, like the Mac's windows.
             content
-        }
-        // Inside the pane's frame, by brightness alone: a dark ring with a light one inside it, so it shows on light
-        // and dark pages alike (a single translucent line vanished on light pages in dark mode).
-        .overlay {
-            if focused && ring {
-                ZStack {
-                    Rectangle().strokeBorder(Color.black.opacity(0.55), lineWidth: 2)
-                    Rectangle().inset(by: 2).strokeBorder(Color.white.opacity(0.85), lineWidth: 1)
+                .clipShape(shape)
+                // Inside the card, by brightness alone: a dark ring with a light one inside it, so it shows on light
+                // and dark pages alike (a single translucent line vanished on light pages in dark mode).
+                .overlay {
+                    if focused && ring {
+                        ZStack {
+                            shape.strokeBorder(Color.black.opacity(0.55), lineWidth: 2)
+                            RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius - 2, style: .continuous).inset(by: 2)
+                                .strokeBorder(Color.white.opacity(0.85), lineWidth: 1)
+                        }
+                        .allowsHitTesting(false)
+                    }
                 }
-                .allowsHitTesting(false)
-            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(focused ? "Focused pane, \(tab.displayTitle)" : "Pane, \(tab.displayTitle)")
