@@ -52,6 +52,7 @@ public enum ConfigFile {
         "notifications": .string(SitePolicy.defaults.notifications.rawValue),
         "httpsOnly": .bool(SitePolicy.defaults.httpsOnly),
         "popups": .bool(SitePolicy.defaults.popups),
+        "darkMode": .bool(SitePolicy.defaults.darkMode),
         "freeze": .string(SitePolicy.defaults.freeze.rawValue),
     ]
 

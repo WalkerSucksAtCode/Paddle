@@ -15,6 +15,8 @@ public struct SitePolicy: Sendable, Equatable {
     public var httpsOnly: Bool
     /// True lets the host's pages open windows without a click.
     public var popups: Bool
+    /// True forces website dark mode; false forces light mode; follows global setting by default.
+    public var darkMode: Bool
     /// Whether this host's background tabs freeze; `auto` follows the global rules.
     public var freeze: SiteSettings.Freeze
 
@@ -23,7 +25,7 @@ public struct SitePolicy: Sendable, Equatable {
     public static let defaults = SitePolicy(SiteSettings())
 
     /// `defaultZoom` is the zoom of a site with no `zoom` of its own (`PaddleConfig.defaultZoom`).
-    public init(_ settings: SiteSettings, defaultZoom: Double = 1) {
+    public init(_ settings: SiteSettings, defaultZoom: Double = 1, defaultDarkMode: Bool = false) {
         zoom = settings.zoom.map(Self.normalizedZoom) ?? Self.normalizedZoom(defaultZoom)
         javaScript = settings.javaScript ?? true
         autoplay = settings.autoplay ?? .muted
@@ -32,6 +34,7 @@ public struct SitePolicy: Sendable, Equatable {
         notifications = settings.notifications ?? .ask
         httpsOnly = settings.httpsOnly ?? true
         popups = settings.popups ?? false
+        darkMode = settings.darkMode ?? defaultDarkMode
         freeze = settings.freeze ?? .auto
     }
 
@@ -57,8 +60,8 @@ public struct SitePolicy: Sendable, Equatable {
 
 extension PaddleConfig {
     /// The effective settings for `host` (see `SitePolicy`).
-    public func sitePolicy(forHost host: String) -> SitePolicy {
-        SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom)
+    public func sitePolicy(forHost host: String, systemIsDark: Bool = false) -> SitePolicy {
+        SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom, defaultDarkMode: defaultDarkMode(systemIsDark: systemIsDark))
     }
 
     /// Hosts with `sites.<host>.contentBlocking: false`, for block-list exceptions (`SharedExceptions`) and
@@ -124,7 +127,7 @@ extension PaddleConfig {
 extension SiteSettings {
     /// The field names as config.json writes them.
     public enum Field: String, Sendable, CaseIterable {
-        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly, popups, freeze
+        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly, popups, darkMode, freeze
     }
 
     /// A `sites` entry as it is in the file (`existing`, nil when there is none) with one field set to `value`, or
@@ -149,6 +152,7 @@ extension SiteSettings {
         case .notifications: return .string(d.notifications.rawValue)
         case .httpsOnly: return .bool(d.httpsOnly)
         case .popups: return .bool(d.popups)
+        case .darkMode: return .bool(d.darkMode)
         case .freeze: return .string(d.freeze.rawValue)
         }
     }

@@ -419,6 +419,15 @@ final class WebEnvironment {
             ))
         }
 
+        let isDark = AppModel.shared.effectiveAppearanceIsDark
+        let darkModeScript = DarkModeScript.source(for: config.sites, defaultDarkMode: config.defaultDarkMode(systemIsDark: isDark))
+        contentController.addUserScript(WKUserScript(
+            source: darkModeScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false,
+            in: .defaultClient
+        ))
+
         let files = (try? FileManager.default.contentsOfDirectory(at: Paths.userScripts, includingPropertiesForKeys: nil)) ?? []
         for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where file.pathExtension == "js" {
             guard let source = try? String(contentsOf: file, encoding: .utf8) else { continue }

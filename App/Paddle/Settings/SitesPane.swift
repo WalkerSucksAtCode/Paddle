@@ -69,6 +69,10 @@ struct SitesPane: View {
                 .width(min: 120, ideal: 150)
                 TableColumn("Zoom") { row in zoomPicker(row) }
                     .width(80)
+                TableColumn("Dark mode") { row in
+                    toggle(row, .darkMode, isOn: row.policy.darkMode, label: "Dark mode")
+                }
+                .width(70)
                 TableColumn("JavaScript") { row in
                     toggle(row, .javaScript, isOn: row.policy.javaScript, label: "JavaScript")
                 }
@@ -340,6 +344,7 @@ struct SitesPane: View {
         guard let entry else { return false }
         switch field {
         case .zoom: return entry.zoom != nil
+        case .darkMode: return entry.darkMode != nil
         case .javaScript: return entry.javaScript != nil
         case .autoplay: return entry.autoplay != nil
         case .contentBlocking: return entry.contentBlocking != nil

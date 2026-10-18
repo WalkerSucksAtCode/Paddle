@@ -86,6 +86,15 @@ struct AppearancePane: View {
             }
             .disabled(model.controlsDisabled)
             Section("Pages") {
+                Picker("Website dark mode", selection: Binding(
+                    get: { model.file.darkMode },
+                    set: { value in Task { await model.saveKey(.darkMode, .string(value.rawValue)) } }
+                )) {
+                    Text("Off").tag(DarkModePreference.off)
+                    Text("System").tag(DarkModePreference.system)
+                    Text("Always").tag(DarkModePreference.always)
+                }
+                .help("darkMode in config.json. Generates clean dark themes on any website, matching system or always on.")
                 zoomPicker
                 fontSizePicker
             }

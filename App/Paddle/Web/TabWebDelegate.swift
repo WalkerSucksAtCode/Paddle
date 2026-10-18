@@ -170,11 +170,18 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// every site gets the configuration's default (media may autoplay muted) and per-site autoplay does nothing.
     static let supportsSiteAutoplay = WKWebpagePreferences.instancesRespond(to: setAutoplayPolicy)
 
+    private static let setColorSchemePreference = NSSelectorFromString("_setColorSchemePreference:")
+
     /// The host's `sites` settings for this main-frame navigation only: JavaScript, and autoplay where WebKit has
     /// the private policy. Zoom is set when the page commits (`Tab.applySiteZoom`); content blocking is compiled
     /// into the block lists (`WebEnvironment.performBlockerLoad`).
     private static func apply(_ policy: SitePolicy, to preferences: WKWebpagePreferences) {
         preferences.allowsContentJavaScript = policy.javaScript
+        if preferences.responds(to: setColorSchemePreference) {
+            typealias SetScheme = @convention(c) (AnyObject, Selector, Int) -> Void
+            let set = unsafeBitCast(preferences.method(for: setColorSchemePreference), to: SetScheme.self)
+            set(preferences, setColorSchemePreference, policy.darkMode ? 2 : 0)
+        }
         guard supportsSiteAutoplay else { return }
         // `_WKWebsiteAutoplayPolicy`: 0 is the configuration's default (sound waits for a click or key, the "muted"
         // setting), 1 allows sound, 3 denies all autoplay. WebKit uses a non-default value instead of the

@@ -1,6 +1,7 @@
 import Foundation
 @testable import PaddleCore
 import Testing
+import WebKit
 
 struct SitePolicyTests {
     @Test func defaultsFillUnsetFields() {
@@ -138,4 +139,64 @@ struct SitePolicyTests {
         #expect(SiteSettings.entry(nil, setting: .freeze, to: .string("auto")) == nil)
         #expect(SiteSettings.entry(nil, setting: .freeze, to: .string("never")) == ["freeze": "never"])
     }
+
+    @Test func darkModePolicyAndScriptTests() {
+        var config = PaddleConfig()
+        #expect(!config.sitePolicy(forHost: "example.com").darkMode)
+
+        // Always dark
+        config.darkMode = .always
+        #expect(config.sitePolicy(forHost: "example.com").darkMode)
+
+        // System follows systemIsDark
+        config.darkMode = .system
+        #expect(config.sitePolicy(forHost: "example.com", systemIsDark: false).darkMode == false)
+        #expect(config.sitePolicy(forHost: "example.com", systemIsDark: true).darkMode == true)
+
+        // Per-site override wins
+        config.sites = [
+            "light.com": SiteSettings(darkMode: false),
+            "dark.com": SiteSettings(darkMode: true),
+        ]
+        #expect(config.sitePolicy(forHost: "dark.com", systemIsDark: false).darkMode == true)
+        #expect(config.sitePolicy(forHost: "light.com", systemIsDark: true).darkMode == false)
+
+        // Entry serialization
+        #expect(SiteSettings.entry(nil, setting: .darkMode, to: true) == ["darkMode": true])
+        #expect(SiteSettings.entry(nil, setting: .darkMode, to: false) == nil)
+
+        // Script source generation
+        let script = DarkModeScript.source(for: config.sites, defaultDarkMode: true)
+        #expect(script.contains("paddle-dark-mode-styles"))
+        #expect(script.contains("window.__paddleDarkMode"))
+        #expect(script.contains("dark.com"))
+    }
+
+    @MainActor
+    @Test func darkModeScriptExecutesInWebKit() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let script = DarkModeScript.source(for: ["example.com": SiteSettings(darkMode: true)], defaultDarkMode: false)
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient
+        ))
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.loadHTMLString("<html><head><title>Test</title></head><body><h1>Hello</h1></body></html>", baseURL: URL(string: "https://example.com/"))
+        let deadline = ContinuousClock.now + .seconds(10)
+        var check: String?
+        while ContinuousClock.now < deadline {
+            check = try? await withCheckedThrowingContinuation { cont in
+                webView.callAsyncJavaScript("return typeof window.__paddleDarkMode", arguments: [:], in: nil, in: .defaultClient) { result in
+                    switch result {
+                    case .success(let val): cont.resume(returning: val as? String)
+                    case .failure(let err): cont.resume(throwing: err)
+                    }
+                }
+            }
+            if check == "object" { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(check == "object")
+    }
 }
+

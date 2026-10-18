@@ -40,6 +40,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     /// True lets pages on this site open windows without a click (pop-ups). Unset or false: a window a script opens
     /// on its own may still download a file, but a page in it is blocked, with a Pop-up blocked button to open it.
     public var popups: Bool?
+    /// Whether website dark mode is forced on (true) or off (false) on this site; unset follows the global setting.
+    public var darkMode: Bool?
     /// Whether background tabs on this site freeze (see `Freeze`).
     public var freeze: Freeze?
 
@@ -52,6 +54,7 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         notifications: Permission? = nil,
         httpsOnly: Bool? = nil,
         popups: Bool? = nil,
+        darkMode: Bool? = nil,
         freeze: Freeze? = nil
     ) {
         self.zoom = zoom
@@ -62,13 +65,14 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         self.notifications = notifications
         self.httpsOnly = httpsOnly
         self.popups = popups
+        self.darkMode = darkMode
         self.freeze = freeze
     }
 
     /// True when no field is set, so the entry says nothing and can be dropped.
     public var isEmpty: Bool {
         zoom == nil && javaScript == nil && autoplay == nil && contentBlocking == nil && location == nil
-            && notifications == nil && httpsOnly == nil && popups == nil && freeze == nil
+            && notifications == nil && httpsOnly == nil && popups == nil && darkMode == nil && freeze == nil
     }
 
     /// `other` laid over self: every field `other` sets replaces the one here.
@@ -82,6 +86,7 @@ public struct SiteSettings: Codable, Sendable, Equatable {
             notifications: other.notifications ?? notifications,
             httpsOnly: other.httpsOnly ?? httpsOnly,
             popups: other.popups ?? popups,
+            darkMode: other.darkMode ?? darkMode,
             freeze: other.freeze ?? freeze
         )
     }

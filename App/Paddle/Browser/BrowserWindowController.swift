@@ -434,6 +434,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         tab.toggleReaderMode()
     }
 
+    /// View > Dark Mode (⇧⌘D): toggles dark mode for the current tab's site.
+    @objc func paddleToggleDarkMode(_ sender: Any?) {
+        guard let tab else { return }
+        tab.toggleDarkMode()
+    }
+
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
@@ -685,6 +691,10 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleToggleReaderMode(_:)):
             menuItem.title = tab?.readerArticle != nil ? "Hide Reader" : "Show Reader"
             return tab != nil && (tab?.isReaderAvailable == true || tab?.readerArticle != nil)
+        case #selector(paddleToggleDarkMode(_:)):
+            guard let tab, tab.siteHost != nil else { return false }
+            menuItem.state = tab.isSiteDarkModeActive ? .on : .off
+            return true
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
              #selector(paddleTranslatePage(_:)), #selector(paddleCopyLinkToHighlight(_:)),
              #selector(paddleSearchSelectedText(_:)), #selector(paddleCreateQRCode(_:)),

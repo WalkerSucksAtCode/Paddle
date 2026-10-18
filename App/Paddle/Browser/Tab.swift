@@ -401,7 +401,13 @@ final class Tab: Identifiable {
     }
 
     private func pageBackdropColor() -> NSColor {
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) != .aqua
+        let isDark = AppModel.shared.effectiveAppearanceIsDark
+        let host = siteHost ?? ""
+        let siteDark = !host.isEmpty && AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+        if siteDark {
+            return NSColor(srgbRed: 0.094, green: 0.102, blue: 0.106, alpha: 1)
+        }
+        let dark = isDark
         let rgb = AppModel.shared.activeTheme?.palette(dark: dark)?.newTabBackground ?? DefaultChromeColors.base(dark: dark)
         return NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
     }
@@ -614,6 +620,7 @@ final class Tab: Identifiable {
         // Extension pages and Paddle's own pages get no block lists, so they never need the reload.
         loadedUnblocked = own == nil && extensionPageID == nil && !AppModel.shared.web.blockersReady.isReady
         applySiteZoom()
+        applySiteDarkMode(systemIsDark: AppModel.shared.effectiveAppearanceIsDark)
         // A navigation inside the tab is a session change too (its URL and history), not only tab and window changes.
         if !isPrivate && !isPreview { AppModel.shared.sessionChanged() }
     }
@@ -864,7 +871,7 @@ final class Tab: Identifiable {
     // MARK: - Site settings
 
     /// The site of a web page (http or https) showing in an ordinary web view; nil for extension pages and others.
-    private var siteHost: String? {
+    var siteHost: String? {
         guard extensionPageID == nil, let url = webView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         return url.host()
     }
@@ -888,6 +895,37 @@ final class Tab: Identifiable {
         webView.pageZoom = zoom
         guard let host = siteHost else { return }
         AppModel.shared.rememberZoom(zoom, forHost: host, isPrivate: isPrivate)
+    }
+
+    /// Whether website dark mode is currently active for this tab's site.
+    var isSiteDarkModeActive: Bool {
+        guard let host = siteHost else { return false }
+        let isDark = AppModel.shared.effectiveAppearanceIsDark
+        return AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+    }
+
+    /// Updates this tab's dark mode state in the web view.
+    func applySiteDarkMode(systemIsDark: Bool) {
+        refreshPageBackdrop()
+        guard let webView, let host = siteHost else { return }
+        let policy = AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: systemIsDark)
+        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(policy.darkMode ? "true" : "false")); }"
+        webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
+    }
+
+    /// Toggles website dark mode for this tab's site and persists the change to config.json.
+    func toggleDarkMode() {
+        guard let host = siteHost else { return }
+        let isDark = AppModel.shared.effectiveAppearanceIsDark
+        let current = AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+        let next = !current
+        Task {
+            await AppModel.shared.writeSiteSetting(.darkMode, .bool(next), forKey: host)
+        }
+        guard let webView else { return }
+        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(next ? "true" : "false")); }"
+        webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
+        refreshPageBackdrop()
     }
 
     // MARK: - KVO

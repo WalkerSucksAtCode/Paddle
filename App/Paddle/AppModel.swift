@@ -179,6 +179,10 @@ final class AppModel {
     }
 
     /// `NSApp.appearance` for the `appearance` key: nil follows macOS. Pages follow through their web view's effective appearance.
+    var effectiveAppearanceIsDark: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
     func applyAppearance(_ mode: AppearanceMode) {
         switch mode {
         case .system: NSApp.appearance = nil
@@ -186,6 +190,7 @@ final class AppModel {
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
         for tab in allTabs { tab.refreshPageBackdrop() }
+        applySiteDarkMode()
     }
 
     // MARK: - Lifecycle
@@ -425,6 +430,7 @@ final class AppModel {
             for tab in allTabs { tab.webView?.configuration.preferences.minimumFontSize = CGFloat(new.minimumFontSize) }
         }
         if keys.contains(.sites) || keys.contains(.defaultZoom) { applySiteZoom() }
+        if keys.contains(.sites) || keys.contains(.darkMode) { applySiteDarkMode() }
         // Scriptlets come from the same list files, so they are rebuilt with the block lists.
         if !keys.isDisjoint(with: [.contentBlocking, .filterLists, .scriptlets, .trustedLists])
             || (keys.contains(.sites) && old.blockingOffHosts != new.blockingOffHosts) {
@@ -498,6 +504,7 @@ final class AppModel {
             case .showHomeButton: old.showHomeButton != new.showHomeButton
             case .alwaysShowDownloadsButton: old.alwaysShowDownloadsButton != new.alwaysShowDownloadsButton
             case .appearance: old.appearance != new.appearance
+            case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
             case .theme: old.theme != new.theme
             case .accentColor: old.accentColor != new.accentColor
@@ -634,6 +641,14 @@ final class AppModel {
         for tab in allTabs {
             if let host = tab.webView?.url?.host(), pendingZoomWrites[config.zoomKey(forHost: host)] != nil { continue }
             tab.applySiteZoom()
+        }
+    }
+
+    /// Awake tabs update their dark mode state when global or per-site dark mode changes.
+    func applySiteDarkMode() {
+        let isDark = effectiveAppearanceIsDark
+        for tab in allTabs {
+            tab.applySiteDarkMode(systemIsDark: isDark)
         }
     }
 

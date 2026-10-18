@@ -88,6 +88,7 @@ final class ToolbarMenuNSButton: NSButton {
         let zoom = NSMenuItem(title: "Zoom", action: nil, keyEquivalent: "")
         zoom.view = ZoomMenuRowView(model: model)
         menu.addItem(zoom)
+        addCommand("toggleDarkMode")
         menu.addItem(.separator())
         if AppModel.shared.config.developerTools {
             let develop = NSMenu(title: "Developer Tools")

@@ -19,6 +19,11 @@ public enum AppearanceMode: String, Codable, Sendable, CaseIterable {
     case system, light, dark
 }
 
+/// Whether websites are forced into dark mode: follow Paddle's appearance, always dark, or off.
+public enum DarkModePreference: String, Codable, Sendable, CaseIterable {
+    case off, system, always
+}
+
 /// How large Paddle's own text (tabs, toolbar, bars) is.
 public enum InterfaceTextSize: String, Codable, Sendable, CaseIterable {
     case small, `default`, large, larger
@@ -114,6 +119,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var tabLayout: TabLayout
     /// Light, dark, or follow macOS. Pages follow through their color scheme.
     public var appearance: AppearanceMode
+    /// Website dark mode: `off`, `system` (follows appearance), or `always`.
+    public var darkMode: DarkModePreference
     /// Draw the selected tab with a stronger outline and contrast (differs in brightness, not hue).
     public var highContrastTabs: Bool
     /// `default` (today's look), a built-in theme id (graphite, ocean, forest, dusk, sand, high-contrast) or the base
@@ -195,7 +202,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
-        case appearance, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
+        case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
@@ -239,6 +246,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         showHomeButton: Bool = false,
         alwaysShowDownloadsButton: Bool = false,
         appearance: AppearanceMode = .system,
+        darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
         theme: String = "default",
         accentColor: String = "system",
@@ -296,6 +304,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.showHomeButton = showHomeButton
         self.alwaysShowDownloadsButton = alwaysShowDownloadsButton
         self.appearance = appearance
+        self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
         self.theme = theme
         self.accentColor = accentColor
@@ -361,6 +370,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         showHomeButton = c.decodeValue(.showHomeButton, d.showHomeButton, issues)
         alwaysShowDownloadsButton = c.decodeValue(.alwaysShowDownloadsButton, d.alwaysShowDownloadsButton, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
+        darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
         theme = c.decodeValue(.theme, d.theme, issues)
         accentColor = c.decodeColor(.accentColor, d.accentColor, automatic: "system", issues)
@@ -451,6 +461,20 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     static func normalizedMinimumFontSize(_ size: Double) -> Double {
         guard size.isFinite, size > 0 else { return 0 }
         return min(max(size.rounded(), 9), 24)
+    }
+
+    /// Whether websites without a per-site dark mode setting should be dark.
+    public func defaultDarkMode(systemIsDark: Bool = false) -> Bool {
+        switch darkMode {
+        case .off: return false
+        case .always: return true
+        case .system:
+            switch appearance {
+            case .system: return systemIsDark
+            case .light: return false
+            case .dark: return true
+            }
+        }
     }
 
     /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.

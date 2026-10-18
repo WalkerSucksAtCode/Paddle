@@ -177,6 +177,7 @@ extension SettingsModel {
         case .notifications: .string(policy.notifications.rawValue)
         case .httpsOnly: .bool(policy.httpsOnly)
         case .popups: .bool(policy.popups)
+        case .darkMode: .bool(policy.darkMode)
         case .freeze: .string(policy.freeze.rawValue)
         }
     }
