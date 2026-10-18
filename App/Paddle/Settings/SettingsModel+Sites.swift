@@ -35,6 +35,7 @@ extension SettingsModel {
         let issues = self.issues.filter { $0.key == .sites || $0.key == .siteUserAgents }
         var keys = file.sites.keys.sorted()
         let siteHosts = Set(keys.map(PaddleConfig.normalizedHost))
+        let isDark = AppModel.shared.effectiveAppearanceIsDark
         keys += file.siteUserAgents.keys.sorted().filter { !siteHosts.contains(PaddleConfig.normalizedHost($0)) }
         return keys.sorted { ($0.lowercased(), $0) < ($1.lowercased(), $1) }.map { key in
             var without = file
@@ -43,8 +44,8 @@ extension SettingsModel {
             return SiteRow(
                 key: key,
                 userAgent: userAgentEntry(forKey: key),
-                policy: file.sitePolicy(forHost: key),
-                inherited: without.sitePolicy(forHost: key),
+                policy: file.sitePolicy(forHost: key, systemIsDark: isDark),
+                inherited: without.sitePolicy(forHost: key, systemIsDark: isDark),
                 blockingOffBy: parents.last { file.sites[$0]?.contentBlocking == false },
                 issues: issues.filter { $0.path.starts(with: ["sites", key]) || $0.path.starts(with: ["siteUserAgents", key]) }
             )
@@ -129,6 +130,7 @@ extension SettingsModel {
         case (.httpsOnly, .bool(let on)): entry.httpsOnly = on
         case (.popups, .bool(let on)): entry.popups = on
         case (.freeze, .string(let text)): entry.freeze = SiteSettings.Freeze(rawValue: text)
+        case (.darkMode, .bool(let on)): entry.darkMode = on
         default: return "\(field.rawValue) can't be set to that value."
         }
         candidate.sites[key] = entry
@@ -138,7 +140,8 @@ extension SettingsModel {
 
         var without = file
         without.sites[key] = nil
-        let inherited = Self.json(field, of: without.sitePolicy(forHost: key))
+        // Dark mode set to follow the system inherits macOS's look, so "off" on a dark Mac is a real choice.
+        let inherited = Self.json(field, of: without.sitePolicy(forHost: key, systemIsDark: AppModel.shared.effectiveAppearanceIsDark))
         await save(building: { base in
             var object = ((try? JSONSpans.scan(base))?.object["sites"]?.objectValue?[key]?.objectValue) ?? [:]
             object[field.rawValue] = value == inherited ? nil : value
