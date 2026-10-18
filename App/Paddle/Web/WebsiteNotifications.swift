@@ -290,6 +290,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.threadIdentifier = host
         content.userInfo = userInfo
         let identifier = tag.isEmpty ? uuid : "\(origin)#\(tag)"
+        NotificationInbox.shared.record(origin: origin, host: host, title: title, body: body)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
@@ -341,6 +342,9 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
               let shown = window.model.selectedTab?.url else { return false }
         return !host.isEmpty && Self.host(of: shown) == host
     }
+
+    /// New Tab's Notifications section: what a click on the notification does.
+    func showSite(origin: String) { handleClick(userInfo: ["origin": origin]) }
 
     private func handleClick(userInfo: [AnyHashable: Any]) {
         let app = AppModel.shared

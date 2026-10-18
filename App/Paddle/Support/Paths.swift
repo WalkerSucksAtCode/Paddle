@@ -37,6 +37,8 @@ enum Paths {
     /// A non-default profile's browsing history; the default profile's is `history`.
     static func profileHistory(_ id: String) -> URL { profileFolder(id).appending(path: "history.sqlite") }
     static let bookmarks = support.appending(path: "bookmarks.json")
+    /// The New Tab News section's last stories (`FeedStore`), so they show at once after a launch.
+    static let feedsCache = support.appending(path: "feeds-cache.json")
     /// Pinned New Tab page sites and hidden Frequently visited hosts (`NewTabStore`).
     static let newTab = support.appending(path: "newtab.json")
     static let favicons = support.appending(path: "favicons", directoryHint: .isDirectory)

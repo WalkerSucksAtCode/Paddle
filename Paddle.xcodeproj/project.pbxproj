@@ -21,6 +21,7 @@
 		1920D017B26AF96178C1FA0B /* TabGroupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E58CA20A0866C0A7A9A100F9 /* TabGroupViews.swift */; };
 		1A56D996881623A870C71228 /* PopupProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38280EEDA7BA22769BDF3025 /* PopupProbe.swift */; };
 		1AB913A91D0FBFC786D5FE27 /* ExtensionPopups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FF180A042514269EA95F84 /* ExtensionPopups.swift */; };
+		1F81EE27F66C2CCE928C0607 /* NewTabOverride.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC277645CBC1A91E45C0554 /* NewTabOverride.swift */; };
 		20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */; };
 		2179624B092B340F7AE1DC68 /* ExtensionPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */; };
 		243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */; };
@@ -70,6 +71,7 @@
 		891D142EAA22B1223D898C39 /* PopupBlockedButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0C439787B818F5994274B2 /* PopupBlockedButton.swift */; };
 		8996CB86020598BC61B32AF1 /* ShortcutRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91F6090B48E416A87BCCC699 /* ShortcutRecorder.swift */; };
 		919F620EBA3AFF98602BB16D /* ChromeStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60BD3A551575242DFC25D1CC /* ChromeStyle.swift */; };
+		92F72BCDCBFCD47D032CB826 /* NewTabFeeds.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8249EDDFD5DD95F1327564C /* NewTabFeeds.swift */; };
 		972450F26A2D4D9240A889E0 /* SettingsModel+Advanced.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8C7EC334C5A367E069A808 /* SettingsModel+Advanced.swift */; };
 		9889453BFC7814356B7E0C3F /* FilterSnapshots in Resources */ = {isa = PBXBuildFile; fileRef = 08A0AF5CF0C8F628DF3A3616 /* FilterSnapshots */; };
 		9D1DD6B67A237E0F27BFD667 /* PrivacyPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B95CD836D55F745348E437 /* PrivacyPane.swift */; };
@@ -230,6 +232,7 @@
 		D6AB8511862F229DB168B109 /* SitesPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SitesPane.swift; sourceTree = "<group>"; };
 		DA0DF898105FD6DB4420F579 /* TabDragging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabDragging.swift; sourceTree = "<group>"; };
 		DAD89EBE879D1EF8139AE668 /* WebsiteDataSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteDataSheet.swift; sourceTree = "<group>"; };
+		DEC277645CBC1A91E45C0554 /* NewTabOverride.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabOverride.swift; sourceTree = "<group>"; };
 		E05B63171469865BF8E8104E /* Paddle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Paddle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E17D1B37D4339465E9CD3B94 /* WebsiteNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebsiteNotifications.swift; sourceTree = "<group>"; };
 		E20AE5E86BBFB8E7575CB581 /* SettingsModel+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Extensions.swift"; sourceTree = "<group>"; };
@@ -242,6 +245,7 @@
 		F09575E91B2DFAA356C42768 /* ControlBridge+Tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControlBridge+Tools.swift"; sourceTree = "<group>"; };
 		F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeSocketServer.swift; sourceTree = "<group>"; };
 		F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressSuggestions.swift; sourceTree = "<group>"; };
+		F8249EDDFD5DD95F1327564C /* NewTabFeeds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabFeeds.swift; sourceTree = "<group>"; };
 		F965A2C39359669A792EB86C /* ControlBridgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlBridgeViews.swift; sourceTree = "<group>"; };
 		FD90D6D847CB211120DC3AF6 /* SiteSecurityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteSecurityView.swift; sourceTree = "<group>"; };
 		FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionPrompts.swift; sourceTree = "<group>"; };
@@ -334,6 +338,7 @@
 				EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */,
 				5CFE8B96C6FDD7CBF4318B8F /* LinkPreview.swift */,
 				A0562CFD09A0530167FD11F4 /* MediaControlsPopover.swift */,
+				F8249EDDFD5DD95F1327564C /* NewTabFeeds.swift */,
 				3485769C1E48286709A33E89 /* NewTabPage.swift */,
 				22F4A5F2E7709D55FB100130 /* PDFToolbarHUD.swift */,
 				AA0C439787B818F5994274B2 /* PopupBlockedButton.swift */,
@@ -401,6 +406,7 @@
 				69054BABA706ABC56F8274A1 /* ExtensionShared.swift */,
 				98C6A2F4AFE93544F200F0A2 /* ExtensionsMenu.swift */,
 				15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */,
+				DEC277645CBC1A91E45C0554 /* NewTabOverride.swift */,
 				622C488303FD517D47056F39 /* StoreInstaller.swift */,
 				AB52F5C90420FF8983F587F4 /* Compat */,
 			);
@@ -642,6 +648,8 @@
 				E76B3F3228467EA4467D665E /* LinkPreview.swift in Sources */,
 				2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */,
 				5BEF3239AF03AC645E9B0763 /* MediaControlsPopover.swift in Sources */,
+				92F72BCDCBFCD47D032CB826 /* NewTabFeeds.swift in Sources */,
+				1F81EE27F66C2CCE928C0607 /* NewTabOverride.swift in Sources */,
 				A8A2BBA04239338337B0BF50 /* NewTabPage.swift in Sources */,
 				DA1FCADBAB0B44818AFB9F84 /* NewTabStore.swift in Sources */,
 				71DD83DB9877EB04B0FBE55C /* PDFToolbarHUD.swift in Sources */,

@@ -24,6 +24,8 @@ struct ConfigTests {
         #expect(config.fraudWarnings && config.swipeNavigation && config.pinchZoom)
         #expect(!config.tabKeyHighlightsLinks)
         #expect(!config.contactAutofill)
+        #expect(config.newTabExtension.isEmpty)
+        #expect(config.newTabFeeds.isEmpty && !config.newTabNotifications)
     }
 
     @Test func browsingBehaviourKeysDecodeAndUnknownWordsFallBack() throws {

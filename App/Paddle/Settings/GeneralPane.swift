@@ -77,12 +77,14 @@ struct GeneralPane: View {
                 ))
                 .help("showFullAddress in config.json. Off, the address field shows only the site until you click it.")
                 .disabled(model.controlsDisabled)
-                Toggle("Show frequently visited sites on new tabs", isOn: Binding(
-                    get: { model.file.newTabFrequentSites },
-                    set: { value in Task { await model.saveKey(.newTabFrequentSites, .bool(value)) } }
-                ))
-                .help("newTabFrequentSites in config.json. A Frequently visited row on the New Tab page, from history; never in private windows.")
-                .disabled(model.controlsDisabled)
+            }
+            Section("New Tab") {
+                NewTabExtensionRow(model: model)
+                ConfigToggle("Show frequently visited sites", .newTabFrequentSites, \.newTabFrequentSites, model: model,
+                             help: "A Frequently visited row on the New Tab page, from history; never in private windows.")
+                ConfigToggle("Show website notifications", .newTabNotifications, \.newTabNotifications, model: model,
+                             help: "The notifications sites sent since Paddle opened, newest first. Kept in memory only; never private windows'.")
+                FeedRows(model: model)
             }
             Section("Trackpad & Keyboard") {
                 ConfigToggle("Swipe between pages", .swipeNavigation, \.swipeNavigation, model: model,
@@ -119,6 +121,107 @@ struct GeneralPane: View {
                 .help("askWhereToDownload in config.json. Prompts for a destination before downloading instead of saving straight to ~/Downloads.")
                 .disabled(model.controlsDisabled)
             }
+        }
+    }
+}
+
+/// `newTabFeeds`: the feeds New Tab's News section lists, one row each with its problem if the last fetch failed, and a
+/// field that takes a feed address or a site's (its `<link rel="alternate">` feed is found).
+private struct FeedRows: View {
+    let model: SettingsModel
+    @State private var draft = ""
+    @State private var adding = false
+    @State private var problem: String?
+    private var store: FeedStore { .shared }
+
+    var body: some View {
+        let feeds = model.file.newTabFeeds
+        ForEach(feeds, id: \.self) { feed in
+            LabeledContent {
+                Button("Remove", role: .destructive) {
+                    Task { await model.saveKey(.newTabFeeds, .array(feeds.filter { $0 != feed }.map { .string($0) })) }
+                }
+                .disabled(model.controlsDisabled)
+            } label: {
+                Text(URL(string: feed)?.host() ?? feed).lineLimit(1)
+                if let problem = store.problems[feed] {
+                    Text(problem).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                } else {
+                    Text(feed).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        LabeledContent("Add a feed") {
+            HStack {
+                TextField("Feed", text: $draft, prompt: Text("Site or feed address"))
+                    .labelsHidden()
+                    .onSubmit(add)
+                    .accessibilityLabel("Feed or site address")
+                if adding {
+                    ProgressView().controlSize(.small).accessibilityLabel("Checking")
+                } else {
+                    Button("Add", action: add).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .help("newTabFeeds in config.json. A site's address works when the site links its RSS or Atom feed.")
+        .disabled(model.controlsDisabled)
+        if let problem { ConfigIssueList(issues: [ConfigIssue(key: .newTabFeeds, severity: .error, message: problem)]) }
+        if !feeds.isEmpty {
+            LabeledContent("Stories") {
+                Button(store.refreshing ? "Updating…" : "Update Now") { Task { await store.refresh(feeds: feeds) } }
+                    .disabled(store.refreshing)
+                    .help("Feeds update when a New Tab shows and the stories are over 30 minutes old. Fetched without cookies.")
+            }
+        }
+    }
+
+    private func add() {
+        let typed = draft
+        guard !typed.trimmingCharacters(in: .whitespaces).isEmpty, !adding else { return }
+        adding = true
+        problem = nil
+        Task {
+            defer { adding = false }
+            switch await FeedStore.resolve(typed) {
+            case .failure(let error): problem = error.message
+            case .success(let url):
+                let feeds = model.file.newTabFeeds
+                guard !feeds.contains(url.absoluteString) else { problem = "That feed is already listed."; return }
+                await model.saveKey(.newTabFeeds, .array((feeds + [url.absoluteString]).map { .string($0) }))
+                draft = ""
+            }
+        }
+    }
+}
+
+/// `newTabExtension`: Paddle's New Tab or the page of a running extension that brings one. Shown only while such an
+/// extension runs (or one is chosen).
+private struct NewTabExtensionRow: View {
+    let model: SettingsModel
+
+    private var candidates: [LoadedExtension] {
+        guard let host = AppModel.shared.existingExtensions(for: model.profileID) else { return [] }
+        return host.loaded.filter { $0.webExtension.hasOverrideNewTabPage && $0.context.overrideNewTabPageURL != nil }
+    }
+
+    var body: some View {
+        let chosen = model.file.newTabExtension
+        if !candidates.isEmpty || !chosen.isEmpty {
+            Picker("New Tab page", selection: Binding(
+                get: { chosen },
+                set: { value in Task { await model.saveKey(.newTabExtension, .string(value)) } }
+            )) {
+                Text("Paddle's New Tab").tag("")
+                ForEach(candidates) { ext in
+                    Text(ext.displayName).tag(ext.name)
+                }
+                if !chosen.isEmpty, !candidates.contains(where: { $0.name == chosen }) {
+                    Text("\(chosen) (not running)").tag(chosen)
+                }
+            }
+            .help("newTabExtension in config.json: an extension's own New Tab page, by its folder name. It wins over New tabs open with; while that extension isn't running, Paddle's New Tab shows.")
+            .disabled(model.controlsDisabled)
         }
     }
 }

@@ -80,4 +80,16 @@ enum ExtensionPrompts {
         alert.addButton(withTitle: "Don't Allow")
         return alert
     }
+
+    /// An extension that brings its own New Tab page, the first time New Tab opens while it runs. True: use it.
+    /// App-modal; asked once per extension and profile.
+    static func newTabPage(name: String, icon: NSImage?) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Let “\(name)” show its page in new tabs?"
+        alert.informativeText = "New tabs open the extension's page instead of Paddle's New Tab. Change it later in Settings > General > New Tab."
+        if let icon { alert.icon = icon }
+        alert.addButton(withTitle: "Use Its Page")
+        alert.addButton(withTitle: "Keep Paddle's")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
 }

@@ -602,6 +602,9 @@ final class AppModel {
             case .pinchZoom: old.pinchZoom != new.pinchZoom
             case .tabKeyHighlightsLinks: old.tabKeyHighlightsLinks != new.tabKeyHighlightsLinks
             case .contactAutofill: old.contactAutofill != new.contactAutofill
+            case .newTabExtension: old.newTabExtension != new.newTabExtension
+            case .newTabFeeds: old.newTabFeeds != new.newTabFeeds
+            case .newTabNotifications: old.newTabNotifications != new.newTabNotifications
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

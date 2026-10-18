@@ -14,45 +14,62 @@ struct NewTabPage: View {
     @Environment(\.chromeTheme) private var theme
 
     private var showsFrequent: Bool { model.config.newTabFrequentSites && !model.isPrivate }
+    private var showsNotifications: Bool { model.config.newTabNotifications && !model.isPrivate }
+    private var inbox: NotificationInbox { .shared }
+    private var feeds: FeedStore { .shared }
 
     var body: some View {
         let sites = app.newTab.sites
         VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            VStack(spacing: 22) {
-                Text("Paddle")
-                    .chromeFont(size: 22, weight: .semibold, design: .rounded)
-                    .foregroundStyle(.secondary)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], spacing: 12) {
-                    ForEach(sites) { site in
-                        PinnedTile(site: site, model: model, app: app)
-                    }
-                    if sites.count < NewTabSites.maxSites {
-                        AddTile(adding: $adding, app: app)
-                    }
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Pinned sites")
-                if showsFrequent, !frequent.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Frequently visited")
-                            .chromeFont(size: 11, weight: .semibold)
-                            .foregroundStyle(.secondary)
-                            .accessibilityAddTraits(.isHeader)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], alignment: .leading, spacing: 12) {
-                            ForEach(frequent) { entry in
-                                FrequentTile(entry: entry, model: model, app: app)
+            // Centred while it fits; the News and Notifications sections can make it scroll.
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 32)
+                        VStack(spacing: 22) {
+                            Text("Paddle")
+                                .chromeFont(size: 22, weight: .semibold, design: .rounded)
+                                .foregroundStyle(.secondary)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], spacing: 12) {
+                                ForEach(sites) { site in
+                                    PinnedTile(site: site, model: model, app: app)
+                                }
+                                if sites.count < NewTabSites.maxSites {
+                                    AddTile(adding: $adding, app: app)
+                                }
+                            }
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Pinned sites")
+                            if showsFrequent, !frequent.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Frequently visited")
+                                        .chromeFont(size: 11, weight: .semibold)
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityAddTraits(.isHeader)
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], alignment: .leading, spacing: 12) {
+                                        ForEach(frequent) { entry in
+                                            FrequentTile(entry: entry, model: model, app: app)
+                                        }
+                                    }
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityLabel("Frequently visited")
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            if showsNotifications, !inbox.entries.isEmpty {
+                                NotificationsSection(inbox: inbox)
+                            }
+                            if !model.config.newTabFeeds.isEmpty, !model.isPrivate {
+                                NewsSection(feeds: feeds, model: model)
                             }
                         }
-                        .accessibilityElement(children: .contain)
-                        .accessibilityLabel("Frequently visited")
+                        .frame(maxWidth: 720)
+                        .padding(.horizontal, 24)
+                        Spacer(minLength: 32)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                 }
             }
-            .frame(maxWidth: 720)
-            .padding(.horizontal, 24)
-            Spacer(minLength: 0)
             Button("Customize Paddle…") {
                 NSWorkspace.shared.open(Paths.support)
             }
@@ -62,7 +79,11 @@ struct NewTabPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme?.newTabBackground ?? Color(nsColor: .textBackgroundColor))
         .chromeText(enabled: theme?.newTabBackground != nil)
-        .onAppear(perform: refreshFrequent)
+        .onAppear {
+            refreshFrequent()
+            if !model.isPrivate { feeds.refreshIfDue(feeds: model.config.newTabFeeds) }
+        }
+        .onChange(of: model.config.newTabFeeds) { _, new in if !model.isPrivate { feeds.refreshIfDue(feeds: new) } }
         .onDisappear { frequentTask?.cancel() }
         .onChange(of: app.newTab.sites) { refreshFrequent() }
         .onChange(of: app.newTab.hiddenFrequent) { refreshFrequent() }
@@ -84,6 +105,112 @@ struct NewTabPage: View {
                   !Task.isCancelled, model.profileID == profile, showsFrequent else { return }
             frequent = found
         }
+    }
+}
+
+// MARK: - Notifications and News
+
+/// This run's website notifications, newest first: the site, the title and a line of the body. A click shows the
+/// site's tab as clicking the notification does.
+private struct NotificationsSection: View {
+    let inbox: NotificationInbox
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Notifications")
+                    .chromeFont(size: 11, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button("Clear") { inbox.clear() }
+                    .buttonStyle(.link)
+                    .chromeFont(size: 11)
+            }
+            VStack(spacing: 0) {
+                ForEach(inbox.entries.prefix(8)) { entry in
+                    Button {
+                        WebsiteNotifications.shared.showSite(origin: entry.origin)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title.isEmpty ? entry.host : entry.title)
+                                    .chromeFont(size: 13, weight: .medium)
+                                    .lineLimit(1)
+                                if !entry.body.isEmpty {
+                                    Text(entry.body).chromeFont(size: 12).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            Text("\(entry.host) · \(entry.date.formatted(.relative(presentation: .named)))")
+                                .chromeFont(size: 11)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show \(entry.host)")
+                    if entry != inbox.entries.prefix(8).last { Divider().padding(.leading, 12) }
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The newest stories of `newTabFeeds`, as cards two or three to a row. A click opens the story in this tab.
+private struct NewsSection: View {
+    let feeds: FeedStore
+    let model: BrowserModel
+    @Environment(\.chromeScale) private var scale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("News")
+                    .chromeFont(size: 11, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+                if feeds.refreshing { ProgressView().controlSize(.mini).accessibilityLabel("Updating") }
+                Spacer()
+            }
+            if feeds.items.isEmpty {
+                Text(feeds.refreshing ? "Loading stories…" : feeds.problems.isEmpty ? "No stories yet." : "The feeds couldn't be read. See Settings > General > New Tab.")
+                    .chromeFont(size: 12)
+                    .foregroundStyle(.secondary)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210 * scale), spacing: 10)], alignment: .leading, spacing: 10) {
+                ForEach(feeds.items.prefix(12)) { item in
+                    Button {
+                        model.selectedTab?.load(item.link)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(item.title)
+                                .chromeFont(size: 13, weight: .medium)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Spacer(minLength: 0)
+                            Text([item.source, item.published.map { $0.formatted(.relative(presentation: .named)) }].compactMap { $0 }.joined(separator: " · "))
+                                .chromeFont(size: 11)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, minHeight: 92 * scale, alignment: .topLeading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+                        .contentShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.link.absoluteString)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

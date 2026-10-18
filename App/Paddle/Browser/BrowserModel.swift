@@ -225,16 +225,18 @@ final class BrowserModel {
     }
 
     /// New tab from the "new tab" command: the configured new-tab page, or empty with the address field focused.
-    /// `newTabPosition` afterCurrent puts it right after the selected tab (not as a link from it: no opener).
+    /// `newTabPosition` afterCurrent puts it right after the selected tab (not as a link from it: no opener). An
+    /// extension's New Tab page (`newTabExtension`) wins over `newTabPage`.
     func openNewTabPage() {
-        let page = URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+        let override = AppModel.shared.newTabOverrideURL(for: self)
+        let page = override ?? URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
         if config.newTabPosition == .afterCurrent, let current = selectedTab {
             let tab = Tab(url: page, isPrivate: isPrivate)
             insert(tab, after: current, select: true)
         } else {
             newTab(url: page)
         }
-        if page == nil { focusAddress() }
+        if page == nil || override != nil { focusAddress() }
     }
 
     /// `announce` false: extensions already know the tab (the link preview becoming one), so no tab-opened event.
@@ -1395,8 +1397,9 @@ final class BrowserModel {
         focusAddressRequest += 1
     }
 
+    /// The address field's text for `url`: empty for a blank page and an extension's New Tab page, as for Paddle's.
     static func displayString(_ url: URL) -> String {
-        url.absoluteString == "about:blank" ? "" : url.absoluteString
+        url.absoluteString == "about:blank" || AppModel.shared.isNewTabOverridePage(url) ? "" : url.absoluteString
     }
 
     // MARK: - Find

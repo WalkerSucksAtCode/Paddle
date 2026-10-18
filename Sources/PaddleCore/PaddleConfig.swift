@@ -210,6 +210,12 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var tabKeyHighlightsLinks: Bool
     /// Offer to fill name, email, phone and address fields from the contact card kept in the Keychain. Off by default.
     public var contactAutofill: Bool
+    /// The extension folder whose New Tab page (`chrome_url_overrides.newtab`) New Tab opens; empty for Paddle's own.
+    public var newTabExtension: String
+    /// RSS or Atom feed addresses whose newest stories New Tab lists. Empty: no News section.
+    public var newTabFeeds: [String]
+    /// New Tab lists the website notifications of this run (never private windows'), newest first.
+    public var newTabNotifications: Bool
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -247,7 +253,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -303,6 +309,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         pinchZoom: Bool = true,
         tabKeyHighlightsLinks: Bool = false,
         contactAutofill: Bool = false,
+        newTabExtension: String = "",
+        newTabFeeds: [String] = [],
+        newTabNotifications: Bool = false,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -373,6 +382,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.pinchZoom = pinchZoom
         self.tabKeyHighlightsLinks = tabKeyHighlightsLinks
         self.contactAutofill = contactAutofill
+        self.newTabExtension = newTabExtension
+        self.newTabFeeds = newTabFeeds
+        self.newTabNotifications = newTabNotifications
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -451,6 +463,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         pinchZoom = c.decodeValue(.pinchZoom, d.pinchZoom, issues)
         tabKeyHighlightsLinks = c.decodeValue(.tabKeyHighlightsLinks, d.tabKeyHighlightsLinks, issues)
         contactAutofill = c.decodeValue(.contactAutofill, d.contactAutofill, issues)
+        newTabExtension = c.decodeValue(.newTabExtension, d.newTabExtension, issues)
+        newTabFeeds = c.decodeStrings(.newTabFeeds, d.newTabFeeds, issues)
+        newTabNotifications = c.decodeValue(.newTabNotifications, d.newTabNotifications, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
