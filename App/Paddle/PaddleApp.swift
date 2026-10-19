@@ -4,6 +4,7 @@ import PaddleCore
 @main
 enum PaddleMain {
     static func main() {
+        ExceptionLog.install()
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
