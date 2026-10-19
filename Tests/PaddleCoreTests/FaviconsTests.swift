@@ -14,6 +14,27 @@ struct FaviconsTests {
         FaviconPicker.bestIcon(candidates, pageURL: page)?.absoluteString
     }
 
+    @Test func largeIconsPreferTouchIconsThenBigLinksThenTheRootTouchIcon() {
+        let urls = FaviconPicker.largeIcons([
+            icon("https://x.test/32.png", sizes: "32x32"),
+            icon("https://x.test/192.png", sizes: "192x192"),
+            icon("/touch-120.png", rel: "apple-touch-icon", sizes: "120x120"),
+            icon("/touch.png", rel: "apple-touch-icon"),
+            icon("/logo.svg", sizes: "512x512", type: "image/svg+xml"),
+        ], pageURL: page).map(\.absoluteString)
+        #expect(urls == [
+            "https://example.com/touch.png",
+            "https://example.com/touch-120.png",
+            "https://x.test/192.png",
+            "https://example.com/apple-touch-icon.png",
+        ])
+    }
+
+    @Test func largeIconsFallBackToTheRootTouchIcon() {
+        #expect(FaviconPicker.largeIcons([icon("/favicon.ico")], pageURL: page).map(\.absoluteString) == ["https://example.com/apple-touch-icon.png"])
+        #expect(FaviconPicker.largeIcons([], pageURL: URL(string: "about:blank")!).isEmpty)
+    }
+
     @Test func prefersSmallestSizeAtLeast32() {
         #expect(best([icon("https://x.test/192.png", sizes: "192x192"), icon("https://x.test/32.png", sizes: "16x16 32x32")]) == "https://x.test/32.png")
     }

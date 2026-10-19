@@ -63,6 +63,33 @@ public enum FaviconPicker {
         return fallbackIcon(for: pageURL)
     }
 
+    /// Edge, in pixels, of the large icons New Tab tiles draw (40 pt on a 2x screen, with room to spare).
+    public static let largePixels = 128
+
+    /// Icons worth fetching for a large tile, best first: apple-touch-icons by size (an unsized one counts as 180,
+    /// its usual size), then icon/shortcut-icon links declaring 96 px or more (largest first), then the site's
+    /// `/apple-touch-icon.png`, which many sites serve without linking it. Same URL rules as `bestIcon`.
+    public static func largeIcons(_ candidates: [IconCandidate], pageURL: URL) -> [URL] {
+        let usable: [(candidate: IconCandidate, url: URL, sizes: [Int])] = candidates.compactMap { candidate in
+            guard let url = resolve(candidate.href, against: pageURL), withoutFragment(url) != withoutFragment(pageURL),
+                  !isSVG(candidate, url: url) else { return nil }
+            return (candidate, url, parseSizes(candidate.sizes))
+        }
+        let touch = usable.filter { relTokens($0.candidate.rel).contains("apple-touch-icon") || relTokens($0.candidate.rel).contains("apple-touch-icon-precomposed") }
+            .map { (url: $0.url, size: $0.sizes.max() ?? 180) }
+        let sized = usable.filter { relTokens($0.candidate.rel).contains("icon") }
+            .compactMap { item in item.sizes.max().flatMap { $0 >= 96 ? (url: item.url, size: $0) : nil } }
+        var urls: [URL] = []
+        for item in touch.sorted(by: { $0.size > $1.size }) + sized.sorted(by: { $0.size > $1.size }) where !urls.contains(item.url) {
+            urls.append(item.url)
+        }
+        if let root = fallbackIcon(for: pageURL).flatMap({ URL(string: "/apple-touch-icon.png", relativeTo: $0)?.absoluteURL }),
+           !urls.contains(root) {
+            urls.append(root)
+        }
+        return urls
+    }
+
     /// Cache key per site: lowercased host without a leading "www.", plus ":port" when the URL names one
     /// explicitly (so `localhost:3000` and `localhost:8080` differ); nil without a host.
     public static func cacheKey(for pageURL: URL) -> String? {

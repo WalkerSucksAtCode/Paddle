@@ -109,6 +109,13 @@ final class NewTabStore {
         if let profile { frequentCache[profile] = nil } else { frequentCache.removeAll() }
     }
 
+    /// Icon cache keys (`FaviconPicker.cacheKey`) of the sites New Tab shows as tiles for `profile`: pinned ones and
+    /// the last Frequently visited row. Only these get the large icon (`FaviconStore.largeImage`).
+    func tileIconKeys(profile: ProfileID) -> Set<String> {
+        let urls = data.sites.map(\.url) + cachedFrequentSites(profile: profile).map(\.url)
+        return Set(urls.compactMap { URL(string: $0).flatMap(FaviconPicker.cacheKey(for:)) })
+    }
+
     private var excludedFrequentHosts: Set<String> {
         Set(data.sites.compactMap { NewTabSites.siteHost($0.url) }).union(data.hiddenFrequent)
     }

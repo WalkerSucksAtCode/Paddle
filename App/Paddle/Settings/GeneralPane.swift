@@ -80,6 +80,7 @@ struct GeneralPane: View {
             }
             Section("New Tab") {
                 NewTabExtensionRow(model: model)
+                SectionOrderRows(model: model)
                 ConfigToggle("Show frequently visited sites", .newTabFrequentSites, \.newTabFrequentSites, model: model,
                              help: "A Frequently visited row on the New Tab page, from history; never in private windows.")
                 ConfigToggle("Show website notifications", .newTabNotifications, \.newTabNotifications, model: model,
@@ -136,6 +137,59 @@ struct GeneralPane: View {
                 .disabled(model.controlsDisabled)
             }
         }
+    }
+}
+
+/// `newTabSections`: New Tab's sections top to bottom. Drag a row onto another to move it there, or use its Move Up
+/// and Move Down buttons (also for VoiceOver).
+private struct SectionOrderRows: View {
+    let model: SettingsModel
+
+    var body: some View {
+        let order = model.file.newTabSectionOrder
+        LabeledContent("Section order") {
+            Button("Reset") { save(NewTabSection.allCases) }
+                .disabled(order == NewTabSection.allCases || model.controlsDisabled)
+        }
+        .help("newTabSections in config.json: the order of New Tab's sections, top to bottom.")
+        ForEach(Array(order.enumerated()), id: \.element) { index, section in
+            LabeledContent {
+                HStack(spacing: 4) {
+                    Button { move(section, by: -1, in: order) } label: { Image(systemName: "chevron.up") }
+                        .disabled(index == 0)
+                        .accessibilityLabel("Move \(section.title) up")
+                    Button { move(section, by: 1, in: order) } label: { Image(systemName: "chevron.down") }
+                        .disabled(index == order.count - 1)
+                        .accessibilityLabel("Move \(section.title) down")
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.controlsDisabled)
+            } label: {
+                Label(section.title, systemImage: "line.3.horizontal")
+            }
+            .contentShape(Rectangle())
+            .draggable(section.rawValue)
+            .dropDestination(for: String.self) { items, _ in
+                guard let moved = items.first.flatMap(NewTabSection.init(rawValue:)), moved != section else { return false }
+                // The dragged section takes the target row's place; the rows in between shift toward where it was.
+                var next = order.filter { $0 != moved }
+                next.insert(moved, at: min(index, next.count))
+                save(next)
+                return true
+            }
+        }
+    }
+
+    private func move(_ section: NewTabSection, by offset: Int, in order: [NewTabSection]) {
+        guard let from = order.firstIndex(of: section), order.indices.contains(from + offset) else { return }
+        var next = order
+        next.swapAt(from, from + offset)
+        save(next)
+    }
+
+    /// The default order removes the key, as every setting set back to its default does.
+    private func save(_ order: [NewTabSection]) {
+        Task { await model.saveKey(.newTabSections, .array(order.map { .string($0.rawValue) })) }
     }
 }
 

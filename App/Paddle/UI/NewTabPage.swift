@@ -2,7 +2,8 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// The page of an empty tab: pinned sites, an optional Frequently visited row and a link to Settings > General.
+/// The page of an empty tab: pinned sites, Frequently visited, notifications and news in `newTabSections` order, and
+/// a link to Settings > General.
 /// Pinned sites come from `app.newTab`; the frequent row is shown from the last result at once and re-queried off the main thread on appear and when the store or config changes.
 struct NewTabPage: View {
     let model: BrowserModel
@@ -26,58 +27,24 @@ struct NewTabPage: View {
     private var feeds: FeedStore { .shared }
 
     var body: some View {
-        let sites = app.newTab.sites
         VStack(spacing: 0) {
-            // Centred while it fits; the News and Notifications sections can make it scroll.
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 32)
-                        VStack(spacing: 22) {
-                            Text("Paddle")
-                                .chromeFont(size: 22, weight: .semibold, design: .rounded)
-                                .foregroundStyle(.secondary)
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], spacing: 12) {
-                                ForEach(sites) { site in
-                                    PinnedTile(site: site, model: model, app: app)
-                                }
-                                if sites.count < NewTabSites.maxSites {
-                                    AddTile(adding: $adding, app: app)
-                                }
-                            }
-                            .accessibilityElement(children: .contain)
-                            .accessibilityLabel("Pinned sites")
-                            if showsFrequent, !frequent.isEmpty {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Frequently visited")
-                                        .chromeFont(size: 11, weight: .semibold)
-                                        .foregroundStyle(.secondary)
-                                        .accessibilityAddTraits(.isHeader)
-                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: 120 * scale), spacing: 12)], alignment: .leading, spacing: 12) {
-                                        ForEach(frequent) { entry in
-                                            FrequentTile(entry: entry, model: model, app: app)
-                                        }
-                                    }
-                                    .accessibilityElement(children: .contain)
-                                    .accessibilityLabel("Frequently visited")
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if showsNotifications, !shownNotifications.isEmpty {
-                                NotificationsSection(inbox: inbox, entries: shownNotifications, hidden: model.config.newTabHiddenNotifications)
-                            }
-                            if !model.config.newTabFeeds.isEmpty, !model.isPrivate {
-                                NewsSection(feeds: feeds, model: model)
-                            } else if !model.isPrivate, !newsPromptDismissed {
-                                AddNewsPrompt(model: model) { newsPromptDismissed = true }
-                            }
-                        }
-                        .frame(maxWidth: 720)
-                        .padding(.horizontal, 24)
-                        Spacer(minLength: 32)
+            // Sections top to bottom in `newTabSections` order, as wide as the window allows up to `maxWidth`, so a
+            // row of tiles only wraps when the window is narrow.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 30) {
+                    Text("Paddle")
+                        .chromeFont(size: 15, weight: .semibold, design: .rounded)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                    ForEach(model.config.newTabSectionOrder) { section in
+                        sectionView(section)
                     }
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                 }
+                .frame(maxWidth: Self.maxWidth * scale)
+                .padding(.horizontal, 40)
+                .padding(.top, 44)
+                .padding(.bottom, 28)
+                .frame(maxWidth: .infinity)
             }
             // Settings > General, whose New Tab section has this page's options (feeds, frequent sites, notifications).
             Button("Customize Paddle…") {
@@ -98,6 +65,43 @@ struct NewTabPage: View {
         .onChange(of: app.newTab.sites) { refreshFrequent() }
         .onChange(of: app.newTab.hiddenFrequent) { refreshFrequent() }
         .onChange(of: model.config.newTabFrequentSites) { refreshFrequent() }
+    }
+
+    /// The widest the sections get: eight tiles to a row.
+    static let maxWidth: CGFloat = 8 * TileMetrics.width + 7 * TileMetrics.spacing
+
+    @ViewBuilder
+    private func sectionView(_ section: NewTabSection) -> some View {
+        switch section {
+        case .pinned:
+            let sites = app.newTab.sites
+            TileSection(title: "Pinned") {
+                ForEach(sites) { site in
+                    PinnedTile(site: site, model: model, app: app)
+                }
+                if sites.count < NewTabSites.maxSites {
+                    AddTile(adding: $adding, app: app)
+                }
+            }
+        case .frequent:
+            if showsFrequent, !frequent.isEmpty {
+                TileSection(title: "Frequently visited") {
+                    ForEach(frequent) { entry in
+                        FrequentTile(entry: entry, model: model, app: app)
+                    }
+                }
+            }
+        case .notifications:
+            if showsNotifications, !shownNotifications.isEmpty {
+                NotificationsSection(inbox: inbox, entries: shownNotifications, hidden: model.config.newTabHiddenNotifications)
+            }
+        case .news:
+            if !model.config.newTabFeeds.isEmpty, !model.isPrivate {
+                NewsSection(feeds: feeds, model: model)
+            } else if !model.isPrivate, !newsPromptDismissed {
+                AddNewsPrompt(model: model) { newsPromptDismissed = true }
+            }
+        }
     }
 
     /// Shows the cached row now, then replaces it with a fresh query's result. A newer refresh cancels the older one;
@@ -295,8 +299,38 @@ private struct FeedThumbnail: View {
 // MARK: - Tiles
 
 private enum TileMetrics {
-    static let width: CGFloat = 104
-    static let height: CGFloat = 92
+    static let width: CGFloat = 128
+    static let height: CGFloat = 116
+    static let spacing: CGFloat = 12
+    /// The rounded plate behind a site's icon, and the icon on it.
+    static let plate: CGFloat = 60
+    static let icon: CGFloat = 36
+}
+
+/// A titled grid of tiles, filled left to right at a fixed tile size so rows line up with the other sections.
+private struct TileSection<Tiles: View>: View {
+    let title: String
+    @ViewBuilder var tiles: Tiles
+    @Environment(\.chromeScale) private var scale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .chromeFont(size: 12, weight: .semibold)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: TileMetrics.width * scale, maximum: TileMetrics.width * scale), spacing: TileMetrics.spacing * scale)],
+                alignment: .leading,
+                spacing: TileMetrics.spacing * scale
+            ) {
+                tiles
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(title)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
 /// The look shared by every tile: size, fill by hover and keyboard focus, and the icon over a one-line title.
@@ -310,11 +344,11 @@ private struct TileFace: View {
     @Environment(\.chromeScale) private var scale
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 10) {
             icon
-                .frame(width: 40 * scale, height: 40 * scale)
+                .frame(width: TileMetrics.plate * scale, height: TileMetrics.plate * scale)
             Text(title)
-                .chromeFont(size: 12)
+                .chromeFont(size: 13)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .padding(.horizontal, 6)
@@ -333,25 +367,28 @@ private struct TileFace: View {
         .onHover { hovering = $0 }
     }
 
-    /// The site's icon at 16 pt (its stored 32 px, crisp on 2x screens) or the host's first letter, on a plate.
+    /// The site's large icon (`FaviconStore.largeImage`, 128 px) at 36 pt; until Paddle has one, its 32 px icon at
+    /// 24 pt; without either, the host's first letter. On a plate.
     @ViewBuilder
     private var icon: some View {
-        if let image = AppModel.shared.favicons.image(for: url) {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(plate(AppModel.shared.favicons.luminance(for: url)))
+        let favicons = AppModel.shared.favicons
+        if let image = favicons.largeImage(for: url) ?? favicons.image(for: url) {
+            let large = favicons.largeImage(for: url) != nil
+            RoundedRectangle(cornerRadius: 14)
+                .fill(plate(large ? favicons.largeLuminance(for: url) : favicons.luminance(for: url)))
                 .overlay {
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
-                        .frame(width: 16 * scale, height: 16 * scale)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .frame(width: (large ? TileMetrics.icon : 24) * scale, height: (large ? TileMetrics.icon : 24) * scale)
+                        .clipShape(RoundedRectangle(cornerRadius: large ? 8 : 4))
                 }
         } else {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 14)
                 .fill(Color.primary.opacity(0.10))
                 .overlay {
                     Text(String(host.first.map { Character($0.uppercased()) } ?? "?"))
-                        .chromeFont(size: 18, weight: .bold)
+                        .chromeFont(size: 24, weight: .bold)
                         .foregroundStyle(.secondary)
                 }
         }
@@ -477,13 +514,13 @@ private struct AddTile: View {
     @Environment(\.chromeScale) private var scale
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 10) {
             Image(systemName: "plus")
-                .chromeFont(size: 18, weight: .semibold)
+                .chromeFont(size: 22, weight: .semibold)
                 .foregroundStyle(.secondary)
-                .frame(width: 40 * scale, height: 40 * scale)
+                .frame(width: TileMetrics.plate * scale, height: TileMetrics.plate * scale)
             Text("Add Site")
-                .chromeFont(size: 12)
+                .chromeFont(size: 13)
                 .foregroundStyle(.secondary)
         }
         .frame(width: TileMetrics.width * scale, height: TileMetrics.height * scale)
