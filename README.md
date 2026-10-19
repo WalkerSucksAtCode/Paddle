@@ -107,6 +107,10 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `mosaicCloseKey` | `"closeTab"` | ⌘W in a pane closes its tab (`"closeTab"`) or only takes it out of the Mosaic (`"removePane"`). Settings > Mosaic |
 | `mosaicStripIcon` | `"icon"` | A Mosaic's strip and sidebar item shows its `"icon"` or its panes' site icons (`"favicons"`). Settings > Mosaic |
 | `mosaicStripName` | `"focused"` | An unnamed Mosaic is called by its focused pane's site (`"focused"`) or every pane's site (`"all"`, "reddit.com · x.com"). Settings > Mosaic |
+| `mosaicStripShading` | `true` | Mosaic items in the tab strip and sidebar get their own shading, so they stand out from tabs. Settings > Mosaic |
+| `mosaicStripColor` | `"accent"` | The shading's color: `"accent"`, `"icon"` (the Mosaic's icon tint, else the accent), a color name or `#rrggbb`. Settings > Mosaic |
+| `mosaicStripStrength` | `16` | How strong the shading is, 4 to 60 (percent; the outline is drawn about three times stronger). Settings > Mosaic |
+| `mosaicStripStyle` | `"both"` | The shading is a `"fill"`, an `"outline"` or `"both"`. Settings > Mosaic |
 | `tabLayout` | `"horizontal"` | `"vertical"` shows the tabs in a sidebar beside the page instead of a strip above the toolbar. View > Vertical Tabs, Settings > Appearance |
 | `appearance` | `"system"` | `"light"` or `"dark"` forces the windows (and the color scheme pages see) instead of following macOS. Settings > Appearance |
 | `darkMode` | `"off"` | Website dark mode: `"off"` (default), `"system"` (matches appearance) or `"always"`. Off leaves sites alone unless set in `sites`; per-site overrides can be toggled on any site. Settings > Appearance |

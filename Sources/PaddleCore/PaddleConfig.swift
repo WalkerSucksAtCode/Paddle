@@ -132,6 +132,11 @@ public enum MosaicStripName: String, Codable, Sendable, CaseIterable {
     case focused, all
 }
 
+/// How a Mosaic's strip and sidebar item is shaded: a fill, an outline, or both.
+public enum MosaicStripStyle: String, Codable, Sendable, CaseIterable {
+    case fill, outline, both
+}
+
 /// The buttons a Mosaic pane's toolbar can show besides its site icon and address field.
 public enum MosaicToolbarButton: String, Codable, Sendable, CaseIterable {
     case back, forward, reload, close
@@ -382,6 +387,15 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var mosaicCloseKey: MosaicCloseKey
     public var mosaicStripIcon: MosaicStripIcon
     public var mosaicStripName: MosaicStripName
+    /// Mosaic items in the tab strip and sidebar get their own shading, so they stand out from tabs.
+    public var mosaicStripShading: Bool
+    /// The shading's color: "accent", "icon" (the Mosaic's icon tint, else the accent), a color name or #rrggbb.
+    public var mosaicStripColor: String
+    /// How strong the shading is, in percent (`mosaicStripStrengthRange`).
+    public var mosaicStripStrength: Double
+    public var mosaicStripStyle: MosaicStripStyle
+
+    public static let mosaicStripStrengthRange: ClosedRange<Double> = 4...60
 
     public static let mosaicDimRange: ClosedRange<Double> = 0.05...0.7
 
@@ -429,6 +443,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case mosaicPaneCorners, mosaicFocusMarker, mosaicDimAmount, mosaicToolbarSize, mosaicToolbarButtons
         case mosaicPaneGrab, mosaicModifierDrag, mosaicWindowDrag, mosaicNewTab, mosaicLinks, mosaicNewPanePlacement, mosaicDefaultLayout, mosaicAutoArrange
         case mosaicDarkMode, mosaicZoom, mosaicFocusFollowsPointer, mosaicSound, mosaicCloseKey, mosaicStripIcon, mosaicStripName
+        case mosaicStripShading, mosaicStripColor, mosaicStripStrength, mosaicStripStyle
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -523,6 +538,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicCloseKey: MosaicCloseKey = .closeTab,
         mosaicStripIcon: MosaicStripIcon = .icon,
         mosaicStripName: MosaicStripName = .focused,
+        mosaicStripShading: Bool = true,
+        mosaicStripColor: String = "accent",
+        mosaicStripStrength: Double = 16,
+        mosaicStripStyle: MosaicStripStyle = .both,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -632,6 +651,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.mosaicCloseKey = mosaicCloseKey
         self.mosaicStripIcon = mosaicStripIcon
         self.mosaicStripName = mosaicStripName
+        self.mosaicStripShading = mosaicStripShading
+        self.mosaicStripColor = Self.isStripColor(mosaicStripColor) ? mosaicStripColor : "accent"
+        self.mosaicStripStrength = Self.clamped(mosaicStripStrength, to: Self.mosaicStripStrengthRange, else: 16)
+        self.mosaicStripStyle = mosaicStripStyle
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -757,6 +780,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicCloseKey = c.decodeValue(.mosaicCloseKey, d.mosaicCloseKey, issues)
         mosaicStripIcon = c.decodeValue(.mosaicStripIcon, d.mosaicStripIcon, issues)
         mosaicStripName = c.decodeValue(.mosaicStripName, d.mosaicStripName, issues)
+        mosaicStripShading = c.decodeValue(.mosaicStripShading, d.mosaicStripShading, issues)
+        let stripColor: String = c.decodeValue(.mosaicStripColor, d.mosaicStripColor, issues)
+        mosaicStripColor = stripColor == "icon" ? stripColor : c.decodeColor(.mosaicStripColor, d.mosaicStripColor, automatic: "accent", issues)
+        mosaicStripStrength = Self.clamped(c.decodeValue(.mosaicStripStrength, d.mosaicStripStrength, issues), to: Self.mosaicStripStrengthRange, else: d.mosaicStripStrength)
+        mosaicStripStyle = c.decodeValue(.mosaicStripStyle, d.mosaicStripStyle, issues)
         mosaicToolbarButtons = Self.ordered(c.decodeStrings(.mosaicToolbarButtons, d.mosaicToolbarButtons.map(\.rawValue), issues).compactMap(MosaicToolbarButton.init(rawValue:)))
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
@@ -833,6 +861,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         @unknown default:
             return error.localizedDescription
         }
+    }
+
+    /// "accent", "icon", a color name or #rrggbb.
+    public static func isStripColor(_ value: String) -> Bool {
+        value == "icon" || ColorChoice(configValue: value, automaticValue: "accent") != nil
     }
 
     /// `buttons` once each, in toolbar order.

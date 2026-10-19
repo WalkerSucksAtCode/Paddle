@@ -41,6 +41,7 @@ struct ViewStripButton: View {
         }
         .padding(.horizontal, 10)
         .frame(width: width, height: 28)
+        .modifier(MosaicStripShade(model: model, split: split, cornerRadius: 7))
         .background {
             RoundedRectangle(cornerRadius: 7)
                 .fill(isShown ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.30 : 0.14)) : ink.opacity(hovering ? 0.06 : 0))
@@ -116,6 +117,7 @@ struct ViewSidebarRow: View {
         .padding(.horizontal, iconsOnly ? 0 : 8)
         .frame(maxWidth: .infinity, alignment: iconsOnly ? .center : .leading)
         .frame(height: 30 * scale)
+        .modifier(MosaicStripShade(model: model, split: split, cornerRadius: 7))
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(isShown ? (theme?.selectedTab ?? ink.opacity(highContrast ? 0.36 : 0.14)) : ink.opacity(hovering ? 0.06 : 0))
@@ -241,6 +243,44 @@ struct MosaicStripBadge: View {
             .accessibilityHidden(true)
         } else {
             MosaicIconView(layout: split.layout, size: size)
+        }
+    }
+}
+
+/// The shading that sets a Mosaic's strip or sidebar item apart from tabs (`mosaicStripShading`): a fill and/or an
+/// outline (`mosaicStripStyle`) in `mosaicStripColor` at `mosaicStripStrength`. The outline is drawn stronger than the
+/// fill, so the item stands out by brightness and edge, not by its color alone.
+struct MosaicStripShade: ViewModifier {
+    let model: BrowserModel
+    let split: BrowserModel.Split
+    let cornerRadius: CGFloat
+    @Environment(\.chromeTheme) private var theme
+
+    func body(content: Content) -> some View {
+        let config = model.config
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        let color = Self.color(config.mosaicStripColor, layout: split.layout, accent: theme?.accent ?? Color.accentColor)
+        let strength = config.mosaicStripStrength / 100
+        content
+            .overlay {
+                if config.mosaicStripShading, config.mosaicStripStyle != .fill {
+                    shape.strokeBorder(color.opacity(min(1, strength * 3 + 0.15)), lineWidth: 1.5).allowsHitTesting(false)
+                }
+            }
+            .background {
+                if config.mosaicStripShading, config.mosaicStripStyle != .outline {
+                    shape.fill(color.opacity(strength))
+                }
+            }
+    }
+
+    /// "accent", "icon" (the Mosaic's icon tint, else the accent), a color name or #rrggbb.
+    static func color(_ value: String, layout: PaneLayout, accent: Color) -> Color {
+        if value == "icon" { return layout.iconTint?.swiftUIColor ?? accent }
+        switch ColorChoice(configValue: value, automaticValue: "accent") {
+        case .preset(let preset)?: return preset.swiftUIColor
+        case .custom(let rgb)?: return Color(rgb: rgb)
+        default: return accent
         }
     }
 }

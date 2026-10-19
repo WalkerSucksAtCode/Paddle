@@ -1,3 +1,4 @@
+import AppKit
 import PaddleCore
 import SwiftUI
 
@@ -292,6 +293,14 @@ struct MosaicPane: View {
                     Text("Every pane's site").tag(MosaicStripName.all)
                 }
                 .help("mosaicStripName in config.json. Rename Mosaic… gives it a name of its own.")
+                Toggle("Shade Mosaic items so they stand out from tabs", isOn: Binding(
+                    get: { model.file.mosaicStripShading },
+                    set: { value in Task { await model.saveKey(.mosaicStripShading, .bool(value)) } }
+                ))
+                .help("mosaicStripShading in config.json.")
+                if model.file.mosaicStripShading {
+                    MosaicShadingRows(model: model)
+                }
             }
             .disabled(model.controlsDisabled)
 
@@ -361,5 +370,89 @@ private struct MosaicTimerPicker: View {
             return "\(hours) hour\(hours == 1 ? "" : "s")"
         }
         return "\(minutes.formatted()) minute\(minutes == 1 ? "" : "s")"
+    }
+}
+
+/// The shading's color, strength and style, with a preview of a Mosaic item next to a tab.
+private struct MosaicShadingRows: View {
+    let model: SettingsModel
+    @State private var custom = Color.orange
+
+    private static let custom = "custom"
+    private var color: String { model.file.mosaicStripColor }
+    private var isCustom: Bool { color.hasPrefix("#") }
+
+    var body: some View {
+        Picker("Color", selection: Binding(
+            get: { isCustom ? Self.custom : color },
+            set: { value in
+                let saved = value == Self.custom ? "#" + ThemeColorHex.hex(of: custom) : value
+                Task { await model.saveKey(.mosaicStripColor, .string(saved)) }
+            }
+        )) {
+            Text("Accent color").tag("accent")
+            Text("The Mosaic's icon tint").tag("icon")
+            Divider()
+            ForEach(ColorPreset.allCases, id: \.self) { preset in Text(preset.displayName).tag(preset.rawValue) }
+            Divider()
+            Text("Custom").tag(Self.custom)
+        }
+        .help("mosaicStripColor in config.json: accent, icon, a color name or #rrggbb. Icon tint falls back to the accent for a Mosaic without one.")
+        if isCustom {
+            ColorPicker("Custom color", selection: Binding(
+                get: { RGBColor(hex: color).map { Color(rgb: $0) } ?? custom },
+                set: { value in
+                    custom = value
+                    Task { await model.saveKey(.mosaicStripColor, .string("#" + ThemeColorHex.hex(of: value))) }
+                }
+            ), supportsOpacity: false)
+        }
+        LabeledContent("Strength") {
+            Slider(value: Binding(
+                get: { model.file.mosaicStripStrength },
+                set: { value in Task { await model.saveKey(.mosaicStripStrength, .number(value.rounded())) } }
+            ), in: PaddleConfig.mosaicStripStrengthRange)
+            .frame(width: 160)
+            Text("\(Int(model.file.mosaicStripStrength)) %").monospacedDigit().frame(width: 40, alignment: .trailing)
+        }
+        .help("mosaicStripStrength in config.json, 4 to 60.")
+        Picker("Style", selection: Binding(
+            get: { model.file.mosaicStripStyle },
+            set: { value in Task { await model.saveKey(.mosaicStripStyle, .string(value.rawValue)) } }
+        )) {
+            Text("Fill and outline").tag(MosaicStripStyle.both)
+            Text("Fill").tag(MosaicStripStyle.fill)
+            Text("Outline").tag(MosaicStripStyle.outline)
+        }
+        .help("mosaicStripStyle in config.json.")
+        LabeledContent("Preview") {
+            HStack(spacing: 6) {
+                preview(title: "A tab", shaded: false)
+                preview(title: "A Mosaic", shaded: true)
+            }
+        }
+        SettingsCaption("The outline is drawn stronger than the fill, so a Mosaic stands out by its brightness and edge as well as its color.")
+    }
+
+    private func preview(title: String, shaded: Bool) -> some View {
+        let shade = MosaicStripShade.color(color, layout: PaneLayout("a", "b")!, accent: .accentColor)
+        let strength = model.file.mosaicStripStrength / 100
+        let style = model.file.mosaicStripStyle
+        let shape = RoundedRectangle(cornerRadius: 7)
+        return Text(title)
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .frame(width: 90, height: 24)
+            .background(shape.fill(shaded && style != .outline ? shade.opacity(strength) : Color.primary.opacity(0.06)))
+            .overlay(shape.strokeBorder(shaded && style != .fill ? shade.opacity(min(1, strength * 3 + 0.15)) : .clear, lineWidth: 1.5))
+    }
+}
+
+/// `#rrggbb` text for a color (no leading #).
+enum ThemeColorHex {
+    static func hex(of color: Color) -> String {
+        guard let c = NSColor(color).usingColorSpace(.sRGB) else { return "ff8800" }
+        func part(_ v: CGFloat) -> String { String(format: "%02x", Int((min(max(v, 0), 1) * 255).rounded())) }
+        return part(c.redComponent) + part(c.greenComponent) + part(c.blueComponent)
     }
 }

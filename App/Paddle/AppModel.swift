@@ -641,6 +641,10 @@ final class AppModel {
             case .mosaicCloseKey: old.mosaicCloseKey != new.mosaicCloseKey
             case .mosaicStripIcon: old.mosaicStripIcon != new.mosaicStripIcon
             case .mosaicStripName: old.mosaicStripName != new.mosaicStripName
+            case .mosaicStripShading: old.mosaicStripShading != new.mosaicStripShading
+            case .mosaicStripColor: old.mosaicStripColor != new.mosaicStripColor
+            case .mosaicStripStrength: old.mosaicStripStrength != new.mosaicStripStrength
+            case .mosaicStripStyle: old.mosaicStripStyle != new.mosaicStripStyle
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

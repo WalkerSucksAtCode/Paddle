@@ -30,6 +30,17 @@ struct ConfigTests {
         #expect(PaddleConfig(mosaicMaxPanes: 99).mosaicMaxPanes == PaneLayout.maxPanes)
     }
 
+    @Test func mosaicStripShadingKeysDecode() throws {
+        let d = PaddleConfig()
+        #expect(d.mosaicStripShading && d.mosaicStripColor == "accent" && d.mosaicStripStrength == 16 && d.mosaicStripStyle == .both)
+        for value in ["icon", "green", "#ff8800", "accent"] {
+            let c = try PaddleConfig.decode(Data(#"{"mosaicStripColor": "\#(value)"}"#.utf8))
+            #expect(c.mosaicStripColor == value)
+        }
+        let odd = try PaddleConfig.decode(Data(#"{"mosaicStripColor": "mauve-ish", "mosaicStripStrength": 900, "mosaicStripStyle": "outline", "mosaicStripShading": false}"#.utf8))
+        #expect(odd.mosaicStripColor == "accent" && odd.mosaicStripStrength == 60 && odd.mosaicStripStyle == .outline && !odd.mosaicStripShading)
+    }
+
     @Test func mosaicPaneAndStripKeysDecode() throws {
         let d = PaddleConfig()
         #expect(d.mosaicDarkMode == .site && d.mosaicZoom == .focused && !d.mosaicFocusFollowsPointer && d.mosaicSound == .all)

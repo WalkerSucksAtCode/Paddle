@@ -109,7 +109,7 @@ enum SettingsPane: String, CaseIterable {
             "re-tile", "arrange", "mosaicAutoArrange", "dark mode", "mosaicDarkMode", "zoom", "mosaicZoom", "focus follows",
             "pointer", "hover", "mosaicFocusFollowsPointer", "sound", "mute", "mosaicSound", "close", "⌘W", "mosaicCloseKey",
             "strip", "favicons", "mosaicStripIcon", "name", "mosaicStripName", "freeform", "free form", "overlap", "tidy up",
-            "cards", "windows",
+            "cards", "windows", "shading", "shade", "highlight", "mosaicStripShading", "mosaicStripColor", "mosaicStripStrength", "mosaicStripStyle",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
