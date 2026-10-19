@@ -108,6 +108,8 @@ struct GeneralPane: View {
                              help: "Pinch zooms the page in and out; ⌘+ and ⌘− work either way.")
                 ConfigToggle("Tab key highlights each item on a page", .tabKeyHighlightsLinks, \.tabKeyHighlightsLinks, model: model,
                              help: "Tab moves through links as well as fields and buttons. Pages opened afterwards pick it up.")
+                ConfigToggle("Play system sound effects for unhandled keys", .soundEffects, \.soundEffects, model: model,
+                             help: "Off, pressing arrow keys or Escape on pages such as YouTube doesn't play the macOS alert sound.")
             }
             Section("Downloads") {
                 LabeledContent("Save files to") {

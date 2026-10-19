@@ -117,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if menuItem.action == #selector(paddleToggleVerticalTabs(_:)) {
             menuItem.state = AppModel.shared.config.tabLayout == .vertical ? .on : .off
         }
+        if menuItem.action == #selector(paddleToggleInvertTextImages(_:)) {
+            menuItem.state = AppModel.shared.config.invertTextImages ? .on : .off
+        }
         if menuItem.action == #selector(paddleToggleSidebarCollapsed(_:)) {
             menuItem.title = UserDefaults.standard.bool(forKey: SidebarMetrics.collapsedKey) ? "Expand Sidebar" : "Collapse Sidebar"
             return AppModel.shared.config.tabLayout == .vertical
@@ -176,6 +179,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func paddleToggleVerticalTabs(_ sender: Any?) {
         let next: TabLayout = AppModel.shared.config.tabLayout == .vertical ? .horizontal : .vertical
         Task { await AppModel.shared.setTabLayout(next) }
+    }
+
+    @objc func paddleToggleInvertTextImages(_ sender: Any?) {
+        Task { await AppModel.shared.toggleInvertTextImages() }
     }
 
     @objc func paddleToggleSidebarCollapsed(_ sender: Any?) {

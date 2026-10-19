@@ -196,5 +196,40 @@ struct SitePolicyTests {
         }
         #expect(check == "object")
     }
+
+    @MainActor
+    @Test func textImageInversionTogglesInWebKit() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        let script = DarkModeScript.source(for: ["example.com": SiteSettings(darkMode: true)], defaultDarkMode: false, invertTextImages: true)
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient
+        ))
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let html = "<html><body><img id='testimg' src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' /></body></html>"
+        webView.loadHTMLString(html, baseURL: URL(string: "https://example.com/"))
+        let deadline = ContinuousClock.now + .seconds(10)
+        var toggled: Bool?
+        while ContinuousClock.now < deadline {
+            toggled = try? await withCheckedThrowingContinuation { cont in
+                let js = """
+                if (!window.__paddleDarkMode) return null;
+                const img = document.getElementById('testimg');
+                if (!img) return null;
+                window.__paddleDarkMode.toggleLastClickedImage(img.src);
+                return img.getAttribute('data-paddle-inverted-text');
+                """
+                webView.callAsyncJavaScript(js, arguments: [:], in: nil, in: .defaultClient) { result in
+                    switch result {
+                    case .success(let val): cont.resume(returning: (val as? String) == "true")
+                    case .failure(let err): cont.resume(throwing: err)
+                    }
+                }
+            }
+            if toggled == true { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(toggled == true)
+    }
 }
 

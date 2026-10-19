@@ -957,6 +957,13 @@ final class Tab: Identifiable {
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
+    func applyInvertTextImages() {
+        guard let webView, !isSuspendedInWebKit else { return }
+        let enabled = AppModel.shared.config.invertTextImages
+        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setInvertTextImages(\(enabled ? "true" : "false")); }"
+        webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
+    }
+
     /// Toggles website dark mode for this tab's site and persists the change to config.json.
     func toggleDarkMode() {
         guard let host = siteHost else { return }

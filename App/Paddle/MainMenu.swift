@@ -101,6 +101,7 @@ enum MainMenu {
         add(view, "viewSource", "View Source", #selector(BrowserWindowController.paddleViewSource(_:)), "u", [.command, .option])
         add(view, "toggleReaderMode", "Show Reader", #selector(BrowserWindowController.paddleToggleReaderMode(_:)), "r", [.command, .shift])
         add(view, "toggleDarkMode", "Dark Mode", #selector(BrowserWindowController.paddleToggleDarkMode(_:)), "d", [.command, .shift])
+        add(view, "toggleInvertTextImages", "Invert Bright Text Images", #selector(AppDelegate.paddleToggleInvertTextImages(_:)), "", target: appDelegate)
         add(view, "togglePictureInPicture", "Picture in Picture", #selector(BrowserWindowController.paddleTogglePictureInPicture(_:)), "p", [.command, .control])
         add(view, "translatePage", "Translate Page…", #selector(BrowserWindowController.paddleTranslatePage(_:)), "")
         view.addItem(.separator())

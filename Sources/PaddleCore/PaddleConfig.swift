@@ -255,6 +255,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var appearance: AppearanceMode
     /// Website dark mode: `off`, `system` (follows appearance), or `always`.
     public var darkMode: DarkModePreference
+    /// Inverts images that are clearly dark text on a bright background (screenshots of text, documents) when dark mode is on.
+    public var invertTextImages: Bool
     /// Draw the selected tab with a stronger outline and contrast (differs in brightness, not hue).
     public var highContrastTabs: Bool
     /// `default` (today's look), a built-in theme id (graphite, ocean, forest, dusk, sand, high-contrast) or the base
@@ -322,6 +324,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var pinchZoom: Bool
     /// The Tab key moves through links as well as form fields and buttons (Safari's ⌥Tab behaviour on Tab).
     public var tabKeyHighlightsLinks: Bool
+    /// Play the macOS alert sound when a key press (such as an arrow key or Escape) isn't handled by the page. Off by default.
+    public var soundEffects: Bool
     /// Offer to fill name, email, phone and address fields from the contact card kept in the Keychain. Off by default.
     public var contactAutofill: Bool
     /// The extension folder whose New Tab page (`chrome_url_overrides.newtab`) New Tab opens; empty for Paddle's own.
@@ -438,13 +442,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight, mosaicStaysReady, mosaicFreezeAfterMinutes, mosaicSleepAfterMinutes
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, soundEffects, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight, mosaicStaysReady, mosaicFreezeAfterMinutes, mosaicSleepAfterMinutes
         case mosaicAnimation, mosaicAnimationSpeed, mosaicLiveDragPreview, mosaicDividerGrips, mosaicDividerSnapping, mosaicDividerDoubleClick
         case mosaicPaneCorners, mosaicFocusMarker, mosaicDimAmount, mosaicToolbarSize, mosaicToolbarButtons
         case mosaicPaneGrab, mosaicModifierDrag, mosaicWindowDrag, mosaicNewTab, mosaicLinks, mosaicNewPanePlacement, mosaicDefaultLayout, mosaicAutoArrange
         case mosaicDarkMode, mosaicZoom, mosaicFocusFollowsPointer, mosaicSound, mosaicCloseKey, mosaicStripIcon, mosaicStripName
         case mosaicStripShading, mosaicStripColor, mosaicStripStrength, mosaicStripStyle
-        case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
+        case appearance, darkMode, invertTextImages, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
         case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
@@ -498,6 +502,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         swipeNavigation: Bool = true,
         pinchZoom: Bool = true,
         tabKeyHighlightsLinks: Bool = false,
+        soundEffects: Bool = false,
         contactAutofill: Bool = false,
         newTabExtension: String = "",
         newTabFeeds: [String] = [],
@@ -544,6 +549,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicStripStyle: MosaicStripStyle = .both,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
+        invertTextImages: Bool = false,
         highContrastTabs: Bool = false,
         theme: String = "default",
         accentColor: String = "system",
@@ -611,6 +617,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.swipeNavigation = swipeNavigation
         self.pinchZoom = pinchZoom
         self.tabKeyHighlightsLinks = tabKeyHighlightsLinks
+        self.soundEffects = soundEffects
         self.contactAutofill = contactAutofill
         self.newTabExtension = newTabExtension
         self.newTabFeeds = newTabFeeds
@@ -657,6 +664,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.mosaicStripStyle = mosaicStripStyle
         self.appearance = appearance
         self.darkMode = darkMode
+        self.invertTextImages = invertTextImages
         self.highContrastTabs = highContrastTabs
         self.theme = theme
         self.accentColor = accentColor
@@ -732,6 +740,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         swipeNavigation = c.decodeValue(.swipeNavigation, d.swipeNavigation, issues)
         pinchZoom = c.decodeValue(.pinchZoom, d.pinchZoom, issues)
         tabKeyHighlightsLinks = c.decodeValue(.tabKeyHighlightsLinks, d.tabKeyHighlightsLinks, issues)
+        soundEffects = c.decodeValue(.soundEffects, d.soundEffects, issues)
         contactAutofill = c.decodeValue(.contactAutofill, d.contactAutofill, issues)
         newTabExtension = c.decodeValue(.newTabExtension, d.newTabExtension, issues)
         newTabFeeds = c.decodeStrings(.newTabFeeds, d.newTabFeeds, issues)
@@ -788,6 +797,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicToolbarButtons = Self.ordered(c.decodeStrings(.mosaicToolbarButtons, d.mosaicToolbarButtons.map(\.rawValue), issues).compactMap(MosaicToolbarButton.init(rawValue:)))
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
+        invertTextImages = c.decodeValue(.invertTextImages, d.invertTextImages, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
         theme = c.decodeValue(.theme, d.theme, issues)
         accentColor = c.decodeColor(.accentColor, d.accentColor, automatic: "system", issues)

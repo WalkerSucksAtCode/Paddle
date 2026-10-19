@@ -518,6 +518,7 @@ final class AppModel {
         }
         if keys.contains(.sites) || keys.contains(.defaultZoom) { applySiteZoom() }
         if keys.contains(.sites) || keys.contains(.darkMode) { applySiteDarkMode() }
+        if keys.contains(.invertTextImages) { for tab in allTabs { tab.applyInvertTextImages() } }
         // Scriptlets come from the same list files, so they are rebuilt with the block lists.
         if !keys.isDisjoint(with: [.contentBlocking, .filterLists, .scriptlets, .trustedLists])
             || (keys.contains(.sites) && old.blockingOffHosts != new.blockingOffHosts) {
@@ -601,6 +602,7 @@ final class AppModel {
             case .swipeNavigation: old.swipeNavigation != new.swipeNavigation
             case .pinchZoom: old.pinchZoom != new.pinchZoom
             case .tabKeyHighlightsLinks: old.tabKeyHighlightsLinks != new.tabKeyHighlightsLinks
+            case .soundEffects: old.soundEffects != new.soundEffects
             case .contactAutofill: old.contactAutofill != new.contactAutofill
             case .newTabExtension: old.newTabExtension != new.newTabExtension
             case .newTabFeeds: old.newTabFeeds != new.newTabFeeds
@@ -647,6 +649,7 @@ final class AppModel {
             case .mosaicStripStyle: old.mosaicStripStyle != new.mosaicStripStyle
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
+            case .invertTextImages: old.invertTextImages != new.invertTextImages
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
             case .theme: old.theme != new.theme
             case .accentColor: old.accentColor != new.accentColor
@@ -842,6 +845,18 @@ final class AppModel {
         for tab in allTabs {
             tab.applySiteDarkMode(systemIsDark: isDark)
         }
+    }
+
+    /// Toggles automatic inversion of bright text images in dark mode and persists the change to config.json.
+    func toggleInvertTextImages() async {
+        let disk: Data
+        do {
+            disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
+        } catch {
+            return
+        }
+        let next = !config.invertTextImages
+        _ = await writeConfig([ConfigChange("invertTextImages", .bool(next))], base: disk)
     }
 
     /// Settings' "This session: Forget": the next camera, microphone, location or download request from `host`

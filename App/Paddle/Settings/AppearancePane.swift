@@ -95,6 +95,11 @@ struct AppearancePane: View {
                     Text("Always").tag(DarkModePreference.always)
                 }
                 .help("darkMode in config.json. Generates clean dark themes on any website, matching system or always on.")
+                Toggle("Invert bright text images in dark mode", isOn: Binding(
+                    get: { model.file.invertTextImages },
+                    set: { value in Task { await model.saveKey(.invertTextImages, .bool(value)) } }
+                ))
+                .help("invertTextImages in config.json. Inverts screenshots of text and documents on bright backgrounds when dark mode is active. Option-click any image to toggle.")
                 zoomPicker
                 fontSizePicker
             }

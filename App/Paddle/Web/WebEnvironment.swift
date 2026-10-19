@@ -395,6 +395,10 @@ final class WebEnvironment {
         contentController.addUserScript(WKUserScript(
             source: Self.xrayBridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page
         ))
+        // Remembers a column's scroll position across Back. See `ScrollRestoreScript`.
+        contentController.addUserScript(WKUserScript(
+            source: ScrollRestoreScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page
+        ))
 
         // `contactAutofill`: the fill chip on name, email, phone and address fields. Pages loaded while it was off get
         // it when they next load.
@@ -439,7 +443,7 @@ final class WebEnvironment {
         }
 
         let isDark = AppModel.shared.effectiveAppearanceIsDark
-        let darkModeScript = DarkModeScript.source(for: config.sites, defaultDarkMode: config.defaultDarkMode(systemIsDark: isDark))
+        let darkModeScript = DarkModeScript.source(for: config.sites, defaultDarkMode: config.defaultDarkMode(systemIsDark: isDark), invertTextImages: config.invertTextImages)
         contentController.addUserScript(WKUserScript(
             source: darkModeScript,
             injectionTime: .atDocumentStart,

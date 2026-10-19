@@ -724,6 +724,28 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             item.target = self
             menu.insertItem(item, at: index + 1)
         }
+        let imageURL = hit.flatMap { $0.responds(to: NSSelectorFromString("absoluteImageURL")) ? $0.value(forKey: "absoluteImageURL") as? URL : nil }
+        if let imageURL {
+            let item = NSMenuItem(title: "Invert Image Colors", action: #selector(toggleImageInversion(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = imageURL
+            if let index = menu.items.firstIndex(where: {
+                let id = $0.identifier?.rawValue ?? ""
+                return id.contains("CopyImage") || id.contains("OpenImage")
+            }) {
+                menu.insertItem(item, at: index + 1)
+            } else {
+                menu.insertItem(item, at: 0)
+            }
+        }
+    }
+
+    @objc private func toggleImageInversion(_ sender: NSMenuItem) {
+        guard let tab, let webView = tab.webView else { return }
+        let url = (sender.representedObject as? URL)?.absoluteString ?? ""
+        let escaped = url.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.toggleLastClickedImage(\"\(escaped)\"); }"
+        webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
     @objc private func toggleNewTabSite(_ sender: NSMenuItem) {

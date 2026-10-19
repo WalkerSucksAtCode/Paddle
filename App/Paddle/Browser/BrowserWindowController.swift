@@ -465,6 +465,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         model.toggleDarkMode(tab)
     }
 
+    /// View > Invert Bright Text Images: toggles automatic inversion of bright text images in dark mode.
+    @objc func paddleToggleInvertTextImages(_ sender: Any?) {
+        Task {
+            await AppModel.shared.toggleInvertTextImages()
+        }
+    }
+
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
@@ -656,6 +663,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         guard let item = sender as? NSMenuItem else { return }
         if item.tag == 9 { model.selectLastTab() } else { model.select(index: item.tag - 1) }
     }
+
+    override func noResponder(for eventSelector: Selector) {
+        guard AppModel.shared.config(for: model.profileID).soundEffects else { return }
+        super.noResponder(for: eventSelector)
+    }
 }
 
 /// Side buttons (3 back, 4 forward) go back/forward on mouse-up, as in Chrome. The trackpad swipe
@@ -670,6 +682,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 /// Extension commands don't come through here: `ExtensionHost` runs them before dispatch, before the
 /// page sees the key, unless a Paddle menu item uses that key.
 final class BrowserWindow: NSWindow {
+    private var allowsSoundEffects: Bool {
+        (windowController as? BrowserWindowController).map {
+            AppModel.shared.config(for: $0.model.profileID).soundEffects
+        } ?? AppModel.shared.config.soundEffects
+    }
+
     override func sendEvent(_ event: NSEvent) {
         if event.type == .otherMouseDown || event.type == .otherMouseUp, event.buttonNumber == 3 || event.buttonNumber == 4,
            let controller = windowController as? BrowserWindowController {
@@ -699,7 +717,13 @@ final class BrowserWindow: NSWindow {
     /// The same Escape as an action; NSWindow's own `cancelOperation:` runs when no preview closed.
     override func cancelOperation(_ sender: Any?) {
         if (windowController as? BrowserWindowController)?.closePreviewOnEscape() == true { return }
+        guard allowsSoundEffects else { return }
         super.cancelOperation(sender)
+    }
+
+    override func noResponder(for eventSelector: Selector) {
+        guard allowsSoundEffects else { return }
+        super.noResponder(for: eventSelector)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -748,6 +772,9 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleToggleDarkMode(_:)):
             guard let tab, tab.siteHost != nil else { return false }
             menuItem.state = tab.isDarkModeActive ? .on : .off
+            return true
+        case #selector(paddleToggleInvertTextImages(_:)):
+            menuItem.state = AppModel.shared.config.invertTextImages ? .on : .off
             return true
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
              #selector(paddleTranslatePage(_:)), #selector(paddleCopyLinkToHighlight(_:)),
