@@ -7,6 +7,7 @@ summary. Needs controlBridge on, and controlBridgeScripts for pausing video.
     scripts/bench.py [--label NAME] [--sites all|general] [--relay PATH] [--settle SECONDS]
 
 Compare two runs: scripts/bench.py --compare build/bench/a.json build/bench/b.json
+Count visible ads on ad-heavy pages (content blocking checks): scripts/bench.py --adcheck --label NAME
 """
 import argparse
 import json
@@ -31,6 +32,34 @@ GENERAL_SITES = [url for url in SITES if "youtube.com" not in url and "reddit.co
     "https://www.apple.com/macos/",
     "https://news.ycombinator.com/",
 ]
+# Ad-heavy pages for --adcheck: each is loaded muted, scrolled, then its visible ad elements are counted.
+AD_SITES = [
+    "https://www.theverge.com/",
+    "https://www.cnn.com/",
+    "https://weather.com/",
+    "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
+    "https://www.dailymail.co.uk/home/index.html",
+    "https://www.forbes.com/",
+    "https://www.espn.com/",
+    "https://minecraft.fandom.com/wiki/Creeper",
+    "https://www.speedtest.net/",
+    "https://www.wunderground.com/",
+]
+# Elements that are ads on these sites, counted when at least 30 px tall and wide; the selector list is the
+# commonest ad slot markup (Google Publisher Tag, AdSense, Taboola, Outbrain, Amazon, generic ad wrappers).
+AD_SCRIPT = r"""
+const selectors = ['iframe[id^="google_ads_iframe"]', 'iframe[src*="doubleclick.net"]', 'iframe[src*="googlesyndication"]',
+  'ins.adsbygoogle', 'div[id^="div-gpt-ad"]', '[data-google-query-id]', '[id^="taboola-"]', '.trc_rbox_container',
+  '.OUTBRAIN', '[data-widget-id][class*="outbrain"]', 'iframe[src*="amazon-adsystem"]', '[class*="ad-slot"]',
+  '[class*="AdSlot"]', '[id*="ad-slot"]', '[class^="ad-"]', '[class*=" ad-"]', '[data-ad-unit]', '[data-ad]', '[aria-label="Advertisement"]'];
+const seen = new Set(); let visible = 0;
+for (const sel of selectors) for (const el of document.querySelectorAll(sel)) {
+  if (seen.has(el)) continue; seen.add(el);
+  const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+  if (r.width >= 30 && r.height >= 30 && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0') visible++;
+}
+return {visible, matched: seen.size, height: document.documentElement.scrollHeight};
+"""
 DEFAULT_RELAYS = [
     "build/DerivedData.noindex/Build/Products/Debug/Paddle.app/Contents/Helpers/paddle-mcp",
     "/Applications/Paddle.app/Contents/Helpers/paddle-mcp",
@@ -192,6 +221,57 @@ def measure(bridge, window, tabs, args):
     return result
 
 
+def adcheck(args):
+    """Loads AD_SITES one at a time in a muted tab of a window of its own, scrolls each through, and counts the
+    visible ad elements (AD_SCRIPT). Writes build/bench/<label>-ads-<time>.json."""
+    relay = args.relay or next((r for r in DEFAULT_RELAYS if os.path.exists(r)), None)
+    bridge = Bridge(relay)
+    before = {w["id"] for w in bridge.state()["windows"]}
+    bridge.tool("menu_action", name="newWindow")
+    window = next(w for w in bridge.state()["windows"] if w["id"] not in before)
+    reply = bridge.tool("open_url", url="about:blank", window=window["id"], newTab=False)
+    tab = re.search(r"tab ([0-9A-F-]{36})", reply).group(1)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit("stopped"))
+    rows = []
+    try:
+        bridge.tool("wait_for_load", tab=tab, timeoutSeconds=10)
+        bridge.tool("menu_action", name="toggleMute")
+        for url in AD_SITES:
+            bridge.tool("open_url", url=url, window=window["id"], newTab=False)
+            try:
+                bridge.tool("wait_for_load", tab=tab, timeoutSeconds=30)
+            except RuntimeError:
+                pass
+            pause_media(bridge, tab)
+            for fraction in (0.33, 0.66, 1.0, 0.0):
+                try:
+                    bridge.tool("run_js", tab=tab, script=f"window.scrollTo(0, document.documentElement.scrollHeight * {fraction}); return 1;")
+                except RuntimeError:
+                    pass
+                time.sleep(2)
+            pause_media(bridge, tab)
+            try:
+                text = bridge.tool("run_js", tab=tab, script=AD_SCRIPT)
+                counts = json.loads(text[text.index("{"):text.rindex("}") + 1])
+            except (RuntimeError, ValueError) as error:
+                counts = {"error": str(error)[:120]}
+            rows.append({"url": url, **counts})
+            print(f"  {counts.get('visible', '?'):>4} visible ads  {url}", flush=True)
+    finally:
+        try:
+            bridge.tool("close_tab", tab=tab)
+        except Exception:
+            pass
+        bridge.close()
+    total = sum(r.get("visible", 0) for r in rows)
+    print(f"{args.label}: {total} visible ad elements on {len(rows)} pages")
+    os.makedirs("build/bench", exist_ok=True)
+    path = f"build/bench/{args.label}-ads-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    with open(path, "w") as f:
+        json.dump({"label": args.label, "total": total, "rows": rows}, f, indent=2)
+    print(f"wrote {path}")
+
+
 def summarize(r):
     m = r["memoryMB"]
     switches = sorted(r["switchShownMs"])
@@ -228,9 +308,12 @@ if __name__ == "__main__":
     parser.add_argument("--cpu-window", type=float, default=20)
     parser.add_argument("--sites", choices=["all", "general"], default="all")
     parser.add_argument("--compare", nargs=2, metavar=("A", "B"))
+    parser.add_argument("--adcheck", action="store_true", help="count visible ads on AD_SITES instead")
     args = parser.parse_args()
     args.site_list = GENERAL_SITES if args.sites == "general" else SITES
     if args.compare:
         compare(*args.compare)
+    elif args.adcheck:
+        adcheck(args)
     else:
         run(args)

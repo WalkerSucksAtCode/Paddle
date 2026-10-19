@@ -772,6 +772,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -disable-dynamic-actor-isolation";
 				PRODUCT_BUNDLE_IDENTIFIER = com.walker.Paddle;
 				PRODUCT_NAME = Paddle;
 				SDKROOT = macosx;
@@ -854,6 +855,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -disable-dynamic-actor-isolation";
 				PRODUCT_BUNDLE_IDENTIFIER = com.walker.Paddle;
 				PRODUCT_NAME = Paddle;
 				SDKROOT = macosx;

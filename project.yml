@@ -48,6 +48,9 @@ targets:
         CODE_SIGN_ENTITLEMENTS: App/Paddle/Paddle.entitlements
         CODE_SIGN_IDENTITY[sdk=macosx*]: Apple Development
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        # The compiler's runtime main-actor checks crash in swift_task_isCurrentExecutor on macOS 27.0.1 (the main
+        # executor reads as CFMainExecutor with DispatchMainExecutor's witness table). Compile-time isolation stays on.
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xfrontend -disable-dynamic-actor-isolation"
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         LD_RUNPATH_SEARCH_PATHS:
