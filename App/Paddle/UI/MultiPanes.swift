@@ -19,10 +19,13 @@ struct MultiPanes<Pane: View>: View {
             // While a tab is dragged over the panes, the layout its drop would make: the panes move aside for it.
             let preview = model.paneDragPreview(for: split)
             let layout = preview ?? split.layout
-            let frames = layout.frames(in: rect, gap: PaneMetrics.gap)
+            var frames = layout.frames(in: rect, gap: PaneMetrics.gap)
             let narrow = PaneMetrics.isNarrow(split.layout.frames(in: rect, gap: PaneMetrics.gap))
             let shown = model.panes(of: split)
             let dragged = preview == nil ? nil : model.paneDragTabID
+            // Zoom Pane: the focused pane over the whole area, the others kept (hidden) in their places.
+            let zoomed = preview == nil && model.zoomedPaneID == focused.id ? focused.id : nil
+            let _ = zoomed.map { frames[$0.uuidString] = rect }
             ZStack(alignment: .topLeading) {
                 if narrow {
                     PaneFrame(model: model, tab: focused, focused: true, ring: false, size: rect.size, content: pane(focused, true))
@@ -35,22 +38,24 @@ struct MultiPanes<Pane: View>: View {
                         let frame = frames[tab.id.uuidString] ?? .zero
                         PaneFrame(model: model, tab: tab, focused: tab === focused, ring: true, size: frame.size, content: pane(tab, tab === focused))
                             .id(tab.id)
-                            // The pane on the move fades back under its landing highlight.
-                            .opacity(tab.id == dragged ? 0.35 : 1)
+                            // The pane on the move fades back under its landing highlight; a zoomed pane hides the rest.
+                            .opacity(tab.id == dragged ? 0.35 : zoomed == nil || zoomed == tab.id ? 1 : 0)
+                            .allowsHitTesting(zoomed == nil || zoomed == tab.id)
                             // The card's edges spring to the new frame; the page inside is already at its new size, so
                             // it is uncovered or cut off rather than stretched.
                             .frame(width: frame.width, height: frame.height, alignment: .topLeading)
                             // Not while its address suggestions show: they may hang out of a narrow pane.
                             .modifier(PaneClip(active: model.editingPaneID != tab.id))
                             .position(x: frame.midX, y: frame.midY)
-                            // Its address suggestions hang over the panes below.
-                            .zIndex(model.editingPaneID == tab.id ? 1 : 0)
+                            // Its address suggestions hang over the panes below; a zoomed pane is over the others.
+                            .zIndex(model.editingPaneID == tab.id || zoomed == tab.id ? 1 : 0)
                     }
                     ForEach(layout.dividers(in: rect, gap: PaneMetrics.gap), id: \.path) { divider in
                         PaneDividerView(model: model, split: split, divider: divider)
                             .frame(width: divider.frame.width, height: divider.frame.height)
                             .position(x: divider.frame.midX, y: divider.frame.midY)
-                            .allowsHitTesting(preview == nil)
+                            .allowsHitTesting(preview == nil && zoomed == nil)
+                            .opacity(zoomed == nil ? 1 : 0)
                     }
                 }
                 if let preview, !narrow, let dragged, let frame = preview.frames(in: rect, gap: PaneMetrics.gap)[dragged.uuidString] {
@@ -63,7 +68,7 @@ struct MultiPanes<Pane: View>: View {
             // Rotate, Swap, a pane added or taken out); none while dragging a divider, which follows the pointer.
             .animation(
                 model.isDraggingDivider || AppModel.shared.reducesMotion ? nil : .spring(response: 0.26, dampingFraction: 0.86),
-                value: AnimatedLayout(layout: layout, dragging: dragged)
+                value: AnimatedLayout(layout: layout, dragging: dragged, zoomed: zoomed)
             )
             .frame(width: rect.width, height: rect.height, alignment: .topLeading)
             .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
@@ -88,10 +93,12 @@ private struct PaneClip: ViewModifier {
 private struct AnimatedLayout: Equatable {
     var root: PaneNode
     var dragging: UUID?
+    var zoomed: UUID?
 
-    init(layout: PaneLayout, dragging: UUID?) {
+    init(layout: PaneLayout, dragging: UUID?, zoomed: UUID?) {
         root = layout.root
         self.dragging = dragging
+        self.zoomed = zoomed
     }
 }
 
@@ -112,15 +119,20 @@ private struct PaneLandingHighlight: View {
     }
 }
 
-/// Multi view sizes shared by the content area and the model.
+/// Mosaic sizes shared by the content area and the model.
 enum PaneMetrics {
-    /// The gap of chrome between panes, which is also the divider's hit area.
-    static let gap: CGFloat = 6
+    /// The gap of chrome between panes, which is also the divider's hit area (`mosaicGap`).
+    static var gap: CGFloat { CGFloat(AppModel.shared.config.mosaicGap) }
     /// The height of a pane's own toolbar (`PaneBar`).
     static let barHeight: CGFloat = 30
     /// A pane's corners: slightly rounded, like the Mac's windows and controls.
     static let cornerRadius: CGFloat = 8
-    static let minimumPane = CGSize(width: 260, height: 160)
+    /// `mosaicMinimumPaneWidth` × `mosaicMinimumPaneHeight`.
+    static var minimumPane: CGSize {
+        CGSize(width: AppModel.shared.config.mosaicMinimumPaneWidth, height: AppModel.shared.config.mosaicMinimumPaneHeight)
+    }
+    /// Pane toolbars only on hover (`mosaicPaneBars`): they sit over the top of the page.
+    static var barsOnHover: Bool { AppModel.shared.config.mosaicPaneBars == .hover }
 
     /// A pane would be under `minimumPane`, so only the focused one shows.
     static func isNarrow(_ frames: [String: CGRect]) -> Bool {
@@ -138,16 +150,24 @@ private struct PaneFrame<Content: View>: View {
     /// lays each page out once instead of stretching it frame by frame.
     let size: CGSize
     let content: Content
+    @State private var hovering = false
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius, style: .continuous)
+        let overlaid = PaneMetrics.barsOnHover
+        // On hover the bar sits over the page's top edge and shows while the pointer is in the pane or its address is
+        // being edited (⌘L too); it stays in place when hidden, so an edit in it isn't lost.
+        let barShown = !overlaid || hovering || model.editingPaneID == tab.id
+        ZStack(alignment: .top) {
         VStack(spacing: 0) {
-            PaneBar(model: model, tab: tab, focused: focused)
-                // Over the page, so its suggestions show on top of it (they aren't inside the page's clip).
-                .zIndex(1)
+            if !overlaid {
+                PaneBar(model: model, tab: tab, focused: focused)
+                    // Over the page, so its suggestions show on top of it (they aren't inside the page's clip).
+                    .zIndex(1)
+            }
             // The page is a card with slightly rounded corners under its bar, like the Mac's windows.
             content
-                .frame(width: size.width, height: max(0, size.height - PaneMetrics.barHeight))
+                .frame(width: size.width, height: max(0, size.height - (overlaid ? 0 : PaneMetrics.barHeight)))
                 .transaction { $0.animation = nil }
                 .clipShape(shape)
                 // Inside the card, by brightness alone: a dark ring with a light one inside it, so it shows on light
@@ -163,6 +183,17 @@ private struct PaneFrame<Content: View>: View {
                     }
                 }
         }
+            if overlaid {
+                PaneBar(model: model, tab: tab, focused: focused)
+                    .background(.regularMaterial)
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: PaneMetrics.cornerRadius, topTrailingRadius: PaneMetrics.cornerRadius, style: .continuous))
+                    .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+                    .opacity(barShown ? 1 : 0)
+                    .allowsHitTesting(barShown)
+                    .animation(AppModel.shared.reducesMotion ? nil : .easeOut(duration: 0.14), value: barShown)
+            }
+        }
+        .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(focused ? "Focused pane, \(tab.displayTitle)" : "Pane, \(tab.displayTitle)")
     }

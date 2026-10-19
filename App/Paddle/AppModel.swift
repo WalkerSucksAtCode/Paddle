@@ -608,6 +608,10 @@ final class AppModel {
             case .newTabHiddenNotifications: old.newTabHiddenNotifications != new.newTabHiddenNotifications
             case .newTabSections: old.newTabSections != new.newTabSections
             case .mosaicMaxPanes: old.mosaicMaxPanes != new.mosaicMaxPanes
+            case .mosaicPaneBars: old.mosaicPaneBars != new.mosaicPaneBars
+            case .mosaicGap: old.mosaicGap != new.mosaicGap
+            case .mosaicMinimumPaneWidth: old.mosaicMinimumPaneWidth != new.mosaicMinimumPaneWidth
+            case .mosaicMinimumPaneHeight: old.mosaicMinimumPaneHeight != new.mosaicMinimumPaneHeight
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
@@ -721,21 +725,25 @@ final class AppModel {
         }
     }
 
-    /// Sets `mosaicMaxPanes` through `writeConfig` (the Mosaic bar's menu), dropping the old `multiViewMaxPanes`.
-    func setMosaicMaxPanes(_ count: Int) async {
+    /// Writes Mosaic settings through `writeConfig` (the Mosaic bar's menu), the way Settings does.
+    func setMosaicConfig(_ changes: [ConfigChange]) async {
         let disk: Data
         do {
             disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
         } catch {
-            log.error("mosaicMaxPanes not written: \(error.localizedDescription, privacy: .public)")
+            log.error("Mosaic settings not written: \(error.localizedDescription, privacy: .public)")
             return
         }
-        let changes = [ConfigChange("mosaicMaxPanes", .number(Double(count))), ConfigChange("multiViewMaxPanes", nil)]
         switch await writeConfig(changes, base: disk) {
         case .written: break
-        case .conflict(let paths): log.error("mosaicMaxPanes not written: changed on disk (\(paths.count) paths)")
-        case .failed(let reason): log.error("mosaicMaxPanes not written: \(reason, privacy: .public)")
+        case .conflict(let paths): log.error("Mosaic settings not written: changed on disk (\(paths.count) paths)")
+        case .failed(let reason): log.error("Mosaic settings not written: \(reason, privacy: .public)")
         }
+    }
+
+    /// `mosaicMaxPanes`, dropping the old `multiViewMaxPanes`.
+    func setMosaicMaxPanes(_ count: Int) async {
+        await setMosaicConfig([ConfigChange("mosaicMaxPanes", .number(Double(count))), ConfigChange("multiViewMaxPanes", nil)])
     }
 
     /// The zoom a page on `host` opens at: `sites` in ordinary windows; in private ones what was set there this

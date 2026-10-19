@@ -581,6 +581,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleRotatePanes(_ sender: Any?) { model.rotatePanes() }
     @objc func paddleAddPane(_ sender: Any?) { model.addPaneToMosaic() }
     @objc func paddleReloadAllPanes(_ sender: Any?) { model.reloadAllPanes() }
+    @objc func paddleZoomPane(_ sender: Any?) { model.toggleZoomPane() }
+    @objc func paddleMovePaneLeft(_ sender: Any?) { model.movePane(toward: .left) }
+    @objc func paddleMovePaneRight(_ sender: Any?) { model.movePane(toward: .right) }
+    @objc func paddleMovePaneUp(_ sender: Any?) { model.movePane(toward: .top) }
+    @objc func paddleMovePaneDown(_ sender: Any?) { model.movePane(toward: .bottom) }
+    @objc func paddleMuteOtherPanes(_ sender: Any?) { model.muteOtherPanes() }
     @objc func paddleRemoveFromView(_ sender: Any?) { if let tab = model.selectedTab { model.removeFromView(tab) } }
 
     /// `screen` (a screen point) in the window's content view, top-left origin as SwiftUI's global frames; nil when
@@ -775,9 +781,14 @@ extension BrowserWindowController: NSMenuItemValidation {
              #selector(paddleFocusPaneUp(_:)), #selector(paddleFocusPaneDown(_:)), #selector(paddleEvenOutPanes(_:)),
              #selector(paddleRemoveFromView(_:)), #selector(paddleArrangeColumns(_:)), #selector(paddleArrangeRows(_:)),
              #selector(paddleArrangeGrid(_:)), #selector(paddleArrangeMainAndStack(_:)), #selector(paddleRotatePanes(_:)),
-             #selector(paddleReloadAllPanes(_:)):
+             #selector(paddleReloadAllPanes(_:)), #selector(paddleMovePaneLeft(_:)), #selector(paddleMovePaneRight(_:)),
+             #selector(paddleMovePaneUp(_:)), #selector(paddleMovePaneDown(_:)), #selector(paddleMuteOtherPanes(_:)):
             return tab.map { model.split(of: $0) != nil } ?? false
         case #selector(paddleAddPane(_:)): return model.canAddPane
+        case #selector(paddleZoomPane(_:)):
+            let zoomed = tab.map { model.zoomedPaneID == $0.id } ?? false
+            menuItem.title = zoomed ? "Unzoom Pane" : "Zoom Pane"
+            return tab.map { model.split(of: $0) != nil } ?? false
         case #selector(paddleOpenLinkPreviewAsTab(_:)), #selector(paddleCloseLinkPreview(_:)):
             return model.preview != nil
         case #selector(paddleSelectTab(_:)):

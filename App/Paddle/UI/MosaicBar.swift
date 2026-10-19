@@ -34,7 +34,8 @@ extension PaneArrangement {
 /// The window toolbar's middle while a Mosaic shows (each pane has its own address field): empty space that drags the
 /// window like the title bar, with the Mosaic's controls in the middle: its icon (click to choose one), its name
 /// (click to rename) and pane count,
-/// the layouts, Even Out, Rotate, Swap (two panes), Add Pane, Reload All, a settings menu and End Mosaic.
+/// the layouts, Even Out, Rotate, Swap (two panes), Add Pane, Reload All, Zoom Pane, a settings menu (most panes, pane
+/// toolbars, the gap, Mute Other Panes) and End Mosaic.
 struct MosaicToolbarArea: View {
     let model: BrowserModel
     let split: BrowserModel.Split
@@ -53,7 +54,7 @@ struct MosaicToolbarArea: View {
     }
 }
 
-private struct MosaicBar: View {
+struct MosaicBar: View {
     let model: BrowserModel
     let split: BrowserModel.Split
     let app: AppModel
@@ -118,6 +119,11 @@ private struct MosaicBar: View {
             icon("plus.rectangle.on.rectangle", model.canAddPane ? "Add Pane" : "Add Pane: this Mosaic is full (\(model.maxPanes) panes)",
                  action: "addPane", enabled: model.canAddPane) { model.addPaneToMosaic() }
             icon("arrow.clockwise", "Reload All Panes", action: "reloadAllPanes") { model.reloadAllPanes() }
+            let zoomed = model.selectedTab.map { model.zoomedPaneID == $0.id } ?? false
+            icon(zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                 zoomed ? "Unzoom Pane" : "Zoom Pane: the focused pane fills the Mosaic for now", action: "zoomPane", selected: zoomed) {
+                model.toggleZoomPane()
+            }
             separator
             settingsMenu
             icon("xmark.rectangle", "End Mosaic: the tabs stay in the strip", action: "toggleMosaic") {
@@ -130,6 +136,9 @@ private struct MosaicBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Mosaic controls")
     }
+
+    /// The gap choices offered in the menus: `mosaicGap` takes any whole number in its range.
+    static let gaps: [(title: String, points: Double)] = [("Tight (2 pt)", 2), ("Normal (6 pt)", 6), ("Roomy (12 pt)", 12)]
 
     private var separator: some View {
         Rectangle().fill(Color.primary.opacity(0.15)).frame(width: 1, height: 14).padding(.horizontal, 3)
@@ -145,6 +154,26 @@ private struct MosaicBar: View {
                 ForEach(2...PaneLayout.maxPanes, id: \.self) { n in Text("\(n) panes").tag(n) }
             }
             .pickerStyle(.menu)
+            Picker("Pane Toolbars", selection: Binding(
+                get: { app.config.mosaicPaneBars },
+                set: { value in Task { await app.setMosaicConfig([ConfigChange("mosaicPaneBars", .string(value.rawValue))]) } }
+            )) {
+                Text("Always Shown").tag(MosaicPaneBars.always)
+                Text("Shown on Hover").tag(MosaicPaneBars.hover)
+            }
+            .pickerStyle(.menu)
+            Picker("Space Between Panes", selection: Binding(
+                get: { app.config.mosaicGap },
+                set: { value in Task { await app.setMosaicConfig([ConfigChange("mosaicGap", .number(value))]) } }
+            )) {
+                ForEach(MosaicBar.gaps, id: \.points) { gap in Text(gap.title).tag(gap.points) }
+                if !MosaicBar.gaps.contains(where: { $0.points == app.config.mosaicGap }) {
+                    Text("\(Int(app.config.mosaicGap)) pt").tag(app.config.mosaicGap)
+                }
+            }
+            .pickerStyle(.menu)
+            Divider()
+            Button("Mute Other Panes") { model.muteOtherPanes() }
             Divider()
             Button("Mosaic Settings…") { app.showSettings(pane: .tabsMemory) }
         } label: {

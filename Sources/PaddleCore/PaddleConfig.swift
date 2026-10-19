@@ -34,6 +34,12 @@ public enum TabLayout: String, Codable, Sendable, CaseIterable {
     case horizontal, vertical
 }
 
+/// When a Mosaic pane shows its own toolbar (back, forward, reload, address, ×): always, above the page, or only
+/// while the pointer is over the pane or its address is being edited, over the top of the page.
+public enum MosaicPaneBars: String, Codable, Sendable, CaseIterable {
+    case always, hover
+}
+
 /// Whether the windows are light or dark: follow macOS, or always one.
 public enum AppearanceMode: String, Codable, Sendable, CaseIterable {
     case system, light, dark
@@ -222,6 +228,16 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabSections: [String]
     /// The most tabs a Mosaic shows at once, 2 to `PaneLayout.maxPanes`. Older files call it `multiViewMaxPanes`.
     public var mosaicMaxPanes: Int
+    /// When a pane shows its toolbar.
+    public var mosaicPaneBars: MosaicPaneBars
+    /// Points between Mosaic panes (also the dividers' hit area), `mosaicGapRange`.
+    public var mosaicGap: Double
+    /// Below this width or height (points, `mosaicMinimumPaneRange`) for any pane, only the focused one shows.
+    public var mosaicMinimumPaneWidth: Double
+    public var mosaicMinimumPaneHeight: Double
+
+    public static let mosaicGapRange: ClosedRange<Double> = 2...16
+    public static let mosaicMinimumPaneRange: ClosedRange<Double> = 100...800
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -259,7 +275,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -321,6 +337,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabHiddenNotifications: [String] = [],
         newTabSections: [String] = NewTabSection.allCases.map(\.rawValue),
         mosaicMaxPanes: Int = 4,
+        mosaicPaneBars: MosaicPaneBars = .always,
+        mosaicGap: Double = 6,
+        mosaicMinimumPaneWidth: Double = 260,
+        mosaicMinimumPaneHeight: Double = 160,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -397,6 +417,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.newTabHiddenNotifications = newTabHiddenNotifications
         self.newTabSections = newTabSections
         self.mosaicMaxPanes = min(max(mosaicMaxPanes, 2), PaneLayout.maxPanes)
+        self.mosaicPaneBars = mosaicPaneBars
+        self.mosaicGap = Self.clamped(mosaicGap, to: Self.mosaicGapRange, else: 6)
+        self.mosaicMinimumPaneWidth = Self.clamped(mosaicMinimumPaneWidth, to: Self.mosaicMinimumPaneRange, else: 260)
+        self.mosaicMinimumPaneHeight = Self.clamped(mosaicMinimumPaneHeight, to: Self.mosaicMinimumPaneRange, else: 160)
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -485,6 +509,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
             ? c.decodeValue(.mosaicMaxPanes, d.mosaicMaxPanes, issues)
             : ((try? legacy.decode(Int.self, forKey: .multiViewMaxPanes)) ?? d.mosaicMaxPanes)
         mosaicMaxPanes = min(max(maxPanes, 2), PaneLayout.maxPanes)
+        mosaicPaneBars = c.decodeValue(.mosaicPaneBars, d.mosaicPaneBars, issues)
+        mosaicGap = Self.clamped(c.decodeValue(.mosaicGap, d.mosaicGap, issues), to: Self.mosaicGapRange, else: d.mosaicGap)
+        mosaicMinimumPaneWidth = Self.clamped(
+            c.decodeValue(.mosaicMinimumPaneWidth, d.mosaicMinimumPaneWidth, issues), to: Self.mosaicMinimumPaneRange, else: d.mosaicMinimumPaneWidth
+        )
+        mosaicMinimumPaneHeight = Self.clamped(
+            c.decodeValue(.mosaicMinimumPaneHeight, d.mosaicMinimumPaneHeight, issues), to: Self.mosaicMinimumPaneRange, else: d.mosaicMinimumPaneHeight
+        )
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
@@ -560,6 +592,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         @unknown default:
             return error.localizedDescription
         }
+    }
+
+    /// `value` rounded and kept in `range`; `fallback` for a non-number.
+    static func clamped(_ value: Double, to range: ClosedRange<Double>, else fallback: Double) -> Double {
+        value.isFinite ? min(max(value.rounded(), range.lowerBound), range.upperBound) : fallback
     }
 
     /// Keys older files used for what is now another key; read when the new one is missing, never written.

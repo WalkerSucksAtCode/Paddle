@@ -30,6 +30,15 @@ struct ConfigTests {
         #expect(PaddleConfig(mosaicMaxPanes: 99).mosaicMaxPanes == PaneLayout.maxPanes)
     }
 
+    @Test func mosaicLookKeysDecodeAndAreKeptInRange() throws {
+        let d = PaddleConfig()
+        #expect(d.mosaicPaneBars == .always && d.mosaicGap == 6 && d.mosaicMinimumPaneWidth == 260 && d.mosaicMinimumPaneHeight == 160)
+        let c = try PaddleConfig.decode(Data(#"{"mosaicPaneBars": "hover", "mosaicGap": 40, "mosaicMinimumPaneWidth": 10.4, "mosaicMinimumPaneHeight": 300}"#.utf8))
+        #expect(c.mosaicPaneBars == .hover && c.mosaicGap == 16 && c.mosaicMinimumPaneWidth == 100 && c.mosaicMinimumPaneHeight == 300)
+        let odd = try PaddleConfig.decode(Data(#"{"mosaicPaneBars": "sometimes"}"#.utf8))
+        #expect(odd.mosaicPaneBars == .always)
+    }
+
     @Test func mosaicReadsTheOldMultiViewKeyAndActionNames() throws {
         let old = try PaddleConfig.decode(Data(#"{"multiViewMaxPanes": 3, "shortcuts": {"toggleSplitView": "cmd+k", "removeFromView": "cmd+j"}}"#.utf8))
         #expect(old.mosaicMaxPanes == 3)

@@ -305,6 +305,8 @@ final class BrowserModel {
     private func activate(_ tab: Tab, previous: Tab?, focusPage: Bool = true) {
         // Selecting any tab but the one under the preview closes it (another tab, a space switch, a popup).
         if preview != nil, tab !== previewSource { closePreview() }
+        // A zoomed pane gives the Mosaic back when another tab is focused.
+        if let zoomed = zoomedPaneID, zoomed != tab.id { zoomedPaneID = nil }
         let now = Date()
         if let previous, previous !== tab {
             previous.lastActive = now
@@ -828,7 +830,7 @@ final class BrowserModel {
         let local = CGRect(origin: .zero, size: paneArea.size)
         guard let split = split(of: selected) else { return [selected.id: paneArea] }
         let frames = split.layout.frames(in: local, gap: PaneMetrics.gap)
-        if PaneMetrics.isNarrow(frames) { return [selected.id: paneArea] }
+        if PaneMetrics.isNarrow(frames) || zoomedPaneID == selected.id { return [selected.id: paneArea] }
         return Dictionary(uniqueKeysWithValues: frames.compactMap { key, frame in
             UUID(uuidString: key).map { ($0, frame.offsetBy(dx: paneArea.minX, dy: paneArea.minY)) }
         })
@@ -1128,6 +1130,32 @@ final class BrowserModel {
         guard layout.setRatio(ratio, at: path), layout != splits[at].layout else { return }
         splits[at].layout = layout
         AppModel.shared.sessionChanged()
+    }
+
+    /// The focused pane fills its Mosaic for now (Zoom Pane, ⌃⌘↩); the other panes stay as they were. Focusing
+    /// another tab, or Zoom Pane again, gives the space back. Not saved.
+    var zoomedPaneID: UUID?
+
+    func toggleZoomPane() {
+        guard let selected = selectedTab, split(of: selected) != nil else { return }
+        zoomedPaneID = zoomedPaneID == selected.id ? nil : selected.id
+    }
+
+    /// ⌃⌥⇧⌘ and an arrow: the focused pane trades places with the pane next to it that way; it stays focused.
+    func movePane(toward edge: PaneEdge) {
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        let size = paneArea.size == .zero ? CGSize(width: 1200, height: 800) : paneArea.size
+        guard let other = split.layout.neighbor(of: selected.id.uuidString, toward: edge, in: CGRect(origin: .zero, size: size)) else { return }
+        var layout = split.layout
+        guard layout.swap(selected.id.uuidString, other) else { return }
+        setLayout(layout, for: split)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Mute Other Panes: every pane of the focused pane's Mosaic but it.
+    func muteOtherPanes() {
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        for tab in panes(of: split) where tab !== selected { tab.setMuted(true) }
     }
 
     /// The selected tab's Mosaic, laid out as `arrangement` in its pane order (the Mosaic bar's layout buttons).

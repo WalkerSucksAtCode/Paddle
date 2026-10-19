@@ -77,6 +77,42 @@ struct TabsMemoryPane: View {
                 }
                 .help("mosaicMaxPanes in config.json. Every pane is a live page, so each one takes memory and CPU like a tab you're looking at. A Mosaic already bigger stays as it is.")
                 .disabled(model.controlsDisabled)
+                Picker("Pane toolbars", selection: Binding(
+                    get: { model.file.mosaicPaneBars },
+                    set: { value in Task { await model.saveKey(.mosaicPaneBars, .string(value.rawValue)) } }
+                )) {
+                    Text("Always shown").tag(MosaicPaneBars.always)
+                    Text("Shown on hover").tag(MosaicPaneBars.hover)
+                }
+                .help("mosaicPaneBars in config.json. On hover, each pane's back, forward, reload and address bar shows over the top of its page while the pointer is in the pane (⌘L shows the focused one's).")
+                .disabled(model.controlsDisabled)
+                Picker("Space between panes", selection: Binding(
+                    get: { model.file.mosaicGap },
+                    set: { value in Task { await model.saveKey(.mosaicGap, .number(value)) } }
+                )) {
+                    ForEach(MosaicBar.gaps, id: \.points) { gap in Text(gap.title).tag(gap.points) }
+                    if !MosaicBar.gaps.contains(where: { $0.points == model.file.mosaicGap }) {
+                        Text("\(Int(model.file.mosaicGap)) pt").tag(model.file.mosaicGap)
+                    }
+                }
+                .help("mosaicGap in config.json, 2 to 16 points. The gap is also where you grab a divider.")
+                .disabled(model.controlsDisabled)
+                Stepper(value: Binding(
+                    get: { model.file.mosaicMinimumPaneWidth },
+                    set: { value in Task { await model.saveKey(.mosaicMinimumPaneWidth, .number(value)) } }
+                ), in: PaddleConfig.mosaicMinimumPaneRange, step: 20) {
+                    Text("Smallest pane width: \(Int(model.file.mosaicMinimumPaneWidth)) pt")
+                }
+                .help("mosaicMinimumPaneWidth in config.json. When the window would make any pane narrower, only the focused pane shows.")
+                .disabled(model.controlsDisabled)
+                Stepper(value: Binding(
+                    get: { model.file.mosaicMinimumPaneHeight },
+                    set: { value in Task { await model.saveKey(.mosaicMinimumPaneHeight, .number(value)) } }
+                ), in: PaddleConfig.mosaicMinimumPaneRange, step: 20) {
+                    Text("Smallest pane height: \(Int(model.file.mosaicMinimumPaneHeight)) pt")
+                }
+                .help("mosaicMinimumPaneHeight in config.json. When the window would make any pane shorter, only the focused pane shows.")
+                .disabled(model.controlsDisabled)
             }
             Section("Link preview") {
                 Toggle("Preview links on ⌥-click", isOn: Binding(
