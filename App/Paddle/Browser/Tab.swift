@@ -423,7 +423,7 @@ final class Tab: Identifiable {
     private func pageBackdropColor() -> NSColor {
         let isDark = AppModel.shared.effectiveAppearanceIsDark
         let host = siteHost ?? ""
-        let siteDark = !host.isEmpty && AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+        let siteDark = !host.isEmpty && (darkModeOverride ?? AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode)
         if siteDark {
             return NSColor(srgbRed: 0.094, green: 0.102, blue: 0.106, alpha: 1)
         }
@@ -928,6 +928,20 @@ final class Tab: Identifiable {
         AppModel.shared.rememberZoom(zoom, forHost: host, isPrivate: isPrivate, profile: profileID)
     }
 
+    /// A Mosaic pane's own dark mode (`mosaicDarkMode` unified or per pane, or the pane toolbar's menu): it wins over
+    /// the site setting for this tab only, and isn't saved. Nil follows the site. Cleared when the tab leaves its Mosaic.
+    var darkModeOverride: Bool?
+
+    /// Dark mode as this tab shows it: `darkModeOverride`, else the site setting.
+    var isDarkModeActive: Bool { darkModeOverride ?? isSiteDarkModeActive }
+
+    /// Sets `darkModeOverride` and applies it to the open page.
+    func setDarkModeOverride(_ dark: Bool?) {
+        guard dark != darkModeOverride else { return }
+        darkModeOverride = dark
+        applySiteDarkMode(systemIsDark: AppModel.shared.effectiveAppearanceIsDark)
+    }
+
     var isSiteDarkModeActive: Bool {
         guard let host = siteHost else { return false }
         let isDark = AppModel.shared.effectiveAppearanceIsDark
@@ -938,8 +952,8 @@ final class Tab: Identifiable {
         refreshPageBackdrop()
         // Scripts raise on a suspended page; `unfreeze()` applies it.
         guard let webView, !isSuspendedInWebKit, let host = siteHost else { return }
-        let policy = AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: systemIsDark)
-        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(policy.darkMode ? "true" : "false")); }"
+        let dark = darkModeOverride ?? AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: systemIsDark).darkMode
+        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(dark ? "true" : "false")); }"
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
 

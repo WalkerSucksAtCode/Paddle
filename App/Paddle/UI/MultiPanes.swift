@@ -229,6 +229,14 @@ private struct PaneFrame<Content: View>: View {
             }
         }
         .onHover { hovering = $0 }
+        // `mosaicFocusFollowsPointer`: a pointer that rests on a pane for a moment focuses it, unless an address is
+        // being edited (the keyboard stays there).
+        .task(id: hovering) {
+            guard hovering, !focused, ring, PaneMetrics.config.mosaicFocusFollowsPointer else { return }
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, hovering, model.editingPaneID == nil, model.selectedID != tab.id else { return }
+            model.select(tab)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(focused ? "Focused pane, \(tab.displayTitle)" : "Pane, \(tab.displayTitle)")
     }
@@ -290,6 +298,18 @@ private struct PaneBar: View {
         .padding(.horizontal, 4)
         .frame(height: PaneMetrics.barHeight)
         .frame(maxWidth: .infinity)
+        // This pane's own dark mode (not saved), whatever `mosaicDarkMode` says ⇧⌘D does.
+        .contextMenu {
+            Picker("Dark Mode", selection: Binding(
+                get: { tab.darkModeOverride.map { $0 ? 1 : 0 } ?? -1 },
+                set: { tab.setDarkModeOverride($0 < 0 ? nil : $0 == 1) }
+            )) {
+                Text("Follow the Site Setting").tag(-1)
+                Text("On for This Pane").tag(1)
+                Text("Off for This Pane").tag(0)
+            }
+            Button("Remove from Mosaic") { model.removeFromView(tab) }
+        }
         // `mosaicPaneGrab` "toolbar": any part of the bar but its address field picks the pane up.
         .background(Color.clear.modifier(TabDrag(tab: tab, enabled: grab == .toolbar, strip: false, toolbar: true)))
         .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))

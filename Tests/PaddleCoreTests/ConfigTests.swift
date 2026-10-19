@@ -30,6 +30,15 @@ struct ConfigTests {
         #expect(PaddleConfig(mosaicMaxPanes: 99).mosaicMaxPanes == PaneLayout.maxPanes)
     }
 
+    @Test func mosaicPaneAndStripKeysDecode() throws {
+        let d = PaddleConfig()
+        #expect(d.mosaicDarkMode == .site && d.mosaicZoom == .focused && !d.mosaicFocusFollowsPointer && d.mosaicSound == .all)
+        #expect(d.mosaicCloseKey == .closeTab && d.mosaicStripIcon == .icon && d.mosaicStripName == .focused)
+        let c = try PaddleConfig.decode(Data(#"{"mosaicDarkMode": "perPane", "mosaicZoom": "all", "mosaicFocusFollowsPointer": true, "mosaicSound": "focused", "mosaicCloseKey": "removePane", "mosaicStripIcon": "favicons", "mosaicStripName": "all"}"#.utf8))
+        #expect(c.mosaicDarkMode == .perPane && c.mosaicZoom == .all && c.mosaicFocusFollowsPointer && c.mosaicSound == .focused)
+        #expect(c.mosaicCloseKey == .removePane && c.mosaicStripIcon == .favicons && c.mosaicStripName == .all)
+    }
+
     @Test func mosaicOpeningAndDraggingKeysDecode() throws {
         let d = PaddleConfig()
         #expect(d.mosaicPaneGrab == .icon && d.mosaicModifierDrag && d.mosaicWindowDrag)

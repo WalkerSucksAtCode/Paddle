@@ -341,6 +341,7 @@ final class BrowserModel {
             other.lastActive = now
             other.wake()
         }
+        applyMosaicSound(focused: tab)
         if previous !== tab { extensionHost?.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
         suggestions.dismiss()
@@ -489,6 +490,52 @@ final class BrowserModel {
     /// relaunches.
     func toggleMute(_ tab: Tab) {
         tab.setMuted(!tab.isMuted)
+        // Your own choice: `mosaicSound` leaves it alone from now on.
+        autoMutedPanes.remove(tab.id)
+    }
+
+    /// Panes `mosaicSound` "focused" muted (not the user), to unmute when they're focused or the rule no longer applies.
+    @ObservationIgnored private var autoMutedPanes: Set<UUID> = []
+
+    /// `mosaicSound`: with "focused", the panes of `focused`'s Mosaic but it are muted and it is unmuted (if Paddle
+    /// muted it); every pane Paddle muted that the rule no longer covers is unmuted.
+    func applyMosaicSound(focused: Tab) {
+        let covered: Set<UUID> = config.mosaicSound == .focused ? Set(split(of: focused)?.tabIDs ?? []).subtracting([focused.id]) : []
+        for id in autoMutedPanes.subtracting(covered) {
+            autoMutedPanes.remove(id)
+            allTabs.first { $0.id == id }?.setMuted(false)
+        }
+        for tab in tabs where covered.contains(tab.id) && !tab.isMuted {
+            tab.setMuted(true)
+            autoMutedPanes.insert(tab.id)
+        }
+    }
+
+    /// ⇧⌘D in a Mosaic, by `mosaicDarkMode`: the site setting of `tab` (saved), every pane together, or `tab` alone.
+    func toggleDarkMode(_ tab: Tab) {
+        guard let split = split(of: tab), config.mosaicDarkMode != .site else {
+            tab.setDarkModeOverride(nil)
+            tab.toggleDarkMode()
+            return
+        }
+        let next = !tab.isDarkModeActive
+        let targets = config.mosaicDarkMode == .unified ? panes(of: split) : [tab]
+        for pane in targets { pane.setDarkModeOverride(next) }
+    }
+
+    /// The tabs ⌘+, ⌘− and ⌘0 zoom: every pane of `tab`'s Mosaic with `mosaicZoom` "all", else `tab`.
+    func zoomTargets(for tab: Tab) -> [Tab] {
+        guard config.mosaicZoom == .all, let split = split(of: tab) else { return [tab] }
+        return panes(of: split)
+    }
+
+    /// ⌘W: closes `tab`, or with `mosaicCloseKey` "removePane" only takes a Mosaic pane out of its Mosaic.
+    func closeCommand(_ tab: Tab) {
+        if config.mosaicCloseKey == .removePane, split(of: tab) != nil {
+            removeFromView(tab)
+        } else {
+            close(tab)
+        }
     }
 
     // MARK: - View Source
@@ -872,6 +919,14 @@ final class BrowserModel {
     func displayName(of split: Split) -> String {
         if let name = split.layout.name { return name }
         let shown = panes(of: split)
+        // `mosaicStripName` "all": every pane's site, in pane order.
+        if config.mosaicStripName == .all {
+            let names = shown.map { tab -> String in
+                guard let host = tab.url?.host(), !host.isEmpty else { return tab.displayTitle }
+                return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            }
+            if !names.isEmpty { return names.joined(separator: " · ") }
+        }
         guard let lead = shown.first(where: { $0.id == selectedID }) ?? shown.max(by: { $0.lastActive < $1.lastActive }) else { return "View" }
         if let host = lead.url?.host(), !host.isEmpty { return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host }
         return lead.displayTitle
@@ -1076,6 +1131,8 @@ final class BrowserModel {
     /// Replaces `split`'s layout, or ends it (nil).
     private func setLayout(_ layout: PaneLayout?, for split: Split) {
         guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        // A tab that leaves (the last one too, when the Mosaic ends) goes back to its site's dark mode.
+        clearDarkOverrides(leaving: splits[at].layout, for: layout)
         if let layout { splits[at].layout = layout } else { splits.remove(at: at) }
     }
 
@@ -1105,6 +1162,7 @@ final class BrowserModel {
     /// Ends the multi view `tab` is in; its tabs stay where they are.
     func endSplit(of tab: Tab) {
         guard let split = split(of: tab) else { return }
+        clearDarkOverrides(leaving: split.layout, for: nil)
         splits.removeAll { $0.id == split.id }
         AppModel.shared.sessionChanged()
     }
@@ -1262,12 +1320,19 @@ final class BrowserModel {
             tabs: tabs.map { SplitTab(id: $0.id.uuidString, groupID: $0.groupID?.uuidString, isPinned: $0.isPinned) }
         )
         guard kept != splits.map(\.layout) else { return }
+        for old in splits { clearDarkOverrides(leaving: old.layout, for: kept.first { $0.tabs.contains(where: old.layout.tabs.contains) }) }
         splits = kept.map { layout in
             let old = splits.first { $0.layout.tabs.contains(where: layout.tabs.contains) }
             // A Mosaic that lost a pane (closed, moved away) goes back to its default layout with `mosaicAutoArrange`.
             let shrank = old.map { $0.layout.count > layout.count } ?? false
             return Split(id: old?.id ?? UUID(), layout: shrank ? autoArranged(layout) : layout)
         }
+    }
+
+    /// The tabs of `old` that aren't in `new` (all of them for nil) lose their Mosaic dark mode (`darkModeOverride`).
+    private func clearDarkOverrides(leaving old: PaneLayout, for new: PaneLayout?) {
+        let gone = Set(old.tabs).subtracting(new?.tabs ?? [])
+        for tab in allTabs where gone.contains(tab.id.uuidString) { tab.setDarkModeOverride(nil) }
     }
 
     /// `layout` in `mosaicDefaultLayout` when `mosaicAutoArrange` is on, else unchanged.

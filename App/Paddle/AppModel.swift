@@ -634,6 +634,13 @@ final class AppModel {
             case .mosaicNewPanePlacement: old.mosaicNewPanePlacement != new.mosaicNewPanePlacement
             case .mosaicDefaultLayout: old.mosaicDefaultLayout != new.mosaicDefaultLayout
             case .mosaicAutoArrange: old.mosaicAutoArrange != new.mosaicAutoArrange
+            case .mosaicDarkMode: old.mosaicDarkMode != new.mosaicDarkMode
+            case .mosaicZoom: old.mosaicZoom != new.mosaicZoom
+            case .mosaicFocusFollowsPointer: old.mosaicFocusFollowsPointer != new.mosaicFocusFollowsPointer
+            case .mosaicSound: old.mosaicSound != new.mosaicSound
+            case .mosaicCloseKey: old.mosaicCloseKey != new.mosaicCloseKey
+            case .mosaicStripIcon: old.mosaicStripIcon != new.mosaicStripIcon
+            case .mosaicStripName: old.mosaicStripName != new.mosaicStripName
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

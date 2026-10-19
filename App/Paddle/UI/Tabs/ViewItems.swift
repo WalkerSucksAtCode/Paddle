@@ -16,7 +16,7 @@ struct ViewStripButton: View {
     var body: some View {
         let ink: Color = theme?.text ?? .primary
         HStack(spacing: 6) {
-            MosaicIconView(layout: split.layout, size: 11)
+            MosaicStripBadge(model: model, split: split, size: 11)
             Text(model.displayName(of: split))
                 .chromeFont(size: 12, weight: highContrast && isShown ? .semibold : .regular)
                 .lineLimit(1)
@@ -87,8 +87,8 @@ struct ViewSidebarRow: View {
     var body: some View {
         let ink: Color = theme?.text ?? .primary
         HStack(spacing: 8) {
-            MosaicIconView(layout: split.layout, size: 12)
-                .frame(width: 16)
+            MosaicStripBadge(model: model, split: split, size: 12)
+                .frame(minWidth: 16)
             if !iconsOnly {
                 Text(model.displayName(of: split))
                     .chromeFont(size: 12.5, weight: highContrast && isShown ? .semibold : .regular)
@@ -222,5 +222,25 @@ struct ViewNameField: View {
         if let current = model.view(id: split.id) { model.renameView(current, to: name) }
         model.renamingViewID = nil
         done()
+    }
+}
+
+/// A Mosaic's strip and sidebar icon (`mosaicStripIcon`): its own icon, or its panes' site icons in a row.
+struct MosaicStripBadge: View {
+    let model: BrowserModel
+    let split: BrowserModel.Split
+    let size: CGFloat
+
+    var body: some View {
+        if model.config.mosaicStripIcon == .favicons {
+            HStack(spacing: 2) {
+                ForEach(model.panes(of: split).prefix(PaneLayout.maxPanes), id: \.id) { tab in
+                    FaviconView(url: tab.url, size: size)
+                }
+            }
+            .accessibilityHidden(true)
+        } else {
+            MosaicIconView(layout: split.layout, size: size)
+        }
     }
 }

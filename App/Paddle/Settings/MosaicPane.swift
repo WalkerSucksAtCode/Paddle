@@ -232,6 +232,69 @@ struct MosaicPane: View {
             }
             .disabled(model.controlsDisabled)
 
+            Section("Panes and focus") {
+                Picker("⇧⌘D (Dark Mode) in a Mosaic", selection: Binding(
+                    get: { model.file.mosaicDarkMode },
+                    set: { value in Task { await model.saveKey(.mosaicDarkMode, .string(value.rawValue)) } }
+                )) {
+                    Text("Switches the focused pane's site").tag(MosaicDarkMode.site)
+                    Text("Switches every pane together").tag(MosaicDarkMode.unified)
+                    Text("Switches the focused pane only").tag(MosaicDarkMode.perPane)
+                }
+                .help("mosaicDarkMode in config.json. Unified and per pane aren't saved; right-click a pane's toolbar to set one pane.")
+                Picker("Zoom (⌘+ ⌘− ⌘0) changes", selection: Binding(
+                    get: { model.file.mosaicZoom },
+                    set: { value in Task { await model.saveKey(.mosaicZoom, .string(value.rawValue)) } }
+                )) {
+                    Text("The focused pane").tag(MosaicZoom.focused)
+                    Text("Every pane").tag(MosaicZoom.all)
+                }
+                .help("mosaicZoom in config.json.")
+                Toggle("Focus the pane under the pointer", isOn: Binding(
+                    get: { model.file.mosaicFocusFollowsPointer },
+                    set: { value in Task { await model.saveKey(.mosaicFocusFollowsPointer, .bool(value)) } }
+                ))
+                .help("mosaicFocusFollowsPointer in config.json. After the pointer rests on it for a moment; never while you type in an address.")
+                Picker("Sound plays from", selection: Binding(
+                    get: { model.file.mosaicSound },
+                    set: { value in Task { await model.saveKey(.mosaicSound, .string(value.rawValue)) } }
+                )) {
+                    Text("Every pane").tag(MosaicSound.all)
+                    Text("The focused pane only").tag(MosaicSound.focused)
+                }
+                .help("mosaicSound in config.json. The other panes are muted while unfocused; muting or unmuting one yourself takes it out of this.")
+                Picker("⌘W in a pane", selection: Binding(
+                    get: { model.file.mosaicCloseKey },
+                    set: { value in Task { await model.saveKey(.mosaicCloseKey, .string(value.rawValue)) } }
+                )) {
+                    Text("Closes the tab").tag(MosaicCloseKey.closeTab)
+                    Text("Takes it out of the Mosaic").tag(MosaicCloseKey.removePane)
+                }
+                .help("mosaicCloseKey in config.json.")
+                SettingsCaption("Right-click a pane's toolbar to turn dark mode on or off for that pane alone.")
+            }
+            .disabled(model.controlsDisabled)
+
+            Section("Tab strip") {
+                Picker("A Mosaic's item shows", selection: Binding(
+                    get: { model.file.mosaicStripIcon },
+                    set: { value in Task { await model.saveKey(.mosaicStripIcon, .string(value.rawValue)) } }
+                )) {
+                    Text("Its icon").tag(MosaicStripIcon.icon)
+                    Text("Its panes' site icons").tag(MosaicStripIcon.favicons)
+                }
+                .help("mosaicStripIcon in config.json.")
+                Picker("An unnamed Mosaic is called by", selection: Binding(
+                    get: { model.file.mosaicStripName },
+                    set: { value in Task { await model.saveKey(.mosaicStripName, .string(value.rawValue)) } }
+                )) {
+                    Text("The focused pane's site").tag(MosaicStripName.focused)
+                    Text("Every pane's site").tag(MosaicStripName.all)
+                }
+                .help("mosaicStripName in config.json. Rename Mosaic… gives it a name of its own.")
+            }
+            .disabled(model.controlsDisabled)
+
             Section("In the background") {
                 Toggle("Keep the last Mosaic ready", isOn: Binding(
                     get: { model.file.mosaicStaysReady },

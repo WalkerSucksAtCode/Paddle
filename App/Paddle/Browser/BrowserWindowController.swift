@@ -192,7 +192,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func paddleNewTab(_ sender: Any?) { model.newTabCommand() }
     @objc func paddleOpenLocation(_ sender: Any?) { model.focusAddress() }
-    @objc func paddleCloseTab(_ sender: Any?) { if let tab { model.close(tab) } }
+    @objc func paddleCloseTab(_ sender: Any?) { if let tab { model.closeCommand(tab) } }
     @objc func paddleReopenClosedTab(_ sender: Any?) { model.reopenClosedTab() }
 
     /// Print, Save Page As and View Source need the site's page showing: not the start page, a sleeping tab, a tab
@@ -386,12 +386,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleHardReload(_ sender: Any?) { model.selectedTab?.reload(fromOrigin: true) }
     @objc func paddleStop(_ sender: Any?) { webView?.stopLoading() }
     // The zoom is remembered for the site (`Tab.setZoom`).
-    @objc func paddleZoomIn(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom + SitePolicy.zoomStep) } }
-    @objc func paddleZoomOut(_ sender: Any?) { if let tab, let webView { tab.setZoom(webView.pageZoom - SitePolicy.zoomStep) } }
+    /// Every pane of a Mosaic with `mosaicZoom` "all" (each from its own zoom), else the selected tab.
+    @objc func paddleZoomIn(_ sender: Any?) { zoom { $0 + SitePolicy.zoomStep } }
+    @objc func paddleZoomOut(_ sender: Any?) { zoom { $0 - SitePolicy.zoomStep } }
     /// Actual Size is the default zoom (`defaultZoom`), so it also resets sites that had their own zoom.
-    @objc func paddleActualSize(_ sender: Any?) {
+    @objc func paddleActualSize(_ sender: Any?) { zoom { _ in AppModel.shared.config.defaultZoom } }
+
+    private func zoom(_ change: (Double) -> Double) {
         guard let tab else { return }
-        tab.setZoom(AppModel.shared.config.defaultZoom)
+        for target in model.zoomTargets(for: tab) {
+            guard let view = target.webView else { continue }
+            target.setZoom(change(view.pageZoom))
+        }
     }
 
     /// View > Show Downloads (⌥⌘L): the downloads popover, or the download folder when this window's list is empty.
@@ -456,7 +462,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     /// View > Dark Mode (⇧⌘D): toggles dark mode for the current tab's site.
     @objc func paddleToggleDarkMode(_ sender: Any?) {
         guard let tab else { return }
-        tab.toggleDarkMode()
+        model.toggleDarkMode(tab)
     }
 
     // MARK: - History
@@ -739,7 +745,7 @@ extension BrowserWindowController: NSMenuItemValidation {
             return tab != nil && (tab?.isReaderAvailable == true || tab?.readerArticle != nil)
         case #selector(paddleToggleDarkMode(_:)):
             guard let tab, tab.siteHost != nil else { return false }
-            menuItem.state = tab.isSiteDarkModeActive ? .on : .off
+            menuItem.state = tab.isDarkModeActive ? .on : .off
             return true
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
              #selector(paddleTranslatePage(_:)), #selector(paddleCopyLinkToHighlight(_:)),

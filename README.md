@@ -100,6 +100,13 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `mosaicNewPanePlacement` | `"largest"` | A pane that joins a Mosaic takes half of the `"largest"`, the `"focused"` or the `"last"` pane. Settings > Mosaic |
 | `mosaicDefaultLayout` | `"asDropped"` | The layout a new Mosaic starts in: `"asDropped"`, `"columns"`, `"rows"`, `"grid"` or `"mainAndStack"`. Settings > Mosaic |
 | `mosaicAutoArrange` | `false` | A Mosaic goes back to `mosaicDefaultLayout` whenever a pane joins or leaves. Settings > Mosaic |
+| `mosaicDarkMode` | `"site"` | ⇧⌘D in a Mosaic switches the focused pane's `"site"` setting (saved), every pane together (`"unified"`) or the focused pane only (`"perPane"`); the last two aren't saved. Right-click a pane's toolbar to set one pane. Settings > Mosaic |
+| `mosaicZoom` | `"focused"` | ⌘+, ⌘− and ⌘0 zoom the `"focused"` pane or `"all"` of them. Settings > Mosaic |
+| `mosaicFocusFollowsPointer` | `false` | Resting the pointer on a pane focuses it (never while an address is being edited). Settings > Mosaic |
+| `mosaicSound` | `"all"` | Sound plays from `"all"` panes, or only the `"focused"` one (the others are muted while unfocused; muting or unmuting one yourself takes it out). Settings > Mosaic |
+| `mosaicCloseKey` | `"closeTab"` | ⌘W in a pane closes its tab (`"closeTab"`) or only takes it out of the Mosaic (`"removePane"`). Settings > Mosaic |
+| `mosaicStripIcon` | `"icon"` | A Mosaic's strip and sidebar item shows its `"icon"` or its panes' site icons (`"favicons"`). Settings > Mosaic |
+| `mosaicStripName` | `"focused"` | An unnamed Mosaic is called by its focused pane's site (`"focused"`) or every pane's site (`"all"`, "reddit.com · x.com"). Settings > Mosaic |
 | `tabLayout` | `"horizontal"` | `"vertical"` shows the tabs in a sidebar beside the page instead of a strip above the toolbar. View > Vertical Tabs, Settings > Appearance |
 | `appearance` | `"system"` | `"light"` or `"dark"` forces the windows (and the color scheme pages see) instead of following macOS. Settings > Appearance |
 | `darkMode` | `"off"` | Website dark mode: `"off"` (default), `"system"` (matches appearance) or `"always"`. Off leaves sites alone unless set in `sites`; per-site overrides can be toggled on any site. Settings > Appearance |

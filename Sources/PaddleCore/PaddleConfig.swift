@@ -101,6 +101,37 @@ public enum MosaicDefaultLayout: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// How ⇧⌘D (View > Dark Mode) works in a Mosaic: each pane's site setting (the focused pane's site is switched and
+/// saved), every pane together (switched for this Mosaic, not saved), or the focused pane alone (not saved).
+public enum MosaicDarkMode: String, Codable, Sendable, CaseIterable {
+    case site, unified, perPane
+}
+
+/// What ⌘+, ⌘− and ⌘0 zoom in a Mosaic: the focused pane, or every pane.
+public enum MosaicZoom: String, Codable, Sendable, CaseIterable {
+    case focused, all
+}
+
+/// Which panes of a Mosaic play sound: all of them, or only the focused one (the others muted while unfocused).
+public enum MosaicSound: String, Codable, Sendable, CaseIterable {
+    case all, focused
+}
+
+/// What ⌘W (File > Close Tab) does to a Mosaic pane: closes its tab, or only takes it out of the Mosaic.
+public enum MosaicCloseKey: String, Codable, Sendable, CaseIterable {
+    case closeTab, removePane
+}
+
+/// A Mosaic's strip item shows its icon, or a row of its panes' site icons.
+public enum MosaicStripIcon: String, Codable, Sendable, CaseIterable {
+    case icon, favicons
+}
+
+/// An unnamed Mosaic is called by its focused pane's site, or by all its panes' sites ("reddit.com · x.com").
+public enum MosaicStripName: String, Codable, Sendable, CaseIterable {
+    case focused, all
+}
+
 /// The buttons a Mosaic pane's toolbar can show besides its site icon and address field.
 public enum MosaicToolbarButton: String, Codable, Sendable, CaseIterable {
     case back, forward, reload, close
@@ -343,6 +374,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var mosaicDefaultLayout: MosaicDefaultLayout
     /// A Mosaic goes back to `mosaicDefaultLayout` whenever a pane joins or leaves it.
     public var mosaicAutoArrange: Bool
+    public var mosaicDarkMode: MosaicDarkMode
+    public var mosaicZoom: MosaicZoom
+    /// Resting the pointer on a pane focuses it.
+    public var mosaicFocusFollowsPointer: Bool
+    public var mosaicSound: MosaicSound
+    public var mosaicCloseKey: MosaicCloseKey
+    public var mosaicStripIcon: MosaicStripIcon
+    public var mosaicStripName: MosaicStripName
 
     public static let mosaicDimRange: ClosedRange<Double> = 0.05...0.7
 
@@ -389,6 +428,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case mosaicAnimation, mosaicAnimationSpeed, mosaicLiveDragPreview, mosaicDividerGrips, mosaicDividerSnapping, mosaicDividerDoubleClick
         case mosaicPaneCorners, mosaicFocusMarker, mosaicDimAmount, mosaicToolbarSize, mosaicToolbarButtons
         case mosaicPaneGrab, mosaicModifierDrag, mosaicWindowDrag, mosaicNewTab, mosaicLinks, mosaicNewPanePlacement, mosaicDefaultLayout, mosaicAutoArrange
+        case mosaicDarkMode, mosaicZoom, mosaicFocusFollowsPointer, mosaicSound, mosaicCloseKey, mosaicStripIcon, mosaicStripName
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -476,6 +516,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicNewPanePlacement: PanePlacement = .largest,
         mosaicDefaultLayout: MosaicDefaultLayout = .asDropped,
         mosaicAutoArrange: Bool = false,
+        mosaicDarkMode: MosaicDarkMode = .site,
+        mosaicZoom: MosaicZoom = .focused,
+        mosaicFocusFollowsPointer: Bool = false,
+        mosaicSound: MosaicSound = .all,
+        mosaicCloseKey: MosaicCloseKey = .closeTab,
+        mosaicStripIcon: MosaicStripIcon = .icon,
+        mosaicStripName: MosaicStripName = .focused,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -578,6 +625,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.mosaicNewPanePlacement = mosaicNewPanePlacement
         self.mosaicDefaultLayout = mosaicDefaultLayout
         self.mosaicAutoArrange = mosaicAutoArrange
+        self.mosaicDarkMode = mosaicDarkMode
+        self.mosaicZoom = mosaicZoom
+        self.mosaicFocusFollowsPointer = mosaicFocusFollowsPointer
+        self.mosaicSound = mosaicSound
+        self.mosaicCloseKey = mosaicCloseKey
+        self.mosaicStripIcon = mosaicStripIcon
+        self.mosaicStripName = mosaicStripName
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -696,6 +750,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicNewPanePlacement = c.decodeValue(.mosaicNewPanePlacement, d.mosaicNewPanePlacement, issues)
         mosaicDefaultLayout = c.decodeValue(.mosaicDefaultLayout, d.mosaicDefaultLayout, issues)
         mosaicAutoArrange = c.decodeValue(.mosaicAutoArrange, d.mosaicAutoArrange, issues)
+        mosaicDarkMode = c.decodeValue(.mosaicDarkMode, d.mosaicDarkMode, issues)
+        mosaicZoom = c.decodeValue(.mosaicZoom, d.mosaicZoom, issues)
+        mosaicFocusFollowsPointer = c.decodeValue(.mosaicFocusFollowsPointer, d.mosaicFocusFollowsPointer, issues)
+        mosaicSound = c.decodeValue(.mosaicSound, d.mosaicSound, issues)
+        mosaicCloseKey = c.decodeValue(.mosaicCloseKey, d.mosaicCloseKey, issues)
+        mosaicStripIcon = c.decodeValue(.mosaicStripIcon, d.mosaicStripIcon, issues)
+        mosaicStripName = c.decodeValue(.mosaicStripName, d.mosaicStripName, issues)
         mosaicToolbarButtons = Self.ordered(c.decodeStrings(.mosaicToolbarButtons, d.mosaicToolbarButtons.map(\.rawValue), issues).compactMap(MosaicToolbarButton.init(rawValue:)))
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
