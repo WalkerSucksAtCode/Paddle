@@ -205,4 +205,60 @@ struct PaneLayoutTests {
         #expect(l.slotForNewPane(.focused, focused: "zz", in: rect).target == "a")
         #expect(l.slotForNewPane(.last, focused: "a", in: rect).target == "c")
     }
+
+    private func three() throws -> PaneLayout {
+        var l = try layout()
+        l.insert("c", at: "b", edge: .right)
+        return l.arranged(.columns)
+    }
+
+    @Test func freeformStartsWhereTheTilesAreAndFollowsTheArea() throws {
+        let free = try three().freeformed(in: rect, gap: 0, front: "a")
+        #expect(free.isFreeform && free.freeform?.order == ["b", "c", "a"])
+        let frames = free.frames(in: rect, gap: 6)
+        #expect(abs(frames["b"]!.minX - 333) <= 1 && frames["b"]!.height == 600)
+        // Twice the area, twice the card.
+        #expect(abs(free.frames(in: CGRect(x: 0, y: 0, width: 2000, height: 1200))["b"]!.width - 667) <= 2)
+        #expect(free.dividers(in: rect).isEmpty && !free.isArranged(.columns))
+    }
+
+    @Test func freeformCardsMoveStackAndStayInside() throws {
+        var free = try three().freeformed(in: rect, gap: 0)
+        #expect(mutate(&free) { $0.setFreeformFrame(CGRect(x: 0.9, y: -0.2, width: 0.5, height: 0.01), of: "a") })
+        let a = free.freeform!.frames["a"]!
+        #expect(a.minX == 0.5 && a.minY == 0 && a.height == FreeformPlacement.minimumSize.height)
+        free.bringToFront("a")
+        #expect(free.freeform!.order.last == "a")
+        #expect(!mutate(&free) { $0.setFreeformFrame(.zero, of: "zz") })
+    }
+
+    @Test func panesJoiningAndLeavingAFreeformMosaicGetOrLoseCards() throws {
+        var free = try three().freeformed(in: rect, gap: 0)
+        #expect(mutate(&free) { $0.insert("d", at: "a", edge: .right) })
+        #expect(free.freeform!.frames["d"] != nil && free.freeform!.order.last == "d")
+        let rest = try #require(free.removing("b"))
+        #expect(rest.freeform!.frames["b"] == nil && !rest.freeform!.order.contains("b"))
+        var swapped = free
+        swapped.swap("a", "c")
+        #expect(swapped.freeform!.frames["a"] == free.freeform!.frames["c"])
+    }
+
+    @Test func tidyUpTilesInReadingOrder() throws {
+        var free = try three().freeformed(in: rect, gap: 0)
+        free.setFreeformFrame(CGRect(x: 0.6, y: 0.6, width: 0.3, height: 0.3), of: "a")  // bottom right
+        free.setFreeformFrame(CGRect(x: 0.0, y: 0.0, width: 0.3, height: 0.3), of: "c")  // top left
+        free.setFreeformFrame(CGRect(x: 0.5, y: 0.05, width: 0.3, height: 0.3), of: "b") // top right
+        let tidy = free.tidied(.columns)
+        #expect(!tidy.isFreeform && tidy.tabs == ["c", "b", "a"] && tidy.isArranged(.columns))
+    }
+
+    @Test func freeformIsSavedAndRenamed() throws {
+        var free = try three().freeformed(in: rect, gap: 0)
+        free.setFreeformFrame(CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4), of: "b")
+        let back = try JSONDecoder().decode(PaneLayout.self, from: JSONEncoder().encode(free))
+        #expect(back.freeform == free.freeform)
+        let renamed = try #require(free.mapped { $0.uppercased() })
+        #expect(renamed.freeform!.frames["B"] == free.freeform!.frames["b"] && renamed.freeform!.order == ["A", "B", "C"])
+        #expect(free.rotated().freeform!.frames["c"] == free.freeform!.frames["a"] && free.rotated().freeform!.frames["a"] == free.freeform!.frames["b"])
+    }
 }

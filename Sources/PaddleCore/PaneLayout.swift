@@ -35,6 +35,46 @@ public enum PanePlacement: String, Codable, Sendable, CaseIterable {
     case largest, focused, last
 }
 
+/// A Mosaic laid out freely: each pane a card at its own place, which may overlap others, like windows on a desktop.
+/// Rectangles are fractions of the content area (0 to 1), so they follow the window's size; `order` is back to front.
+public struct FreeformPlacement: Equatable, Sendable, Codable {
+    public var frames: [String: CGRect]
+    public var order: [String]
+
+    /// A card can't get smaller than this share of the area, nor leave it.
+    public static let minimumSize = CGSize(width: 0.12, height: 0.12)
+
+    public init(frames: [String: CGRect], order: [String]) {
+        self.frames = frames
+        self.order = order
+    }
+
+    /// `rect` at least `minimumSize` and inside the unit square.
+    public static func clamped(_ rect: CGRect) -> CGRect {
+        let w = min(max(rect.width.isFinite ? rect.width : 0.5, minimumSize.width), 1)
+        let h = min(max(rect.height.isFinite ? rect.height : 0.5, minimumSize.height), 1)
+        let x = min(max(rect.minX.isFinite ? rect.minX : 0, 0), 1 - w)
+        let y = min(max(rect.minY.isFinite ? rect.minY : 0, 0), 1 - h)
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    private enum CodingKeys: String, CodingKey { case frames, order }
+
+    /// `{"frames": {"<id>": [x, y, width, height]}, "order": ["<id>", …]}`; odd rectangles are clamped.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let raw = (try? c.decode([String: [Double]].self, forKey: .frames)) ?? [:]
+        frames = raw.compactMapValues { v in v.count == 4 ? Self.clamped(CGRect(x: v[0], y: v[1], width: v[2], height: v[3])) : nil }
+        order = (try? c.decode([String].self, forKey: .order)) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(frames.mapValues { r in [r.minX, r.minY, r.width, r.height].map { ($0 * 10_000).rounded() / 10_000 } }, forKey: .frames)
+        try c.encode(order, forKey: .order)
+    }
+}
+
 /// One node of a multi view: a tab (by its session id), or a split of two nodes at `ratio` (the first side's share).
 public indirect enum PaneNode: Equatable, Sendable {
     case tab(String)
@@ -71,6 +111,10 @@ public struct PaneLayout: Equatable, Sendable {
     public private(set) var root: PaneNode
     /// The Mosaic's name in the tab strip, set by Rename Mosaic; nil shows the focused pane's site.
     public var name: String?
+    /// Freeform placement (Freeform in the Mosaic bar); nil is tiled. The tile tree is kept underneath, so the panes'
+    /// order and membership work the same either way, and Tidy Up goes back to tiles.
+    public private(set) var freeform: FreeformPlacement?
+    public var isFreeform: Bool { freeform != nil }
     /// The Mosaic's icon (Choose Icon…); nil shows the grid symbol.
     public var icon: MosaicIcon?
     /// The icon's tint (a symbol's color); nil is the text color.
@@ -107,6 +151,75 @@ public struct PaneLayout: Equatable, Sendable {
         name = other.name
         icon = other.icon
         iconTint = other.iconTint
+        freeform = other.freeform
+        syncFreeform()
+    }
+
+    // MARK: - Freeform
+
+    /// The same panes as freeform cards where they are tiled now in `rect` (with `gap`), the focused one (`front`) on top.
+    public func freeformed(in rect: CGRect, gap: CGFloat = 1, front: String? = nil) -> PaneLayout {
+        guard !isFreeform, rect.width > 0, rect.height > 0 else { return self }
+        let tiled = frames(in: rect, gap: gap)
+        var copy = self
+        copy.freeform = FreeformPlacement(
+            frames: tiled.mapValues { f in
+                FreeformPlacement.clamped(CGRect(x: (f.minX - rect.minX) / rect.width, y: (f.minY - rect.minY) / rect.height,
+                                                 width: f.width / rect.width, height: f.height / rect.height))
+            },
+            order: tabs.filter { $0 != front } + (front.map { [$0] } ?? []).filter(contains)
+        )
+        return copy
+    }
+
+    /// Tidy Up: back to tiles, the panes in reading order of where their cards sit (rows top to bottom by their
+    /// middles, left to right in a row), laid out as `arrangement`.
+    public func tidied(_ arrangement: PaneArrangement = .grid) -> PaneLayout {
+        guard let freeform else { return arranged(arrangement) }
+        let placed = tabs.map { id in (id, freeform.frames[id] ?? CGRect(x: 0, y: 0, width: 1, height: 1)) }
+        let sorted = placed.sorted { a, b in
+            if abs(a.1.midY - b.1.midY) > 0.15 { return a.1.midY < b.1.midY }
+            return a.1.midX < b.1.midX
+        }.map(\.0)
+        var copy = self
+        copy.freeform = nil
+        var index = 0
+        copy.root = Self.mapTabs(root) { _ in
+            defer { index += 1 }
+            return sorted[index]
+        }
+        return copy.arranged(arrangement)
+    }
+
+    /// Moves or resizes `id`'s card to `rect` (fractions of the area), kept inside it and at least the minimum size.
+    @discardableResult
+    public mutating func setFreeformFrame(_ rect: CGRect, of id: String) -> Bool {
+        guard freeform != nil, contains(id) else { return false }
+        freeform!.frames[id] = FreeformPlacement.clamped(rect)
+        return true
+    }
+
+    /// `id`'s card on top of the others.
+    public mutating func bringToFront(_ id: String) {
+        guard freeform != nil, contains(id), freeform!.order.last != id else { return }
+        freeform!.order.removeAll { $0 == id }
+        freeform!.order.append(id)
+    }
+
+    /// Cards for panes that have none (a pane that joined), next to `near`'s card or cascading from the top left;
+    /// cards and order entries of panes that left go.
+    mutating func syncFreeform(near: String? = nil) {
+        guard var placement = freeform else { return }
+        let ids = Set(tabs)
+        placement.frames = placement.frames.filter { ids.contains($0.key) }
+        placement.order = placement.order.filter(ids.contains)
+        for id in tabs where placement.frames[id] == nil {
+            let base = near.flatMap { placement.frames[$0] } ?? CGRect(x: 0.05, y: 0.05, width: 0.5, height: 0.6)
+            let step = CGFloat(placement.frames.count % 6) * 0.04
+            placement.frames[id] = FreeformPlacement.clamped(base.offsetBy(dx: 0.06 + step, dy: 0.06 + step))
+        }
+        for id in tabs where !placement.order.contains(id) { placement.order.append(id) }
+        freeform = placement
     }
     public func contains(_ id: String) -> Bool { tabs.contains(id) }
     public var isFull: Bool { count >= Self.maxPanes }
@@ -117,6 +230,7 @@ public struct PaneLayout: Equatable, Sendable {
     public mutating func insert(_ new: String, at target: String, edge: PaneEdge, limit: Int = PaneLayout.maxPanes) -> Bool {
         guard !contains(new), contains(target), count < min(limit, Self.maxPanes) else { return false }
         root = Self.inserting(new, at: target, edge: edge, in: root)
+        syncFreeform(near: target)
         return true
     }
 
@@ -126,6 +240,7 @@ public struct PaneLayout: Equatable, Sendable {
         guard contains(id), let rest = Self.removing(id, from: root), rest.tabs.count >= 2 else { return contains(id) ? nil : self }
         var copy = self
         copy.root = rest
+        copy.syncFreeform()
         return copy
     }
 
@@ -134,6 +249,12 @@ public struct PaneLayout: Equatable, Sendable {
     public mutating func swap(_ a: String, _ b: String) -> Bool {
         guard a != b, contains(a), contains(b) else { return false }
         root = Self.mapTabs(root) { $0 == a ? b : $0 == b ? a : $0 }
+        if var placement = freeform {
+            let fa = placement.frames[a], fb = placement.frames[b]
+            placement.frames[a] = fb
+            placement.frames[b] = fa
+            freeform = placement
+        }
         return true
     }
 
@@ -143,6 +264,11 @@ public struct PaneLayout: Equatable, Sendable {
     public mutating func replace(_ old: String, with new: String) -> Bool {
         guard contains(old), !contains(new) else { return false }
         root = Self.mapTabs(root) { $0 == old ? new : $0 }
+        if var placement = freeform {
+            placement.frames[new] = placement.frames.removeValue(forKey: old)
+            placement.order = placement.order.map { $0 == old ? new : $0 }
+            freeform = placement
+        }
         return true
     }
 
@@ -165,6 +291,13 @@ public struct PaneLayout: Equatable, Sendable {
         guard Set(names).count == names.count else { return nil }
         var renamed = PaneLayout(root: Self.mapTabs(layout.root) { rename($0) ?? $0 })
         renamed?.takeLooks(of: self)
+        if let placement = layout.freeform {
+            renamed?.freeform = FreeformPlacement(
+                frames: Dictionary(placement.frames.compactMap { key, rect in rename(key).map { ($0, rect) } }, uniquingKeysWith: { a, _ in a }),
+                order: placement.order.compactMap(rename)
+            )
+            renamed?.syncFreeform()
+        }
         return renamed
     }
 
@@ -203,6 +336,7 @@ public struct PaneLayout: Equatable, Sendable {
         }
         var copy = self
         copy.root = root
+        copy.freeform = nil
         return copy
     }
 
@@ -217,18 +351,32 @@ public struct PaneLayout: Equatable, Sendable {
             defer { index += 1 }
             return moved[index]
         }
+        // Freeform: each tab moves to the card the tab before it had.
+        if let placement = freeform {
+            let byPosition = Dictionary(uniqueKeysWithValues: zip(ids, moved))
+            copy.freeform = FreeformPlacement(
+                frames: Dictionary(uniqueKeysWithValues: placement.frames.compactMap { key, rect in byPosition[key].map { ($0, rect) } }),
+                order: placement.order.compactMap { byPosition[$0] }
+            )
+        }
         return copy
     }
 
     /// The shape `arrangement` makes: its tabs' layout is `arranged(arrangement)`'s, ratios and all.
     public func isArranged(_ arrangement: PaneArrangement) -> Bool {
-        arranged(arrangement).root == root
+        !isFreeform && arranged(arrangement).root == root
     }
 
     // MARK: - Geometry
 
     /// Each tab's rectangle in `rect`, with `gap` points between panes for the dividers.
     public func frames(in rect: CGRect, gap: CGFloat = 1) -> [String: CGRect] {
+        if let freeform {
+            return freeform.frames.mapValues { f in
+                CGRect(x: rect.minX + f.minX * rect.width, y: rect.minY + f.minY * rect.height,
+                       width: f.width * rect.width, height: f.height * rect.height).integral
+            }
+        }
         var out: [String: CGRect] = [:]
         var unused: [PaneDivider] = []
         Self.layout(root, in: rect, gap: gap, path: [], frames: &out, dividers: &unused)
@@ -237,6 +385,7 @@ public struct PaneLayout: Equatable, Sendable {
 
     /// The dividers, each with the split it moves.
     public func dividers(in rect: CGRect, gap: CGFloat = 1) -> [PaneDivider] {
+        guard !isFreeform else { return [] }
         var frames: [String: CGRect] = [:]
         var out: [PaneDivider] = []
         Self.layout(root, in: rect, gap: gap, path: [], frames: &frames, dividers: &out)
@@ -473,7 +622,7 @@ extension PaneNode: Codable {
 
 /// The root node's object, with the Mosaic's `name`, `icon` and `iconTint` beside its keys when it has them.
 extension PaneLayout: Codable {
-    private enum NameKey: String, CodingKey { case name, icon, iconTint }
+    private enum NameKey: String, CodingKey { case name, icon, iconTint, freeform }
 
     public init(from decoder: Decoder) throws {
         let node = try PaneNode(from: decoder)
@@ -485,16 +634,19 @@ extension PaneLayout: Codable {
         layout.name = name?.isEmpty == false ? String(name!.prefix(60)) : nil
         layout.icon = ((try? c.decodeIfPresent(String.self, forKey: .icon)) ?? nil).flatMap(MosaicIcon.init)
         layout.iconTint = ((try? c.decodeIfPresent(String.self, forKey: .iconTint)) ?? nil).flatMap { ColorPreset(rawValue: $0.lowercased()) }
+        layout.freeform = (try? c.decodeIfPresent(FreeformPlacement.self, forKey: .freeform)) ?? nil
+        layout.syncFreeform()
         self = layout
     }
 
     public func encode(to encoder: Encoder) throws {
         try root.encode(to: encoder)
-        guard name != nil || icon != nil || iconTint != nil else { return }
+        guard name != nil || icon != nil || iconTint != nil || freeform != nil else { return }
         var c = encoder.container(keyedBy: NameKey.self)
         try c.encodeIfPresent(name, forKey: .name)
         try c.encodeIfPresent(icon?.name, forKey: .icon)
         try c.encodeIfPresent(iconTint?.rawValue, forKey: .iconTint)
+        try c.encodeIfPresent(freeform, forKey: .freeform)
     }
 
     /// A saved layout against the window's tabs now: tabs that are gone taken out (their siblings take the space);

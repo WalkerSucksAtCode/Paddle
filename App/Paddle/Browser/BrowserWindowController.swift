@@ -127,9 +127,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         let local = root.convert(event.locationInWindow, from: nil)
         let point = root.isFlipped ? local : CGPoint(x: local.x, y: root.bounds.height - local.y)
         // The pane's bar has its own controls (× must not move the focus first); its address field focuses by itself.
-        guard let hit = model.paneFrames.first(where: { key, frame in
-                  key != model.selectedID && frame.contains(point) && point.y > frame.minY + PaneMetrics.barHeight
-              })?.key,
+        // A freeform card comes forward from a click anywhere on it (its bar is how it's moved).
+        guard let (hit, frame) = model.pane(at: point), hit != model.selectedID,
+              model.isFreeformShown || point.y > frame.minY + PaneMetrics.barHeight,
               let tab = model.tabs.first(where: { $0.id == hit }) else { return }
         DispatchQueue.main.async { [weak self] in self?.model.select(tab) }
     }
@@ -593,6 +593,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleMovePaneUp(_ sender: Any?) { model.movePane(toward: .top) }
     @objc func paddleMovePaneDown(_ sender: Any?) { model.movePane(toward: .bottom) }
     @objc func paddleMuteOtherPanes(_ sender: Any?) { model.muteOtherPanes() }
+    @objc func paddleToggleFreeform(_ sender: Any?) { model.toggleFreeform() }
+    @objc func paddleTidyUp(_ sender: Any?) { model.tidyUp() }
     @objc func paddleRemoveFromView(_ sender: Any?) { if let tab = model.selectedTab { model.removeFromView(tab) } }
 
     /// `screen` (a screen point) in the window's content view, top-left origin as SwiftUI's global frames; nil when
@@ -791,6 +793,10 @@ extension BrowserWindowController: NSMenuItemValidation {
              #selector(paddleMovePaneUp(_:)), #selector(paddleMovePaneDown(_:)), #selector(paddleMuteOtherPanes(_:)):
             return tab.map { model.split(of: $0) != nil } ?? false
         case #selector(paddleAddPane(_:)): return model.canAddPane
+        case #selector(paddleToggleFreeform(_:)):
+            menuItem.state = model.isFreeformShown ? .on : .off
+            return tab.map { model.split(of: $0) != nil } ?? false
+        case #selector(paddleTidyUp(_:)): return model.isFreeformShown
         case #selector(paddleZoomPane(_:)):
             let zoomed = tab.map { model.zoomedPaneID == $0.id } ?? false
             menuItem.title = zoomed ? "Unzoom Pane" : "Zoom Pane"

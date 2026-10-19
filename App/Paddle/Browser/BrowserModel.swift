@@ -342,6 +342,10 @@ final class BrowserModel {
             other.wake()
         }
         applyMosaicSound(focused: tab)
+        // A freeform card that is focused comes to the front.
+        if let split = split(of: tab), split.layout.isFreeform, let at = splits.firstIndex(where: { $0.id == split.id }) {
+            splits[at].layout.bringToFront(tab.id.uuidString)
+        }
         if previous !== tab { extensionHost?.tabActivated(tab, previous: previous) }
         tab.resumeSelectionWaiters(true)
         suggestions.dismiss()
@@ -891,11 +895,22 @@ final class BrowserModel {
         let local = CGRect(origin: .zero, size: paneArea.size)
         guard let split = split(of: selected) else { return [selected.id: paneArea] }
         let frames = split.layout.frames(in: local, gap: PaneMetrics.gap)
-        if PaneMetrics.isNarrow(frames) || zoomedPaneID == selected.id { return [selected.id: paneArea] }
+        if (!split.layout.isFreeform && PaneMetrics.isNarrow(frames)) || zoomedPaneID == selected.id { return [selected.id: paneArea] }
         return Dictionary(uniqueKeysWithValues: frames.compactMap { key, frame in
             UUID(uuidString: key).map { ($0, frame.offsetBy(dx: paneArea.minX, dy: paneArea.minY)) }
         })
     }
+    /// The pane under `point` (window content coordinates, as `paneFrames`) and its frame: in a freeform Mosaic the
+    /// card on top, else the one pane there.
+    func pane(at point: CGPoint) -> (id: UUID, frame: CGRect)? {
+        let frames = paneFrames
+        let order = selectedTab.flatMap { split(of: $0)?.layout.freeform?.order.compactMap(UUID.init(uuidString:)) } ?? Array(frames.keys)
+        for id in order.reversed() {
+            if let frame = frames[id], frame.contains(point) { return (id, frame) }
+        }
+        return nil
+    }
+
     /// Where a tab being dragged over the content area would land: a pane and an edge (nil: the middle, a swap or
     /// replace). The content area draws it.
     var paneDropHint: (target: UUID, edge: PaneEdge?)?
@@ -1230,6 +1245,42 @@ final class BrowserModel {
         splits[at].layout = layout
         AppModel.shared.sessionChanged()
     }
+
+    /// Freeform (the Mosaic bar, Tabs > Mosaic Layout): the selected tab's Mosaic becomes cards where its tiles are, or,
+    /// already freeform, is tidied up.
+    func toggleFreeform() {
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        if split.layout.isFreeform {
+            tidyUp()
+            return
+        }
+        let area = paneArea.size == .zero ? CGSize(width: 1200, height: 800) : paneArea.size
+        setLayout(split.layout.freeformed(in: CGRect(origin: .zero, size: area), gap: PaneMetrics.gap, front: selected.id.uuidString), for: split)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Tidy Up: a freeform Mosaic back to tiles in reading order, in `mosaicDefaultLayout` (a grid when that is
+    /// "as dropped").
+    func tidyUp() {
+        guard let selected = selectedTab, let split = split(of: selected), split.layout.isFreeform else { return }
+        setLayout(split.layout.tidied(config.mosaicDefaultLayout.arrangement ?? .grid), for: split)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// The selected tab's Mosaic is freeform.
+    var isFreeformShown: Bool { selectedTab.flatMap { split(of: $0) }?.layout.isFreeform ?? false }
+
+    /// A freeform card moved or resized to `rect`, in fractions of the content area.
+    func setFreeformFrame(_ rect: CGRect, of tab: Tab) {
+        guard let split = split(of: tab), let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        var layout = splits[at].layout
+        guard layout.setFreeformFrame(rect, of: tab.id.uuidString), layout != splits[at].layout else { return }
+        splits[at].layout = layout
+        AppModel.shared.sessionChanged()
+    }
+
+    /// A freeform card is being moved or resized: the cards follow the pointer with no spring.
+    var isMovingFreeform = false
 
     /// The focused pane fills its Mosaic for now (Zoom Pane, ⌃⌘↩); the other panes stay as they were. Focusing
     /// another tab, or Zoom Pane again, gives the space back. Not saved.

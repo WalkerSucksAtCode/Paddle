@@ -40,7 +40,7 @@ struct MosaicPane: View {
                     Text("Smallest pane height: \(Int(model.file.mosaicMinimumPaneHeight)) pt")
                 }
                 .help("mosaicMinimumPaneHeight in config.json.")
-                SettingsCaption("When the window would make any pane smaller than this, the Mosaic shows only its focused pane until there is room again.")
+                SettingsCaption("When the window would make any pane smaller than this, the Mosaic shows only its focused pane until there is room again. Freeform Mosaics (the Mosaic bar's Freeform button) keep their cards' own sizes; Tidy Up tiles them again in the layout new Mosaics start as below, or a grid.")
             }
             .disabled(model.controlsDisabled)
 

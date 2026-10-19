@@ -223,7 +223,7 @@ final class TabDragController: NSObject, NSDraggingSource {
               controller.model.config.mosaicModifierDrag, let selected = controller.model.selectedTab,
               controller.model.split(of: selected) != nil,
               let local = controller.contentPoint(fromScreen: window.convertPoint(toScreen: event.locationInWindow)),
-              let id = controller.model.paneFrames.first(where: { $0.value.contains(local) })?.key else { return nil }
+              let id = controller.model.pane(at: local)?.id else { return nil }
         return anchors.allObjects.first { $0.window === window && !$0.isStrip && $0.tab?.id == id && $0.enabled }
     }
 
@@ -341,7 +341,7 @@ final class TabDragController: NSObject, NSDraggingSource {
     private func pane(in window: BrowserWindowController, at point: NSPoint, dragging tab: Tab) -> (UUID, PaneEdge?)? {
         let model = window.model
         guard model.preview == nil, !tab.isPinned, let local = window.contentPoint(fromScreen: point),
-              let (id, frame) = model.paneFrames.first(where: { $0.value.contains(local) }), id != tab.id,
+              let (id, frame) = model.pane(at: local), id != tab.id,
               let target = model.tabs.first(where: { $0.id == id }), !target.isPinned else { return nil }
         let edge = PaneLayout.dropEdge(at: local, in: frame)
         if let edge, let view = model.split(of: target), !view.contains(tab), view.layout.count >= model.maxPanes { return nil }

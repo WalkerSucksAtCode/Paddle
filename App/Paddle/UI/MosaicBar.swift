@@ -110,8 +110,14 @@ struct MosaicBar: View {
                     model.arrangeMosaic(arrangement)
                 }
             }
+            // Freeform: cards placed anywhere, overlapping; Tidy Up tiles them again.
+            icon("rectangle.on.rectangle", split.layout.isFreeform ? "Freeform (on): drag a card by its toolbar, resize it by its edges" : "Freeform: place panes anywhere, overlapping",
+                 action: "toggleFreeform", selected: split.layout.isFreeform) { model.toggleFreeform() }
+            if split.layout.isFreeform {
+                icon("wand.and.stars", "Tidy Up: back to tiles, in reading order", action: "tidyUp") { model.tidyUp() }
+            }
             separator
-            icon("equal.square", "Even Out Panes", action: "evenOutPanes") { model.equalizePanes() }
+            icon("equal.square", "Even Out Panes", action: "evenOutPanes", enabled: !split.layout.isFreeform) { model.equalizePanes() }
             icon("arrow.triangle.2.circlepath", "Rotate Panes", action: "rotatePanes") { model.rotatePanes() }
             if count == 2 {
                 icon("arrow.left.arrow.right", "Swap Panes", action: "swapMosaicPanes") { model.swapSplitSides() }

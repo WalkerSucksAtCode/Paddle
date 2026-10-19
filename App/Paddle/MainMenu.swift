@@ -191,6 +191,8 @@ enum MainMenu {
         add(mosaic, "arrangeRows", "Rows", #selector(BrowserWindowController.paddleArrangeRows(_:)), "")
         add(mosaic, "arrangeGrid", "Grid", #selector(BrowserWindowController.paddleArrangeGrid(_:)), "")
         add(mosaic, "arrangeMainAndStack", "Main and Stack", #selector(BrowserWindowController.paddleArrangeMainAndStack(_:)), "")
+        add(mosaic, "toggleFreeform", "Freeform", #selector(BrowserWindowController.paddleToggleFreeform(_:)), "")
+        add(mosaic, "tidyUp", "Tidy Up", #selector(BrowserWindowController.paddleTidyUp(_:)), "")
         mosaic.addItem(.separator())
         add(mosaic, "evenOutPanes", "Even Out Panes", #selector(BrowserWindowController.paddleEvenOutPanes(_:)), "")
         add(mosaic, "rotatePanes", "Rotate Panes", #selector(BrowserWindowController.paddleRotatePanes(_:)), "")

@@ -20,7 +20,10 @@ struct MultiPanes<Pane: View>: View {
             let preview = PaneMetrics.config.mosaicLiveDragPreview ? model.paneDragPreview(for: split) : nil
             let layout = preview ?? split.layout
             var frames = layout.frames(in: rect, gap: PaneMetrics.gap)
-            let narrow = PaneMetrics.isNarrow(split.layout.frames(in: rect, gap: PaneMetrics.gap))
+            // Freeform cards keep their own sizes, so a small window doesn't fall back to one pane.
+            let freeform = layout.isFreeform
+            let narrow = !freeform && PaneMetrics.isNarrow(split.layout.frames(in: rect, gap: PaneMetrics.gap))
+            let stack = layout.freeform?.order ?? []
             let shown = model.panes(of: split)
             let dragged = preview == nil ? nil : model.paneDragTabID
             // Zoom Pane: the focused pane over the whole area, the others kept (hidden) in their places.
@@ -28,7 +31,7 @@ struct MultiPanes<Pane: View>: View {
             let _ = zoomed.map { frames[$0.uuidString] = rect }
             ZStack(alignment: .topLeading) {
                 if narrow {
-                    PaneFrame(model: model, tab: focused, focused: true, ring: false, size: rect.size, content: pane(focused, true))
+                    PaneFrame(model: model, tab: focused, focused: true, ring: false, size: rect.size, freeform: false, content: pane(focused, true))
                         .id(focused.id)
                         .frame(width: rect.width, height: rect.height)
                 } else {
@@ -36,7 +39,7 @@ struct MultiPanes<Pane: View>: View {
                     // in dark mode (measured all white).
                     ForEach(shown, id: \.id) { tab in
                         let frame = frames[tab.id.uuidString] ?? .zero
-                        PaneFrame(model: model, tab: tab, focused: tab === focused, ring: true, size: frame.size, content: pane(tab, tab === focused))
+                        PaneFrame(model: model, tab: tab, focused: tab === focused, ring: true, size: frame.size, freeform: freeform, content: pane(tab, tab === focused))
                             .id(tab.id)
                             // The pane on the move fades back under its landing highlight; a zoomed pane hides the rest.
                             .opacity(tab.id == dragged ? 0.35 : zoomed == nil || zoomed == tab.id ? 1 : 0)
@@ -46,9 +49,17 @@ struct MultiPanes<Pane: View>: View {
                             .frame(width: frame.width, height: frame.height, alignment: .topLeading)
                             // Not while its address suggestions show: they may hang out of a narrow pane.
                             .modifier(PaneClip(active: model.editingPaneID != tab.id))
+                            // Freeform cards stand off the background and each other.
+                            .shadow(color: .black.opacity(freeform ? 0.35 : 0), radius: freeform ? 10 : 0, y: freeform ? 3 : 0)
+                            .overlay {
+                                if freeform, zoomed == nil {
+                                    FreeformResizeHandles(model: model, tab: tab, frame: frame, area: rect.size)
+                                }
+                            }
                             .position(x: frame.midX, y: frame.midY)
-                            // Its address suggestions hang over the panes below; a zoomed pane is over the others.
-                            .zIndex(model.editingPaneID == tab.id || zoomed == tab.id ? 1 : 0)
+                            // Its address suggestions hang over the panes below; a zoomed pane is over the others;
+                            // freeform cards stack back to front.
+                            .zIndex(model.editingPaneID == tab.id || zoomed == tab.id ? 100 : Double(stack.firstIndex(of: tab.id.uuidString) ?? 0))
                     }
                     ForEach(layout.dividers(in: rect, gap: PaneMetrics.gap), id: \.path) { divider in
                         PaneDividerView(model: model, split: split, divider: divider)
@@ -69,7 +80,7 @@ struct MultiPanes<Pane: View>: View {
             // added or taken out) at `mosaicAnimationSpeed`; with reduced motion they jump and only highlights fade;
             // none while dragging a divider, which follows the pointer.
             .animation(
-                model.isDraggingDivider ? nil : PaneMetrics.layoutAnimation,
+                model.isDraggingDivider || model.isMovingFreeform ? nil : PaneMetrics.layoutAnimation,
                 value: AnimatedLayout(layout: layout, dragging: dragged, zoomed: zoomed)
             )
             .frame(width: rect.width, height: rect.height, alignment: .topLeading)
@@ -177,6 +188,8 @@ private struct PaneFrame<Content: View>: View {
     /// The pane's size in the layout it is going to: the page takes it at once (no animation), so a layout change
     /// lays each page out once instead of stretching it frame by frame.
     let size: CGSize
+    /// A freeform card: its toolbar moves it.
+    let freeform: Bool
     let content: Content
     @State private var hovering = false
 
@@ -189,7 +202,7 @@ private struct PaneFrame<Content: View>: View {
         ZStack(alignment: .top) {
         VStack(spacing: 0) {
             if !overlaid {
-                PaneBar(model: model, tab: tab, focused: focused)
+                PaneBar(model: model, tab: tab, focused: focused, freeform: freeform)
                     // Over the page, so its suggestions show on top of it (they aren't inside the page's clip).
                     .zIndex(1)
             }
@@ -219,7 +232,7 @@ private struct PaneFrame<Content: View>: View {
                 }
         }
             if overlaid {
-                PaneBar(model: model, tab: tab, focused: focused)
+                PaneBar(model: model, tab: tab, focused: focused, freeform: freeform)
                     .background(.regularMaterial)
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: PaneMetrics.cornerRadius, topTrailingRadius: PaneMetrics.cornerRadius, style: .continuous))
                     .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
@@ -249,6 +262,9 @@ private struct PaneBar: View {
     let model: BrowserModel
     let tab: Tab
     let focused: Bool
+    let freeform: Bool
+    /// The card's frame (fractions of the area) when a freeform move began.
+    @State private var moveStart: CGRect?
     @State private var draft = ""
     @FocusState private var editing: Bool
     @Environment(\.chromeTheme) private var theme
@@ -262,7 +278,21 @@ private struct PaneBar: View {
     var body: some View {
         let grab = PaneMetrics.config.mosaicPaneGrab
         HStack(spacing: 2) {
-            if grab == .grip { grip }
+            if freeform {
+                // A freeform card's own handle: the address field fills most of the bar, so the card has this to grab.
+                Image(systemName: "line.3.horizontal")
+                    .rotationEffect(.degrees(90))
+                    .chromeFont(size: 10, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: control)
+                    .contentShape(Rectangle())
+                    .pointerStyle(.grabIdle)
+                    .help("Drag to move this card")
+                    .gesture(moveGesture)
+                    .accessibilityLabel("Move \(tab.displayTitle)")
+            } else if grab == .grip {
+                grip
+            }
             FaviconView(url: tab.url, size: PaneMetrics.compactBar ? 11 : 12)
                 .frame(width: control, height: control)
                 .contentShape(Rectangle())
@@ -310,12 +340,41 @@ private struct PaneBar: View {
             }
             Button("Remove from Mosaic") { model.removeFromView(tab) }
         }
-        // `mosaicPaneGrab` "toolbar": any part of the bar but its address field picks the pane up.
-        .background(Color.clear.modifier(TabDrag(tab: tab, enabled: grab == .toolbar, strip: false, toolbar: true)))
+        // `mosaicPaneGrab` "toolbar": any part of the bar but its address field picks the pane up. A freeform card's
+        // bar moves the card instead.
+        .background(Color.clear.modifier(TabDrag(tab: tab, enabled: grab == .toolbar && !freeform, strip: false, toolbar: true)))
+        .background {
+            if freeform {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(moveGesture)
+            }
+        }
         .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) {
             TabProgressBar(tab: tab, accent: theme?.accent ?? Color.accentColor, reducesMotion: AppModel.shared.reducesMotion)
         }
+    }
+
+    /// Drags a freeform card by its toolbar, kept inside the area.
+    private var moveGesture: some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("paneArea"))
+            .onChanged { value in
+                let area = model.paneArea.size
+                guard area.width > 0, area.height > 0 else { return }
+                if moveStart == nil {
+                    moveStart = model.split(of: tab)?.layout.freeform?.frames[tab.id.uuidString]
+                    model.isMovingFreeform = true
+                    if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+                }
+                guard let start = moveStart else { return }
+                let moved = start.offsetBy(dx: value.translation.width / area.width, dy: value.translation.height / area.height)
+                model.setFreeformFrame(moved, of: tab)
+            }
+            .onEnded { _ in
+                moveStart = nil
+                model.isMovingFreeform = false
+            }
     }
 
     private var grip: some View {
@@ -535,5 +594,79 @@ struct SinglePaneTarget: ViewModifier {
                 }
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.paneArea = $0 }
         }
+    }
+}
+
+/// A freeform card's edges and corners: drag one to resize the card (at least `FreeformPlacement.minimumSize`, inside
+/// the area). Thin strips just inside the card, with resize pointers.
+private struct FreeformResizeHandles: View {
+    let model: BrowserModel
+    let tab: Tab
+    /// The card in the content area's coordinates, and that area's size.
+    let frame: CGRect
+    let area: CGSize
+    @State private var start: CGRect?
+
+    private struct Edges: OptionSet, Hashable {
+        let rawValue: Int
+        static let left = Edges(rawValue: 1), right = Edges(rawValue: 2), top = Edges(rawValue: 4), bottom = Edges(rawValue: 8)
+    }
+
+    private static let thickness: CGFloat = 6
+    private static let corner: CGFloat = 14
+
+    var body: some View {
+        let t = Self.thickness, c = Self.corner
+        ZStack(alignment: .topLeading) {
+            handle([.left], x: 0, y: c, width: t, height: frame.height - 2 * c, pointer: .columnResize)
+            handle([.right], x: frame.width - t, y: c, width: t, height: frame.height - 2 * c, pointer: .columnResize)
+            // The top edge is the toolbar's, which moves the card; only its corners resize.
+            handle([.bottom], x: c, y: frame.height - t, width: frame.width - 2 * c, height: t, pointer: .rowResize)
+            handle([.top, .left], x: 0, y: 0, width: c, height: t, pointer: .frameResize(position: .topLeading))
+            handle([.top, .right], x: frame.width - c, y: 0, width: c, height: t, pointer: .frameResize(position: .topTrailing))
+            handle([.bottom, .left], x: 0, y: frame.height - c, width: c, height: c, pointer: .frameResize(position: .bottomLeading))
+            handle([.bottom, .right], x: frame.width - c, y: frame.height - c, width: c, height: c, pointer: .frameResize(position: .bottomTrailing))
+        }
+        .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+        .accessibilityHidden(true)
+    }
+
+    private func handle(_ edges: Edges, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, pointer: PointerStyle) -> some View {
+        Color.clear
+            .frame(width: max(0, width), height: max(0, height))
+            .contentShape(Rectangle())
+            .pointerStyle(pointer)
+            .offset(x: x, y: y)
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .named("paneArea"))
+                    .onChanged { value in resize(edges, by: value.translation) }
+                    .onEnded { _ in
+                        start = nil
+                        model.isMovingFreeform = false
+                    }
+            )
+    }
+
+    private func resize(_ edges: Edges, by translation: CGSize) {
+        guard area.width > 0, area.height > 0 else { return }
+        if start == nil {
+            start = model.split(of: tab)?.layout.freeform?.frames[tab.id.uuidString]
+            model.isMovingFreeform = true
+            if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+        }
+        guard var rect = start else { return }
+        let dx = translation.width / area.width, dy = translation.height / area.height
+        let minimum = FreeformPlacement.minimumSize
+        if edges.contains(.left) {
+            let x = min(rect.minX + dx, rect.maxX - minimum.width)
+            rect = CGRect(x: max(0, x), y: rect.minY, width: rect.maxX - max(0, x), height: rect.height)
+        }
+        if edges.contains(.right) { rect.size.width = max(minimum.width, min(rect.width + dx, 1 - rect.minX)) }
+        if edges.contains(.top) {
+            let y = min(rect.minY + dy, rect.maxY - minimum.height)
+            rect = CGRect(x: rect.minX, y: max(0, y), width: rect.width, height: rect.maxY - max(0, y))
+        }
+        if edges.contains(.bottom) { rect.size.height = max(minimum.height, min(rect.height + dy, 1 - rect.minY)) }
+        model.setFreeformFrame(rect, of: tab)
     }
 }
