@@ -465,13 +465,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         model.toggleDarkMode(tab)
     }
 
-    /// View > Invert Bright Text Images: toggles automatic inversion of bright text images in dark mode.
-    @objc func paddleToggleInvertTextImages(_ sender: Any?) {
-        Task {
-            await AppModel.shared.toggleInvertTextImages()
-        }
-    }
-
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
@@ -772,9 +765,6 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleToggleDarkMode(_:)):
             guard let tab, tab.siteHost != nil else { return false }
             menuItem.state = tab.isDarkModeActive ? .on : .off
-            return true
-        case #selector(paddleToggleInvertTextImages(_:)):
-            menuItem.state = AppModel.shared.config.invertTextImages ? .on : .off
             return true
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
              #selector(paddleTranslatePage(_:)), #selector(paddleCopyLinkToHighlight(_:)),

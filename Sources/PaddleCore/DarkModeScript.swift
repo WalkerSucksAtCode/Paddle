@@ -166,8 +166,6 @@ public enum DarkModeScript {
             }
           }
 
-          // --- Image Inversion & Heuristic ---
-
           let lastContextMenuTarget = null;
           document.addEventListener('contextmenu', (e) => {
             lastContextMenuTarget = e.target;
@@ -190,7 +188,6 @@ public enum DarkModeScript {
             return null;
           }
 
-          // Option-click toggles inversion directly on an image
           document.addEventListener('click', (e) => {
             if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
               const img = findTargetImage(e.target);

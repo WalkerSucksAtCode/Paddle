@@ -847,7 +847,7 @@ final class AppModel {
         }
     }
 
-    /// Toggles automatic inversion of bright text images in dark mode and persists the change to config.json.
+    /// Writes `invertTextImages` in config.json.
     func toggleInvertTextImages() async {
         let disk: Data
         do {

@@ -94,7 +94,7 @@ struct AppearancePane: View {
                     Text("System").tag(DarkModePreference.system)
                     Text("Always").tag(DarkModePreference.always)
                 }
-                .help("darkMode in config.json. Generates clean dark themes on any website, matching system or always on.")
+                .help("darkMode in config.json. Off leaves sites alone. System follows appearance. Always forces it. A per-site setting still wins.")
                 Toggle("Invert bright text images in dark mode", isOn: Binding(
                     get: { model.file.invertTextImages },
                     set: { value in Task { await model.saveKey(.invertTextImages, .bool(value)) } }
@@ -109,7 +109,7 @@ struct AppearancePane: View {
                     get: { model.file.underlineLinks },
                     set: { value in Task { await model.saveKey(.underlineLinks, .bool(value)) } }
                 ))
-                .help("underlineLinks in config.json. Underlines text hyperlinks across all websites to aid colorblind readability.")
+                .help("underlineLinks in config.json. Underlines links on web pages for colorblind accessibility.")
                 Toggle("Always reduce motion", isOn: Binding(
                     get: { model.file.reduceMotion == .always },
                     set: { value in Task { await model.saveKey(.reduceMotion, .string(value ? "always" : "system")) } }
