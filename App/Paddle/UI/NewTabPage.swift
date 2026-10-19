@@ -2,7 +2,7 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// The page of an empty tab: pinned sites, an optional Frequently visited row and a link to the config folder.
+/// The page of an empty tab: pinned sites, an optional Frequently visited row and a link to Settings > General.
 /// Pinned sites come from `app.newTab`; the frequent row is shown from the last result at once and re-queried off the main thread on appear and when the store or config changes.
 struct NewTabPage: View {
     let model: BrowserModel
@@ -75,8 +75,9 @@ struct NewTabPage: View {
                     .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                 }
             }
+            // Settings > General, whose New Tab section has this page's options (feeds, frequent sites, notifications).
             Button("Customize Paddle…") {
-                NSWorkspace.shared.open(Paths.support)
+                model.showSettings(pane: .general)
             }
             .buttonStyle(.link)
             .padding(.bottom, 16)

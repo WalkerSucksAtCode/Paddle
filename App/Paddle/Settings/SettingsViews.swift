@@ -65,6 +65,8 @@ enum SettingsPane: String, CaseIterable {
             "searchTemplate", "searchSuggestTemplate", "search suggestions", "address", "showFullAddress",
             "bookmarks bar", "default browser", "downloads", "download", "askWhereToDownload", "ask where to download",
             "pinned sites", "speed dial", "frequently visited", "newTabFrequentSites",
+            "customize new tab", "feeds", "news", "rss", "atom", "newTabFeeds", "website notifications",
+            "newTabNotifications", "newTabHiddenNotifications", "new tab extension", "newTabExtension",
             "startup", "launch", "onLaunch", "restore", "session", "quit", "askBeforeQuitting", "close window",
             "askBeforeClosingWindow", "other apps", "externalLinks", "links", "new tab position", "newTabPosition",
             "after closing", "afterClosingTab", "background", "cmd-click", "command-click", "openLinksInBackground",
