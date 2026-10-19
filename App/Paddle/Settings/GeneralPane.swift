@@ -138,8 +138,9 @@ struct GeneralPane: View {
     }
 }
 
-/// `newTabFeeds`: the feeds New Tab's News section lists, one row each with its problem if the last fetch failed, and a
-/// field that takes a feed address or a site's (its `<link rel="alternate">` feed is found).
+/// `newTabFeeds`: the feeds New Tab's News section lists. `SuggestedFeeds` each get a switch; other feeds get a row
+/// with Remove. Each shows its problem if the last fetch failed. A field takes a feed address or a site's (its
+/// `<link rel="alternate">` feed is found).
 private struct FeedRows: View {
     let model: SettingsModel
     @State private var draft = ""
@@ -149,7 +150,22 @@ private struct FeedRows: View {
 
     var body: some View {
         let feeds = model.file.newTabFeeds
-        ForEach(feeds, id: \.self) { feed in
+        ForEach(SuggestedFeeds.all) { suggestion in
+            Toggle(isOn: Binding(
+                get: { feeds.contains(suggestion.url) },
+                set: { on in
+                    let current = model.file.newTabFeeds
+                    let next = on ? current + [suggestion.url] : current.filter { $0 != suggestion.url }
+                    Task { await model.saveKey(.newTabFeeds, .array(next.map { .string($0) })) }
+                }
+            )) {
+                Text(suggestion.name)
+                Text(store.problems[suggestion.url] ?? suggestion.topic).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            .help("Adds \(suggestion.url) to newTabFeeds in config.json.")
+            .disabled(model.controlsDisabled)
+        }
+        ForEach(feeds.filter { !SuggestedFeeds.urls.contains($0) }, id: \.self) { feed in
             LabeledContent {
                 Button("Remove", role: .destructive) {
                     Task { await model.saveKey(.newTabFeeds, .array(feeds.filter { $0 != feed }.map { .string($0) })) }

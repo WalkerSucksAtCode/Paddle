@@ -10,6 +10,8 @@ struct NewTabPage: View {
     @State private var frequent: [HistoryEntry] = []
     @State private var frequentTask: Task<Void, Never>?
     @State private var adding = false
+    /// Not Now on the Add News prompt: it stays away on this Mac. Settings > General > New Tab still has the feeds.
+    @AppStorage("newTabNewsPromptDismissed") private var newsPromptDismissed = false
     @Environment(\.chromeScale) private var scale
     @Environment(\.chromeTheme) private var theme
 
@@ -66,6 +68,8 @@ struct NewTabPage: View {
                             }
                             if !model.config.newTabFeeds.isEmpty, !model.isPrivate {
                                 NewsSection(feeds: feeds, model: model)
+                            } else if !model.isPrivate, !newsPromptDismissed {
+                                AddNewsPrompt(model: model) { newsPromptDismissed = true }
                             }
                         }
                         .frame(maxWidth: 720)
@@ -177,6 +181,39 @@ private struct NotificationsSection: View {
 }
 
 /// The newest stories of `newTabFeeds`, as cards two or three to a row. A click opens the story in this tab.
+/// Shown instead of News while `newTabFeeds` is empty: Add News opens Settings > General, whose New Tab section has
+/// the suggested feeds; Not Now hides it.
+private struct AddNewsPrompt: View {
+    let model: BrowserModel
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "newspaper")
+                .chromeFont(size: 18)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add news to New Tab")
+                    .chromeFont(size: 13, weight: .medium)
+                Text("Pick feeds like BBC News or Ars Technica, or add any site's feed.")
+                    .chromeFont(size: 12)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Not Now", action: dismiss)
+                .buttonStyle(.link)
+                .chromeFont(size: 12)
+            Button("Add News…") { model.showSettings(pane: .general) }
+                .chromeFont(size: 12)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.05)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct NewsSection: View {
     let feeds: FeedStore
     let model: BrowserModel
