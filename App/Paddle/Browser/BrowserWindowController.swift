@@ -564,7 +564,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
     @objc func paddleEditSpace(_ sender: Any?) { model.editSpaceRequest += 1 }
 
-    // MARK: - Multi view
+    // MARK: - Mosaic
 
     @objc func paddleToggleSplitView(_ sender: Any?) { model.toggleSplitView() }
     @objc func paddleSwapSplitSides(_ sender: Any?) { model.swapSplitSides() }
@@ -574,6 +574,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func paddleFocusPaneUp(_ sender: Any?) { model.focusPane(toward: .top) }
     @objc func paddleFocusPaneDown(_ sender: Any?) { model.focusPane(toward: .bottom) }
     @objc func paddleEvenOutPanes(_ sender: Any?) { model.equalizePanes() }
+    @objc func paddleArrangeColumns(_ sender: Any?) { model.arrangeMosaic(.columns) }
+    @objc func paddleArrangeRows(_ sender: Any?) { model.arrangeMosaic(.rows) }
+    @objc func paddleArrangeGrid(_ sender: Any?) { model.arrangeMosaic(.grid) }
+    @objc func paddleArrangeMainAndStack(_ sender: Any?) { model.arrangeMosaic(.mainAndStack) }
+    @objc func paddleRotatePanes(_ sender: Any?) { model.rotatePanes() }
+    @objc func paddleAddPane(_ sender: Any?) { model.addPaneToMosaic() }
+    @objc func paddleReloadAllPanes(_ sender: Any?) { model.reloadAllPanes() }
     @objc func paddleRemoveFromView(_ sender: Any?) { if let tab = model.selectedTab { model.removeFromView(tab) } }
 
     /// `screen` (a screen point) in the window's content view, top-left origin as SwiftUI's global frames; nil when
@@ -760,14 +767,17 @@ extension BrowserWindowController: NSMenuItemValidation {
         case #selector(paddleMoveTabToSpace(_:)): return tab != nil
         case #selector(paddleToggleSplitView(_:)):
             let split = tab.map { model.split(of: $0) != nil } ?? false
-            menuItem.title = split ? "End Split View" : "Split View"
+            menuItem.title = split ? "End Mosaic" : "Mosaic"
             return split || (tab.map { !$0.isPinned } ?? false)
         case #selector(paddleSwapSplitSides(_:)):
             return tab.flatMap { model.split(of: $0) }?.layout.count == 2
         case #selector(paddleFocusOtherSplitSide(_:)), #selector(paddleFocusPaneLeft(_:)), #selector(paddleFocusPaneRight(_:)),
              #selector(paddleFocusPaneUp(_:)), #selector(paddleFocusPaneDown(_:)), #selector(paddleEvenOutPanes(_:)),
-             #selector(paddleRemoveFromView(_:)):
+             #selector(paddleRemoveFromView(_:)), #selector(paddleArrangeColumns(_:)), #selector(paddleArrangeRows(_:)),
+             #selector(paddleArrangeGrid(_:)), #selector(paddleArrangeMainAndStack(_:)), #selector(paddleRotatePanes(_:)),
+             #selector(paddleReloadAllPanes(_:)):
             return tab.map { model.split(of: $0) != nil } ?? false
+        case #selector(paddleAddPane(_:)): return model.canAddPane
         case #selector(paddleOpenLinkPreviewAsTab(_:)), #selector(paddleCloseLinkPreview(_:)):
             return model.preview != nil
         case #selector(paddleSelectTab(_:)):

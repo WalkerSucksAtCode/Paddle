@@ -220,8 +220,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var newTabHiddenNotifications: [String]
     /// The order of New Tab's sections, by `NewTabSection` name; read through `newTabSectionOrder`.
     public var newTabSections: [String]
-    /// The most tabs a multi view shows at once, 2 to `PaneLayout.maxPanes`.
-    public var multiViewMaxPanes: Int
+    /// The most tabs a Mosaic shows at once, 2 to `PaneLayout.maxPanes`. Older files call it `multiViewMaxPanes`.
+    public var mosaicMaxPanes: Int
 
     /// Menu shortcut overrides: action name to a shortcut like `"cmd+shift+k"`. See README for action names.
     public var shortcuts: [String: String]
@@ -259,7 +259,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, multiViewMaxPanes
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -320,7 +320,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabNotifications: Bool = false,
         newTabHiddenNotifications: [String] = [],
         newTabSections: [String] = NewTabSection.allCases.map(\.rawValue),
-        multiViewMaxPanes: Int = 4,
+        mosaicMaxPanes: Int = 4,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -396,7 +396,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.newTabNotifications = newTabNotifications
         self.newTabHiddenNotifications = newTabHiddenNotifications
         self.newTabSections = newTabSections
-        self.multiViewMaxPanes = min(max(multiViewMaxPanes, 2), PaneLayout.maxPanes)
+        self.mosaicMaxPanes = min(max(mosaicMaxPanes, 2), PaneLayout.maxPanes)
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -480,7 +480,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         newTabNotifications = c.decodeValue(.newTabNotifications, d.newTabNotifications, issues)
         newTabHiddenNotifications = c.decodeStrings(.newTabHiddenNotifications, d.newTabHiddenNotifications, issues)
         newTabSections = c.decodeStrings(.newTabSections, d.newTabSections, issues)
-        multiViewMaxPanes = min(max(c.decodeValue(.multiViewMaxPanes, d.multiViewMaxPanes, issues), 2), PaneLayout.maxPanes)
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        let maxPanes: Int = c.contains(.mosaicMaxPanes) || !legacy.contains(.multiViewMaxPanes)
+            ? c.decodeValue(.mosaicMaxPanes, d.mosaicMaxPanes, issues)
+            : ((try? legacy.decode(Int.self, forKey: .multiViewMaxPanes)) ?? d.mosaicMaxPanes)
+        mosaicMaxPanes = min(max(maxPanes, 2), PaneLayout.maxPanes)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
@@ -507,7 +511,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         reduceTransparency = c.decodeValue(.reduceTransparency, d.reduceTransparency, issues)
         controlBridge = c.decodeValue(.controlBridge, d.controlBridge, issues)
         controlBridgeScripts = c.decodeValue(.controlBridgeScripts, d.controlBridgeScripts, issues)
-        shortcuts = c.decodeEntries(.shortcuts, d.shortcuts, issues)
+        shortcuts = Self.renamingLegacyActions(c.decodeEntries(.shortcuts, d.shortcuts, issues))
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
         extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)
         extensionsInPrivate = c.decodeValue(.extensionsInPrivate, d.extensionsInPrivate, issues)
@@ -556,6 +560,28 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         @unknown default:
             return error.localizedDescription
         }
+    }
+
+    /// Keys older files used for what is now another key; read when the new one is missing, never written.
+    enum LegacyKeys: String, CodingKey, CaseIterable {
+        case multiViewMaxPanes
+    }
+
+    /// Shortcut action names from before multi view became Mosaic, and their names now.
+    public static let legacyActionNames: [String: String] = [
+        "toggleSplitView": "toggleMosaic",
+        "swapSplitSides": "swapMosaicPanes",
+        "focusOtherSplitSide": "focusNextPane",
+        "removeFromView": "removeFromMosaic",
+    ]
+
+    /// `shortcuts` with old action names read as their new ones; a binding under the new name wins.
+    static func renamingLegacyActions(_ shortcuts: [String: String]) -> [String: String] {
+        var out = shortcuts.filter { Self.legacyActionNames[$0.key] == nil }
+        for (old, new) in Self.legacyActionNames {
+            if let text = shortcuts[old], out[new] == nil { out[new] = text }
+        }
+        return out
     }
 
     public func encoded() throws -> Data {

@@ -1,8 +1,8 @@
 import PaddleCore
 import SwiftUI
 
-/// A multi view in the tab strip: one item in place of its tabs, with a grid symbol, its name and how many panes it
-/// has. A click shows the view; the chevron (or a right-click) opens its menu.
+/// A Mosaic in the tab strip: one item in place of its tabs, with a grid symbol, its name and how many panes it
+/// has. A click shows the Mosaic; the chevron (or a right-click) opens its menu.
 struct ViewStripButton: View {
     let split: BrowserModel.Split
     let model: BrowserModel
@@ -39,8 +39,8 @@ struct ViewStripButton: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("This view's tabs and options")
-            .accessibilityLabel("View menu")
+            .help("This Mosaic's tabs and options")
+            .accessibilityLabel("Mosaic menu")
         }
         .padding(.horizontal, 10)
         .frame(width: width, height: 28)
@@ -57,7 +57,7 @@ struct ViewStripButton: View {
         .onHover { hovering = $0 }
         .contextMenu { ViewMenu(split: split, model: model) }
         .viewRenamePopover(split: split, model: model)
-        // A tab dragged here joins the view.
+        // A tab dragged here joins the Mosaic.
         .background(ViewDropAnchor(model: model, viewID: split.id))
         .overlay {
             if model.viewDropTargetID == split.id {
@@ -67,14 +67,14 @@ struct ViewStripButton: View {
         }
         .help("\(model.displayName(of: split)): " + model.panes(of: split).map(\.displayTitle).joined(separator: ", "))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("View \(model.displayName(of: split)), \(split.layout.count) tabs")
+        .accessibilityLabel("Mosaic \(model.displayName(of: split)), \(split.layout.count) tabs")
         .accessibilityAddTraits(isShown ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { model.selectView(split) }
         .id(split.id)
     }
 }
 
-/// A multi view in the vertical sidebar: one row in place of its tabs, like `ViewStripButton`.
+/// A Mosaic in the vertical sidebar: one row in place of its tabs, like `ViewStripButton`.
 struct ViewSidebarRow: View {
     let split: BrowserModel.Split
     let model: BrowserModel
@@ -114,8 +114,8 @@ struct ViewSidebarRow: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
-                .help("This view's tabs and options")
-                .accessibilityLabel("View menu")
+                .help("This Mosaic's tabs and options")
+                .accessibilityLabel("Mosaic menu")
             }
         }
         .padding(.horizontal, iconsOnly ? 0 : 8)
@@ -130,7 +130,7 @@ struct ViewSidebarRow: View {
         .onHover { hovering = $0 }
         .contextMenu { ViewMenu(split: split, model: model) }
         .viewRenamePopover(split: split, model: model)
-        // A tab dragged here joins the view.
+        // A tab dragged here joins the Mosaic.
         .background(ViewDropAnchor(model: model, viewID: split.id))
         .overlay {
             if model.viewDropTargetID == split.id {
@@ -140,42 +140,53 @@ struct ViewSidebarRow: View {
         }
         .help("\(model.displayName(of: split)): " + model.panes(of: split).map(\.displayTitle).joined(separator: ", "))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("View \(model.displayName(of: split)), \(split.layout.count) tabs")
+        .accessibilityLabel("Mosaic \(model.displayName(of: split)), \(split.layout.count) tabs")
         .accessibilityAddTraits(isShown ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { model.selectView(split) }
     }
 }
 
-/// A view's menu: its tabs (choose one to show it focused), then Rename View…, Even Out Panes, Move Tab Out and End View.
+/// A Mosaic's menu: its tabs (choose one to show it focused), then Rename Mosaic…, its layouts, Even Out Panes, Move
+/// Tab Out and End Mosaic.
 struct ViewMenu: View {
     let split: BrowserModel.Split
     let model: BrowserModel
 
     var body: some View {
         let tabs = model.panes(of: split)
-        Section("Tabs in This View") {
+        Section("Tabs in This Mosaic") {
             ForEach(tabs, id: \.id) { tab in
                 Button(tab.displayTitle) { model.select(tab) }
             }
         }
         Divider()
-        Button("Rename View…") { model.renamingViewID = split.id }
+        Button("Rename Mosaic…") { model.renamingViewID = split.id }
+        Menu("Layout") {
+            ForEach(PaneArrangement.allCases, id: \.self) { arrangement in
+                Button {
+                    model.selectView(split)
+                    model.arrangeMosaic(arrangement)
+                } label: {
+                    Label(arrangement.title, systemImage: arrangement.symbol)
+                }
+            }
+        }
         Button("Even Out Panes") {
             model.selectView(split)
             model.equalizePanes()
         }
-        Menu("Move Tab Out of View") {
+        Menu("Move Tab Out of Mosaic") {
             ForEach(tabs, id: \.id) { tab in
                 Button(tab.displayTitle) { model.removeFromView(tab) }
             }
         }
         Divider()
-        Button("End View") { if let first = tabs.first { model.endSplit(of: first) } }
+        Button("End Mosaic") { if let first = tabs.first { model.endSplit(of: first) } }
     }
 }
 
 extension View {
-    /// Rename View: a popover with the name field; an empty name goes back to the focused pane's site.
+    /// Rename Mosaic: a popover with the name field; an empty name goes back to the focused pane's site.
     func viewRenamePopover(split: BrowserModel.Split, model: BrowserModel) -> some View {
         popover(isPresented: Binding(
             get: { model.renamingViewID == split.id },
@@ -186,15 +197,17 @@ extension View {
     }
 }
 
-private struct ViewNameField: View {
+struct ViewNameField: View {
     let split: BrowserModel.Split
     let model: BrowserModel
+    /// Called after the name is set, for a popover other than the strip item's (the Mosaic bar's).
+    var done: () -> Void = {}
     @State private var name = ""
     @FocusState private var focused: Bool
 
     var body: some View {
         HStack {
-            TextField("View name", text: $name, prompt: Text(model.displayName(of: BrowserModel.Split(layout: split.layout.unnamed))))
+            TextField("Mosaic name", text: $name, prompt: Text(model.displayName(of: BrowserModel.Split(layout: split.layout.unnamed))))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 200)
                 .focused($focused)
@@ -211,5 +224,6 @@ private struct ViewNameField: View {
     private func commit() {
         if let current = model.view(id: split.id) { model.renameView(current, to: name) }
         model.renamingViewID = nil
+        done()
     }
 }

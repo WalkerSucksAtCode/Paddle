@@ -607,7 +607,7 @@ final class AppModel {
             case .newTabNotifications: old.newTabNotifications != new.newTabNotifications
             case .newTabHiddenNotifications: old.newTabHiddenNotifications != new.newTabHiddenNotifications
             case .newTabSections: old.newTabSections != new.newTabSections
-            case .multiViewMaxPanes: old.multiViewMaxPanes != new.multiViewMaxPanes
+            case .mosaicMaxPanes: old.mosaicMaxPanes != new.mosaicMaxPanes
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
@@ -718,6 +718,23 @@ final class AppModel {
         case .written: break
         case .conflict(let paths): log.error("tabLayout not written: changed on disk (\(paths.count) paths)")
         case .failed(let reason): log.error("tabLayout not written: \(reason, privacy: .public)")
+        }
+    }
+
+    /// Sets `mosaicMaxPanes` through `writeConfig` (the Mosaic bar's menu), dropping the old `multiViewMaxPanes`.
+    func setMosaicMaxPanes(_ count: Int) async {
+        let disk: Data
+        do {
+            disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
+        } catch {
+            log.error("mosaicMaxPanes not written: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        let changes = [ConfigChange("mosaicMaxPanes", .number(Double(count))), ConfigChange("multiViewMaxPanes", nil)]
+        switch await writeConfig(changes, base: disk) {
+        case .written: break
+        case .conflict(let paths): log.error("mosaicMaxPanes not written: changed on disk (\(paths.count) paths)")
+        case .failed(let reason): log.error("mosaicMaxPanes not written: \(reason, privacy: .public)")
         }
     }
 

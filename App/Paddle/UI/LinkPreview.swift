@@ -73,7 +73,7 @@ private struct LinkPreviewCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             button("arrow.up.right.square", help: "Open as Tab") { model.openPreviewAsTab(split: false) }
             if model.canSplitPreview {
-                button("rectangle.split.2x1", help: "Open in Split View") { model.openPreviewAsTab(split: true) }
+                button("rectangle.split.2x1", help: "Open in Mosaic") { model.openPreviewAsTab(split: true) }
             }
             button("link", help: "Copy Link", enabled: preview.url != nil) {
                 guard let url = preview.url else { return }

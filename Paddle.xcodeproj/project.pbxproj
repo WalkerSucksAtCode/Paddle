@@ -49,6 +49,7 @@
 		4FCB6755611238489C8BA11B /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25922B0DB334CF68223037F6 /* SettingsTabView.swift */; };
 		5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */; };
 		51F4933CF1904CF98671BEBC /* ExtensionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */; };
+		5BAC47A720A6614AC9522F78 /* MosaicBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6659A292C6CF8268DE0007E2 /* MosaicBar.swift */; };
 		5BEF3239AF03AC645E9B0763 /* MediaControlsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0562CFD09A0530167FD11F4 /* MediaControlsPopover.swift */; };
 		5C478FFBF2FEFB8939B4F03F /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35942D5DECDC242D193A6BA /* SettingsViews.swift */; };
 		5CBA2190D1B4CFBA33A79A23 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA58B4D797F83211511883E /* Downloads.swift */; };
@@ -190,6 +191,7 @@
 		60BD3A551575242DFC25D1CC /* ChromeStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeStyle.swift; sourceTree = "<group>"; };
 		622C488303FD517D47056F39 /* StoreInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreInstaller.swift; sourceTree = "<group>"; };
 		631287FC6D8A4ACC34AED794 /* PageWorkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageWorkMonitor.swift; sourceTree = "<group>"; };
+		6659A292C6CF8268DE0007E2 /* MosaicBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicBar.swift; sourceTree = "<group>"; };
 		6742A205E6C2867AE660D717 /* AMO */ = {isa = PBXFileReference; lastKnownFileType = folder; name = AMO; path = Resources/AMO; sourceTree = SOURCE_ROOT; };
 		67BF01C047B069C23CA1FAAF /* BrowserWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowController.swift; sourceTree = "<group>"; };
 		69054BABA706ABC56F8274A1 /* ExtensionShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionShared.swift; sourceTree = "<group>"; };
@@ -343,6 +345,7 @@
 				EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */,
 				5CFE8B96C6FDD7CBF4318B8F /* LinkPreview.swift */,
 				A0562CFD09A0530167FD11F4 /* MediaControlsPopover.swift */,
+				6659A292C6CF8268DE0007E2 /* MosaicBar.swift */,
 				A3FD53C689FECA45D5B3465C /* MultiPanes.swift */,
 				F8249EDDFD5DD95F1327564C /* NewTabFeeds.swift */,
 				3485769C1E48286709A33E89 /* NewTabPage.swift */,
@@ -654,6 +657,7 @@
 				E76B3F3228467EA4467D665E /* LinkPreview.swift in Sources */,
 				2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */,
 				5BEF3239AF03AC645E9B0763 /* MediaControlsPopover.swift in Sources */,
+				5BAC47A720A6614AC9522F78 /* MosaicBar.swift in Sources */,
 				BFEAD39C97BA9F2605C60129 /* MultiPanes.swift in Sources */,
 				92F72BCDCBFCD47D032CB826 /* NewTabFeeds.swift in Sources */,
 				1F81EE27F66C2CCE928C0607 /* NewTabOverride.swift in Sources */,

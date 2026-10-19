@@ -16,6 +16,19 @@ public enum PaneEdge: String, Sendable, CaseIterable {
     var newFirst: Bool { self == .left || self == .top }
 }
 
+/// A Mosaic's whole shape at once, from the Mosaic bar or Tabs > Mosaic: the panes keep their order (left to right, top
+/// to bottom) and get new places.
+public enum PaneArrangement: String, Sendable, CaseIterable {
+    /// Side by side, equal widths.
+    case columns
+    /// Stacked, equal heights.
+    case rows
+    /// Rows of equal columns: as square as the count allows (3 is two over one, 5 is three over two).
+    case grid
+    /// The first pane large on the left, the others stacked on the right.
+    case mainAndStack
+}
+
 /// One node of a multi view: a tab (by its session id), or a split of two nodes at `ratio` (the first side's share).
 public indirect enum PaneNode: Equatable, Sendable {
     case tab(String)
@@ -148,9 +161,51 @@ public struct PaneLayout: Equatable, Sendable {
         return true
     }
 
-    /// Every split back to even shares (the double-click on a divider does one; this is View > Even Out Panes).
+    /// Every pane its even share: a run of splits along one axis shares its space equally between its panes (three
+    /// columns get a third each, not a half and two quarters), and a split across the axis gives its sides half each.
+    /// (The double-click on a divider sets that one split to the middle; this is Even Out Panes.)
     public mutating func equalize() {
         root = Self.equalized(root)
+    }
+
+    /// The same tabs in pane order, laid out as `arrangement`, at even shares. The name is kept.
+    public func arranged(_ arrangement: PaneArrangement) -> PaneLayout {
+        let ids = tabs
+        let root: PaneNode
+        switch arrangement {
+        case .columns: root = Self.run(ids.map { .tab($0) }, axis: .horizontal)
+        case .rows: root = Self.run(ids.map { .tab($0) }, axis: .vertical)
+        case .grid:
+            let columns = Int(Double(ids.count).squareRoot().rounded(.up))
+            let rows = stride(from: 0, to: ids.count, by: columns).map { start in
+                Self.run(ids[start..<min(start + columns, ids.count)].map { .tab($0) }, axis: .horizontal)
+            }
+            root = Self.run(rows, axis: .vertical)
+        case .mainAndStack:
+            root = .split(.horizontal, ratio: 0.6, .tab(ids[0]), Self.run(ids.dropFirst().map { .tab($0) }, axis: .vertical))
+        }
+        var copy = self
+        copy.root = root
+        return copy
+    }
+
+    /// The tabs move one pane along in pane order (the last to the first pane with `forward`), the shape kept.
+    public func rotated(forward: Bool = true) -> PaneLayout {
+        let ids = tabs
+        guard ids.count > 1 else { return self }
+        let moved = forward ? [ids[ids.count - 1]] + ids.dropLast() : Array(ids.dropFirst()) + [ids[0]]
+        var index = 0
+        var copy = self
+        copy.root = Self.mapTabs(root) { _ in
+            defer { index += 1 }
+            return moved[index]
+        }
+        return copy
+    }
+
+    /// The shape `arrangement` makes: its tabs' layout is `arranged(arrangement)`'s, ratios and all.
+    public func isArranged(_ arrangement: PaneArrangement) -> Bool {
+        arranged(arrangement).root == root
     }
 
     // MARK: - Geometry
@@ -282,8 +337,21 @@ public struct PaneLayout: Equatable, Sendable {
     private static func equalized(_ node: PaneNode) -> PaneNode {
         switch node {
         case .tab: node
-        case .split(let axis, _, let a, let b): .split(axis, ratio: 0.5, equalized(a), equalized(b))
+        case .split(let axis, _, let a, let b):
+            .split(axis, ratio: clamped(Double(cells(a, along: axis)) / Double(cells(a, along: axis) + cells(b, along: axis))), equalized(a), equalized(b))
         }
+    }
+
+    /// How many even shares `node` takes along `axis`: the panes of its run of splits along that axis.
+    private static func cells(_ node: PaneNode, along axis: PaneAxis) -> Int {
+        guard case .split(let own, _, let a, let b) = node, own == axis else { return 1 }
+        return cells(a, along: axis) + cells(b, along: axis)
+    }
+
+    /// `nodes` side by side along `axis`, each an even share.
+    private static func run(_ nodes: [PaneNode], axis: PaneAxis) -> PaneNode {
+        guard nodes.count > 1 else { return nodes[0] }
+        return .split(axis, ratio: clamped(1 / Double(nodes.count)), nodes[0], run(Array(nodes.dropFirst()), axis: axis))
     }
 
     /// Ratios clamped, a split of a tab with itself collapsed; nil for nothing left.

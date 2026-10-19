@@ -19,12 +19,12 @@ struct TabContextMenu: View {
         Button("Put Tab to Sleep") { model.sleep(tab) }
             .disabled(!tab.isAwake || model.isVisible(tab))
         if model.split(of: tab) != nil {
-            Button("Remove from View") { model.removeFromView(tab) }
-            Button("End View") { model.endSplit(of: tab) }
+            Button("Remove from Mosaic") { model.removeFromView(tab) }
+            Button("End Mosaic") { model.endSplit(of: tab) }
         } else if let current = model.selectedTab, current !== tab, !tab.isPinned, !current.isPinned,
                   model.tabs.contains(where: { $0 === tab }),
                   model.split(of: current).map({ $0.layout.count < model.maxPanes }) ?? true {
-            Button(model.split(of: current) == nil ? "Split with Current Tab" : "Add to Current View") { model.makeSplit(current, with: tab) }
+            Button(model.split(of: current) == nil ? "Mosaic with Current Tab" : "Add to Current Mosaic") { model.makeSplit(current, with: tab) }
         }
         if !tab.isPinned {
             Divider()

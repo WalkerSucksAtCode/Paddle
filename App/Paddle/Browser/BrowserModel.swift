@@ -814,8 +814,8 @@ final class BrowserModel {
         func contains(_ tab: Tab) -> Bool { layout.contains(tab.id.uuidString) }
     }
 
-    /// The most panes a multi view in this window may have (`multiViewMaxPanes`).
-    var maxPanes: Int { config.multiViewMaxPanes }
+    /// The most panes a Mosaic in this window may have (`mosaicMaxPanes`).
+    var maxPanes: Int { config.mosaicMaxPanes }
 
     /// The content area in the window's content view (top-left origin), set by the content area as it lays out.
     @ObservationIgnored var paneArea: CGRect = .zero
@@ -836,6 +836,10 @@ final class BrowserModel {
     /// Where a tab being dragged over the content area would land: a pane and an edge (nil: the middle, a swap or
     /// replace). The content area draws it.
     var paneDropHint: (target: UUID, edge: PaneEdge?)?
+    /// The tab being dragged while `paneDropHint` is set, for the live preview (`paneDragPreview`).
+    var paneDragTabID: UUID?
+    /// A divider is being dragged: the panes follow the pointer with no spring.
+    var isDraggingDivider = false
 
     /// Incremented to put the keyboard in the focused pane's address field (⌘L in a multi view).
     var paneAddressFocusRequest = 0
@@ -931,23 +935,8 @@ final class BrowserModel {
         let existing = split(of: target)
         var layout: PaneLayout
         if let existing {
-            layout = existing.layout
-            if let edge {
-                if layout.contains(tid) {
-                    if layout.count > 2 {
-                        guard layout.move(tid, to: gid, edge: edge) else { return false }
-                    } else {
-                        guard let two = Self.twoPanes(tid, at: gid, edge: edge) else { return false }
-                        layout = two
-                    }
-                } else {
-                    guard layout.insert(tid, at: gid, edge: edge, limit: maxPanes) else { return false }
-                }
-            } else if layout.contains(tid) {
-                layout.swap(tid, gid)
-            } else {
-                guard layout.replace(gid, with: tid) else { return false }
-            }
+            guard let dropped = Self.dropping(tid, onto: gid, edge: edge, in: existing.layout, limit: maxPanes) else { return false }
+            layout = dropped
         } else {
             guard let edge else {
                 select(tab)
@@ -969,6 +958,40 @@ final class BrowserModel {
         select(tab)
         AppModel.shared.sessionChanged()
         return true
+    }
+
+    /// `layout` once tab `tid` is let go on `edge` of `gid`'s pane (nil: its middle), as `dropTab` does it; nil when
+    /// refused (a full Mosaic's edge). Also the live preview of a drag (`paneDragPreview`).
+    private static func dropping(_ tid: String, onto gid: String, edge: PaneEdge?, in layout: PaneLayout, limit: Int) -> PaneLayout? {
+        var layout = layout
+        if let edge {
+            if layout.contains(tid) {
+                if layout.count > 2 {
+                    guard layout.move(tid, to: gid, edge: edge) else { return nil }
+                } else {
+                    return twoPanes(tid, at: gid, edge: edge).map { two in
+                        var named = two
+                        named.name = layout.name
+                        return named
+                    }
+                }
+            } else {
+                guard layout.insert(tid, at: gid, edge: edge, limit: limit) else { return nil }
+            }
+        } else if layout.contains(tid) {
+            layout.swap(tid, gid)
+        } else {
+            guard layout.replace(gid, with: tid) else { return nil }
+        }
+        return layout
+    }
+
+    /// What `split` would look like if the tab being dragged (`paneDragTabID`) were let go where `paneDropHint`
+    /// says: the content area draws this while the drag goes on, the panes moving aside for it. Nil when no drag is
+    /// over `split`'s panes.
+    func paneDragPreview(for split: Split) -> PaneLayout? {
+        guard let hint = paneDropHint, let dragged = paneDragTabID, split.tabIDs.contains(hint.target) else { return nil }
+        return Self.dropping(dragged.uuidString, onto: hint.target.uuidString, edge: hint.edge, in: split.layout, limit: maxPanes)
     }
 
     /// `new` on `edge` of `target`, the two alone.
@@ -1096,7 +1119,54 @@ final class BrowserModel {
         AppModel.shared.sessionChanged()
     }
 
-    /// View > Even Out Panes: every divider of the selected tab's view back to the middle.
+    /// The selected tab's Mosaic, laid out as `arrangement` in its pane order (the Mosaic bar's layout buttons).
+    func arrangeMosaic(_ arrangement: PaneArrangement) {
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        let arranged = split.layout.arranged(arrangement)
+        guard arranged != split.layout else { return }
+        setLayout(arranged, for: split)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Tabs > Rotate Panes: each tab of the selected tab's Mosaic moves one pane along; the focused tab stays focused.
+    func rotatePanes(forward: Bool = true) {
+        guard let selected = selectedTab, let split = split(of: selected), split.layout.count > 1 else { return }
+        setLayout(split.layout.rotated(forward: forward), for: split)
+        AppModel.shared.sessionChanged()
+    }
+
+    /// The selected tab's Mosaic has room for another pane.
+    var canAddPane: Bool {
+        guard let selected = selectedTab, let split = split(of: selected) else { return false }
+        return split.layout.count < maxPanes
+    }
+
+    /// Tabs > Add Pane: a new New Tab page joins the selected tab's Mosaic in half of its largest pane, focused with
+    /// the keyboard in its address field.
+    func addPaneToMosaic() {
+        guard canAddPane, let selected = selectedTab, let split = split(of: selected) else { return }
+        let last = panes(of: split).max { a, b in
+            (tabs.firstIndex { $0 === a } ?? 0) < (tabs.firstIndex { $0 === b } ?? 0)
+        } ?? selected
+        let page = URL(string: config.newTabPage).flatMap { $0.absoluteString == "about:blank" ? nil : $0 }
+        let fresh = newTab(url: page, select: false, after: last)
+        fresh.opener = nil
+        fresh.groupID = selected.groupID
+        guard addToView(fresh, split) else {
+            close(fresh, remember: false)
+            return
+        }
+        select(fresh)
+        if page == nil { focusAddress() }
+    }
+
+    /// Tabs > Reload All Panes: every page of the selected tab's Mosaic (a Settings pane has nothing to reload).
+    func reloadAllPanes() {
+        guard let selected = selectedTab, let split = split(of: selected) else { return }
+        for tab in panes(of: split) where tab.url != nil && tab.settingsPane == nil { tab.reload() }
+    }
+
+    /// Even Out Panes: every pane of the selected tab's Mosaic its even share (`PaneLayout.equalize`).
     func equalizePanes() {
         guard let selected = selectedTab, let split = split(of: selected), let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
         splits[at].layout.equalize()

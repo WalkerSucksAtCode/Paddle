@@ -215,12 +215,14 @@ final class TabDragController: NSObject, NSDraggingSource {
         showsGhost = true
         target = nil
         targetIndex = nil
-        let ghost = Self.image(for: tab, size: anchor.bounds.size)
+        // A pane's site icon is tiny: its ghost is a title card, the pointer near its left end.
+        let frame = anchor.isStrip ? anchor.bounds : NSRect(x: -8, y: anchor.bounds.midY - 15, width: 240, height: 30)
+        let ghost = Self.image(for: tab, size: frame.size)
         self.ghost = ghost
         let item = NSPasteboardItem()
         item.setData(data, forType: NSPasteboard.PasteboardType(UTType.paddleTab.identifier))
         let dragging = NSDraggingItem(pasteboardWriter: item)
-        dragging.setDraggingFrame(anchor.bounds, contents: ghost)
+        dragging.setDraggingFrame(frame, contents: ghost)
         let session = anchor.beginDraggingSession(with: [dragging], event: event, source: self)
         // A drop nobody takes ends at once: no slide back to the tab before the window appears.
         session.animatesToStartingPositionsOnCancelOrFail = false
@@ -341,10 +343,14 @@ final class TabDragController: NSObject, NSDraggingSource {
 
     /// Shows the pane highlight in `window` (removing it from the window that had it), or removes it.
     private func showPane(_ drop: (UUID, PaneEdge?)?, in window: BrowserWindowController?) {
-        if let paneWindow, paneWindow !== window || drop == nil { paneWindow.model.paneDropHint = nil }
+        if let paneWindow, paneWindow !== window || drop == nil {
+            paneWindow.model.paneDropHint = nil
+            paneWindow.model.paneDragTabID = nil
+        }
         paneWindow = drop == nil ? nil : window
         paneTarget = drop.map { (id: $0.0, edge: $0.1) }
         if let drop, let window {
+            if window.model.paneDragTabID != tab?.id { window.model.paneDragTabID = tab?.id }
             let current = window.model.paneDropHint
             if current?.target != drop.0 || current?.edge != drop.1 { window.model.paneDropHint = (target: drop.0, edge: drop.1) }
         }

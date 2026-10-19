@@ -2,7 +2,7 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// The content area of a multi view: each tab's page in its pane of the layout (`PaneLayout.frames`) under the pane's
+/// The content area of a Mosaic: each tab's page in its pane of the layout (`PaneLayout.frames`) under the pane's
 /// own toolbar (`PaneBar`), dividers between them, a ring on the focused one, and where a dragged tab would land. When a pane would be smaller than `minimumPane`, only the focused one
 /// shows (the layout is kept).
 struct MultiPanes<Pane: View>: View {
@@ -16,12 +16,16 @@ struct MultiPanes<Pane: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let rect = CGRect(origin: .zero, size: geometry.size)
-            let frames = split.layout.frames(in: rect, gap: PaneMetrics.gap)
-            let narrow = PaneMetrics.isNarrow(frames)
+            // While a tab is dragged over the panes, the layout its drop would make: the panes move aside for it.
+            let preview = model.paneDragPreview(for: split)
+            let layout = preview ?? split.layout
+            let frames = layout.frames(in: rect, gap: PaneMetrics.gap)
+            let narrow = PaneMetrics.isNarrow(split.layout.frames(in: rect, gap: PaneMetrics.gap))
             let shown = model.panes(of: split)
+            let dragged = preview == nil ? nil : model.paneDragTabID
             ZStack(alignment: .topLeading) {
                 if narrow {
-                    PaneFrame(model: model, tab: focused, focused: true, ring: false, content: pane(focused, true))
+                    PaneFrame(model: model, tab: focused, focused: true, ring: false, size: rect.size, content: pane(focused, true))
                         .id(focused.id)
                         .frame(width: rect.width, height: rect.height)
                 } else {
@@ -29,27 +33,82 @@ struct MultiPanes<Pane: View>: View {
                     // in dark mode (measured all white).
                     ForEach(shown, id: \.id) { tab in
                         let frame = frames[tab.id.uuidString] ?? .zero
-                        PaneFrame(model: model, tab: tab, focused: tab === focused, ring: true, content: pane(tab, tab === focused))
+                        PaneFrame(model: model, tab: tab, focused: tab === focused, ring: true, size: frame.size, content: pane(tab, tab === focused))
                             .id(tab.id)
-                            .frame(width: frame.width, height: frame.height)
+                            // The pane on the move fades back under its landing highlight.
+                            .opacity(tab.id == dragged ? 0.35 : 1)
+                            // The card's edges spring to the new frame; the page inside is already at its new size, so
+                            // it is uncovered or cut off rather than stretched.
+                            .frame(width: frame.width, height: frame.height, alignment: .topLeading)
+                            // Not while its address suggestions show: they may hang out of a narrow pane.
+                            .modifier(PaneClip(active: model.editingPaneID != tab.id))
                             .position(x: frame.midX, y: frame.midY)
                             // Its address suggestions hang over the panes below.
                             .zIndex(model.editingPaneID == tab.id ? 1 : 0)
                     }
-                    ForEach(split.layout.dividers(in: rect, gap: PaneMetrics.gap), id: \.path) { divider in
+                    ForEach(layout.dividers(in: rect, gap: PaneMetrics.gap), id: \.path) { divider in
                         PaneDividerView(model: model, split: split, divider: divider)
                             .frame(width: divider.frame.width, height: divider.frame.height)
                             .position(x: divider.frame.midX, y: divider.frame.midY)
+                            .allowsHitTesting(preview == nil)
                     }
                 }
-                PaneDropHighlight(model: model, frames: narrow ? [focused.id.uuidString: rect] : frames)
+                if let preview, !narrow, let dragged, let frame = preview.frames(in: rect, gap: PaneMetrics.gap)[dragged.uuidString] {
+                    PaneLandingHighlight(frame: frame)
+                } else {
+                    PaneDropHighlight(model: model, frames: narrow ? [focused.id.uuidString: rect] : frames)
+                }
             }
+            // Snappy but smooth: panes spring to a new layout (a drag's preview, a drop, the Mosaic bar's layouts,
+            // Rotate, Swap, a pane added or taken out); none while dragging a divider, which follows the pointer.
+            .animation(
+                model.isDraggingDivider || AppModel.shared.reducesMotion ? nil : .spring(response: 0.26, dampingFraction: 0.86),
+                value: AnimatedLayout(layout: layout, dragging: dragged)
+            )
             .frame(width: rect.width, height: rect.height, alignment: .topLeading)
             .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
             .coordinateSpace(.named("paneArea"))
             // Where clicks focus a pane and drags drop: the model lays the panes out in this (`paneFrames`).
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.paneArea = $0 }
         }
+    }
+}
+
+/// Clips a pane to its rounded card, or (`active` false) to a shape far bigger than it, which leaves it whole. One
+/// shape either way: switching between two views would rebuild the page and drop the address field's focus.
+private struct PaneClip: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        content.clipShape(RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius, style: .continuous).inset(by: active ? 0 : -2000))
+    }
+}
+
+/// What the pane animation follows: the shape (not the name) and the pane on the move.
+private struct AnimatedLayout: Equatable {
+    var root: PaneNode
+    var dragging: UUID?
+
+    init(layout: PaneLayout, dragging: UUID?) {
+        root = layout.root
+        self.dragging = dragging
+    }
+}
+
+/// Where the dragged tab will land in the preview layout: an accent card in its pane's place.
+private struct PaneLandingHighlight: View {
+    let frame: CGRect
+    @Environment(\.chromeTheme) private var theme
+
+    var body: some View {
+        let accent = theme?.accent ?? Color.accentColor
+        RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius, style: .continuous)
+            .fill(accent.opacity(0.18))
+            .overlay(RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius, style: .continuous).strokeBorder(accent, lineWidth: 2))
+            .frame(width: max(0, frame.width - 8), height: max(0, frame.height - 8))
+            .position(x: frame.midX, y: frame.midY)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -75,6 +134,9 @@ private struct PaneFrame<Content: View>: View {
     let tab: Tab
     let focused: Bool
     let ring: Bool
+    /// The pane's size in the layout it is going to: the page takes it at once (no animation), so a layout change
+    /// lays each page out once instead of stretching it frame by frame.
+    let size: CGSize
     let content: Content
 
     var body: some View {
@@ -85,6 +147,8 @@ private struct PaneFrame<Content: View>: View {
                 .zIndex(1)
             // The page is a card with slightly rounded corners under its bar, like the Mac's windows.
             content
+                .frame(width: size.width, height: max(0, size.height - PaneMetrics.barHeight))
+                .transaction { $0.animation = nil }
                 .clipShape(shape)
                 // Inside the card, by brightness alone: a dark ring with a light one inside it, so it shows on light
                 // and dark pages alike (a single translucent line vanished on light pages in dark mode).
@@ -206,7 +270,7 @@ private struct PaneBar: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("Remove from View: the tab stays, in the view's menu in the strip")
+            .help("Remove from Mosaic: the tab stays, in the Mosaic's menu in the strip")
             .accessibilityLabel("Remove \(tab.displayTitle) from the view")
         }
         .padding(.horizontal, 4)
@@ -254,8 +318,10 @@ private struct PaneDividerView: View {
             .pointerStyle(horizontal ? .columnResize : .rowResize)
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .named("paneArea")).onChanged { value in
+                    if !model.isDraggingDivider { model.isDraggingDivider = true }
                     model.setSplitRatio(PaneLayout.ratio(dragging: divider, to: value.location), at: divider.path, for: split)
                 }
+                .onEnded { _ in model.isDraggingDivider = false }
             )
             .onTapGesture(count: 2) { model.setSplitRatio(0.5, at: divider.path, for: split) }
             .accessibilityElement()

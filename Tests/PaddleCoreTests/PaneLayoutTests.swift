@@ -142,4 +142,51 @@ struct PaneLayoutTests {
         let unnamed = try layout()
         #expect(!String(decoding: try JSONEncoder().encode(unnamed), as: UTF8.self).contains("name"))
     }
+
+    private func five() throws -> PaneLayout {
+        var l = try layout()
+        for (new, at) in [("c", "b"), ("d", "c"), ("e", "d")] { l.insert(new, at: at, edge: .right) }
+        l.name = "Work"
+        return l
+    }
+
+    @Test func arrangementsKeepPaneOrderAndShareEvenly() throws {
+        let l = try five()
+        let columns = l.arranged(.columns)
+        #expect(columns.tabs == ["a", "b", "c", "d", "e"] && columns.name == "Work")
+        let widths = columns.frames(in: rect, gap: 0).values.map(\.width)
+        #expect(widths.allSatisfy { abs($0 - 200) <= 1 })
+        #expect(l.arranged(.rows).frames(in: rect, gap: 0).values.allSatisfy { abs($0.height - 120) <= 1 && $0.width == 1000 })
+        // Five in a grid: three over two.
+        let grid = l.arranged(.grid).frames(in: rect, gap: 0)
+        #expect(grid["a"]!.minY == 0 && grid["c"]!.minY == 0 && grid["d"]!.minY == 300 && grid["e"]!.minY == 300)
+        #expect(abs(grid["a"]!.width - 333) <= 1 && grid["d"]!.width == 500)
+        let main = l.arranged(.mainAndStack).frames(in: rect, gap: 0)
+        #expect(main["a"]!.width == 600 && main["a"]!.height == 600)
+        #expect(["b", "c", "d", "e"].allSatisfy { main[$0]!.minX == 600 && main[$0]!.height == 150 })
+        #expect(l.arranged(.grid).isArranged(.grid) && !l.arranged(.grid).isArranged(.columns))
+    }
+
+    @Test func gridOfTwoToSixIsAsSquareAsItCanBe() throws {
+        var l = try layout()
+        for (count, new) in zip(3...6, ["c", "d", "e", "f"]) {
+            l.insert(new, at: l.tabs.last!, edge: .right)
+            let rows = Set(l.arranged(.grid).frames(in: rect, gap: 0).values.map(\.minY)).count
+            #expect(rows == (count <= 2 ? 1 : 2), "\(count) panes")
+        }
+    }
+
+    @Test func evenOutSharesARunOfColumnsEqually() throws {
+        var l = try five()
+        l.equalize()
+        #expect(l.frames(in: rect, gap: 0).values.allSatisfy { abs($0.width - 200) <= 1 })
+    }
+
+    @Test func rotatingMovesEachTabOnePaneAlong() throws {
+        let l = try five().arranged(.mainAndStack)
+        let r = l.rotated()
+        #expect(r.tabs == ["e", "a", "b", "c", "d"])
+        #expect(r.frames(in: rect)["e"] == l.frames(in: rect)["a"])
+        #expect(r.rotated(forward: false) == l)
+    }
 }

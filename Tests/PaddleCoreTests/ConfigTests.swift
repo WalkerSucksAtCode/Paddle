@@ -26,8 +26,18 @@ struct ConfigTests {
         #expect(!config.contactAutofill)
         #expect(config.newTabExtension.isEmpty)
         #expect(config.newTabFeeds.isEmpty && !config.newTabNotifications && config.newTabHiddenNotifications.isEmpty)
-        #expect(config.multiViewMaxPanes == 4)
-        #expect(PaddleConfig(multiViewMaxPanes: 99).multiViewMaxPanes == PaneLayout.maxPanes)
+        #expect(config.mosaicMaxPanes == 4)
+        #expect(PaddleConfig(mosaicMaxPanes: 99).mosaicMaxPanes == PaneLayout.maxPanes)
+    }
+
+    @Test func mosaicReadsTheOldMultiViewKeyAndActionNames() throws {
+        let old = try PaddleConfig.decode(Data(#"{"multiViewMaxPanes": 3, "shortcuts": {"toggleSplitView": "cmd+k", "removeFromView": "cmd+j"}}"#.utf8))
+        #expect(old.mosaicMaxPanes == 3)
+        #expect(old.shortcuts == ["toggleMosaic": "cmd+k", "removeFromMosaic": "cmd+j"])
+        let both = try PaddleConfig.decode(Data(#"{"multiViewMaxPanes": 3, "mosaicMaxPanes": 5, "shortcuts": {"toggleSplitView": "cmd+k", "toggleMosaic": "cmd+m"}}"#.utf8))
+        #expect(both.mosaicMaxPanes == 5)
+        #expect(both.shortcuts == ["toggleMosaic": "cmd+m"])
+        #expect(try ConfigFile.unknownKeys(in: Data(#"{"multiViewMaxPanes": 3, "mosaicMaxPanes": 5}"#.utf8)).isEmpty)
     }
 
     @Test func browsingBehaviourKeysDecodeAndUnknownWordsFallBack() throws {

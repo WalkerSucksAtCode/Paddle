@@ -193,7 +193,7 @@ public enum ConfigFile {
 
     /// Top-level keys `PaddleConfig` doesn't read, in file order: typos and leftovers from old versions.
     public static func unknownKeys(in data: Data) throws -> [String] {
-        let known = Set(PaddleConfig.CodingKeys.allCases.map(\.rawValue))
+        let known = Set(PaddleConfig.CodingKeys.allCases.map(\.rawValue) + PaddleConfig.LegacyKeys.allCases.map(\.rawValue))
         var unknown: [String] = []
         for member in try JSONSpans.scan(data).members where !known.contains(member.key) && !unknown.contains(member.key) {
             unknown.append(member.key)

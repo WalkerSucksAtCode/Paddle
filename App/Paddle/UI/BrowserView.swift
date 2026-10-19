@@ -376,8 +376,8 @@ private struct NavigationBar: View {
                     .help("Profile: \(profile.name)")
             }
             BridgeIndicator()
-            if inView {
-                Spacer(minLength: 8)
+            if let tab, let split = model.split(of: tab) {
+                MosaicToolbarArea(model: model, split: split, app: app)
             } else {
                 addressField
                     .padding(.horizontal, 4)

@@ -92,7 +92,7 @@ enum SettingsPane: String, CaseIterable {
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
             "awake", "linkPreview", "link preview", "audio", "resumeMediaOnSelect", "play the tab",
             "upload", "uploads", "unsaved", "keepPageWorkRunning", "notifications", "live", "keepNotifyingSitesLive",
-            "multi view", "split view", "panes", "tiles", "multiViewMaxPanes",
+            "mosaic", "multi view", "split view", "panes", "tiles", "mosaicMaxPanes",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
