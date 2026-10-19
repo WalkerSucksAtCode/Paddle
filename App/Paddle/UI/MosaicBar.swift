@@ -175,7 +175,7 @@ struct MosaicBar: View {
             Divider()
             Button("Mute Other Panes") { model.muteOtherPanes() }
             Divider()
-            Button("Mosaic Settings…") { app.showSettings(pane: .tabsMemory) }
+            Button("Mosaic Settings…") { app.showSettings(pane: .mosaic) }
         } label: {
             Image(systemName: "slider.horizontal.3").chromeFont(size: 11, weight: .medium)
         }

@@ -130,13 +130,27 @@ final class BrowserModel {
     /// (`closeSuccessorID`), so each of those switches is an opacity flip of a page WebKit has already painted.
     /// Every other page is detached, so WebKit treats it as hidden and throttles it (measured with 8 tabs: the
     /// app's CPU 61% -> 25%).
+    /// With `mosaicStaysReady`, every pane of the Mosaic the previous tab is in counts as the previous tab: leaving a
+    /// Mosaic for another tab keeps all its pages attached, so none of them is told it was hidden (X refreshed its
+    /// timeline on the way back) and going back is an opacity flip for each.
     var mountedWebTabs: [Tab] {
         let successor = closeSuccessorID
+        let readyMosaic: Set<UUID> = {
+            guard config.mosaicStaysReady, let previous = previousSelectedID, let tab = tabs.first(where: { $0.id == previous }),
+                  let split = split(of: tab) else { return [] }
+            return Set(split.tabIDs)
+        }()
         return tabs.filter { tab in
             let hovered = tab.id == hoveredTabID && group(of: tab)?.isCollapsed != true
-            return (tab.id == selectedID || tab.id == previousSelectedID || hovered || tab.id == successor)
+            return (tab.id == selectedID || tab.id == previousSelectedID || readyMosaic.contains(tab.id) || hovered || tab.id == successor)
                 && tab.hostsWebView && tab.webView != nil
         }
+    }
+
+    /// The Mosaic `tab` is a pane of, in any space of this window (the sleep sweep's `TabSnapshot.mosaic`).
+    func mosaicID(of tab: Tab) -> UUID? {
+        if let split = split(of: tab) { return split.id }
+        return stashes.values.lazy.flatMap(\.splits).first { $0.contains(tab) }?.id
     }
 
     /// The tab `close` would select if the selected tab closed now (Cmd-W): its opener when closing returns there,

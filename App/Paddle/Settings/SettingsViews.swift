@@ -4,7 +4,7 @@ import SwiftUI
 /// Settings' panes, in sidebar order. Settings is a tab of a browser window (`SettingsTabView`), addressed as
 /// `paddle://settings/<rawValue>`.
 enum SettingsPane: String, CaseIterable {
-    case general, appearance, profiles, tabsMemory, privacy, sites, extensions, shortcuts, advanced
+    case general, appearance, profiles, tabsMemory, mosaic, privacy, sites, extensions, shortcuts, advanced
 
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ enum SettingsPane: String, CaseIterable {
         case .appearance: "Appearance"
         case .profiles: "Profiles"
         case .tabsMemory: "Tabs & Memory"
+        case .mosaic: "Mosaic"
         case .privacy: "Privacy & Blocking"
         case .sites: "Sites"
         case .extensions: "Extensions"
@@ -26,6 +27,7 @@ enum SettingsPane: String, CaseIterable {
         case .appearance: "Themes, custom theme builder, colors, text size, and accessibility options."
         case .profiles: "Separate cookies, history and extensions per profile, and each profile's own settings."
         case .tabsMemory: "Tab freezing, automatic memory sleep, and background performance."
+        case .mosaic: "Several tabs at once: layout, pane toolbars, and how a Mosaic behaves in the background."
         case .privacy: "Ad and tracker blocking, filter lists, HTTPS upgrades, and browsing history."
         case .sites: "Per-site permissions for zoom, JavaScript, autoplay, location, and camera."
         case .extensions: "WebExtensions management, permissions, and private window access."
@@ -40,6 +42,7 @@ enum SettingsPane: String, CaseIterable {
         case .appearance: "paintbrush"
         case .profiles: "person.2"
         case .tabsMemory: "memorychip"
+        case .mosaic: "rectangle.split.2x2"
         case .privacy: "hand.raised"
         case .sites: "globe"
         case .extensions: "puzzlepiece.extension"
@@ -92,7 +95,12 @@ enum SettingsPane: String, CaseIterable {
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
             "awake", "linkPreview", "link preview", "audio", "resumeMediaOnSelect", "play the tab",
             "upload", "uploads", "unsaved", "keepPageWorkRunning", "notifications", "live", "keepNotifyingSitesLive",
-            "mosaic", "multi view", "split view", "panes", "tiles", "mosaicMaxPanes", "mosaicPaneBars", "pane toolbars", "mosaicGap", "gap", "mosaicMinimumPaneWidth", "mosaicMinimumPaneHeight",
+        ]
+        case .mosaic: [
+            "mosaic", "multi view", "split view", "panes", "tiles", "side by side", "mosaicMaxPanes", "mosaicPaneBars",
+            "pane toolbars", "mosaicGap", "gap", "space between", "mosaicMinimumPaneWidth", "mosaicMinimumPaneHeight",
+            "smallest pane", "mosaicStaysReady", "stays ready", "instant", "mosaicFreezeAfterMinutes", "mosaicSleepAfterMinutes",
+            "freeze", "sleep", "background", "icon",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",
@@ -175,6 +183,7 @@ struct SettingsPaneView: View {
         case .appearance: AppearancePane(model: model)
         case .profiles: ProfilesPane(model: model)
         case .tabsMemory: TabsMemoryPane(model: model)
+        case .mosaic: MosaicPane(model: model)
         case .privacy: PrivacyPane(model: model)
         case .sites: SitesPane(model: model)
         case .extensions: ExtensionsPane(model: model)

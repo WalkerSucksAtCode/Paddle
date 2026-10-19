@@ -30,6 +30,7 @@ struct SettingsLinkTests {
         ("paddle://settings/tabsMemory", SettingsLink(pane: .tabsMemory)),
         ("paddle://settings/tabs", SettingsLink(pane: .tabsMemory)),
         ("paddle://settings/memory", SettingsLink(pane: .tabsMemory)),
+        ("paddle://settings/mosaic", SettingsLink(pane: .mosaic)),
         ("paddle://settings/privacy", SettingsLink(pane: .privacy)),
         ("paddle://settings/blocking", SettingsLink(pane: .privacy)),
         ("paddle://settings/contentblocking", SettingsLink(pane: .privacy)),

@@ -292,6 +292,7 @@ struct ConfigFileTests {
     @Test func unknownKeysAreListedInFileOrder() throws {
         #expect(try ConfigFile.unknownKeys(in: data("{\"zeta\": 1, \"homepage\": \"x\", \"alpha\": {}, \"zeta\": 2}")) == ["zeta", "alpha"])
         #expect(try ConfigFile.unknownKeys(in: Data()) == [])
-        #expect(ConfigFile.defaults.keys.sorted() == PaddleConfig.CodingKeys.allCases.map(\.rawValue).sorted())
+        let withDefaults = PaddleConfig.CodingKeys.allCases.filter { !PaddleConfig.leftOutByDefault.contains($0) }
+        #expect(ConfigFile.defaults.keys.sorted() == withDefaults.map(\.rawValue).sorted())
     }
 }

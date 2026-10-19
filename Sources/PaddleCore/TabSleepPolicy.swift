@@ -24,11 +24,13 @@ public struct TabSnapshot: Sendable, Equatable {
     /// A site that should keep running: allowed to notify, or set to never freeze. Not frozen, and not put to sleep for
     /// being idle; the CPU rule, the cap and memory pressure still apply.
     public var staysLive: Bool
+    /// The Mosaic the tab is a pane of: its panes follow the Mosaic timers and freeze and sleep as one.
+    public var mosaic: UUID?
 
     public init(
         id: UUID, lastActive: Date, isAwake: Bool, isSelected: Bool, isPinned: Bool, isBusy: Bool, cpuBusySince: Date? = nil,
         isFrozen: Bool = false, footprint: UInt64 = 0, isUploading: Bool = false, guardsUnload: Bool = false,
-        staysLive: Bool = false
+        staysLive: Bool = false, mosaic: UUID? = nil
     ) {
         self.id = id
         self.lastActive = lastActive
@@ -42,6 +44,7 @@ public struct TabSnapshot: Sendable, Equatable {
         self.isUploading = isUploading
         self.guardsUnload = guardsUnload
         self.staysLive = staysLive
+        self.mosaic = mosaic
     }
 }
 
@@ -56,20 +59,30 @@ public struct TabSleepPolicy: Sendable, Equatable {
     public var cpuPercent: Double
     /// Idle time after which a background tab is frozen; 0 turns freezing off.
     public var freezeAfter: TimeInterval
+    /// The same two for the panes of a Mosaic that isn't on screen; nil follows the tab values, 0 turns it off.
+    public var mosaicSleepAfter: TimeInterval?
+    public var mosaicFreezeAfter: TimeInterval?
 
     /// How long a tab must stay at `cpuPercent` before it sleeps. A short burst (a download, a build step) doesn't
     /// count, and the sweep that checks this runs once a minute.
     public static let cpuSustain: TimeInterval = 3 * 60
 
     public init(
-        sleepAfter: TimeInterval, maxAwakeTabs: Int, sleepPinnedTabs: Bool, cpuPercent: Double = 0, freezeAfter: TimeInterval = 0
+        sleepAfter: TimeInterval, maxAwakeTabs: Int, sleepPinnedTabs: Bool, cpuPercent: Double = 0, freezeAfter: TimeInterval = 0,
+        mosaicSleepAfter: TimeInterval? = nil, mosaicFreezeAfter: TimeInterval? = nil
     ) {
         self.sleepAfter = sleepAfter
         self.maxAwakeTabs = maxAwakeTabs
         self.sleepPinnedTabs = sleepPinnedTabs
         self.cpuPercent = cpuPercent
         self.freezeAfter = freezeAfter
+        self.mosaicSleepAfter = mosaicSleepAfter
+        self.mosaicFreezeAfter = mosaicFreezeAfter
     }
+
+    /// `tab`'s idle limits: a Mosaic pane's own, or the tab values.
+    func sleepAfter(for tab: TabSnapshot) -> TimeInterval { tab.mosaic == nil ? sleepAfter : mosaicSleepAfter ?? sleepAfter }
+    func freezeAfter(for tab: TabSnapshot) -> TimeInterval { tab.mosaic == nil ? freezeAfter : mosaicFreezeAfter ?? freezeAfter }
 
     public init(config: PaddleConfig) {
         self.init(
@@ -77,7 +90,9 @@ public struct TabSleepPolicy: Sendable, Equatable {
             maxAwakeTabs: config.maxAwakeTabs,
             sleepPinnedTabs: config.sleepPinnedTabs,
             cpuPercent: Double(config.cpuSleepPercent),
-            freezeAfter: config.tabFreezeAfterMinutes * 60
+            freezeAfter: config.tabFreezeAfterMinutes * 60,
+            mosaicSleepAfter: config.mosaicSleepAfterMinutes.map { $0 * 60 },
+            mosaicFreezeAfter: config.mosaicFreezeAfterMinutes.map { $0 * 60 }
         )
     }
 
@@ -88,12 +103,12 @@ public struct TabSleepPolicy: Sendable, Equatable {
     /// Tabs in `discard` are skipped because the caller is about to sleep them.
     /// - Parameter discard: the tabs `tabsToSleep` chose for this sweep.
     public func tabsToFreeze(_ tabs: [TabSnapshot], now: Date, excluding discard: Set<UUID>) -> [UUID] {
-        guard freezeAfter > 0 else { return [] }
         return tabs
             .filter {
-                $0.isAwake && !$0.isFrozen && !$0.isSelected && !$0.isBusy && !$0.isUploading && !$0.staysLive
+                let limit = freezeAfter(for: $0)
+                return limit > 0 && $0.isAwake && !$0.isFrozen && !$0.isSelected && !$0.isBusy && !$0.isUploading && !$0.staysLive
                     && (sleepPinnedTabs || !$0.isPinned) && !discard.contains($0.id)
-                    && now.timeIntervalSince($0.lastActive) >= freezeAfter
+                    && now.timeIntervalSince($0.lastActive) >= limit
             }
             .sorted { $0.lastActive < $1.lastActive }
             .map(\.id)
@@ -120,11 +135,11 @@ public struct TabSleepPolicy: Sendable, Equatable {
         let working = eligible.filter { !$0.isUploading }
         var chosen: [UUID] = []
         var chosenSet: Set<UUID> = []
-        if sleepAfter > 0 {
-            for tab in working where !tab.guardsUnload && !tab.staysLive && now.timeIntervalSince(tab.lastActive) >= sleepAfter {
-                chosen.append(tab.id)
-                chosenSet.insert(tab.id)
-            }
+        for tab in working where !tab.guardsUnload && !tab.staysLive {
+            let limit = sleepAfter(for: tab)
+            guard limit > 0, now.timeIntervalSince(tab.lastActive) >= limit else { continue }
+            chosen.append(tab.id)
+            chosenSet.insert(tab.id)
         }
 
         if cpuPercent > 0 {
@@ -152,8 +167,52 @@ public struct TabSleepPolicy: Sendable, Equatable {
     /// freeze by their group's idle, CPU and pinned rules, then `self`'s `maxAwakeTabs` caps the awake tabs across
     /// every group, as memory pressure does; both let a pinned tab go only when its own group's `sleepPinnedTabs`
     /// allows it. With one group using `self` this is `tabsToSleep` plus `tabsToFreeze`.
+    ///
+    /// A Mosaic's panes go as one: they share the most recent pane's idle clock; when any of them would freeze or sleep,
+    /// all of them do, unless one pane must stay as it is (on screen, playing, uploading, a live site; for sleep, also
+    /// unsaved changes), and then none does. Under memory pressure only on screen and playing hold a Mosaic.
     public func decide(
         _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool = false
+    ) -> (sleep: [UUID], freeze: [UUID]) {
+        let latest = Dictionary(groups.flatMap(\.tabs).compactMap { tab in tab.mosaic.map { ($0, tab.lastActive) } }, uniquingKeysWith: max)
+        let groups = groups.map { group in
+            (policy: group.policy, tabs: group.tabs.map { tab in
+                var tab = tab
+                if let mosaic = tab.mosaic, let last = latest[mosaic] { tab.lastActive = last }
+                return tab
+            })
+        }
+        let decided = decideEach(groups, now: now, memoryPressure: memoryPressure)
+        let all = groups.flatMap(\.tabs)
+        let sleep = Self.asOne(decided.sleep, in: all) { tab in
+            tab.isSelected || tab.isBusy || (!memoryPressure && (tab.isUploading || tab.guardsUnload || tab.staysLive))
+        } joining: { $0.isAwake }
+        let sleeping = Set(sleep)
+        let freeze = Self.asOne(decided.freeze.filter { !sleeping.contains($0) }, in: all) { tab in
+            tab.isSelected || tab.isBusy || tab.isUploading || tab.staysLive
+        } joining: { $0.isAwake && !$0.isFrozen && !sleeping.contains($0.id) }
+        return (sleep, freeze)
+    }
+
+    /// `chosen` with Mosaics made whole: a Mosaic with a chosen pane and no pane that `holds` gets every pane that
+    /// `joins`; one with a pane that holds loses its chosen panes. Tabs outside Mosaics are left as they are.
+    static func asOne(
+        _ chosen: [UUID], in tabs: [TabSnapshot], holds: (TabSnapshot) -> Bool, joining joins: (TabSnapshot) -> Bool
+    ) -> [UUID] {
+        let picked = Set(chosen)
+        let panes = Dictionary(grouping: tabs.filter { $0.mosaic != nil }) { $0.mosaic! }
+        var out = chosen.filter { id in tabs.first { $0.id == id }?.mosaic == nil }
+        var seen = Set(out)
+        for tab in tabs {
+            guard let mosaic = tab.mosaic, let group = panes[mosaic], group.contains(where: { picked.contains($0.id) }),
+                  !group.contains(where: holds), joins(tab), seen.insert(tab.id).inserted else { continue }
+            out.append(tab.id)
+        }
+        return out
+    }
+
+    private func decideEach(
+        _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool
     ) -> (sleep: [UUID], freeze: [UUID]) {
         let all = groups.flatMap(\.tabs)
         // The cap and memory pressure span every group, but each group's own `sleepPinnedTabs` decides whether its
@@ -283,9 +342,9 @@ extension TabSleepPolicy {
         guard power.isConstrained else { return self }
         var policy = self
         let critical = power.thermal == .critical
-        if sleepAfter > 0 {
-            policy.sleepAfter = min(sleepAfter, critical ? Self.criticalSleepAfter : Self.constrainedSleepAfter)
-        }
+        let ceiling = critical ? Self.criticalSleepAfter : Self.constrainedSleepAfter
+        if sleepAfter > 0 { policy.sleepAfter = min(sleepAfter, ceiling) }
+        if let own = mosaicSleepAfter, own > 0 { policy.mosaicSleepAfter = min(own, ceiling) }
         if maxAwakeTabs > 0 {
             let lowered = critical ? Self.criticalMaxAwakeTabs : max(2, (maxAwakeTabs + 1) / 2)
             policy.maxAwakeTabs = min(maxAwakeTabs, lowered)

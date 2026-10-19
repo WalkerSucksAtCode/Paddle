@@ -235,6 +235,13 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// Below this width or height (points, `mosaicMinimumPaneRange`) for any pane, only the focused one shows.
     public var mosaicMinimumPaneWidth: Double
     public var mosaicMinimumPaneHeight: Double
+    /// The Mosaic you just left keeps all its pages attached to the window, so going back is instant (as the tab you
+    /// just left is). Off, only its focused pane stays attached and the others are told they're hidden.
+    public var mosaicStaysReady: Bool
+    /// Minutes before a Mosaic that isn't on screen freezes; nil follows `tabFreezeAfterMinutes`, 0 never.
+    public var mosaicFreezeAfterMinutes: Double?
+    /// Minutes before a Mosaic that isn't on screen sleeps; nil follows `tabSleepAfterMinutes`, 0 never.
+    public var mosaicSleepAfterMinutes: Double?
 
     public static let mosaicGapRange: ClosedRange<Double> = 2...16
     public static let mosaicMinimumPaneRange: ClosedRange<Double> = 100...800
@@ -275,7 +282,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
-        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight
+        case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight, mosaicStaysReady, mosaicFreezeAfterMinutes, mosaicSleepAfterMinutes
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -341,6 +348,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicGap: Double = 6,
         mosaicMinimumPaneWidth: Double = 260,
         mosaicMinimumPaneHeight: Double = 160,
+        mosaicStaysReady: Bool = true,
+        mosaicFreezeAfterMinutes: Double? = nil,
+        mosaicSleepAfterMinutes: Double? = nil,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -421,6 +431,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.mosaicGap = Self.clamped(mosaicGap, to: Self.mosaicGapRange, else: 6)
         self.mosaicMinimumPaneWidth = Self.clamped(mosaicMinimumPaneWidth, to: Self.mosaicMinimumPaneRange, else: 260)
         self.mosaicMinimumPaneHeight = Self.clamped(mosaicMinimumPaneHeight, to: Self.mosaicMinimumPaneRange, else: 160)
+        self.mosaicStaysReady = mosaicStaysReady
+        self.mosaicFreezeAfterMinutes = mosaicFreezeAfterMinutes
+        self.mosaicSleepAfterMinutes = mosaicSleepAfterMinutes
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -517,6 +530,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicMinimumPaneHeight = Self.clamped(
             c.decodeValue(.mosaicMinimumPaneHeight, d.mosaicMinimumPaneHeight, issues), to: Self.mosaicMinimumPaneRange, else: d.mosaicMinimumPaneHeight
         )
+        mosaicStaysReady = c.decodeValue(.mosaicStaysReady, d.mosaicStaysReady, issues)
+        mosaicFreezeAfterMinutes = c.decodeValue(.mosaicFreezeAfterMinutes, d.mosaicFreezeAfterMinutes, issues)
+        mosaicSleepAfterMinutes = c.decodeValue(.mosaicSleepAfterMinutes, d.mosaicSleepAfterMinutes, issues)
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
@@ -598,6 +614,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     static func clamped(_ value: Double, to range: ClosedRange<Double>, else fallback: Double) -> Double {
         value.isFinite ? min(max(value.rounded(), range.lowerBound), range.upperBound) : fallback
     }
+
+    /// Keys whose default is being left out (so `ConfigFile.defaults` has no entry for them): the Mosaic timers,
+    /// which then follow the tab ones.
+    public static let leftOutByDefault: Set<CodingKeys> = [.mosaicFreezeAfterMinutes, .mosaicSleepAfterMinutes]
 
     /// Keys older files used for what is now another key; read when the new one is missing, never written.
     enum LegacyKeys: String, CodingKey, CaseIterable {

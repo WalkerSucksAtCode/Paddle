@@ -612,6 +612,9 @@ final class AppModel {
             case .mosaicGap: old.mosaicGap != new.mosaicGap
             case .mosaicMinimumPaneWidth: old.mosaicMinimumPaneWidth != new.mosaicMinimumPaneWidth
             case .mosaicMinimumPaneHeight: old.mosaicMinimumPaneHeight != new.mosaicMinimumPaneHeight
+            case .mosaicStaysReady: old.mosaicStaysReady != new.mosaicStaysReady
+            case .mosaicFreezeAfterMinutes: old.mosaicFreezeAfterMinutes != new.mosaicFreezeAfterMinutes
+            case .mosaicSleepAfterMinutes: old.mosaicSleepAfterMinutes != new.mosaicSleepAfterMinutes
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs
@@ -1572,7 +1575,8 @@ final class AppModel {
                     isFrozen: tab.isFrozen,
                     // A shared process stays up after this tab sleeps, so it doesn't count as memory this sleep frees.
                     footprint: tab.sharesProcess ? 0 : (tab.memoryBytes ?? 0),
-                    isUploading: uploading, guardsUnload: pageWork && tab.guardsUnload, staysLive: staysLive(tab)
+                    isUploading: uploading, guardsUnload: pageWork && tab.guardsUnload, staysLive: staysLive(tab),
+                    mosaic: tab.browser?.mosaicID(of: tab)
                 )
             }
             let kept = [

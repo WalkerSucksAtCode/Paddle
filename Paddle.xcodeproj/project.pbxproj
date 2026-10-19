@@ -98,6 +98,7 @@
 		C547D3204E002F6937F678B4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95CE29B04855CC44145361B8 /* main.swift */; };
 		C5855246A4598259AFFA4707 /* TabGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37018AF63521DBC068EE5C08 /* TabGroup.swift */; };
 		CE9B12C55130509ECB788A14 /* WebEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */; };
+		D7B220C9E42096A0D40E1AB9 /* MosaicPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592AF6F213BA83E11F9425BD /* MosaicPane.swift */; };
 		DA1FCADBAB0B44818AFB9F84 /* NewTabStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30A5BBA0BDC54F65E89FA044 /* NewTabStore.swift */; };
 		DA59E17FB7357CDC0F86EC16 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488DDEB21AAB3C480FC2F0F /* AppModel.swift */; };
 		DBA96E6E8A40CCD5B60D2146 /* SettingsModel+Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */; };
@@ -188,6 +189,7 @@
 		52C91606DA827F7C24613219 /* ExtensionControllerDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionControllerDelegate.swift; sourceTree = "<group>"; };
 		55C9552622F181311228E602 /* ExtensionHosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionHosts.swift; sourceTree = "<group>"; };
 		567ECF2573CB54724C135588 /* MosaicIconPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicIconPicker.swift; sourceTree = "<group>"; };
+		592AF6F213BA83E11F9425BD /* MosaicPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicPane.swift; sourceTree = "<group>"; };
 		5CFE8B96C6FDD7CBF4318B8F /* LinkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreview.swift; sourceTree = "<group>"; };
 		5DD607686048CC6FC424BAA6 /* ThemeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeStore.swift; sourceTree = "<group>"; };
 		60BD3A551575242DFC25D1CC /* ChromeStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeStyle.swift; sourceTree = "<group>"; };
@@ -289,6 +291,7 @@
 				8FEA8DA57CE8927AE3C65953 /* ConfigWatcher.swift */,
 				7879E7929052FF11CD3E3F68 /* ExtensionsPane.swift */,
 				74FF070E20D29D917EF1BBB4 /* GeneralPane.swift */,
+				592AF6F213BA83E11F9425BD /* MosaicPane.swift */,
 				06B95CD836D55F745348E437 /* PrivacyPane.swift */,
 				3E7ED48B391F11998BD4520C /* PrivacySettings.swift */,
 				08F96B8821DF8FD7A21F3C13 /* ProfilesPane.swift */,
@@ -662,6 +665,7 @@
 				5BEF3239AF03AC645E9B0763 /* MediaControlsPopover.swift in Sources */,
 				5BAC47A720A6614AC9522F78 /* MosaicBar.swift in Sources */,
 				B2F0BEB933148FD4D49992A7 /* MosaicIconPicker.swift in Sources */,
+				D7B220C9E42096A0D40E1AB9 /* MosaicPane.swift in Sources */,
 				BFEAD39C97BA9F2605C60129 /* MultiPanes.swift in Sources */,
 				92F72BCDCBFCD47D032CB826 /* NewTabFeeds.swift in Sources */,
 				1F81EE27F66C2CCE928C0607 /* NewTabOverride.swift in Sources */,

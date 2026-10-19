@@ -52,6 +52,8 @@ public enum ConfigValidator {
             (.sessionHistoryTabs, Double(config.sessionHistoryTabs)),
             (.cpuSleepPercent, Double(config.cpuSleepPercent)),
             (.filterUpdateDays, Double(config.filterUpdateDays)),
+            (.mosaicFreezeAfterMinutes, config.mosaicFreezeAfterMinutes ?? 0),
+            (.mosaicSleepAfterMinutes, config.mosaicSleepAfterMinutes ?? 0),
         ] where value < 0 {
             issues.append(ConfigIssue(key: key, severity: .error, message: "Can't be negative (0 turns it off)."))
         }
