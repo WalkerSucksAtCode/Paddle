@@ -399,6 +399,19 @@ struct FilterListConverterTests {
         #expect(list != nil)
     }
 
+    /// Paddle's bundled list (Resources/PaddleFilters) keeps every selector and compiles in WebKit.
+    @MainActor
+    @Test func bundledPaddleFiltersCompile() async throws {
+        let file = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Resources/PaddleFilters/paddle-filters.txt")
+        let result = FilterListConverter.convert(try String(contentsOf: file, encoding: .utf8))
+        #expect(result.json.contains("css-display-none"))
+        #expect(result.json.contains("aria-label"))
+        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let list = try await store.compileContentRuleList(forIdentifier: "test", encodedContentRuleList: result.json)
+        #expect(list != nil)
+    }
+
     /// `~a.com#@#.foo` has no positive domain; it must not leave an empty `unless-domain` that WebKit rejects.
     @MainActor
     @Test func negatedOnlyCosmeticExceptionCompiles() async throws {

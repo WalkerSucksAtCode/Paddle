@@ -1,0 +1,8 @@
+! Title: Paddle's own filters
+! Built into the app and installed after the configured lists, before user-filters.txt. Sites with blocking off
+! and the user's #@# exceptions apply to it like any other list.
+!
+! Empty ad boxes. Sites keep a labelled "Advertisement" box after its ad was blocked (weather.com, allrecipes.com).
+! Only boxes with no frame, image or video inside are hidden, and :has re-evaluates, so one that later gets an ad
+! shows again.
+##[aria-label="Advertisement" i]:not(:has(iframe, img, video, picture, canvas, object, embed))

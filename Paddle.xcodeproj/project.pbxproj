@@ -23,6 +23,7 @@
 		1AB913A91D0FBFC786D5FE27 /* ExtensionPopups.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38FF180A042514269EA95F84 /* ExtensionPopups.swift */; };
 		1F81EE27F66C2CCE928C0607 /* NewTabOverride.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC277645CBC1A91E45C0554 /* NewTabOverride.swift */; };
 		20F780E5CE6E4624D5C41FA8 /* TabWebDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */; };
+		212611C12F4302A867BC81C1 /* PaddleFilters in Resources */ = {isa = PBXBuildFile; fileRef = F3BB7869D612E04C2204B611 /* PaddleFilters */; };
 		2179624B092B340F7AE1DC68 /* ExtensionPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE8BD91C7FCD78E03AD0BE9D /* ExtensionPrompts.swift */; };
 		243E20B0474070AB57DC2DCC /* PaddleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA57231940DEE446D5E5D5E0 /* PaddleApp.swift */; };
 		2814E7D5B38A129F345FA397 /* MainMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E3E212F72DAF671F028B0F4 /* MainMenu.swift */; };
@@ -256,6 +257,7 @@
 		EE5298F39D453DAE403A0126 /* BrowserModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserModel.swift; sourceTree = "<group>"; };
 		F09575E91B2DFAA356C42768 /* ControlBridge+Tools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ControlBridge+Tools.swift"; sourceTree = "<group>"; };
 		F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeSocketServer.swift; sourceTree = "<group>"; };
+		F3BB7869D612E04C2204B611 /* PaddleFilters */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PaddleFilters; path = Resources/PaddleFilters; sourceTree = SOURCE_ROOT; };
 		F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddressSuggestions.swift; sourceTree = "<group>"; };
 		F8249EDDFD5DD95F1327564C /* NewTabFeeds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabFeeds.swift; sourceTree = "<group>"; };
 		F965A2C39359669A792EB86C /* ControlBridgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlBridgeViews.swift; sourceTree = "<group>"; };
@@ -492,6 +494,7 @@
 			children = (
 				6742A205E6C2867AE660D717 /* AMO */,
 				08A0AF5CF0C8F628DF3A3616 /* FilterSnapshots */,
+				F3BB7869D612E04C2204B611 /* PaddleFilters */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -607,6 +610,7 @@
 				63D6A746C25A8289A6EF1D34 /* AMO in Resources */,
 				8682F6C461619D04A7436F15 /* Assets.xcassets in Resources */,
 				9889453BFC7814356B7E0C3F /* FilterSnapshots in Resources */,
+				212611C12F4302A867BC81C1 /* PaddleFilters in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

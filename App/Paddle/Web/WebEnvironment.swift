@@ -513,7 +513,8 @@ final class WebEnvironment {
     /// The block-list load before this one, so loads run one at a time in order.
     @ObservationIgnored private var blockerLoadTail: Task<Void, Never>?
 
-    /// Installs compiled block lists: each `config.filterLists` file, then `user-filters.txt`. Other files
+    /// Installs compiled block lists: each `config.filterLists` file, Paddle's own `paddle-filters.txt` (bundled),
+    /// then `user-filters.txt`. Other files
     /// in `filters/` stay on disk unused, so a removed list stops blocking at the next reload. Unchanged
     /// lists load from cache; new or changed ones convert and compile in parallel, each installed as soon
     /// as it compiles, selectors first checked by a `SelectorValidator` that lives only for this call. A
@@ -602,6 +603,9 @@ final class WebEnvironment {
                 continue
             }
             sources.append(url)
+        }
+        if let builtIn = Bundle.main.url(forResource: "paddle-filters", withExtension: "txt", subdirectory: "PaddleFilters") {
+            sources.append(builtIn)
         }
         sources.append(Paths.userFilters)
 

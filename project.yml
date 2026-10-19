@@ -34,6 +34,10 @@ targets:
       - path: Resources/FilterSnapshots
         type: folder
         buildPhase: resources
+      # Paddle's own filter list (`WebEnvironment.performBlockerLoad`), installed after the configured lists.
+      - path: Resources/PaddleFilters
+        type: folder
+        buildPhase: resources
       # Mozilla's add-on signing root (`AMO.bundledRootCertificate`): security/manager/ssl/addons-public.pem in Firefox's
       # source as DER, the same bytes Firefox 157 carries (checked 2026-10-13).
       - path: Resources/AMO

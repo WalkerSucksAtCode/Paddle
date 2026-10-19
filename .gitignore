@@ -7,3 +7,6 @@ build/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 .DS_Store
+.cursor/
+.video_agent/
+__pycache__/
