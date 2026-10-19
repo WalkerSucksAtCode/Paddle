@@ -499,7 +499,7 @@ final class SpacesMenuDelegate: NSObject, NSMenuDelegate {
             let space = spaces.indices.contains(item.tag - 1) ? spaces[item.tag - 1] : nil
             item.isHidden = space == nil
             item.title = space?.name ?? "Space \(item.tag)"
-            item.image = space.flatMap { NSImage(systemSymbolName: $0.symbol.sfSymbol, accessibilityDescription: $0.symbol.displayName) }
+            item.image = space.flatMap { NSImage(systemSymbolName: $0.symbol.shown, accessibilityDescription: $0.symbol.displayName) }
             item.preferredImageVisibility = .visible
             item.state = space?.id == model?.activeSpaceID ? .on : .off
         }
@@ -508,7 +508,7 @@ final class SpacesMenuDelegate: NSObject, NSMenuDelegate {
         for space in spaces where space.id != model?.activeSpaceID {
             let entry = NSMenuItem(title: space.name, action: #selector(BrowserWindowController.paddleMoveTabToSpace(_:)), keyEquivalent: "")
             entry.representedObject = space.id
-            entry.image = NSImage(systemSymbolName: space.symbol.sfSymbol, accessibilityDescription: space.symbol.displayName)
+            entry.image = NSImage(systemSymbolName: space.symbol.shown, accessibilityDescription: space.symbol.displayName)
             entry.preferredImageVisibility = .visible
             submenu.addItem(entry)
         }

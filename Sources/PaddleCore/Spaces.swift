@@ -1,37 +1,44 @@
 import Foundation
 
-/// The symbols a space can wear. Spaces are told apart by name and symbol, never by tint alone.
-public enum SpaceSymbol: String, CaseIterable, Codable, Sendable {
-    case home, work, study, code, music, games, shopping, travel, reading, star
+/// The symbol a space wears: any SF Symbol, chosen from the same picker as a Mosaic's icon. Spaces are told apart by
+/// name and symbol, never by tint alone. Saved as the symbol's name; files from before the picker name one of ten
+/// presets (`home`, `work`, …), read as the symbols they stood for.
+public struct SpaceSymbol: Codable, Sendable, Hashable {
+    /// The SF Symbol's name.
+    public let sfSymbol: String
 
-    public var displayName: String {
-        switch self {
-        case .home: "Home"
-        case .work: "Work"
-        case .study: "Study"
-        case .code: "Code"
-        case .music: "Music"
-        case .games: "Games"
-        case .shopping: "Shopping"
-        case .travel: "Travel"
-        case .reading: "Reading"
-        case .star: "Star"
-        }
+    /// Nil for a name symbol names never have (as `MosaicIcon`).
+    public init?(_ name: String) {
+        guard let icon = MosaicIcon(name) else { return nil }
+        sfSymbol = icon.name
     }
 
-    public var sfSymbol: String {
-        switch self {
-        case .home: "house"
-        case .work: "briefcase"
-        case .study: "book"
-        case .code: "chevron.left.forwardslash.chevron.right"
-        case .music: "music.note"
-        case .games: "gamecontroller"
-        case .shopping: "cart"
-        case .travel: "airplane"
-        case .reading: "newspaper"
-        case .star: "star"
+    private init(preset name: String) { sfSymbol = name }
+
+    public static let home = SpaceSymbol(preset: "house")
+    public static let star = SpaceSymbol(preset: "star")
+
+    /// The preset names older files use, and their symbols.
+    static let legacy: [String: String] = [
+        "home": "house", "work": "briefcase", "study": "book", "code": "chevron.left.forwardslash.chevron.right",
+        "music": "music.note", "games": "gamecontroller", "shopping": "cart", "travel": "airplane",
+        "reading": "newspaper", "star": "star",
+    ]
+
+    /// For VoiceOver and menu images: the symbol's name in words ("music note").
+    public var displayName: String { sfSymbol.replacingOccurrences(of: ".", with: " ") }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let symbol = Self.legacy[raw].map(SpaceSymbol.init(preset:)) ?? SpaceSymbol(raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "not a symbol name"))
         }
+        self = symbol
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(sfSymbol)
     }
 }
 

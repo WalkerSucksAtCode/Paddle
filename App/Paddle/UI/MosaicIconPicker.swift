@@ -65,22 +65,34 @@ extension View {
     }
 }
 
-/// Choose Icon: every SF Symbol on this Mac, searchable by name and keyword ("cart", "music", "work") and by category,
-/// with a tint for it. Picking one sets it at once; Remove Icon goes back to the grid symbol.
-struct MosaicIconPicker: View {
-    let model: BrowserModel
-    let splitID: UUID
+extension SpaceSymbol {
+    /// The symbol to draw: the space's own, or the house when this Mac has no symbol by that name.
+    var shown: String { NSImage(systemSymbolName: sfSymbol, accessibilityDescription: nil) == nil ? "house" : sfSymbol }
+}
+
+/// Every SF Symbol on this Mac, searchable by name and keyword ("cart", "music", "work") and by category, as a grid;
+/// clicking one picks it. Choose Icon (a Mosaic) and Edit Space use it.
+struct SymbolGrid: View {
+    /// The symbol shown as chosen.
+    let selected: String?
+    /// The chosen symbol's color in the grid; nil is the accent.
+    var tint: Color?
+    var height: CGFloat = 300
+    /// The search field takes the keyboard when the grid appears.
+    var focusesSearch = true
+    let pick: (String) -> Void
     @State private var query = ""
     @State private var category: String?
     @FocusState private var searching: Bool
     private var library = SymbolLibrary.shared
 
-    init(model: BrowserModel, splitID: UUID) {
-        self.model = model
-        self.splitID = splitID
+    init(selected: String?, tint: Color? = nil, height: CGFloat = 300, focusesSearch: Bool = true, pick: @escaping (String) -> Void) {
+        self.selected = selected
+        self.tint = tint
+        self.height = height
+        self.focusesSearch = focusesSearch
+        self.pick = pick
     }
-
-    private var split: BrowserModel.Split? { model.view(id: splitID) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -106,7 +118,57 @@ struct MosaicIconPicker: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.07)))
 
             grid
-                .frame(height: 300)
+                .frame(height: height)
+        }
+        .onAppear {
+            library.load()
+            if focusesSearch { DispatchQueue.main.async { searching = true } }
+        }
+    }
+
+    @ViewBuilder
+    private var grid: some View {
+        if let catalog = library.catalog {
+            let names = catalog.search(query, category: category)
+            if names.isEmpty {
+                Text("No symbols match “\(query)”")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 36, maximum: 40), spacing: 4)], spacing: 4) {
+                        ForEach(names, id: \.self) { name in
+                            SymbolCell(name: name, selected: selected == name, tint: tint) { pick(name) }
+                        }
+                    }
+                    .padding(2)
+                }
+                .id(category ?? "all")
+            }
+        } else {
+            ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// Choose Icon: a symbol from `SymbolGrid` and a tint for it. Picking one sets it at once; Remove Icon goes back to
+/// the grid symbol.
+struct MosaicIconPicker: View {
+    let model: BrowserModel
+    let splitID: UUID
+
+    init(model: BrowserModel, splitID: UUID) {
+        self.model = model
+        self.splitID = splitID
+    }
+
+    private var split: BrowserModel.Split? { model.view(id: splitID) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SymbolGrid(selected: split?.layout.icon?.name, tint: split?.layout.iconTint?.swiftUIColor) { name in
+                set(icon: MosaicIcon(name))
+            }
 
             tints
 
@@ -129,39 +191,9 @@ struct MosaicIconPicker: View {
         }
         .padding(12)
         .frame(width: 400)
-        .onAppear {
-            library.load()
-            DispatchQueue.main.async { searching = true }
-        }
     }
 
     @Environment(\.dismiss) private var dismiss
-
-    @ViewBuilder
-    private var grid: some View {
-        if let catalog = library.catalog {
-            let names = catalog.search(query, category: category)
-            if names.isEmpty {
-                Text("No symbols match “\(query)”")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 36, maximum: 40), spacing: 4)], spacing: 4) {
-                        ForEach(names, id: \.self) { name in
-                            SymbolCell(name: name, selected: split?.layout.icon?.name == name, tint: split?.layout.iconTint) {
-                                set(icon: MosaicIcon(name))
-                            }
-                        }
-                    }
-                    .padding(2)
-                }
-                .id(category ?? "all")
-            }
-        } else {
-            ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-    }
 
     /// No tint (the text color) and the presets. Told apart by name too (help and VoiceOver), not by color alone; the
     /// chosen one has a ring and a check.
@@ -209,7 +241,7 @@ struct MosaicIconPicker: View {
 private struct SymbolCell: View {
     let name: String
     let selected: Bool
-    let tint: ColorPreset?
+    let tint: Color?
     let action: () -> Void
     @State private var hovering = false
 
@@ -217,7 +249,7 @@ private struct SymbolCell: View {
         Button(action: action) {
             Image(systemName: name)
                 .font(.system(size: 17))
-                .foregroundStyle(selected ? (tint?.swiftUIColor ?? Color.accentColor) : Color.primary)
+                .foregroundStyle(selected ? (tint ?? Color.accentColor) : Color.primary)
                 .frame(width: 36, height: 36)
                 .background(
                     RoundedRectangle(cornerRadius: 7)

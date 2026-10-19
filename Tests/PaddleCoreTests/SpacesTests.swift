@@ -18,7 +18,7 @@ struct SpacesTests {
     @Test func roundTripWithTwoSpaces() throws {
         let active = SpaceRecord(id: "one", name: "Main", symbol: .home)
         let other = SpaceRecord(
-            id: "two", name: "Work", symbol: .work, tint: "blue",
+            id: "two", name: "Work", symbol: SpaceSymbol("briefcase")!, tint: "blue",
             tabs: [TabRecord(url: "https://w.test", title: "W", isPinned: true)], selectedIndex: 0,
             groups: [TabGroupRecord(id: "g", name: "G", color: .red)]
         )
@@ -34,14 +34,14 @@ struct SpacesTests {
 
     @Test func badEntriesAreSkipped() throws {
         let window = try decode("""
-        {"tabs":[],"selectedIndex":0,"space":{"id":"a","name":"X","symbol":"nonsense","tint":"chartreuse"},
+        {"tabs":[],"selectedIndex":0,"space":{"id":"a","name":"X","symbol":"Not A Symbol!","tint":"chartreuse"},
          "otherSpaces":[{"name":"no id"},{"id":"b","name":"B","symbol":"code","tint":"Green",
            "tabs":[{"url":"https://ok.test","title":"ok","isPinned":false},{"bad":1}],"groups":[{"x":1}]},7]}
         """)
         #expect(window.space?.symbol == .home)
         #expect(window.space?.tint == nil)
         #expect(window.otherSpaces.count == 1)
-        #expect(window.otherSpaces[0].symbol == .code)
+        #expect(window.otherSpaces[0].symbol.sfSymbol == "chevron.left.forwardslash.chevron.right")
         #expect(window.otherSpaces[0].tint == "green")
         #expect(window.otherSpaces[0].tabs.map(\.url) == ["https://ok.test"])
         #expect(window.otherSpaces[0].groups.isEmpty)
@@ -66,5 +66,17 @@ struct SpacesTests {
         let capped = SessionRecord(windows: [window]).cappingStates(to: 1).windows[0]
         #expect(capped.tabs[0].interactionState == nil)
         #expect(capped.otherSpaces[0].tabs.map { $0.interactionState != nil } == [true, false])
+    }
+
+    @Test func spaceSymbolsReadOldPresetsAndAnySymbolName() throws {
+        func decode(_ json: String) throws -> SpaceRecord { try JSONDecoder().decode(SpaceRecord.self, from: Data(json.utf8)) }
+        #expect(try decode(#"{"id":"a","symbol":"work"}"#).symbol.sfSymbol == "briefcase")
+        #expect(try decode(#"{"id":"a","symbol":"music"}"#).symbol.sfSymbol == "music.note")
+        #expect(try decode(#"{"id":"a","symbol":"leaf.fill"}"#).symbol.sfSymbol == "leaf.fill")
+        #expect(try decode(#"{"id":"a","symbol":"Not A Symbol"}"#).symbol == .home)
+        let record = SpaceRecord(id: "a", symbol: SpaceSymbol("paintbrush.pointed.fill")!)
+        let back = try JSONDecoder().decode(SpaceRecord.self, from: JSONEncoder().encode(record))
+        #expect(back.symbol.sfSymbol == "paintbrush.pointed.fill")
+        #expect(SpaceSymbol("music.note")?.displayName == "music note")
     }
 }

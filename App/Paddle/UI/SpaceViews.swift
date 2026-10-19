@@ -15,7 +15,7 @@ private struct SpaceEditPopover: ViewModifier {
                 SpaceEditor(model: model, space: model.activeSpace)
                     .systemText()
                     .padding(12)
-                    .frame(width: 260)
+                    .frame(width: 400)
             }
     }
 }
@@ -38,10 +38,13 @@ private struct SpaceEditor: View {
                 .focused($focused)
                 .onSubmit { commit() }
                 .onChange(of: focused) { _, now in if !now { commit() } }
-            Picker("Symbol", selection: Binding(get: { space.symbol }, set: { model.setSymbol($0, of: space.id) })) {
-                ForEach(SpaceSymbol.allCases, id: \.self) { symbol in
-                    Label(symbol.displayName, systemImage: symbol.sfSymbol).tag(symbol)
-                }
+            HStack(spacing: 6) {
+                Image(systemName: space.symbol.shown).frame(width: 18)
+                Text("Symbol").font(.caption).foregroundStyle(.secondary)
+            }
+            // The name field keeps the keyboard; the grid's search is a click away.
+            SymbolGrid(selected: space.symbol.sfSymbol, height: 200, focusesSearch: false) { name in
+                if let symbol = SpaceSymbol(name) { model.setSymbol(symbol, of: space.id) }
             }
             Picker("Tint", selection: Binding(get: { space.tint }, set: { model.setTint($0, of: space.id) })) {
                 Text("None").tag(ColorPreset?.none)
@@ -111,7 +114,7 @@ struct SpaceSwitcher: View {
             // The Tabs menu owns the Control-number shortcuts; a second registration here could clash.
             ForEach(model.spaces) { item in
                 Toggle(isOn: Binding(get: { item.id == model.activeSpaceID }, set: { _ in model.switchToSpace(item.id) })) {
-                    Label(item.name, systemImage: item.symbol.sfSymbol)
+                    Label(item.name, systemImage: item.symbol.shown)
                 }
             }
             Divider()
@@ -120,7 +123,7 @@ struct SpaceSwitcher: View {
             Button("Delete Space") { model.requestDelete(model.activeSpaceID) }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: space.symbol.sfSymbol)
+                Image(systemName: space.symbol.shown)
                 Text(space.name).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
             }
@@ -148,7 +151,7 @@ struct SpaceHeaderRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: space.symbol.sfSymbol)
+            Image(systemName: space.symbol.shown)
             Text(space.name).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
         }
@@ -208,7 +211,7 @@ private struct SpaceButton: View {
         Button {
             model.switchToSpace(space.id)
         } label: {
-            Image(systemName: space.symbol.sfSymbol)
+            Image(systemName: space.symbol.shown)
                 .frame(width: 28, height: 28)
                 .background {
                     RoundedRectangle(cornerRadius: 7)
