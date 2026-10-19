@@ -42,14 +42,16 @@ public enum PrivateAPI {
     }
 
     /// Calls the argument-less, void-returning selector `name` on `receiver`, or does nothing when
-    /// `receiver` has no such method.
-    public static func callVoid(_ name: String, on receiver: AnyObject) {
+    /// `receiver` has no such method. Returns whether it called.
+    @discardableResult
+    public static func callVoid(_ name: String, on receiver: AnyObject) -> Bool {
         let selector = NSSelectorFromString(name)
-        guard receiver.responds(to: selector) else { return }
+        guard receiver.responds(to: selector) else { return false }
         typealias VoidMethod = @convention(c) (AnyObject, Selector) -> Void
         let method = receiver.method(for: selector)
         let imp = unsafeBitCast(method, to: VoidMethod.self)
         imp(receiver, selector)
+        return true
     }
 
     /// The C function `name` from any loaded image (`RTLD_DEFAULT`), typed as `Function` (a `@convention(c)` type),

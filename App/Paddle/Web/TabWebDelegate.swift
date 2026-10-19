@@ -264,6 +264,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse) async -> WKNavigationResponsePolicy {
         if navigationResponse.isForMainFrame {
             mainFrameResponded = true
+            stuckServiceWorkerCheck?.cancel()
             let mime = navigationResponse.response.mimeType?.lowercased() ?? ""
             let ext = navigationResponse.response.url?.pathExtension.lowercased() ?? ""
             tab?.isPDF = (mime == "application/pdf" || ext == "pdf")
@@ -408,9 +409,27 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         tab?.hoveredLink = nil
         tab?.isPDF = false
+        watchForStuckServiceWorker(webView)
+    }
+
+    /// Waits `ServiceWorkerWatchdog.patience` for the main frame's response; still none, a stuck service worker may
+    /// be holding the request (`StuckServiceWorkers`). A response, commit or failure cancels the wait.
+    private var stuckServiceWorkerCheck: Task<Void, Never>?
+
+    private func watchForStuckServiceWorker(_ webView: WKWebView) {
+        stuckServiceWorkerCheck?.cancel()
+        guard Self.isWebPage(webView.url), let host = webView.url?.host(percentEncoded: false) else { return }
+        stuckServiceWorkerCheck = Task { [weak self, weak webView] in
+            try? await Task.sleep(for: .seconds(ServiceWorkerWatchdog.patience))
+            guard !Task.isCancelled, let self, let webView, !self.mainFrameResponded else { return }
+            await StuckServiceWorkers.shared.release(host: host, in: webView) {
+                !Task.isCancelled && !self.mainFrameResponded
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        stuckServiceWorkerCheck?.cancel()
         tab?.hoveredLink = nil
         tab?.httpsUpgrade = nil
         trackErrorPageItem(webView)
@@ -460,6 +479,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     // MARK: - Failures
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        stuckServiceWorkerCheck?.cancel()
         tab?.typedNavigationPending = false
         let nsError = error as NSError
         if let tab, let upgrade = tab.httpsUpgrade,

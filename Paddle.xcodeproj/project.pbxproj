@@ -83,6 +83,7 @@
 		A988120F0AF7A12280F035C0 /* ThemeBuilderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0B10214AB500E253508F96 /* ThemeBuilderSheet.swift */; };
 		AA1C532B2F2AFD7C39F1E0EA /* BridgeSocketServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F142A5C9C67639E9506EE9E9 /* BridgeSocketServer.swift */; };
 		AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363BDE079A3BFEEA28E84473 /* StoreInstallViews.swift */; };
+		AD655255501D9A75F390C269 /* StuckServiceWorkers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5210F809FBA5A3DE30D69422 /* StuckServiceWorkers.swift */; };
 		B15050EC419C701DB0C5049D /* Bookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10F08E60740FF045413DAC8 /* Bookmarks.swift */; };
 		B25B2C45BEC0C154C343CBB2 /* ExtensionHosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C9552622F181311228E602 /* ExtensionHosts.swift */; };
 		B4F21EF508415EEB3C915E08 /* HTTPSOnlyNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDB56D4B0F5E7FFFD661995 /* HTTPSOnlyNotice.swift */; };
@@ -181,6 +182,7 @@
 		46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabWebDelegate.swift; sourceTree = "<group>"; };
 		482A1E734550D576E90F7F71 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectorValidator.swift; sourceTree = "<group>"; };
+		5210F809FBA5A3DE30D69422 /* StuckServiceWorkers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StuckServiceWorkers.swift; sourceTree = "<group>"; };
 		52C91606DA827F7C24613219 /* ExtensionControllerDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionControllerDelegate.swift; sourceTree = "<group>"; };
 		55C9552622F181311228E602 /* ExtensionHosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionHosts.swift; sourceTree = "<group>"; };
 		5CFE8B96C6FDD7CBF4318B8F /* LinkPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkPreview.swift; sourceTree = "<group>"; };
@@ -317,6 +319,7 @@
 				38280EEDA7BA22769BDF3025 /* PopupProbe.swift */,
 				2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */,
 				4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */,
+				5210F809FBA5A3DE30D69422 /* StuckServiceWorkers.swift */,
 				46B7E1372634BB5A455ECB7E /* TabWebDelegate.swift */,
 				25CAAD0EAD31D08BF9850F9D /* WebEnvironment.swift */,
 				74ED21DEB238D504EB6834C7 /* WebInspector.swift */,
@@ -690,6 +693,7 @@
 				2C05F8ADBEB03CE596832645 /* SpaceViews.swift in Sources */,
 				AA5A728411B812B700F1D6A5 /* StoreInstallViews.swift in Sources */,
 				7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */,
+				AD655255501D9A75F390C269 /* StuckServiceWorkers.swift in Sources */,
 				FEB96A235C39935BF193278E /* SwitchTrace.swift in Sources */,
 				11ED8C9BBC76E71EFE475048 /* Tab.swift in Sources */,
 				3748FD296EF9B8B3FC20D1F3 /* TabDragging.swift in Sources */,
