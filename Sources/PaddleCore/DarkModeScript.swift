@@ -1,24 +1,16 @@
 import Foundation
 
-/// Injected at document start in the isolated content world (`.defaultClient`) to provide website dark mode.
-///
-/// Features:
-/// 1. Instant zero-flash color-scheme styling before initial layout/paint.
-/// 2. Natural dark mode awareness: if a website already renders in dark mode (such as GitHub, YouTube,
-///    X/Twitter, or pages adapting to `prefers-color-scheme: dark`), the engine lets the native dark theme shine
-///    without double-inverting or modifying colors.
-/// 3. High-performance smart darkening for stubborn light websites: inverts backgrounds and text while
-///    protecting photos, videos, icons, and embeds from inverted-negative artifacts.
-/// 4. Live instant toggling via `window.__paddleDarkMode.setDarkMode(on)`.
+/// Injected at document start in the isolated content world (`.defaultClient`).
+/// Sets `color-scheme` before first paint. A page that is already dark (computed background, `data-theme`,
+/// or `theme-color`) is left alone so it is not inverted twice. Light pages get inverted backgrounds and text;
+/// photos, video, icons, and embeds are left alone. `window.__paddleDarkMode.setDarkMode(on)` toggles it live.
 public enum DarkModeScript {
-    /// Builds the full user script source for the given `sites` overrides and global `defaultDarkMode`.
     public static func source(for sites: [String: SiteSettings], defaultDarkMode: Bool) -> String {
         let table = hostTable(sites)
         let tableJSON = json(table)
         let defaultDarkStr = defaultDarkMode ? "true" : "false"
 
         return """
-        // Paddle Dark Mode Engine
         (() => {
         'use strict';
 
@@ -91,7 +83,6 @@ public enum DarkModeScript {
 
           function isNaturallyDark() {
             try {
-              // 1. Check computed background luminance of html, body, or main app containers
               const elementsToCheck = [
                 document.documentElement,
                 document.body,
@@ -103,20 +94,18 @@ public enum DarkModeScript {
                 if (lum !== null && lum < 0.45) return true;
               }
 
-              // 2. Check html/body attributes (data-theme="dark", class="dark", etc.)
               const html = document.documentElement;
               const theme = (html.getAttribute('data-theme') || html.getAttribute('data-color-mode') || html.getAttribute('theme') || '').toLowerCase();
               if (theme.includes('dark')) return true;
               if (html.classList.contains('dark') || (document.body && document.body.classList.contains('dark'))) return true;
 
-              // 3. Check meta tags
               const metaTheme = document.querySelector('meta[name="theme-color"]');
               if (metaTheme && metaTheme.content) {
                 const lum = parseLuminance(metaTheme.content);
                 if (lum !== null && lum < 0.45) return true;
               }
             } catch (e) {
-              // Fall through
+              // Computed style or a missing attribute can throw; treat that as not dark.
             }
             return false;
           }

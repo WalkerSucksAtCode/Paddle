@@ -278,7 +278,6 @@ struct ConfigFileTests {
             "b.com": .object(["zoom": 1.25, "autoplay": "block", "location": "deny"]),
             "c.com": .object(["zoom": 1.5]),
         ]))
-        // Without shortcut defaults the shortcuts are left alone.
         #expect(try ConfigFile.tidy(data("{\"shortcuts\": {\"togglePin\": \"none\"}}")).get().removed == [])
     }
 

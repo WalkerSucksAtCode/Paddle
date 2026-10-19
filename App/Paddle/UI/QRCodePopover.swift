@@ -3,7 +3,6 @@ import CoreImage.CIFilterBuiltins
 import PaddleCore
 import SwiftUI
 
-/// Generates and presents an offline, on-device QR code for a web page URL.
 struct QRCodePopover: View {
     let url: URL
     let title: String

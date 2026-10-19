@@ -69,7 +69,6 @@ struct ExtensionSourcesTests {
         #expect(sources.folder(forStoreID: "uBlock0@raymondhill.net", store: .mozillaAddons) == "ublock")
         #expect(sources.folder(forStoreID: "ublock-origin", store: .chromeWebStore) == nil)
         #expect(sources.folder(forStoreID: "other-slug", store: .mozillaAddons) == nil)
-        // A record from before slugs were recorded still matches by guid, not by slug.
         #expect(sources.folder(forStoreID: "old@example.com", store: .mozillaAddons) == "old")
         #expect(sources.folder(forStoreID: "old", store: .mozillaAddons) == nil)
     }

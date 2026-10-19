@@ -24,7 +24,6 @@ enum WebInspector {
         WKWebExtensionContext.instancesRespond(to: NSSelectorFromString(backgroundKey))
     }
 
-    /// True when the inspector was asked to show.
     @discardableResult
     static func show(_ webView: WKWebView) -> Bool {
         guard let inspector = inspector(of: webView) else { return false }
@@ -32,7 +31,6 @@ enum WebInspector {
         return true
     }
 
-    /// True when the inspector was asked to show with the JavaScript console selected.
     @discardableResult
     static func showConsole(_ webView: WKWebView) -> Bool {
         guard let inspector = inspector(of: webView, responding: showConsoleSelector) else { return false }
@@ -40,7 +38,6 @@ enum WebInspector {
         return true
     }
 
-    /// True when element selection was toggled (the inspector opens if it wasn't).
     @discardableResult
     static func toggleElementSelection(_ webView: WKWebView) -> Bool {
         guard let inspector = inspector(of: webView, responding: toggleSelectionSelector) else { return false }

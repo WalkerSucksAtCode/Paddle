@@ -105,7 +105,6 @@ struct BrowserSessionImportTests {
         #expect(result.windows[0].tabs.map(\.url) == ["https://c.test/", "https://a.test/", "https://p.test/2"])
         #expect(result.windows[0].tabs.map(\.isPinned) == [true, false, false])
         #expect(result.windows[0].tabs[1].title == "Alpha é")
-        // The selected tab (settings) was dropped: the nearest kept tab before it, tab 10, is now second.
         #expect(result.windows[0].selectedIndex == 1)
         #expect(result.windows[1].tabs.map(\.url) == ["https://w2.test/", "http://w2.test/b"])
         #expect(result.windows[1].selectedIndex == 1)

@@ -75,7 +75,6 @@ public enum ChromeUpdateCheck {
             var checks: [(status: String?, version: String?)] = []
         }
 
-        /// The first element's name.
         var root: String?
         var apps: [App] = []
         private var stack: [String] = []

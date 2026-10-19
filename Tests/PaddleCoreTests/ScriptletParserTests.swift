@@ -142,7 +142,6 @@ struct ScriptletParserTests {
         // An entity exception removes the domains it covers.
         let domains = ScriptletSet.rules(from: [("shop.com,www.shop.co.uk,other.com##+js(set, x, 1)\nshop.*#@#+js(set, x, 1)", false)]).rules
         #expect(domains.first?.includeDomains == ["other.com"])
-        // Only negated domains in an exception: refused, not read as "everywhere".
         #expect(ScriptletParser.parse("~a.com#@#+js()") == .malformed("exception with only negated domains"))
         let kept = ScriptletSet.rules(from: [("b.com##+js(set, x, 1)\n~a.com#@#+js(set, x, 1)", false)]).rules
         #expect(kept.count == 1)

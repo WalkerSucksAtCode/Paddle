@@ -88,7 +88,6 @@ struct SiteSettingsTests {
         #expect(config.siteSettings(forHost: "docs.example.com") == SiteSettings(zoom: 2, javaScript: false, autoplay: .block, location: .deny))
         #expect(config.siteSettings(forHost: "www.example.com") == SiteSettings(zoom: 1.5, javaScript: false, location: .deny))
         #expect(config.siteSettings(forHost: "example.com") == config.sites["example.com"])
-        // "notexample.com" is not a subdomain of "example.com".
         #expect(config.siteSettings(forHost: "notexample.com").isEmpty)
         #expect(config.siteSettings(forHost: "unknown.example").isEmpty)
     }

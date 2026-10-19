@@ -119,7 +119,6 @@ struct MCPTests {
         #expect(errorCode(await send(#"{"jsonrpc":"2.0","id":1,"method":"bogus"}"#)) == -32601)
         #expect(errorCode(await send(#"[1,2]"#)) == -32600)
         #expect(errorCode(await send(#"{"jsonrpc":"2.0","id":1}"#)) == -32600)
-        // Invalid params: no name, a name that isn't a tool, arguments that aren't an object.
         #expect(errorCode(await send(#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}"#)) == -32602)
         #expect(errorCode(await send(#"{"jsonrpc":"2.0","id":1,"method":"tools/call"}"#)) == -32602)
         #expect(errorCode(await send(#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"nope"}}"#)) == -32602)

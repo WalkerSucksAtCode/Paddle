@@ -149,7 +149,6 @@ final class SettingsModel {
             base = data
             baseStamp = stamp
             pendingChanges = []
-            // Writing applied the whole file, hand edits included.
             banner = nil
         case .conflict(let paths):
             pendingChanges = changes

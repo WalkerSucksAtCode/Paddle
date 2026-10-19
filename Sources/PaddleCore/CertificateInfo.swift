@@ -13,7 +13,6 @@ public struct CertificateInfo: Sendable, Equatable {
         self.isValid = isValid
     }
 
-    /// Reads certificate summary, issuer, and validity from an evaluated `SecTrust`.
     public static func read(from trust: SecTrust) -> CertificateInfo? {
         guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
               let cert = chain.first else {

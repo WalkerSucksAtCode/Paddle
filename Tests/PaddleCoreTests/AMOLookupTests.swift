@@ -184,7 +184,6 @@ struct AMOLookupTests {
     @Test func jarSectionsReadContinuationsAndRefuseBrokenLines() throws {
         let text = "Manifest-Version: 1.0\r\n\r\nName: long\r\n name\r\nSHA256-Digest: AAAA\r\n\r\nName: other\r\n\r\n"
         let sections = try #require(AMO.jarSections(Data(text.utf8)))
-        // The main section, the two entries, then the empty sections the blank lines at the end make.
         #expect(sections.count == 5)
         #expect(sections[0] == ["manifest-version": "1.0"])
         #expect(sections[1] == ["name": "longname", "sha256-digest": "AAAA"])

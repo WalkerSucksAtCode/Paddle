@@ -49,7 +49,6 @@ final class ExtensionPopupPresenter {
 
     init() {
         closeObserver = NotificationCenter.default.addObserver(forName: NSPopover.willCloseNotification, object: nil, queue: .main) { [weak self] note in
-            // Delivered on the main queue (`queue: .main`).
             nonisolated(unsafe) let object = note.object
             MainActor.assumeIsolated { self?.popoverWillClose(object as? NSPopover) }
         }
@@ -101,7 +100,6 @@ final class ExtensionPopupPresenter {
     private func watchEscape() {
         guard escapeMonitor == nil else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            // Local monitors run on the main thread, inside the app's event dispatch.
             nonisolated(unsafe) let keyEvent = event
             let closed = MainActor.assumeIsolated { self?.closeOnEscape(keyEvent) ?? false }
             return closed ? nil : event
@@ -188,7 +186,7 @@ final class ExtensionPopupPresenter {
         }
         clickedButton = nil
         clickedContextID = nil
-        clamp(popover)
+        Self.clampSize(popover)
         if let controller = popover.contentViewController {
             sizeObservation = controller.observe(\.preferredContentSize) { [weak popover] _, _ in
                 DispatchQueue.main.async { MainActor.assumeIsolated { popover.map(Self.clampSize) } }
@@ -214,8 +212,6 @@ final class ExtensionPopupPresenter {
         // A menu-placed extension has no button of its own: the puzzle button stands in.
         return contentView.descendants(withIdentifier: ExtensionOverflowNSButton.identifier).last(where: visible)
     }
-
-    private func clamp(_ popover: NSPopover) { Self.clampSize(popover) }
 
     private static func clampSize(_ popover: NSPopover) {
         let size = popover.contentSize

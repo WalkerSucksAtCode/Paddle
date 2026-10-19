@@ -635,10 +635,6 @@ final class AppModel {
 
     // MARK: - Sites
 
-    /// Sets one field of `sites.<key>` in config.json through `writeConfig`, starting from the entry as it is on
-    /// disk now (other members, unknown ones included, stay). A value equal to Paddle's default removes the field,
-    /// and an entry left empty is removed. `key` is a `sites` key as written in the file, or a new host.
-    @discardableResult
     /// Whether `profile`'s own settings set `field` for the `sites` key `key`.
     func profileSetsSiteField(_ field: SiteSettings.Field, forKey key: String, profile: ProfileID) -> Bool {
         guard case .object(let sites)? = profiles.profile(id: profile).settings[ProfileOverrides.sitesKey] else { return false }
@@ -656,6 +652,10 @@ final class AppModel {
         return false
     }
 
+    /// Sets one field of `sites.<key>` in config.json through `writeConfig`, starting from the entry as it is on
+    /// disk now (other members, unknown ones included, stay). A value equal to Paddle's default removes the field,
+    /// and an entry left empty is removed. `key` is a `sites` key as written in the file, or a new host.
+    @discardableResult
     func writeSiteSetting(_ field: SiteSettings.Field, _ value: JSONValue?, forKey key: String) async -> ConfigWriteResult {
         let disk: Data
         let existing: JSONValue?
@@ -1431,9 +1431,7 @@ final class AppModel {
         }
     }
 
-    /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),
-    /// and tabs playing media or using the camera/mic stay awake.
-    /// The sleep policy now: the configured values, tightened while Low Power Mode or heat constrains power.
+    /// Configured tab sleep policy, tightened while Low Power Mode or heat constrains power (`TabSleepPolicy.adjusted(for:)`).
     var effectiveSleepPolicy: TabSleepPolicy { TabSleepPolicy(config: config).adjusted(for: power) }
 
     /// The sleep policy for a profile's tabs: its own timers (`profileConfigs`), tightened the same way.
@@ -1490,6 +1488,8 @@ final class AppModel {
         }
     }
 
+    /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),
+    /// and tabs playing media or using the camera/mic stay awake.
     func sweepSleepingTabs(memoryPressure: Bool = false) {
         let policy = effectiveSleepPolicy
         Task {

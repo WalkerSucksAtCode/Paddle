@@ -195,7 +195,6 @@ struct BrowserHistoryImportTests {
         ])
         #expect(summary.duplicates == 1)
         #expect(summary.added == 1)
-        // The newer visit keeps its title.
         #expect(try store.recentPages(limit: 1).first?.title == "Mine")
     }
 

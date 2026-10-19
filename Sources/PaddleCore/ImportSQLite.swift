@@ -89,7 +89,6 @@ enum ImportSQLite {
 
     static func double(_ stmt: OpaquePointer, _ column: Int32) -> Double { sqlite3_column_double(stmt, column) }
 
-    /// True when the column is NULL.
     static func isNull(_ stmt: OpaquePointer, _ column: Int32) -> Bool { sqlite3_column_type(stmt, column) == SQLITE_NULL }
 
     /// Runs a query and maps every row. Throws `Failure` when SQLite refuses the statement or a step.

@@ -104,7 +104,7 @@ struct ExtensionsPane: View {
 
     /// The always-visible line: icon, name, "Version X · status" and the load switch on the right.
     @ViewBuilder private func row(_ summary: ExtensionFolderSummary) -> some View {
-        let enabled = isEnabled(summary.folder)
+        let enabled = host.isEnabled(summary.folder, config: model.file)
         let state = status(summary, enabled: enabled)
         HStack(spacing: 10) {
             icon(summary)
@@ -136,7 +136,7 @@ struct ExtensionsPane: View {
 
     /// Everything else for one folder, shown under its Details disclosure.
     @ViewBuilder private func details(_ summary: ExtensionFolderSummary) -> some View {
-        let enabled = isEnabled(summary.folder)
+        let enabled = host.isEnabled(summary.folder, config: model.file)
         LabeledContent("Folder") { Text(summary.folder) }
 
         if summary.isLoaded {
@@ -219,11 +219,6 @@ struct ExtensionsPane: View {
                 .frame(width: size.width, height: size.height)
                 .accessibilityHidden(true)
         }
-    }
-
-    /// Whether the folder runs in this pane's profile (config.json for the default profile, profiles.json otherwise).
-    private func isEnabled(_ folder: String) -> Bool {
-        host.isEnabled(folder, config: model.file)
     }
 
     /// The status line as an icon plus words, never colour alone.

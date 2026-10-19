@@ -253,7 +253,6 @@ struct CompatPreludeTests {
         c.evaluateScript("chrome.permissions.contains({permissions: ['favicon']}, (r) => { globalThis.__cb2 = r; })")
         #expect(Self.eval(c, "__cb2") == "false")
 
-        // A failure: the callback sees lastError, and only while it runs; the promise form rejects.
         #expect(Self.settle(c, "chrome.storage.managed.set({a: 1})") == "ERR:This is a read-only store.")
         c.evaluateScript("globalThis.__nativeLastError = undefined; chrome.storage.managed.set({a: 1}, (r) => { globalThis.__cb3 = [r, chrome.runtime.lastError && chrome.runtime.lastError.message]; })")
         #expect(Self.eval(c, "__cb3") == #"[null,"This is a read-only store."]"#)

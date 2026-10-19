@@ -118,7 +118,6 @@ struct FaviconsTests {
             icon("https://x.test/touch.png", rel: "apple-touch-icon", sizes: "180x180"),
             icon("https://x.test/48.png", rel: "shortcut icon", sizes: "48x48"),
         ]) == "https://x.test/48.png")
-        // With nothing else, the apple-touch-icon is still used.
         #expect(best([icon("https://x.test/touch.png", rel: "apple-touch-icon", sizes: "180x180")]) == "https://x.test/touch.png")
     }
 
@@ -181,7 +180,6 @@ struct FaviconsTests {
             IconCandidate(href: "https://example.com/dir/fav.ico", rel: "Shortcut Icon"),
             IconCandidate(href: "https://cdn.example.net/touch.png", rel: "apple-touch-icon", sizes: "180x180"),
         ])
-        // What the app does next: pick from what the page returned.
         #expect(FaviconPicker.bestIcon(found, pageURL: URL(string: "https://example.com/dir/page.html")!)?.absoluteString
             == "https://example.com/favicon-32.png")
     }

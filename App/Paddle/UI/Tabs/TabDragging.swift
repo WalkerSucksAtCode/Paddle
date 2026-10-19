@@ -135,7 +135,6 @@ final class TabDragController: NSObject, NSDraggingSource {
     private var monitor: Any?
     private var pending: (anchor: TabDragAnchorView, start: NSPoint)?
 
-    // The drag in progress.
     private weak var tab: Tab?
     private weak var origin: BrowserWindowController?
     private var originIndex = 0

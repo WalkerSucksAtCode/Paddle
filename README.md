@@ -52,7 +52,7 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `showFullAddress` | `false` | The address field shows a web page's whole address while you aren't editing it. Off, it shows only the site (`accounts.google.com`, without `www.`); click it for the whole address. Settings > General |
 | `askWhereToDownload` | `false` | When downloading a file, prompt for the destination (a sheet on the window, opening in `downloadFolder`) instead of saving straight to `downloadFolder`. Settings > General > Downloads: Always ask where to save each file |
 | `downloadFolder` | `""` | Folder downloads are saved to (`~` allowed). Empty, or a folder that doesn't exist: ~/Downloads. Settings > General > Downloads: Save files to … Change… |
-| `underlineLinks` | `false` | Underline website links on web pages to improve readability and colorblind accessibility. Settings > Appearance |
+| `underlineLinks` | `false` | Underline website links on web pages for colorblind accessibility. Settings > Appearance |
 | `alwaysShowTabCloseButtons` | `false` | Keep the close button (×) visible on all tabs without requiring hover. Settings > Appearance |
 | `showHomeButton` | `false` | Show a Home button on the toolbar that navigates to `homepage`. Settings > Appearance |
 | `alwaysShowDownloadsButton` | `false` | Always show the Downloads button on the toolbar, even when no downloads are active. Settings > Appearance |

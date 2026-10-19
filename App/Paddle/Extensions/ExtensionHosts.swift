@@ -78,7 +78,6 @@ extension AppModel {
         }
     }
 
-    /// A profile is being deleted (its windows are closed): its host unloads every extension and is dropped.
     /// A new folder installed from a window of `profile` (not the default): on in that profile (profiles.json) and
     /// off in the default profile (`extensions.<folder>` false in config.json), so it runs only where it was installed.
     func installOnlyInProfile(folder: String, profile: ProfileID) async {
@@ -100,6 +99,7 @@ extension AppModel {
         }
     }
 
+    /// A profile is being deleted (its windows are closed): its host unloads every extension and is dropped.
     func dropExtensions(profile: ProfileID) {
         guard profile != ProfileStore.defaultID, let host = profileExtensionHosts.removeValue(forKey: profile) else { return }
         host.shutDown()

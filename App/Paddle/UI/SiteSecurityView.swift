@@ -152,7 +152,6 @@ struct SiteSecurityView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
 
-            // Content Blocking
             Toggle(isOn: Binding(
                 get: { policy.contentBlocking },
                 set: { value in
@@ -165,7 +164,6 @@ struct SiteSecurityView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
-            // Location
             HStack {
                 Label("Location", systemImage: "location")
                     .font(.system(size: 12))
@@ -185,7 +183,6 @@ struct SiteSecurityView: View {
                 .frame(width: 80)
             }
 
-            // Notifications
             HStack {
                 Label("Notifications", systemImage: "bell")
                     .font(.system(size: 12))
@@ -205,7 +202,6 @@ struct SiteSecurityView: View {
                 .frame(width: 80)
             }
 
-            // Autoplay
             HStack {
                 Label("Autoplay", systemImage: "play.circle")
                     .font(.system(size: 12))
@@ -225,7 +221,6 @@ struct SiteSecurityView: View {
                 .frame(width: 80)
             }
 
-            // JavaScript
             Toggle(isOn: Binding(
                 get: { policy.javaScript },
                 set: { value in

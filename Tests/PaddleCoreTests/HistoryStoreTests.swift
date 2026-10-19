@@ -342,7 +342,6 @@ struct HistoryStoreTests {
         #expect(score(90) == 30)
         #expect(score(200) == 10)
         #expect(score(1, visits: 2, typed: 1) == 400)
-        // A visit dated in the future counts as brand new.
         #expect(Frecency.score(visitCount: 1, typedCount: 0, lastVisit: now.addingTimeInterval(3600), now: now) == 100)
     }
 }

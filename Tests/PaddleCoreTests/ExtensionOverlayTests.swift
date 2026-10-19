@@ -38,7 +38,6 @@ struct ExtensionOverlayTests {
         let manifest = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: result.root.appendingPathComponent("manifest.json"))) as? [String: Any])
         #expect((manifest["background"] as? [String: Any])?["scripts"] as? [String] == ["paddle-prelude.js", "background.js"])
 
-        // The user's folder is untouched.
         #expect(try contents(source.appendingPathComponent("manifest.json")) == ExtensionCompatTests.firefox)
         #expect(!fm.fileExists(atPath: source.appendingPathComponent("paddle-prelude.js").path))
     }
@@ -102,7 +101,6 @@ struct ExtensionOverlayTests {
         #expect(!second.reused)
         #expect(!fm.fileExists(atPath: second.root.appendingPathComponent("leftover.txt").path))
         #expect(try contents(second.root.appendingPathComponent("background.js")) == "console.log('edited')")
-        // A clone of a clone's edits never reaches the source.
         #expect(try contents(source.appendingPathComponent("background.js")) == "console.log('edited')")
     }
 

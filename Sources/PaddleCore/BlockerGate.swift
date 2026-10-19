@@ -30,7 +30,6 @@ public final class BlockerGate {
     /// Every list is installed; a page that commits now is blocked.
     public var isReady: Bool { state == .ready }
 
-    /// Starts the timeout. Calling it again does nothing.
     public func start() {
         guard state == .waiting, timer == nil else { return }
         let timeout = timeout

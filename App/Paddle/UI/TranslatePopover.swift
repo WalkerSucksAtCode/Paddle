@@ -105,7 +105,6 @@ struct TranslatePopover: View {
 
             Divider()
 
-            // On-device Apple Translation
             VStack(alignment: .leading, spacing: 6) {
                 Text("Apple Translation")
                     .chromeFont(size: 11, weight: .medium)

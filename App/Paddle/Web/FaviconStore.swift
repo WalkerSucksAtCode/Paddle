@@ -195,7 +195,6 @@ final class FaviconStore {
         return largeFetchedAt[key].map { FaviconPicker.isStale(fetchedAt: $0, now: Date()) } ?? true
     }
 
-    /// Writes an icon's PNG into `folder`, following the history rule above.
     private func store(_ png: Data, key: String, in folder: URL) {
         guard AppModel.shared.historyEnabled || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
         do {

@@ -28,7 +28,6 @@ struct SplitsTests {
         var four = pair("a", "b")
         four.insert("c", at: "b", edge: .right)
         four.insert("d", at: "c", edge: .right)
-        // d was dragged away from the others.
         #expect(MultiViewRules.normalized(layouts: [four], tabs: tabs("a", "b", "c", "x", "d")).first?.tabs == ["a", "b", "c"])
         #expect(MultiViewRules.normalized(layouts: [pair("a", "c")], tabs: tabs("a", "b", "c")).isEmpty)
     }
@@ -64,7 +63,6 @@ struct SplitsTests {
         #expect(back == window)
         #expect(back.splits == [split])
         #expect(back.otherSpaces[0].splits.count == 1)
-        // Old split records come back as two-pane layouts, after any saved layouts.
         #expect(back.allLayouts == [PaneLayout(split: split)])
         let withLayout = WindowRecord(tabs: [], selectedIndex: 0, layouts: [pair("x", "y")])
         let decoded = try JSONDecoder().decode(WindowRecord.self, from: JSONEncoder().encode(withLayout))

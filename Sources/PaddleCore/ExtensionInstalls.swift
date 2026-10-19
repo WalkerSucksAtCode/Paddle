@@ -31,8 +31,8 @@ public struct ExtensionInstalls: Codable, Sendable, Equatable {
         firstSeen[folder] == nil ? "install" : nil
     }
 
-    /// Records the first run; later calls keep the first date.
     @discardableResult
+    /// Records the first run; later calls keep the first date.
     public mutating func markSeen(folder: String, now: Date) -> Bool {
         guard firstSeen[folder] == nil else { return false }
         firstSeen[folder] = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))

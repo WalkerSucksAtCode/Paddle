@@ -76,7 +76,6 @@ struct BrowserSiteSettingsImportTests {
         #expect(sites["ignored.com"] == nil)
         #expect(sites["cookie.com"] == nil)
         #expect(sites.count == 9)
-        // a,b pair; ex*mple; file; chrome-extension; port 8443; "*,*"; about:blank.
         #expect(imported.skippedPatterns == 7)
     }
 

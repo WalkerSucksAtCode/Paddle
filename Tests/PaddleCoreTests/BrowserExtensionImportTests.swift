@@ -46,7 +46,6 @@ struct BrowserExtensionImportTests {
         #expect(byName["Alpha Unpacked"]?.link == nil)
         #expect(byName["Alpha Unpacked"]?.notInstallable == "Added by hand, not from a store")
         #expect(byName["Edge Thing"]?.notInstallable == "From Microsoft Edge Add-ons")
-        // "Off" has a store flag but an id that isn't 32 letters a-p: no link.
         #expect(byName["Off"]?.link == nil)
     }
 
@@ -63,7 +62,6 @@ struct BrowserExtensionImportTests {
         let (f, src) = try chromium(.edge, file: "Preferences")
         _ = f
         let byName = Dictionary(uniqueKeysWithValues: try BrowserExtensionReader.read(src).map { ($0.name, $0) })
-        // Edge: from_webstore alone doesn't mean the Chrome Web Store.
         #expect(byName["Newest Name"]?.link == nil)
         #expect(byName["zeta Store"]?.link == .chromeWebStore(id: Self.storeID))
     }

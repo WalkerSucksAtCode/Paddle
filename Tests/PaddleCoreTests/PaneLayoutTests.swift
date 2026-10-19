@@ -25,7 +25,6 @@ struct PaneLayoutTests {
         #expect(l.root == .split(.horizontal, ratio: 0.5, .tab("a"), .split(.vertical, ratio: 0.5, .tab("b"), .tab("c"))))
         #expect(mutate(&l) { $0.insert("d", at: "a", edge: .left) })
         #expect(l.tabs == ["d", "a", "b", "c"])
-        // Already shown, unknown target: nothing changes.
         #expect(!mutate(&l) { $0.insert("a", at: "b", edge: .top) })
         #expect(!mutate(&l) { $0.insert("e", at: "zz", edge: .top) })
         #expect(l.count == 4)

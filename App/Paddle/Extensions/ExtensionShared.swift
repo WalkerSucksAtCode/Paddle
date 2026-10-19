@@ -169,7 +169,6 @@ final class ExtensionShared {
         ]
         for name in names {
             permissionObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
-                // Delivered on the main queue (`queue: .main`), so the context is used on its actor.
                 nonisolated(unsafe) let object = note.object
                 MainActor.assumeIsolated {
                     guard let context = object as? WKWebExtensionContext else { return }
@@ -184,7 +183,6 @@ final class ExtensionShared {
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Local monitors run on the main thread, inside the app's event dispatch.
             nonisolated(unsafe) let keyEvent = event
             let handled = MainActor.assumeIsolated {
                 let browser = keyEvent.window?.windowController as? BrowserWindowController

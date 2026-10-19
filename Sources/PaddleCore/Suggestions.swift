@@ -78,7 +78,6 @@ public enum SuggestionRanker {
         }
         guard let first = words.first, limit > 0 else { return [] }
 
-        // Best candidate per normalized URL.
         var best: [String: Candidate] = [:]
         for (index, page) in pages.enumerated() {
             let display = displayURL(page.url).lowercased()

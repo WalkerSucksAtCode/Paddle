@@ -11,7 +11,6 @@ struct ReaderArticleTests {
         )
         #expect(short.readingTimeMinutes == 1)
 
-        // 400 words should be ~2 minutes
         let words400 = (1...400).map { "word\($0)" }.joined(separator: " ")
         let longer = ReaderArticle(
             title: "Longer Piece",

@@ -17,7 +17,6 @@ struct SitePersonaScriptTests {
         let context = try #require(JSContext())
         context.setObject(Self.source, forKeyedSubscript: "src" as NSString)
         #expect(context.evaluateScript("(function () { try { new Function(src); return 'ok'; } catch (e) { return String(e); } })()")?.toString() == "ok")
-        // Nothing to present, so nothing to install: no Chrome or Firefox entry.
         #expect(SitePersonaScript.source(for: [:]).isEmpty)
         #expect(SitePersonaScript.source(for: ["a.example": .none, "b.example": .native]).isEmpty)
     }

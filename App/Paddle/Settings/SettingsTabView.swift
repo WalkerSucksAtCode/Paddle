@@ -31,7 +31,7 @@ struct SettingsTabView: View {
             guard press.modifiers.contains(.command),
                   let num = Int(press.characters),
                   num >= 1, num <= SettingsPane.allCases.count else { return .ignored }
-            choose(SettingsPane.allCases[num - 1])
+            tab.browser?.showPane(SettingsPane.allCases[num - 1], in: tab)
             return .handled
         }
         .onAppear(perform: start)
@@ -45,7 +45,7 @@ struct SettingsTabView: View {
         }
         .onChange(of: search) { _, _ in
             // The sidebar lists only matches, so a search that leaves the shown pane out shows the first match.
-            if let first = matches.first, !matches.contains(selected) { choose(first) }
+            if let first = matches.first, !matches.contains(selected) { tab.browser?.showPane(first, in: tab) }
         }
     }
 
@@ -53,7 +53,7 @@ struct SettingsTabView: View {
         VStack(spacing: 0) {
             searchField
                 .padding(10)
-            List(selection: Binding(get: { tab.settingsPane }, set: { if let pane = $0 { choose(pane) } })) {
+            List(selection: Binding(get: { tab.settingsPane }, set: { if let pane = $0 { tab.browser?.showPane(pane, in: tab) } })) {
                 ForEach(matches, id: \.self) { pane in
                     Label(pane.title, systemImage: pane.symbol)
                         .tag(pane)
@@ -100,7 +100,7 @@ struct SettingsTabView: View {
                 .focused($searchFocused)
                 .onSubmit {
                     if let first = matches.first {
-                        choose(first)
+                        tab.browser?.showPane(first, in: tab)
                     }
                 }
                 .onChange(of: browser.settingsSearchFocusRequest) {
@@ -122,11 +122,6 @@ struct SettingsTabView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.07)))
-    }
-
-    /// Shows `pane` in this tab; its address, the session and the remembered pane follow.
-    private func choose(_ pane: SettingsPane) {
-        tab.browser?.showPane(pane, in: tab)
     }
 
     /// Makes the model on first show and starts watching config.json. Showing again re-reads the file too, since

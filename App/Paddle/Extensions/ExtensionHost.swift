@@ -1048,8 +1048,7 @@ final class ExtensionHost {
     }
 
     /// Returns when `loadBackgroundContent` completes or after `timeout`, whichever is first (E24: a failing
-    /// background never calls the completion).
-    /// True when the load completed without an error, false on an error or the timeout.
+    /// background never calls the completion). True on success, false on error or timeout.
     private static func backgroundStarted(_ context: WKWebExtensionContext, timeout: Duration) async -> Bool {
         final class Once { var done = false }
         let once = Once()

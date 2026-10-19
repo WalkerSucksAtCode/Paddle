@@ -7,7 +7,6 @@ import WebKit
 final class DevelopMenuDelegate: NSObject, NSMenuDelegate {
     static let shared = DevelopMenuDelegate()
 
-    /// The submenu item, with this delegate and its placeholder line.
     static func backgroundPagesItem() -> NSMenuItem {
         let item = NSMenuItem(title: "Inspect Extension Background Page", action: nil, keyEquivalent: "")
         let menu = NSMenu(title: item.title)

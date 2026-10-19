@@ -161,11 +161,9 @@ struct SitePolicyTests {
         #expect(config.sitePolicy(forHost: "dark.com", systemIsDark: false).darkMode == true)
         #expect(config.sitePolicy(forHost: "light.com", systemIsDark: true).darkMode == false)
 
-        // Entry serialization
         #expect(SiteSettings.entry(nil, setting: .darkMode, to: true) == ["darkMode": true])
         #expect(SiteSettings.entry(nil, setting: .darkMode, to: false) == nil)
 
-        // Script source generation
         let script = DarkModeScript.source(for: config.sites, defaultDarkMode: true)
         #expect(script.contains("paddle-dark-mode-styles"))
         #expect(script.contains("window.__paddleDarkMode"))

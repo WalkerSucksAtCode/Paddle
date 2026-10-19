@@ -156,10 +156,8 @@ struct StoreInstallTests {
             == .alreadyInstalled(folder: "sponsorblock", version: "5.9.1"))
         #expect(StoreInstall.plan(id: developerID, store: .chromeWebStore, version: "5.10", displayName: "x", sources: sources, existingFolders: existing)
             == .replace(folder: "sponsorblock", oldVersion: "5.9.1", newVersion: "5.10"))
-        // Its folder was deleted: a fresh install.
         #expect(StoreInstall.plan(id: developerID, store: .chromeWebStore, version: "5.9.1", displayName: "SponsorBlock", sources: sources, existingFolders: ["dark-reader"])
             == .install(folder: "sponsorblock"))
-        // Another extension's name collides.
         #expect(StoreInstall.plan(id: String(repeating: "a", count: 32), store: .chromeWebStore, version: "1", displayName: "Dark Reader", sources: sources, existingFolders: existing)
             == .install(folder: "dark-reader-2"))
     }

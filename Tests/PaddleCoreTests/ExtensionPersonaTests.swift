@@ -8,7 +8,6 @@ struct ExtensionPersonaTests {
     }
 
     @Test(arguments: [
-        // (manifest, source, override, expected)
         (#"{"manifest_version":3,"background":{"service_worker":"sw.js"}}"#, nil, nil, Persona.chrome),
         (#"{"manifest_version":2,"background":{"scripts":["bg.js"]}}"#, nil, nil, .chrome),
         (#"{"browser_specific_settings":{"gecko":{"id":"a@b"}},"background":{"scripts":["bg.js"]}}"#, nil, nil, .firefox),
@@ -148,12 +147,10 @@ struct ExtensionPersonaTests {
         #expect(empty.pageUserAgent(forHost: "pass.proton.me") == firefox)
         #expect(empty.pageUserAgent(forHost: "proton.me") == nil)
         #expect(empty.pageUserAgent(forHost: "mail.proton.me") == nil)
-        // Any entry covering the host wins: a string, "" (WebKit's own) or a persona, "none" included.
         #expect(PaddleConfig(siteUserAgents: ["pass.proton.me": "Custom"]).pageUserAgent(forHost: "pass.proton.me") == "Custom")
         #expect(PaddleConfig(siteUserAgents: ["proton.me": ""]).pageUserAgent(forHost: "pass.proton.me") == nil)
         #expect(PaddleConfig(sitePersonas: ["proton.me": .none]).pageUserAgent(forHost: "account.proton.me") == nil)
         #expect(PaddleConfig(sitePersonas: ["account.proton.me": .chrome]).pageUserAgent(forHost: "account.proton.me") == Persona.chrome.userAgent(.current))
-        // An entry for another host leaves the fix alone.
         #expect(PaddleConfig(siteUserAgents: ["example.com": "Custom"]).pageUserAgent(forHost: "account.proton.me") == firefox)
     }
 

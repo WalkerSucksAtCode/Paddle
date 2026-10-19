@@ -151,11 +151,9 @@ struct WebKitRuleEvaluatorTests {
         // `^` is a separator: `/ok/` is excepted, `/ok.js` is not.
         #expect(!decide(e, Request(url: "https://ads.example.com/ok/x.js")).blocked)
         #expect(decide(e, Request(url: "https://ads.example.com/ok.js")).blocked)
-        // `$image,third-party`.
         #expect(decide(e, Request(url: "https://cdn.test/banner/a.png", sourceURL: "https://site.test/", resourceType: "image")).blocked)
         #expect(!decide(e, Request(url: "https://site.test/banner/a.png", sourceURL: "https://site.test/", resourceType: "image")).blocked)
         #expect(!decide(e, Request(url: "https://cdn.test/banner/a.js", sourceURL: "https://site.test/", resourceType: "script")).blocked)
-        // `$domain=news.example`.
         #expect(decide(e, Request(url: "https://track.example/p", sourceURL: "https://news.example/")).blocked)
         #expect(!decide(e, Request(url: "https://track.example/p", sourceURL: "https://other.test/")).blocked)
     }

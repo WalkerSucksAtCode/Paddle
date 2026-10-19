@@ -64,7 +64,6 @@ enum ReaderFont: String, CaseIterable, Identifiable {
     }
 }
 
-/// The distraction-free Reader View overlay for a tab.
 struct ReaderView: View {
     let tab: Tab
     let article: ReaderArticle
@@ -138,7 +137,6 @@ struct ReaderView: View {
                 .font(.headline)
                 .padding(.bottom, 2)
 
-            // Theme colors
             HStack(spacing: 10) {
                 ForEach(ReaderTheme.allCases) { t in
                     Button {
@@ -156,7 +154,6 @@ struct ReaderView: View {
 
             Divider()
 
-            // Font choice
             Picker("Font", selection: $font) {
                 ForEach(ReaderFont.allCases) { f in
                     Text(f.title).tag(f)
@@ -164,7 +161,6 @@ struct ReaderView: View {
             }
             .pickerStyle(.segmented)
 
-            // Font size
             HStack(spacing: 12) {
                 Button {
                     fontSize = max(14, fontSize - 2)
@@ -192,7 +188,6 @@ struct ReaderView: View {
     }
 }
 
-/// A lightweight WKWebView representing the styled reader HTML document.
 private struct ReaderContentWebView: NSViewRepresentable {
     let article: ReaderArticle
     let baseURL: URL?

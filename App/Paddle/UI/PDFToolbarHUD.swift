@@ -3,8 +3,6 @@ import PaddleCore
 import SwiftUI
 import WebKit
 
-/// A floating HUD toolbar presented over a PDF document in Paddle.
-/// Provides controls for opening in macOS Preview, zooming, saving/exporting, and printing.
 struct PDFToolbarHUD: View {
     let tab: Tab
     let model: BrowserModel
@@ -14,7 +12,6 @@ struct PDFToolbarHUD: View {
     var body: some View {
         if isVisible {
             HStack(spacing: 8) {
-                // PDF badge
                 Text("PDF")
                     .chromeFont(size: 10, weight: .bold)
                     .padding(.horizontal, 6)
@@ -22,7 +19,6 @@ struct PDFToolbarHUD: View {
                     .background(RoundedRectangle(cornerRadius: 4).fill(theme?.accent?.opacity(0.2) ?? Color.accentColor.opacity(0.2)))
                     .foregroundStyle(theme?.accent ?? Color.accentColor)
 
-                // Open in Preview
                 Button {
                     model.controller?.paddleOpenInPreview(nil)
                 } label: {
@@ -36,7 +32,6 @@ struct PDFToolbarHUD: View {
                 Divider()
                     .frame(height: 14)
 
-                // Zoom Out
                 Button {
                     model.controller?.paddleZoomOut(nil)
                 } label: {
@@ -48,7 +43,6 @@ struct PDFToolbarHUD: View {
                 .help("Zoom Out (⌘-)")
                 .accessibilityLabel("Zoom Out")
 
-                // Actual Size (100%)
                 Button {
                     model.controller?.paddleActualSize(nil)
                 } label: {
@@ -60,7 +54,6 @@ struct PDFToolbarHUD: View {
                 .help("Actual Size (⌘0)")
                 .accessibilityLabel("Actual Size")
 
-                // Zoom In
                 Button {
                     model.controller?.paddleZoomIn(nil)
                 } label: {
@@ -75,7 +68,6 @@ struct PDFToolbarHUD: View {
                 Divider()
                     .frame(height: 14)
 
-                // Save PDF
                 Button {
                     model.controller?.paddleExportPDF(nil)
                 } label: {
@@ -87,7 +79,6 @@ struct PDFToolbarHUD: View {
                 .help("Save PDF…")
                 .accessibilityLabel("Save PDF")
 
-                // Print
                 Button {
                     model.controller?.paddlePrint(nil)
                 } label: {
@@ -102,7 +93,6 @@ struct PDFToolbarHUD: View {
                 Divider()
                     .frame(height: 14)
 
-                // Dismiss
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
                         isVisible = false

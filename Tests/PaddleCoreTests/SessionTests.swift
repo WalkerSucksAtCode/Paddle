@@ -201,7 +201,6 @@ final class SessionStoreTests {
         #expect(tabs[0].id == a)
         #expect(tabs[1].id == nil)
         #expect(tabs[2].id == nil)
-        // A missing state file: the tab loads by URL.
         #expect(tabs[2].interactionState == nil)
     }
 
@@ -228,7 +227,6 @@ final class SessionStoreTests {
         #expect(kept(0) == ["pinned"])
         #expect(kept(-1) == ["pinned"])
         #expect(kept(30) == ["old", "pinned", "newest", "middle", "never"])
-        // URLs and everything else stay.
         #expect(session.cappingStates(to: 0).windows.flatMap(\.tabs).map(\.url) == session.windows.flatMap(\.tabs).map(\.url))
     }
 

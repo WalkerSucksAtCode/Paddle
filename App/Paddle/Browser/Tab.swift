@@ -132,13 +132,9 @@ final class Tab: Identifiable {
     var isShowingErrorPage: Bool { committedErrorPage || showsExtensionUnavailable || isProcessTerminated }
     /// Distraction-free article content when Reader Mode is active on this tab.
     var readerArticle: ReaderArticle?
-    /// Whether the current page has article content that can be read in Reader Mode.
     var isReaderAvailable = false
-    /// Whether the tab is currently displaying a PDF document.
     var isPDF = false
-    /// Whether the translation popover is presented for this tab.
     var showTranslatePopover = false
-    /// Whether the QR code popover is presented for this tab.
     var showQRCodePopover = false
     @ObservationIgnored private var committedErrorPage = false
     @ObservationIgnored private var isProcessTerminated = false
@@ -757,7 +753,6 @@ final class Tab: Identifiable {
         }
     }
 
-    /// Checks whether the loaded page is an article suitable for Reader Mode.
     func checkReaderAvailability() {
         guard let webView, isAwake, !isShowingErrorPage, readerArticle == nil, !isSuspendedInWebKit else {
             isReaderAvailable = false
@@ -933,14 +928,12 @@ final class Tab: Identifiable {
         AppModel.shared.rememberZoom(zoom, forHost: host, isPrivate: isPrivate, profile: profileID)
     }
 
-    /// Whether website dark mode is currently active for this tab's site.
     var isSiteDarkModeActive: Bool {
         guard let host = siteHost else { return false }
         let isDark = AppModel.shared.effectiveAppearanceIsDark
         return AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
     }
 
-    /// Updates this tab's dark mode state in the web view.
     func applySiteDarkMode(systemIsDark: Bool) {
         refreshPageBackdrop()
         // Scripts raise on a suspended page; `unfreeze()` applies it.

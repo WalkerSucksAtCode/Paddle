@@ -73,7 +73,6 @@ struct BookmarksTests {
         #expect(tree.node(folder.id)?.title == "Folder")
         #expect(tree.node(folder.id)?.url == nil)
         #expect(tree.node(folder.id)?.isFolder == true)
-        // Unknown ids are ignored.
         let before = tree
         tree.rename(UUID(), to: "x")
         tree.setURL(UUID(), to: "x")
@@ -452,7 +451,6 @@ struct BookmarksTests {
         let untitledFolder = try BookmarkTree.decode(Data(#"{"bar":[{"children":[]}]}"#.utf8))
         #expect(untitledFolder.bar[0].title == "")
 
-        // Encoding is unchanged: same keys, nothing extra.
         let text = String(decoding: try news.encoded(), as: UTF8.self)
         #expect(text.contains("\"title\""))
         #expect(!text.contains("children"))
@@ -582,7 +580,6 @@ struct BookmarksTests {
         #expect(BookmarkTree.matchKey("HTTPS://A.Example") == "https://a.example/")
         #expect(BookmarkTree.matchKey("https://a.example/#!/x") == "https://a.example/#!/x")
         #expect(BookmarkTree.matchKey("https://a.example/Path?Q=1#frag") == "https://a.example/Path?Q=1")
-        // Stored strings are not rewritten.
         #expect(tree.bar[0].url == "https://example.com/")
     }
 }

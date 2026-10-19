@@ -83,7 +83,6 @@ struct SuggestionsTests {
         #expect(rank("github.com/", [home]).map(\.url) == [home.url])
         #expect(rank("www.github.com", [home]).map(\.url) == [home.url])
         #expect(rank("WWW.GitHub.com/", [home]).map(\.url) == [home.url])
-        // "www." alone and "/" alone are still words of their own.
         #expect(rank("www.", [home]).isEmpty)
     }
 

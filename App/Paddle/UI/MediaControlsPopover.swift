@@ -1,7 +1,6 @@
 import PaddleCore
 import SwiftUI
 
-/// Toolbar button that appears whenever any tab is playing audio or video, opening a global playback controller.
 struct MediaControlsButton: View {
     let app: AppModel
     let model: BrowserModel
@@ -34,7 +33,6 @@ struct MediaControlsButton: View {
     }
 }
 
-/// Popover listing all tabs playing media with quick Play/Pause, Mute, and PiP controls.
 struct MediaControlsPopover: View {
     let app: AppModel
     let currentModel: BrowserModel
@@ -99,7 +97,6 @@ struct MediaControlsPopover: View {
             }
 
             HStack(spacing: 6) {
-                // Play / Pause toggle
                 Button {
                     togglePlayback(in: tab)
                 } label: {
@@ -110,7 +107,6 @@ struct MediaControlsPopover: View {
                 .buttonStyle(.borderless)
                 .help("Pause Playback")
 
-                // Mute toggle
                 Button {
                     tab.toggleMute()
                 } label: {
@@ -121,7 +117,6 @@ struct MediaControlsPopover: View {
                 .buttonStyle(.borderless)
                 .help(tab.isMuted ? "Unmute" : "Mute")
 
-                // PiP toggle
                 Button {
                     tab.togglePictureInPicture()
                 } label: {

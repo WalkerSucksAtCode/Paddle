@@ -14,7 +14,6 @@ func controlSocketPath() -> String {
         .appending(path: "paddle-\(getuid())", directoryHint: .isDirectory).appending(path: "control.sock").path
 }
 
-/// Prints one JSON-RPC error line and exits 1: the client sees why there is no server.
 func fail(_ message: String) -> Never {
     let line = "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32000,\"message\":\"\(message)\"}}\n"
     FileHandle.standardOutput.write(Data(line.utf8))

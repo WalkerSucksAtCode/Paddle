@@ -175,7 +175,6 @@ struct ExtensionPermissionsTests {
         #expect(s.hosts == ["<all_urls>": .click] && s.run == .allow)
         var decisions = ExtensionDecisions()
         decisions.set(folder: "f", s)
-        // Answered: no prompt again on the next load or Reload Config.
         #expect(!decisions.needsPrompt(folder: "f", name: "N", permissions: ["activeTab"], hosts: ["<all_urls>"]))
         let data = try decisions.encoded()
         #expect(String(decoding: data, as: UTF8.self).contains("\"click\""))
@@ -190,7 +189,6 @@ struct ExtensionPermissionsTests {
             grantedHosts: ["*://*.bank.example/*": soon, "https://b.com/*": later], deniedHosts: ["https://c.com/*": later],
             clickHosts: ["<all_urls>", "https://b.com/*", "https://c.com/*"], now: when
         )
-        // A click's short grant isn't kept; a lasting grant or denial replaces `.click`.
         #expect(s.hosts == ["<all_urls>": .click, "https://b.com/*": .allow, "https://c.com/*": .deny])
     }
 

@@ -6,12 +6,10 @@ public enum ReaderExtractor {
     public static let availabilityProbeScript = """
     (() => {
         if (!document || !document.body) return false;
-        // Check for semantic article tags first
         if (document.querySelector('article, [itemprop="articleBody"], .article-body, .entry-content, .post-content')) {
             const article = document.querySelector('article, [itemprop="articleBody"], .article-body, .entry-content, .post-content');
             if (article && (article.innerText || '').trim().length > 250) return true;
         }
-        // Count paragraphs with substantial text
         const paras = Array.from(document.querySelectorAll('p'));
         let longParas = 0;
         let totalLength = 0;
@@ -32,13 +30,11 @@ public enum ReaderExtractor {
         try {
             if (!document || !document.body) return null;
 
-            // Helper to get meta tag content
             const getMeta = (prop, name) => {
                 const el = document.querySelector(`meta[property="${prop}"], meta[name="${name || prop}"]`);
                 return el ? el.getAttribute('content') : null;
             };
 
-            // Title
             let title = getMeta('og:title') || getMeta('twitter:title');
             if (!title) {
                 const h1 = document.querySelector('h1');
@@ -46,30 +42,24 @@ public enum ReaderExtractor {
             }
             title = (title || document.title || '').trim();
 
-            // Author / Byline
             let byline = getMeta('author', 'author') || getMeta('article:author') || getMeta('twitter:creator');
             if (!byline) {
                 const authorEl = document.querySelector('[rel="author"], .byline, .author, [itemprop="author"]');
                 if (authorEl) byline = authorEl.innerText.trim();
             }
 
-            // Site name
             const siteName = getMeta('og:site_name') || location.hostname.replace(/^www\\./, '');
 
-            // Published time
             let publishedTime = getMeta('article:published_time');
             if (!publishedTime) {
                 const timeEl = document.querySelector('time[datetime], time');
                 if (timeEl) publishedTime = timeEl.getAttribute('datetime') || timeEl.innerText.trim();
             }
 
-            // Excerpt
             const excerpt = getMeta('og:description') || getMeta('description', 'description');
 
-            // Find candidate article root
             let root = document.querySelector('article, [itemprop="articleBody"], .article-body, .entry-content, .post-content');
             if (!root) {
-                // Find element with the most paragraph text
                 let bestNode = null;
                 let maxScore = 0;
                 const candidates = document.querySelectorAll('div, section, main');
@@ -92,7 +82,6 @@ public enum ReaderExtractor {
                 root = bestNode || document.body;
             }
 
-            // Clone and sanitize
             const clone = root.cloneNode(true);
             const unwantedSelectors = [
                 'script', 'style', 'noscript', 'iframe', 'canvas', 'svg',
@@ -103,12 +92,10 @@ public enum ReaderExtractor {
             ];
             clone.querySelectorAll(unwantedSelectors.join(',')).forEach(el => el.remove());
 
-            // Clean attributes
             const allElements = clone.querySelectorAll('*');
             for (const el of allElements) {
                 const tag = el.tagName.toLowerCase();
                 if (['p', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'figure', 'figcaption', 'img', 'a', 'strong', 'em', 'b', 'i'].includes(tag)) {
-                    // Keep essential attributes only
                     const href = el.getAttribute('href');
                     const src = el.getAttribute('src');
                     const alt = el.getAttribute('alt');
@@ -119,7 +106,6 @@ public enum ReaderExtractor {
                     if (src && (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:'))) el.setAttribute('src', src);
                     if (alt) el.setAttribute('alt', alt);
                 } else if (['div', 'section', 'article', 'span'].includes(tag)) {
-                    // Remove attributes
                     while (el.attributes.length > 0) el.removeAttribute(el.attributes[0].name);
                 } else {
                     el.remove();

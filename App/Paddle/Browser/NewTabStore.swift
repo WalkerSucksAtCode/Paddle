@@ -26,9 +26,7 @@ final class NewTabStore {
         var size: Int?
     }
 
-    /// The pinned tiles, in order.
     var sites: [NewTabSite] { data.sites }
-    /// Hosts removed from Frequently visited.
     var hiddenFrequent: [String] { data.hiddenFrequent }
 
     /// Reads newtab.json. An in-app edit still waiting to be saved is written first, unless the file changed
@@ -72,7 +70,6 @@ final class NewTabStore {
     /// Whether a tile for this address (compared without case in scheme and host, ignoring a trailing slash) is pinned.
     func contains(url: String) -> Bool { id(forURL: url) != nil }
 
-    /// The pinned tile for this address, if any.
     func id(forURL url: String) -> UUID? {
         guard let key = NewTabSites.normalized(url) else { return nil }
         return data.sites.first { NewTabSites.normalized($0.url) == key }?.id
@@ -155,7 +152,6 @@ final class NewTabStore {
         return accepted
     }
 
-    /// Removes a host from Frequently visited.
     func hideFrequent(host: String) {
         update("Remove from Frequently Visited") { $0.hideFrequent(host: host) }
     }
