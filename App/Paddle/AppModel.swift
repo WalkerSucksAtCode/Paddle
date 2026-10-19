@@ -615,6 +615,17 @@ final class AppModel {
             case .mosaicStaysReady: old.mosaicStaysReady != new.mosaicStaysReady
             case .mosaicFreezeAfterMinutes: old.mosaicFreezeAfterMinutes != new.mosaicFreezeAfterMinutes
             case .mosaicSleepAfterMinutes: old.mosaicSleepAfterMinutes != new.mosaicSleepAfterMinutes
+            case .mosaicAnimation: old.mosaicAnimation != new.mosaicAnimation
+            case .mosaicAnimationSpeed: old.mosaicAnimationSpeed != new.mosaicAnimationSpeed
+            case .mosaicLiveDragPreview: old.mosaicLiveDragPreview != new.mosaicLiveDragPreview
+            case .mosaicDividerGrips: old.mosaicDividerGrips != new.mosaicDividerGrips
+            case .mosaicDividerSnapping: old.mosaicDividerSnapping != new.mosaicDividerSnapping
+            case .mosaicDividerDoubleClick: old.mosaicDividerDoubleClick != new.mosaicDividerDoubleClick
+            case .mosaicPaneCorners: old.mosaicPaneCorners != new.mosaicPaneCorners
+            case .mosaicFocusMarker: old.mosaicFocusMarker != new.mosaicFocusMarker
+            case .mosaicDimAmount: old.mosaicDimAmount != new.mosaicDimAmount
+            case .mosaicToolbarSize: old.mosaicToolbarSize != new.mosaicToolbarSize
+            case .mosaicToolbarButtons: old.mosaicToolbarButtons != new.mosaicToolbarButtons
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

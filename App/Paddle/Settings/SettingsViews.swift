@@ -100,7 +100,10 @@ enum SettingsPane: String, CaseIterable {
             "mosaic", "multi view", "split view", "panes", "tiles", "side by side", "mosaicMaxPanes", "mosaicPaneBars",
             "pane toolbars", "mosaicGap", "gap", "space between", "mosaicMinimumPaneWidth", "mosaicMinimumPaneHeight",
             "smallest pane", "mosaicStaysReady", "stays ready", "instant", "mosaicFreezeAfterMinutes", "mosaicSleepAfterMinutes",
-            "freeze", "sleep", "background", "icon",
+            "freeze", "sleep", "background", "icon", "animation", "motion", "reduce motion", "mosaicAnimation", "speed",
+            "mosaicAnimationSpeed", "drag preview", "mosaicLiveDragPreview", "divider", "grip", "mosaicDividerGrips", "snap",
+            "mosaicDividerSnapping", "double-click", "mosaicDividerDoubleClick", "corners", "square", "mosaicPaneCorners",
+            "focus", "dim", "mosaicFocusMarker", "mosaicDimAmount", "compact", "mosaicToolbarSize", "buttons", "mosaicToolbarButtons",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",

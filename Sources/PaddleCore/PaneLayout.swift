@@ -246,6 +246,14 @@ public struct PaneLayout: Equatable, Sendable {
         return clamped(value)
     }
 
+    /// The shares a divider drag stops at with snapping on (`mosaicDividerSnapping`).
+    public static let snapPoints: [Double] = [1.0 / 3, 0.5, 2.0 / 3]
+
+    /// `ratio` moved onto a snap point within `reach` of it, else unchanged.
+    public static func snapped(_ ratio: Double, reach: Double = 0.03) -> Double {
+        snapPoints.min { abs($0 - ratio) < abs($1 - ratio) }.flatMap { abs($0 - ratio) <= reach ? $0 : nil } ?? ratio
+    }
+
     /// The pane next to `id` in a direction (⌘⌥ and an arrow), measured in `rect`: of the panes on that side that
     /// overlap it across, the nearest, then the one overlapping most. Nil at the edge.
     public func neighbor(of id: String, toward edge: PaneEdge, in rect: CGRect) -> String? {

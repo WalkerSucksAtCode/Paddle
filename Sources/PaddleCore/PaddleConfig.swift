@@ -34,6 +34,51 @@ public enum TabLayout: String, Codable, Sendable, CaseIterable {
     case horizontal, vertical
 }
 
+/// How Mosaic layout changes move: as the system's Reduce Motion says (Paddle's `reduceMotion` included), a spring,
+/// a short fade without movement, or not at all.
+public enum MosaicAnimation: String, Codable, Sendable, CaseIterable {
+    case system, full, reduced, off
+}
+
+/// How quickly a Mosaic's spring settles.
+public enum MosaicAnimationSpeed: String, Codable, Sendable, CaseIterable {
+    case snappy, smooth, relaxed
+}
+
+/// When the grip in the middle of a Mosaic divider shows.
+public enum MosaicDividerGrips: String, Codable, Sendable, CaseIterable {
+    case always, hover, hidden
+}
+
+/// What double-clicking a Mosaic divider does.
+public enum MosaicDividerDoubleClick: String, Codable, Sendable, CaseIterable {
+    /// That divider back to the middle.
+    case divider
+    /// Every pane its even share (Even Out Panes).
+    case all
+    case nothing
+}
+
+/// A Mosaic pane's corners.
+public enum MosaicPaneCorners: String, Codable, Sendable, CaseIterable {
+    case rounded, square
+}
+
+/// How the focused pane of a Mosaic stands out: an edge ring, the other panes dimmed, or not at all.
+public enum MosaicFocusMarker: String, Codable, Sendable, CaseIterable {
+    case ring, dim, none
+}
+
+/// The height of a Mosaic pane's toolbar.
+public enum MosaicToolbarSize: String, Codable, Sendable, CaseIterable {
+    case regular, compact
+}
+
+/// The buttons a Mosaic pane's toolbar can show besides its site icon and address field.
+public enum MosaicToolbarButton: String, Codable, Sendable, CaseIterable {
+    case back, forward, reload, close
+}
+
 /// When a Mosaic pane shows its own toolbar (back, forward, reload, address, ×): always, above the page, or only
 /// while the pointer is over the pane or its address is being edited, over the top of the page.
 public enum MosaicPaneBars: String, Codable, Sendable, CaseIterable {
@@ -242,6 +287,24 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var mosaicFreezeAfterMinutes: Double?
     /// Minutes before a Mosaic that isn't on screen sleeps; nil follows `tabSleepAfterMinutes`, 0 never.
     public var mosaicSleepAfterMinutes: Double?
+    public var mosaicAnimation: MosaicAnimation
+    public var mosaicAnimationSpeed: MosaicAnimationSpeed
+    /// While a tab or pane is dragged over a Mosaic, the panes move aside into the layout the drop would make; off,
+    /// only a highlight shows where it lands.
+    public var mosaicLiveDragPreview: Bool
+    public var mosaicDividerGrips: MosaicDividerGrips
+    /// A divider dragged near a half or a third stops there.
+    public var mosaicDividerSnapping: Bool
+    public var mosaicDividerDoubleClick: MosaicDividerDoubleClick
+    public var mosaicPaneCorners: MosaicPaneCorners
+    public var mosaicFocusMarker: MosaicFocusMarker
+    /// How much `mosaicFocusMarker` "dim" darkens the other panes, `mosaicDimRange`.
+    public var mosaicDimAmount: Double
+    public var mosaicToolbarSize: MosaicToolbarSize
+    /// The pane toolbar's buttons, in toolbar order; unknown names are left out.
+    public var mosaicToolbarButtons: [MosaicToolbarButton]
+
+    public static let mosaicDimRange: ClosedRange<Double> = 0.05...0.7
 
     public static let mosaicGapRange: ClosedRange<Double> = 2...16
     public static let mosaicMinimumPaneRange: ClosedRange<Double> = 100...800
@@ -283,6 +346,8 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case underlineLinks, alwaysShowTabCloseButtons, showHomeButton, alwaysShowDownloadsButton
         case onLaunch, newTabPosition, openLinksInBackground, afterClosingTab, askBeforeQuitting, askBeforeClosingWindow, externalLinks
         case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight, mosaicStaysReady, mosaicFreezeAfterMinutes, mosaicSleepAfterMinutes
+        case mosaicAnimation, mosaicAnimationSpeed, mosaicLiveDragPreview, mosaicDividerGrips, mosaicDividerSnapping, mosaicDividerDoubleClick
+        case mosaicPaneCorners, mosaicFocusMarker, mosaicDimAmount, mosaicToolbarSize, mosaicToolbarButtons
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -351,6 +416,17 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicStaysReady: Bool = true,
         mosaicFreezeAfterMinutes: Double? = nil,
         mosaicSleepAfterMinutes: Double? = nil,
+        mosaicAnimation: MosaicAnimation = .system,
+        mosaicAnimationSpeed: MosaicAnimationSpeed = .smooth,
+        mosaicLiveDragPreview: Bool = true,
+        mosaicDividerGrips: MosaicDividerGrips = .always,
+        mosaicDividerSnapping: Bool = false,
+        mosaicDividerDoubleClick: MosaicDividerDoubleClick = .divider,
+        mosaicPaneCorners: MosaicPaneCorners = .rounded,
+        mosaicFocusMarker: MosaicFocusMarker = .ring,
+        mosaicDimAmount: Double = 0.25,
+        mosaicToolbarSize: MosaicToolbarSize = .regular,
+        mosaicToolbarButtons: [MosaicToolbarButton] = MosaicToolbarButton.allCases,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -434,6 +510,17 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.mosaicStaysReady = mosaicStaysReady
         self.mosaicFreezeAfterMinutes = mosaicFreezeAfterMinutes
         self.mosaicSleepAfterMinutes = mosaicSleepAfterMinutes
+        self.mosaicAnimation = mosaicAnimation
+        self.mosaicAnimationSpeed = mosaicAnimationSpeed
+        self.mosaicLiveDragPreview = mosaicLiveDragPreview
+        self.mosaicDividerGrips = mosaicDividerGrips
+        self.mosaicDividerSnapping = mosaicDividerSnapping
+        self.mosaicDividerDoubleClick = mosaicDividerDoubleClick
+        self.mosaicPaneCorners = mosaicPaneCorners
+        self.mosaicFocusMarker = mosaicFocusMarker
+        self.mosaicDimAmount = min(max(mosaicDimAmount.isFinite ? mosaicDimAmount : 0.25, Self.mosaicDimRange.lowerBound), Self.mosaicDimRange.upperBound)
+        self.mosaicToolbarSize = mosaicToolbarSize
+        self.mosaicToolbarButtons = Self.ordered(mosaicToolbarButtons)
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -533,6 +620,18 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicStaysReady = c.decodeValue(.mosaicStaysReady, d.mosaicStaysReady, issues)
         mosaicFreezeAfterMinutes = c.decodeValue(.mosaicFreezeAfterMinutes, d.mosaicFreezeAfterMinutes, issues)
         mosaicSleepAfterMinutes = c.decodeValue(.mosaicSleepAfterMinutes, d.mosaicSleepAfterMinutes, issues)
+        mosaicAnimation = c.decodeValue(.mosaicAnimation, d.mosaicAnimation, issues)
+        mosaicAnimationSpeed = c.decodeValue(.mosaicAnimationSpeed, d.mosaicAnimationSpeed, issues)
+        mosaicLiveDragPreview = c.decodeValue(.mosaicLiveDragPreview, d.mosaicLiveDragPreview, issues)
+        mosaicDividerGrips = c.decodeValue(.mosaicDividerGrips, d.mosaicDividerGrips, issues)
+        mosaicDividerSnapping = c.decodeValue(.mosaicDividerSnapping, d.mosaicDividerSnapping, issues)
+        mosaicDividerDoubleClick = c.decodeValue(.mosaicDividerDoubleClick, d.mosaicDividerDoubleClick, issues)
+        mosaicPaneCorners = c.decodeValue(.mosaicPaneCorners, d.mosaicPaneCorners, issues)
+        mosaicFocusMarker = c.decodeValue(.mosaicFocusMarker, d.mosaicFocusMarker, issues)
+        let dim: Double = c.decodeValue(.mosaicDimAmount, d.mosaicDimAmount, issues)
+        mosaicDimAmount = min(max(dim.isFinite ? dim : d.mosaicDimAmount, Self.mosaicDimRange.lowerBound), Self.mosaicDimRange.upperBound)
+        mosaicToolbarSize = c.decodeValue(.mosaicToolbarSize, d.mosaicToolbarSize, issues)
+        mosaicToolbarButtons = Self.ordered(c.decodeStrings(.mosaicToolbarButtons, d.mosaicToolbarButtons.map(\.rawValue), issues).compactMap(MosaicToolbarButton.init(rawValue:)))
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)
         highContrastTabs = c.decodeValue(.highContrastTabs, d.highContrastTabs, issues)
@@ -608,6 +707,11 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         @unknown default:
             return error.localizedDescription
         }
+    }
+
+    /// `buttons` once each, in toolbar order.
+    static func ordered(_ buttons: [MosaicToolbarButton]) -> [MosaicToolbarButton] {
+        MosaicToolbarButton.allCases.filter(buttons.contains)
     }
 
     /// `value` rounded and kept in `range`; `fallback` for a non-number.

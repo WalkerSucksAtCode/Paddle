@@ -172,6 +172,25 @@ struct MosaicBar: View {
                 }
             }
             .pickerStyle(.menu)
+            Picker("Animation", selection: Binding(
+                get: { app.config.mosaicAnimation },
+                set: { value in Task { await app.setMosaicConfig([ConfigChange("mosaicAnimation", .string(value.rawValue))]) } }
+            )) {
+                Text("Follow Reduce Motion").tag(MosaicAnimation.system)
+                Text("Full").tag(MosaicAnimation.full)
+                Text("Reduced").tag(MosaicAnimation.reduced)
+                Text("Off").tag(MosaicAnimation.off)
+            }
+            .pickerStyle(.menu)
+            Picker("Focused Pane", selection: Binding(
+                get: { app.config.mosaicFocusMarker },
+                set: { value in Task { await app.setMosaicConfig([ConfigChange("mosaicFocusMarker", .string(value.rawValue))]) } }
+            )) {
+                Text("Edge").tag(MosaicFocusMarker.ring)
+                Text("Dim the Others").tag(MosaicFocusMarker.dim)
+                Text("No Marker").tag(MosaicFocusMarker.none)
+            }
+            .pickerStyle(.menu)
             Divider()
             Button("Mute Other Panes") { model.muteOtherPanes() }
             Divider()

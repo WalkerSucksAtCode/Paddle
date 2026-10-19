@@ -30,6 +30,25 @@ struct ConfigTests {
         #expect(PaddleConfig(mosaicMaxPanes: 99).mosaicMaxPanes == PaneLayout.maxPanes)
     }
 
+    @Test func mosaicMotionAndLookKeysDecode() throws {
+        let d = PaddleConfig()
+        #expect(d.mosaicAnimation == .system && d.mosaicAnimationSpeed == .smooth && d.mosaicLiveDragPreview)
+        #expect(d.mosaicDividerGrips == .always && !d.mosaicDividerSnapping && d.mosaicDividerDoubleClick == .divider)
+        #expect(d.mosaicPaneCorners == .rounded && d.mosaicFocusMarker == .ring && d.mosaicDimAmount == 0.25)
+        #expect(d.mosaicToolbarSize == .regular && d.mosaicToolbarButtons == MosaicToolbarButton.allCases)
+        let json = #"""
+        {"mosaicAnimation": "reduced", "mosaicAnimationSpeed": "snappy", "mosaicLiveDragPreview": false,
+         "mosaicDividerGrips": "hover", "mosaicDividerSnapping": true, "mosaicDividerDoubleClick": "all",
+         "mosaicPaneCorners": "square", "mosaicFocusMarker": "dim", "mosaicDimAmount": 2,
+         "mosaicToolbarSize": "compact", "mosaicToolbarButtons": ["close", "back", "close", "teleport"]}
+        """#
+        let c = try PaddleConfig.decode(Data(json.utf8))
+        #expect(c.mosaicAnimation == .reduced && c.mosaicAnimationSpeed == .snappy && !c.mosaicLiveDragPreview)
+        #expect(c.mosaicDividerGrips == .hover && c.mosaicDividerSnapping && c.mosaicDividerDoubleClick == .all)
+        #expect(c.mosaicPaneCorners == .square && c.mosaicFocusMarker == .dim && c.mosaicDimAmount == 0.7)
+        #expect(c.mosaicToolbarSize == .compact && c.mosaicToolbarButtons == [.back, .close])
+    }
+
     @Test func mosaicLookKeysDecodeAndAreKeptInRange() throws {
         let d = PaddleConfig()
         #expect(d.mosaicPaneBars == .always && d.mosaicGap == 6 && d.mosaicMinimumPaneWidth == 260 && d.mosaicMinimumPaneHeight == 160)

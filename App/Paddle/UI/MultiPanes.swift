@@ -17,7 +17,7 @@ struct MultiPanes<Pane: View>: View {
         GeometryReader { geometry in
             let rect = CGRect(origin: .zero, size: geometry.size)
             // While a tab is dragged over the panes, the layout its drop would make: the panes move aside for it.
-            let preview = model.paneDragPreview(for: split)
+            let preview = PaneMetrics.config.mosaicLiveDragPreview ? model.paneDragPreview(for: split) : nil
             let layout = preview ?? split.layout
             var frames = layout.frames(in: rect, gap: PaneMetrics.gap)
             let narrow = PaneMetrics.isNarrow(split.layout.frames(in: rect, gap: PaneMetrics.gap))
@@ -60,14 +60,16 @@ struct MultiPanes<Pane: View>: View {
                 }
                 if let preview, !narrow, let dragged, let frame = preview.frames(in: rect, gap: PaneMetrics.gap)[dragged.uuidString] {
                     PaneLandingHighlight(frame: frame)
+                        .transition(.opacity)
                 } else {
                     PaneDropHighlight(model: model, frames: narrow ? [focused.id.uuidString: rect] : frames)
                 }
             }
-            // Snappy but smooth: panes spring to a new layout (a drag's preview, a drop, the Mosaic bar's layouts,
-            // Rotate, Swap, a pane added or taken out); none while dragging a divider, which follows the pointer.
+            // Panes spring to a new layout (a drag's preview, a drop, the Mosaic bar's layouts, Rotate, Swap, a pane
+            // added or taken out) at `mosaicAnimationSpeed`; with reduced motion they jump and only highlights fade;
+            // none while dragging a divider, which follows the pointer.
             .animation(
-                model.isDraggingDivider || AppModel.shared.reducesMotion ? nil : .spring(response: 0.26, dampingFraction: 0.86),
+                model.isDraggingDivider ? nil : PaneMetrics.layoutAnimation,
                 value: AnimatedLayout(layout: layout, dragging: dragged, zoomed: zoomed)
             )
             .frame(width: rect.width, height: rect.height, alignment: .topLeading)
@@ -123,10 +125,36 @@ private struct PaneLandingHighlight: View {
 enum PaneMetrics {
     /// The gap of chrome between panes, which is also the divider's hit area (`mosaicGap`).
     static var gap: CGFloat { CGFloat(AppModel.shared.config.mosaicGap) }
-    /// The height of a pane's own toolbar (`PaneBar`).
-    static let barHeight: CGFloat = 30
-    /// A pane's corners: slightly rounded, like the Mac's windows and controls.
-    static let cornerRadius: CGFloat = 8
+    static var config: PaddleConfig { AppModel.shared.config }
+    /// The height of a pane's own toolbar (`PaneBar`): `mosaicToolbarSize`.
+    static var barHeight: CGFloat { config.mosaicToolbarSize == .compact ? 24 : 30 }
+    static var compactBar: Bool { config.mosaicToolbarSize == .compact }
+    /// A pane's corners (`mosaicPaneCorners`): slightly rounded, like the Mac's windows and controls, or square.
+    static var cornerRadius: CGFloat { config.mosaicPaneCorners == .square ? 0 : 8 }
+
+    /// Motion is reduced: `mosaicAnimation` reduced, or "system" with Reduce Motion on (macOS's or `reduceMotion`).
+    private static var reducedMotion: Bool {
+        switch config.mosaicAnimation {
+        case .reduced: true
+        case .system: AppModel.shared.reducesMotion
+        case .full, .off: false
+        }
+    }
+
+    /// Panes moving to a new layout: a spring at `mosaicAnimationSpeed`, or none (reduced motion or off).
+    static var layoutAnimation: Animation? {
+        guard config.mosaicAnimation != .off, !reducedMotion else { return nil }
+        switch config.mosaicAnimationSpeed {
+        case .snappy: return .spring(response: 0.18, dampingFraction: 0.9)
+        case .smooth: return .spring(response: 0.26, dampingFraction: 0.86)
+        case .relaxed: return .spring(response: 0.42, dampingFraction: 0.84)
+        }
+    }
+
+    /// Things that only appear or disappear (hover toolbars, highlights): a short fade unless animation is off.
+    static var fadeAnimation: Animation? {
+        config.mosaicAnimation == .off ? nil : .easeOut(duration: reducedMotion ? 0.1 : 0.14)
+    }
     /// `mosaicMinimumPaneWidth` × `mosaicMinimumPaneHeight`.
     static var minimumPane: CGSize {
         CGSize(width: AppModel.shared.config.mosaicMinimumPaneWidth, height: AppModel.shared.config.mosaicMinimumPaneHeight)
@@ -173,13 +201,20 @@ private struct PaneFrame<Content: View>: View {
                 // Inside the card, by brightness alone: a dark ring with a light one inside it, so it shows on light
                 // and dark pages alike (a single translucent line vanished on light pages in dark mode).
                 .overlay {
-                    if focused && ring {
+                    // `mosaicFocusMarker`: the ring on the focused pane, or the others dimmed by `mosaicDimAmount`.
+                    switch (ring ? PaneMetrics.config.mosaicFocusMarker : .none, focused) {
+                    case (.ring, true):
                         ZStack {
                             shape.strokeBorder(Color.black.opacity(0.55), lineWidth: 2)
-                            RoundedRectangle(cornerRadius: PaneMetrics.cornerRadius - 2, style: .continuous).inset(by: 2)
+                            RoundedRectangle(cornerRadius: max(0, PaneMetrics.cornerRadius - 2), style: .continuous).inset(by: 2)
                                 .strokeBorder(Color.white.opacity(0.85), lineWidth: 1)
                         }
                         .allowsHitTesting(false)
+                    case (.dim, false):
+                        shape.fill(Color.black.opacity(PaneMetrics.config.mosaicDimAmount))
+                            .allowsHitTesting(false)
+                    default:
+                        EmptyView()
                     }
                 }
         }
@@ -190,7 +225,7 @@ private struct PaneFrame<Content: View>: View {
                     .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
                     .opacity(barShown ? 1 : 0)
                     .allowsHitTesting(barShown)
-                    .animation(AppModel.shared.reducesMotion ? nil : .easeOut(duration: 0.14), value: barShown)
+                    .animation(PaneMetrics.fadeAnimation, value: barShown)
             }
         }
         .onHover { hovering = $0 }
@@ -212,25 +247,35 @@ private struct PaneBar: View {
 
     private var shownAddress: String { tab.url.map(BrowserModel.displayString) ?? "" }
 
+    /// `mosaicToolbarButtons`.
+    private var buttons: [MosaicToolbarButton] { PaneMetrics.config.mosaicToolbarButtons }
+    private var control: CGFloat { PaneMetrics.compactBar ? 18 : 22 }
+
     var body: some View {
         HStack(spacing: 2) {
-            FaviconView(url: tab.url, size: 12)
-                .frame(width: 22, height: 22)
+            FaviconView(url: tab.url, size: PaneMetrics.compactBar ? 11 : 12)
+                .frame(width: control, height: control)
                 .contentShape(Rectangle())
                 .help("Drag to move this pane")
                 .modifier(TabDrag(tab: tab, enabled: true, strip: false))
-            button("chevron.left", "Back", enabled: tab.canGoBack) { tab.webView?.goBack() }
-            button("chevron.right", "Forward", enabled: tab.canGoForward) { tab.webView?.goForward() }
-            button(tab.isLoading ? "xmark" : "arrow.clockwise", tab.isLoading ? "Stop" : "Reload", enabled: tab.url != nil && tab.settingsPane == nil) {
-                if tab.isLoading { tab.webView?.stopLoading() } else { tab.reload() }
+            if buttons.contains(.back) {
+                button("chevron.left", "Back", enabled: tab.canGoBack) { tab.webView?.goBack() }
+            }
+            if buttons.contains(.forward) {
+                button("chevron.right", "Forward", enabled: tab.canGoForward) { tab.webView?.goForward() }
+            }
+            if buttons.contains(.reload) {
+                button(tab.isLoading ? "xmark" : "arrow.clockwise", tab.isLoading ? "Stop" : "Reload", enabled: tab.url != nil && tab.settingsPane == nil) {
+                    if tab.isLoading { tab.webView?.stopLoading() } else { tab.reload() }
+                }
             }
             TextField("Address", text: $draft, prompt: Text("Search or enter address"))
                 .textFieldStyle(.plain)
-                .chromeFont(size: 12)
+                .chromeFont(size: PaneMetrics.compactBar ? 11 : 12)
                 .lineLimit(1)
                 .focused($editing)
                 .padding(.horizontal, 8)
-                .frame(height: 22)
+                .frame(height: control)
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(editing ? 0.10 : 0.06)))
                 .onSubmit {
                     let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -287,22 +332,24 @@ private struct PaneBar: View {
                         .systemText()
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(minWidth: 340, alignment: .top)
-                        .offset(y: 26)
+                        .offset(y: control + 4)
                     }
                 }
                 .accessibilityLabel("Address of \(tab.displayTitle)")
                 .padding(.horizontal, 4)
-            Button {
-                model.removeFromView(tab)
-            } label: {
-                Image(systemName: "xmark").chromeFont(size: 9, weight: .semibold)
-                    .frame(width: 20, height: 22)
-                    .contentShape(Rectangle())
+            if buttons.contains(.close) {
+                Button {
+                    model.removeFromView(tab)
+                } label: {
+                    Image(systemName: "xmark").chromeFont(size: 9, weight: .semibold)
+                        .frame(width: 20, height: control)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Remove from Mosaic: the tab stays, in the Mosaic's menu in the strip")
+                .accessibilityLabel("Remove \(tab.displayTitle) from the Mosaic")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Remove from Mosaic: the tab stays, in the Mosaic's menu in the strip")
-            .accessibilityLabel("Remove \(tab.displayTitle) from the view")
         }
         .padding(.horizontal, 4)
         .frame(height: PaneMetrics.barHeight)
@@ -322,8 +369,8 @@ private struct PaneBar: View {
     private func button(_ symbol: String, _ help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .chromeFont(size: 11, weight: .medium)
-                .frame(width: 22, height: 22)
+                .chromeFont(size: PaneMetrics.compactBar ? 10 : 11, weight: .medium)
+                .frame(width: control, height: control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
@@ -333,28 +380,54 @@ private struct PaneBar: View {
     }
 }
 
-/// The gap between two panes: a grip in the middle, a resize cursor, drag to move, double-click to even out.
+/// The gap between two panes: a grip in the middle (`mosaicDividerGrips`), a resize cursor, drag to move (stopping at
+/// halves and thirds with `mosaicDividerSnapping`), double-click as `mosaicDividerDoubleClick` says.
 private struct PaneDividerView: View {
     let model: BrowserModel
     let split: BrowserModel.Split
     let divider: PaneDivider
+    @State private var hovering = false
 
     private var horizontal: Bool { divider.axis == .horizontal }
+
+    private var gripShown: Bool {
+        switch PaneMetrics.config.mosaicDividerGrips {
+        case .always: true
+        case .hover: hovering || model.isDraggingDivider
+        case .hidden: false
+        }
+    }
 
     var body: some View {
         Rectangle()
             .fill(Color.clear)
-            .overlay(Capsule().fill(Color.secondary.opacity(0.7)).frame(width: horizontal ? 2 : 28, height: horizontal ? 28 : 2))
+            .overlay(
+                Capsule().fill(Color.secondary.opacity(0.7)).frame(width: horizontal ? 2 : 28, height: horizontal ? 28 : 2)
+                    .opacity(gripShown ? 1 : 0)
+                    .animation(PaneMetrics.fadeAnimation, value: gripShown)
+            )
             .contentShape(Rectangle())
+            .onHover { hovering = $0 }
             .pointerStyle(horizontal ? .columnResize : .rowResize)
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .named("paneArea")).onChanged { value in
                     if !model.isDraggingDivider { model.isDraggingDivider = true }
-                    model.setSplitRatio(PaneLayout.ratio(dragging: divider, to: value.location), at: divider.path, for: split)
+                    let ratio = PaneLayout.ratio(dragging: divider, to: value.location)
+                    model.setSplitRatio(PaneMetrics.config.mosaicDividerSnapping ? PaneLayout.snapped(ratio) : ratio, at: divider.path, for: split)
                 }
                 .onEnded { _ in model.isDraggingDivider = false }
             )
-            .onTapGesture(count: 2) { model.setSplitRatio(0.5, at: divider.path, for: split) }
+            .onTapGesture(count: 2) {
+                switch PaneMetrics.config.mosaicDividerDoubleClick {
+                case .divider: model.setSplitRatio(0.5, at: divider.path, for: split)
+                case .all:
+                    if let tab = model.panes(of: split).first(where: { $0.id == model.selectedID }) ?? model.panes(of: split).first {
+                        if model.selectedID != tab.id { model.select(tab) }
+                        model.equalizePanes()
+                    }
+                case .nothing: break
+                }
+            }
             .accessibilityElement()
             .accessibilityLabel(horizontal ? "Divider between side-by-side panes" : "Divider between stacked panes")
             .accessibilityAdjustableAction { direction in

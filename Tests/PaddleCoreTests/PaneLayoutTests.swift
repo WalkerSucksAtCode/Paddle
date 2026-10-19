@@ -189,4 +189,11 @@ struct PaneLayoutTests {
         #expect(r.frames(in: rect)["e"] == l.frames(in: rect)["a"])
         #expect(r.rotated(forward: false) == l)
     }
+
+    @Test func dividerSnapsNearHalvesAndThirds() {
+        #expect(PaneLayout.snapped(0.51) == 0.5)
+        #expect(PaneLayout.snapped(0.32) == 1.0 / 3)
+        #expect(PaneLayout.snapped(0.69) == 2.0 / 3)
+        #expect(PaneLayout.snapped(0.42) == 0.42)
+    }
 }

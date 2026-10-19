@@ -81,6 +81,17 @@ Paddle > Settings… (⌘,) writes this file and applies each change at once. Th
 | `mosaicStaysReady` | `true` | The Mosaic you just left keeps all its pages attached, so going back is instant and none is told it was hidden; `false` keeps only its focused pane attached. Settings > Mosaic |
 | `mosaicFreezeAfterMinutes` | (left out) | Minutes before a Mosaic you aren't looking at freezes; left out follows `tabFreezeAfterMinutes`, `0` never. Settings > Mosaic |
 | `mosaicSleepAfterMinutes` | (left out) | Minutes before a Mosaic you aren't looking at sleeps; left out follows `tabSleepAfterMinutes`, `0` never. Settings > Mosaic |
+| `mosaicAnimation` | `"system"` | How Mosaic layout changes move: `"system"` (Full, or Reduced while Reduce Motion is on), `"full"` (a spring), `"reduced"` (panes jump; only toolbars and highlights fade), `"off"`. Settings > Mosaic, or the Mosaic bar's settings menu |
+| `mosaicAnimationSpeed` | `"smooth"` | The spring: `"snappy"`, `"smooth"` or `"relaxed"`. Settings > Mosaic |
+| `mosaicLiveDragPreview` | `true` | Panes move aside while a tab is dragged over a Mosaic; `false` shows only a highlight where it lands. Settings > Mosaic |
+| `mosaicDividerGrips` | `"always"` | The grip on Mosaic dividers: `"always"`, `"hover"` or `"hidden"` (the divider still resizes). Settings > Mosaic |
+| `mosaicDividerSnapping` | `false` | A divider dragged near a half or a third stops there. Settings > Mosaic |
+| `mosaicDividerDoubleClick` | `"divider"` | Double-clicking a divider evens out `"divider"` (that one), `"all"` (every pane) or does `"nothing"`. Settings > Mosaic |
+| `mosaicPaneCorners` | `"rounded"` | `"rounded"` or `"square"` pane corners. Settings > Mosaic |
+| `mosaicFocusMarker` | `"ring"` | How the focused pane stands out: `"ring"` (an edge), `"dim"` (the others darkened by `mosaicDimAmount`) or `"none"`. Settings > Mosaic, or the Mosaic bar's settings menu |
+| `mosaicDimAmount` | `0.25` | How much `"dim"` darkens the other panes, 0.05 to 0.7. Settings > Mosaic |
+| `mosaicToolbarSize` | `"regular"` | Pane toolbars `"regular"` (30 pt) or `"compact"` (24 pt). Settings > Mosaic |
+| `mosaicToolbarButtons` | `["back", "forward", "reload", "close"]` | The pane toolbar's buttons besides the site icon and address field. Settings > Mosaic |
 | `tabLayout` | `"horizontal"` | `"vertical"` shows the tabs in a sidebar beside the page instead of a strip above the toolbar. View > Vertical Tabs, Settings > Appearance |
 | `appearance` | `"system"` | `"light"` or `"dark"` forces the windows (and the color scheme pages see) instead of following macOS. Settings > Appearance |
 | `darkMode` | `"off"` | Website dark mode: `"off"` (default), `"system"` (matches appearance) or `"always"`. Off leaves sites alone unless set in `sites`; per-site overrides can be toggled on any site. Settings > Appearance |
