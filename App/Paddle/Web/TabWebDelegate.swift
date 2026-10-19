@@ -120,6 +120,20 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return (.cancel, preferences)
         }
 
+        // An unloaded on-demand extension for this site (`extensionsOnDemand`) loads first, then the page loads in a
+        // new web view with the tab's history, since the extension reaches only web views made after it loaded. A
+        // POST goes ahead as it is (loading it again would resend the form); the tab's next web view gets the extension.
+        if isMainFrame, let tab, tab.extensionsAllowed, Self.isWebPage(url),
+           let extensions = AppModel.shared.existingExtensions(for: tab.profileID), extensions.loadOnDemand(for: url),
+           !mainFrameIsPost {
+            await extensions.onDemandLoadsDone()
+            DispatchQueue.main.async {
+                guard let browser = tab.browser, browser.allTabs.contains(where: { $0 === tab }) else { return }
+                tab.renewWebView(goingTo: url)
+            }
+            return (.cancel, preferences)
+        }
+
         if isMainFrame, let host = url.host() {
             if Self.isWebPage(url) { Self.apply((tab?.config ?? AppModel.shared.config).sitePolicy(forHost: host), to: preferences) }
             return (applySiteUserAgent(for: host, navigationAction, preferences, in: webView) ? .allow : .cancel, preferences)

@@ -416,6 +416,9 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// only when any extension may run there (`anyExtensionInPrivate`), decided when it opens; an extension not
     /// allowed there can't see private windows or tabs.
     public var extensionsInPrivate: Bool
+    /// Extensions that only work on certain sites (`OnDemandExtension`) unload once no awake tab has been on those
+    /// sites for a while, and load again when a tab goes there.
+    public var extensionsOnDemand: Bool
     /// Per-folder compatibility settings: `{"protonpass": {"persona": "firefox", "shims": true, "publicID": false, "private": true}}`.
     /// See `ExtensionCompatConfig`; folders not listed get the detected persona, shims on and a private id.
     public var extensionCompat: [String: ExtensionCompatConfig]
@@ -451,7 +454,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case appearance, darkMode, invertTextImages, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
-        case extensions, extensionToolbar, extensionsInPrivate, extensionCompat, extensionUpdates
+        case extensions, extensionToolbar, extensionsInPrivate, extensionsOnDemand, extensionCompat, extensionUpdates
     }
 
     public init(
@@ -566,6 +569,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         extensions: [String: Bool] = [:],
         extensionToolbar: [String: ExtensionToolbarPlacement] = [:],
         extensionsInPrivate: Bool = false,
+        extensionsOnDemand: Bool = true,
         extensionCompat: [String: ExtensionCompatConfig] = [:],
         extensionUpdates: Bool = true,
         sitePersonas: [String: Persona] = [:]
@@ -681,6 +685,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.extensions = extensions
         self.extensionToolbar = extensionToolbar
         self.extensionsInPrivate = extensionsInPrivate
+        self.extensionsOnDemand = extensionsOnDemand
         self.extensionCompat = extensionCompat
         self.extensionUpdates = extensionUpdates
         self.sitePersonas = sitePersonas
@@ -826,6 +831,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         extensions = c.decodeEntries(.extensions, d.extensions, issues)
         extensionToolbar = c.decodeEntries(.extensionToolbar, d.extensionToolbar, issues)
         extensionsInPrivate = c.decodeValue(.extensionsInPrivate, d.extensionsInPrivate, issues)
+        extensionsOnDemand = c.decodeValue(.extensionsOnDemand, d.extensionsOnDemand, issues)
         extensionCompat = c.decodeEntries(.extensionCompat, d.extensionCompat, issues)
         extensionUpdates = c.decodeValue(.extensionUpdates, d.extensionUpdates, issues)
         sitePersonas = c.decodeEntries(.sitePersonas, d.sitePersonas, issues)

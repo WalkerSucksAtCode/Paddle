@@ -753,15 +753,41 @@ public enum CompatPrelude {
         }
       });
 
-      // E19: WebKit never fires onInstalled with 'install'; Paddle says when this is the first load.
+      // E19: Paddle says when this is the first load (`installReason`), and a later load never passes 'install' on:
+      // WebKit on macOS 27 fires onInstalled with 'install' at every load of an extension it has seen (Enhancer for
+      // YouTube reopened its welcome tabs at each launch), though its State.plist has the version.
       section('onInstalled', () => {
-        if (!P.installReason) return;
         let background = isWorker;
         try { if (!background && ns.extension && typeof ns.extension.getBackgroundPage === 'function') background = ns.extension.getBackgroundPage() === G; } catch (e) {}
         if (!background && isWindow && P.backgroundPage) {
           try { background = decodeURIComponent(location.pathname).replace(/^\/+/, '') === P.backgroundPage; } catch (e) {}
         }
         if (!background) return;
+        if (!P.installReason) {
+          const patched = new Set();
+          for (const n of spaces) {
+            const event = n.runtime.onInstalled;
+            if (!event || typeof event.addListener !== 'function' || patched.has(event)) continue;
+            patched.add(event);
+            hold(event);
+            const add = event.addListener, remove = event.removeListener, has = event.hasListener;
+            const wrapped = new Map();
+            const wrap = (l) => {
+              if (typeof l !== 'function') return l;
+              if (!wrapped.has(l)) {
+                wrapped.set(l, function (details, ...rest) {
+                  if (details && details.reason === 'install') return undefined;
+                  return l.call(this, details, ...rest);
+                });
+              }
+              return wrapped.get(l);
+            };
+            put(event, 'addListener', function addListener(l, ...rest) { return add.call(event, wrap(l), ...rest); });
+            if (typeof remove === 'function') put(event, 'removeListener', function removeListener(l, ...rest) { return remove.call(event, wrapped.get(l) || l, ...rest); });
+            if (typeof has === 'function') put(event, 'hasListener', function hasListener(l, ...rest) { return has.call(event, wrapped.get(l) || l, ...rest); });
+          }
+          return;
+        }
         const seen = [];
         let fired = false;
         for (const n of spaces) {

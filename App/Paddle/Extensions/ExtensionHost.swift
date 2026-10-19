@@ -188,6 +188,12 @@ final class ExtensionHost {
     @ObservationIgnored private var deferredTabs: [Weak<Tab>] = []
     /// A load, reconcile or reload (prompts included) is in progress, or none has happened yet.
     @ObservationIgnored private var loadInProgress = true
+    /// Folder name to the sites of each running on-demand extension (`OnDemandExtension`), set as it loads.
+    @ObservationIgnored private var onDemandSites: [String: [WKWebExtension.MatchPattern]] = [:]
+    /// Folder name to the sites of each on-demand extension unloaded for being idle; the first of them loads it again.
+    @ObservationIgnored private var parked: [String: [WKWebExtension.MatchPattern]] = [:]
+    /// Folder name to when an awake tab was last on its sites, one of its pages or popup was open, or it loaded.
+    @ObservationIgnored private var lastOnItsSites: [String: Date] = [:]
     /// Folder name to items the user refused at runtime this session; not asked again until relaunch. Permission
     /// names and match patterns as asked; URLs as their site (`ExtensionAccessPolicy.denialKey`).
     @ObservationIgnored private var deniedThisSession: [String: Set<String>] = [:]
@@ -484,6 +490,8 @@ final class ExtensionHost {
             notes = []
             pruneOverlays()
             let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
+            // Turned off, or `extensionsOnDemand` off: no longer waiting for a site (the second loads below).
+            parked = config.extensionsOnDemand ? parked.filter { isEnabled($0.key, config: config) } : [:]
 
             for ext in loaded {
                 let entry = entries.first { $0.name == ext.name }
@@ -672,6 +680,11 @@ final class ExtensionHost {
     private func finishLoad() {
         loadInProgress = false
         resolveDeferredTabs()
+        refreshStatusLines()
+    }
+
+    /// The status lines from `status`, `notes` and the permissions file's error; logged.
+    private func refreshStatusLines() {
         var lines: [String] = []
         if let decisionsError { lines.append(ExtensionPermissionText.sanitize(decisionsError, max: 240)) }
         // Folder names and WebKit's error text (which can quote the path) are shown as one line each.
@@ -710,6 +723,10 @@ final class ExtensionHost {
             }
             if let decisionsError {
                 status[entry.name] = "not loaded: \(decisionsError)"
+                continue
+            }
+            if parked[entry.name] != nil {
+                status[entry.name] = Self.parkedStatus
                 continue
             }
             // A relative URL traps WKWebExtension.init; the scan makes roots absolute, this is the last guard.
@@ -866,6 +883,11 @@ final class ExtensionHost {
         ext.host = self
         loaded.append(ext)
         loaded.sort { $0.name < $1.name }
+        let sites = (OnDemandExtension.sitePatterns(manifest: webExtension.manifest) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }
+        if !sites.isEmpty {
+            onDemandSites[entry.name] = sites
+            lastOnItsSites[entry.name] = Date()
+        }
         status[entry.name] = loadedStatus(ext)
         log.info("loaded \(entry.name, privacy: .public) (\(displayName, privacy: .public) \(ext.version, privacy: .public)): persona \(setup.persona.rawValue, privacy: .public), base \(identity.baseURL.absoluteString, privacy: .public), runtime.id \(identity.runtimeID, privacy: .public), \(identity.isPublic ? "public" : "private", privacy: .public) id, prelude \(setup.preludeMode, privacy: .public), nativeMessaging \(grantsBus ? "granted (Paddle bus only)" : "not granted", privacy: .public)")
 
@@ -1150,9 +1172,74 @@ final class ExtensionHost {
             }
         }
         bus.forget(ext.context)
+        onDemandSites[ext.name] = nil
         if let observer = backgroundObservers.removeValue(forKey: ext.name) { NotificationCenter.default.removeObserver(observer) }
         loaded.removeAll { $0 === ext }
         log.info("unloaded \(ext.name, privacy: .public)")
+    }
+
+    // MARK: - On demand (`extensionsOnDemand`)
+
+    /// How long an on-demand extension stays loaded with no awake tab on its sites.
+    static let onDemandIdle: TimeInterval = 5 * 60
+    static let parkedStatus = "on demand: loads when a tab opens one of its sites"
+
+    private static func matches(_ sites: [WKWebExtension.MatchPattern], _ url: URL) -> Bool {
+        sites.contains { $0.matches(url) }
+    }
+
+    /// The sleep sweep's call, each minute: unloads each on-demand extension that has had no awake tab on its sites,
+    /// none of its own pages open and no popup showing for `onDemandIdle`. Its background and the copy of its
+    /// scripts in every web process go (measured with three: 330 MB); `loadOnDemand` brings it back.
+    func parkIdleExtensions(config: PaddleConfig, now: Date = Date()) {
+        guard config.extensionsOnDemand, !loadInProgress else { return }
+        let tabs = registeredWindows.compactMap(\.value).flatMap(\.model.allTabs)
+        let awake = tabs.filter(\.isAwake).compactMap(\.url)
+        for ext in loaded {
+            guard let sites = onDemandSites[ext.name] else { continue }
+            if awake.contains(where: { Self.matches(sites, $0) }) || tabs.contains(where: { ext.owns($0.url) })
+                || popups.isShowing(for: ext.context) {
+                lastOnItsSites[ext.name] = now
+                continue
+            }
+            guard now.timeIntervalSince(lastOnItsSites[ext.name] ?? now) >= Self.onDemandIdle else { continue }
+            enqueue { [self] in
+                guard loaded.contains(where: { $0 === ext }) else { return }
+                unload(ext, closingTabs: false)
+                parked[ext.name] = sites
+                status[ext.name] = Self.parkedStatus
+                notes = []
+                refreshStatusLines()
+                log.info("\(ext.name, privacy: .public): unloaded until a tab opens one of its sites (none for \(Int(Self.onDemandIdle / 60)) min)")
+            }
+        }
+    }
+
+    /// Starts loading the unloaded on-demand extensions that work on `url` and returns true; false when none waits
+    /// for it. The caller holds the page until they run (`deferWake`, `onDemandLoadsDone`): an extension reaches
+    /// only web views made after it loaded (`renewTabsForLoadedContexts`).
+    func loadOnDemand(for url: URL) -> Bool {
+        let names = parked.filter { Self.matches($0.value, url) }.map(\.key)
+        guard !names.isEmpty else { return false }
+        for name in names { parked[name] = nil }
+        // Set now, not in the queued body, so `deferWake` holds the tab that asked.
+        loadInProgress = true
+        let config = AppModel.shared.config
+        let wanted = Set(names)
+        enqueue { [self] in
+            loadInProgress = true
+            let pending = await loadEntries(entries.filter { wanted.contains($0.name) }, config: config)
+            for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
+            for name in names { lastOnItsSites[name] = Date() }
+            log.info("loaded for a tab on their sites: \(names.sorted().joined(separator: ", "), privacy: .public)")
+            finishLoad()
+        }
+        return true
+    }
+
+    /// Returns once every load queued so far (`loadOnDemand` included) has finished.
+    func onDemandLoadsDone() async {
+        await operationQueue?.value
     }
 
     // MARK: - Permissions

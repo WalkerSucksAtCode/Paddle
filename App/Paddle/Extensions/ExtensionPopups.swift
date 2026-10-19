@@ -78,6 +78,11 @@ final class ExtensionPopupPresenter {
         return false
     }
 
+    /// The popup on screen belongs to `context`.
+    func isShowing(for context: WKWebExtensionContext) -> Bool {
+        shownContextID == context.uniqueIdentifier && shownPopover?.isShown == true
+    }
+
     /// Closes the popup on screen if it belongs to `context` (unloading it): through the action WebKit showed it
     /// for, then the popover itself in case WebKit no longer tracks it.
     func close(for context: WKWebExtensionContext) {

@@ -312,6 +312,10 @@ struct CompatPreludeTests {
         let notFirst = try Self.run(try Self.plan(.chrome), before: worker)
         notFirst.evaluateScript(listener + "__flush();")
         #expect(Self.eval(notFirst, "__got") == "[]")
+        // WebKit's own 'install' at a later load doesn't reach the listener; 'update' does, and removing still works.
+        notFirst.evaluateScript("for (const l of __ns.runtime.onInstalled._l) { l({reason: 'install'}); l({reason: 'update', previousVersion: '0'}); }")
+        #expect(Self.eval(notFirst, "__got") == #"["update"]"#)
+        #expect(Self.eval(notFirst, "(() => { const f = () => 1; chrome.runtime.onInstalled.addListener(f); const had = chrome.runtime.onInstalled.hasListener(f); chrome.runtime.onInstalled.removeListener(f); return [had, chrome.runtime.onInstalled.hasListener(f)]; })()") == "[true,false]")
         let notBackground = try Self.run(try Self.plan(.chrome, installReason: "install"), window: true)
         notBackground.evaluateScript(listener + "__flush();")
         #expect(Self.eval(notBackground, "__got") == "[]")

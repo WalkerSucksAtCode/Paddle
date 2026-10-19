@@ -264,6 +264,9 @@ final class Tab: Identifiable {
             }
             configuration = pageConfiguration
         } else {
+            // An unloaded on-demand extension for this site (`extensionsOnDemand`) loads first, so the page's web
+            // view is made after it and the extension can reach it.
+            if extensionsAllowed, let url, let host, host.loadOnDemand(for: url), host.deferWake(self) { return nil }
             configuration = makeWebConfiguration()
         }
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -338,6 +341,14 @@ final class Tab: Identifiable {
         sourceHTML = nil
         self.url = url
         wake()
+    }
+
+    /// A new web view that keeps the tab's history, then `url` in it: an extension loaded on demand reaches only web
+    /// views made after it loaded (`ExtensionHost.loadOnDemand`).
+    func renewWebView(goingTo url: URL) {
+        sleep()
+        wake()
+        load(url)
     }
 
     /// An extension page whose extension isn't loaded (declined, off, failed, removed): a plain error page in an

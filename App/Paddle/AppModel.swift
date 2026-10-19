@@ -532,6 +532,8 @@ final class AppModel {
         }
         // A changed `extensionCompat` entry reloads that extension (`reconcile` compares each one's reload key).
         if !keys.isDisjoint(with: [.extensions, .extensionsInPrivate, .extensionCompat]) { await extensions.reconcile(config: new) }
+        // Off: every profile's unloaded on-demand extensions load again.
+        if keys.contains(.extensionsOnDemand) { for host in extensionHosts { await host.reconcile(config: new) } }
         // Other profiles take `extensions` from profiles.json, but `extensionCompat` applies to them too.
         if keys.contains(.extensionCompat) {
             for host in profileExtensionHosts.values { await host.reconcile(config: new) }
@@ -668,6 +670,7 @@ final class AppModel {
             case .extensions: old.extensions != new.extensions
             case .extensionToolbar: old.extensionToolbar != new.extensionToolbar
             case .extensionsInPrivate: old.extensionsInPrivate != new.extensionsInPrivate
+            case .extensionsOnDemand: old.extensionsOnDemand != new.extensionsOnDemand
             case .extensionCompat: old.extensionCompat != new.extensionCompat
             case .extensionUpdates: old.extensionUpdates != new.extensionUpdates
             case .sitePersonas: old.sitePersonas != new.sitePersonas
@@ -1567,6 +1570,7 @@ final class AppModel {
     /// and tabs playing media or using the camera/mic stay awake.
     func sweepSleepingTabs(memoryPressure: Bool = false) {
         stopOrphanServiceWorkers(now: Date())
+        for host in extensionHosts { host.parkIdleExtensions(config: config) }
         let policy = effectiveSleepPolicy
         Task {
             // Asking each page whether it is playing media is a round trip, and the user can switch tabs
@@ -1689,11 +1693,11 @@ final class AppModel {
     }
 
     /// How long a WebContent process may run service workers with no page in it before they are stopped.
-    static let orphanWorkerGrace: TimeInterval = 3 * 60
+    static let orphanWorkerGrace: TimeInterval = 45
 
     /// Stops service workers once a process has run them with no page in it for `orphanWorkerGrace`: a site's
     /// worker outlives its last tab in that tab's whole process (measured: 218 MB still up 3.5 min after closing
-    /// Reddit). WebKit can only stop every worker in a pool (private `-[WKProcessPool _terminateServiceWorkers]`),
+    /// Reddit; 647 MB a minute after the benchmark closed its tabs). Chrome stops an idle worker after 30 s. WebKit can only stop every worker in a pool (private `-[WKProcessPool _terminateServiceWorkers]`),
     /// so open sites' workers stop too; each starts again on its site's next request, as workers are meant to.
     /// Without the process list or the selector nothing happens.
     private func stopOrphanServiceWorkers(now: Date) {
