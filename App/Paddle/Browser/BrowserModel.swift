@@ -894,16 +894,38 @@ final class BrowserModel {
         AppModel.shared.sessionChanged()
     }
 
-    /// A tab dropped on a view's strip item: it joins the view, taking half of the largest pane (split along that
-    /// pane's longer side). False when it can't: in the view already, pinned, another space, or the view is full.
+    /// A tab joining a Mosaic (dropped on its strip item, Add Pane, ⌘T or a link set to open as a pane): it takes half
+    /// of the pane `mosaicNewPanePlacement` names, split along that pane's longer side; `focused` is the pane `.focused`
+    /// means (the selected tab when nil). False when it can't: in the Mosaic already, pinned, another space, or full.
     @discardableResult
-    func addToView(_ tab: Tab, _ split: Split) -> Bool {
+    func addToView(_ tab: Tab, _ split: Split, focused: Tab? = nil) -> Bool {
         guard !split.contains(tab), split.layout.count < maxPanes else { return false }
         let area = paneArea.size == .zero ? CGSize(width: 1200, height: 800) : paneArea.size
-        let frames = split.layout.frames(in: CGRect(origin: .zero, size: area), gap: PaneMetrics.gap)
-        guard let (id, frame) = frames.max(by: { $0.value.width * $0.value.height < $1.value.width * $1.value.height }),
-              let target = tabs.first(where: { $0.id.uuidString == id }) else { return false }
-        return dropTab(tab, onto: target, edge: frame.width >= frame.height ? .right : .bottom)
+        let slot = split.layout.slotForNewPane(
+            config.mosaicNewPanePlacement, focused: (focused?.id ?? selectedID)?.uuidString,
+            in: CGRect(origin: .zero, size: area), gap: PaneMetrics.gap
+        )
+        guard let target = tabs.first(where: { $0.id.uuidString == slot.target }) else { return false }
+        return dropTab(tab, onto: target, edge: slot.edge)
+    }
+
+    /// File > New Tab: with `mosaicNewTab` "pane" and a Mosaic on screen that has room, a new pane in it; else a tab.
+    func newTabCommand() {
+        if config.mosaicNewTab == .pane, canAddPane {
+            addPaneToMosaic()
+        } else {
+            openNewTabPage()
+        }
+    }
+
+    /// A link `opener` opened in a new tab (⌘-click, middle-click, a target=_blank click): with `mosaicLinks` "pane"
+    /// and `opener` in a Mosaic with room, `tab` joins it beside `opener`'s pane. `select` false keeps the focus
+    /// where it was, as a background tab would.
+    func placeLinkTab(_ tab: Tab, from opener: Tab, select: Bool) {
+        guard config.mosaicLinks == .pane, let split = split(of: opener), split.layout.count < maxPanes else { return }
+        let keep = selectedTab
+        guard addToView(tab, split, focused: opener) else { return }
+        if !select, let keep, keep !== tab { self.select(keep) }
     }
 
     /// Shows `split` with its most recently used pane focused.
@@ -975,6 +997,11 @@ final class BrowserModel {
         let before = tabs
         // `tab` leaves any other multi view.
         if let own = split(of: tab), own.id != existing?.id { setLayout(own.layout.removing(tid), for: own) }
+        // `mosaicDefaultLayout`: a new Mosaic starts in it; with `mosaicAutoArrange`, one that gained a pane goes back to it.
+        if let arrangement = config.mosaicDefaultLayout.arrangement,
+           existing == nil || (config.mosaicAutoArrange && layout.count != existing?.layout.count) {
+            layout = layout.arranged(arrangement)
+        }
         if let existing { setLayout(layout, for: existing) } else { splits.append(Split(layout: layout)) }
         gather(around: target, adding: tab)
         reportMoves(from: before)
@@ -1056,7 +1083,7 @@ final class BrowserModel {
     /// moved to just after the view's other tabs so they stay together.
     func removeFromView(_ tab: Tab) {
         guard let split = split(of: tab) else { return }
-        let rest = split.layout.removing(tab.id.uuidString)
+        let rest = split.layout.removing(tab.id.uuidString).map(autoArranged)
         setLayout(rest, for: split)
         if let rest {
             let members = Set(rest.tabs.compactMap(UUID.init(uuidString:)))
@@ -1237,8 +1264,16 @@ final class BrowserModel {
         guard kept != splits.map(\.layout) else { return }
         splits = kept.map { layout in
             let old = splits.first { $0.layout.tabs.contains(where: layout.tabs.contains) }
-            return Split(id: old?.id ?? UUID(), layout: layout)
+            // A Mosaic that lost a pane (closed, moved away) goes back to its default layout with `mosaicAutoArrange`.
+            let shrank = old.map { $0.layout.count > layout.count } ?? false
+            return Split(id: old?.id ?? UUID(), layout: shrank ? autoArranged(layout) : layout)
         }
+    }
+
+    /// `layout` in `mosaicDefaultLayout` when `mosaicAutoArrange` is on, else unchanged.
+    private func autoArranged(_ layout: PaneLayout) -> PaneLayout {
+        guard config.mosaicAutoArrange, let arrangement = config.mosaicDefaultLayout.arrangement else { return layout }
+        return layout.arranged(arrangement)
     }
 
     /// Session restore: the active space's saved multi views, for tabs already in `tabs`.

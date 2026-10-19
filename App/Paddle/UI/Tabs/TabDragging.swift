@@ -32,9 +32,12 @@ struct TabDrag: ViewModifier {
     let enabled: Bool
     /// A tab in a strip or sidebar (its place counts for the insertion bar), not a pane's title bar.
     var strip = true
+    /// A whole pane toolbar (`mosaicPaneGrab` "toolbar"): a press in its address field or a double-click edits or
+    /// selects, never drags or renames.
+    var toolbar = false
 
     func body(content: Content) -> some View {
-        content.background(TabDragAnchor(tab: tab, enabled: enabled, strip: strip))
+        content.background(TabDragAnchor(tab: tab, enabled: enabled, strip: strip, toolbar: toolbar))
     }
 }
 
@@ -42,6 +45,7 @@ private struct TabDragAnchor: NSViewRepresentable {
     let tab: Tab
     let enabled: Bool
     let strip: Bool
+    let toolbar: Bool
 
     func makeNSView(context: Context) -> TabDragAnchorView { TabDragAnchorView() }
 
@@ -49,6 +53,7 @@ private struct TabDragAnchor: NSViewRepresentable {
         view.tab = tab
         view.enabled = enabled
         view.isStrip = strip
+        view.isPaneToolbar = toolbar
     }
 }
 
@@ -84,6 +89,7 @@ final class TabDragAnchorView: NSView {
     weak var tab: Tab?
     var enabled = true
     var isStrip = true
+    var isPaneToolbar = false
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
@@ -162,40 +168,63 @@ final class TabDragController: NSObject, NSDraggingSource {
         anchors.add(anchor)
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { event in
-            MainActor.assumeIsolated { TabDragController.shared.handle(event) }
-            return event
+            // A ⌥⌘ press that will move a pane doesn't reach the page.
+            MainActor.assumeIsolated { TabDragController.shared.handle(event) } ? nil : event
         }
     }
 
-    private func handle(_ event: NSEvent) {
+    /// True when the event is used up here (a ⌥⌘ press on a Mosaic pane's page).
+    private func handle(_ event: NSEvent) -> Bool {
         switch event.type {
         case .leftMouseDown:
             SwitchTrace.mouseDown = event.timestamp
             // A double-click on a tab renames it (pinned tabs show no title, so they don't).
-            if event.clickCount == 2, let tab = anchor(at: event, clicks: 2)?.tab, !tab.isPinned, let browser = tab.browser {
+            if event.clickCount == 2, let anchor = anchor(at: event, clicks: 2), !anchor.isPaneToolbar, let tab = anchor.tab,
+               !tab.isPinned, let browser = tab.browser {
                 pending = nil
                 browser.select(tab)
                 browser.renamingTabID = tab.id
-                return
+                return false
+            }
+            if let pane = modifierDragAnchor(at: event) {
+                pending = (pane, event.locationInWindow)
+                return true
             }
             pending = anchor(at: event, clicks: 1).map { ($0, event.locationInWindow) }
         case .leftMouseDragged:
-            guard let pending else { return }
+            guard let pending else { return false }
             let moved = hypot(event.locationInWindow.x - pending.start.x, event.locationInWindow.y - pending.start.y)
-            guard moved > 4 else { return }
+            guard moved > 4 else { return false }
             self.pending = nil
             begin(from: pending.anchor, event: event)
         default:
             pending = nil
         }
+        return false
     }
 
     private func anchor(at event: NSEvent, clicks: Int) -> TabDragAnchorView? {
         guard let window = event.window, event.clickCount == clicks else { return nil }
         return anchors.allObjects.first { anchor in
-            anchor.window === window && anchor.enabled && anchor.tab != nil
-                && anchor.convert(anchor.bounds, to: nil).contains(event.locationInWindow)
+            guard anchor.window === window, anchor.enabled, anchor.tab != nil,
+                  anchor.convert(anchor.bounds, to: nil).contains(event.locationInWindow) else { return false }
+            // A whole-toolbar grip leaves its address field to typing and selecting.
+            if anchor.isPaneToolbar, let hit = window.contentView?.hitTest(window.contentView!.convert(event.locationInWindow, from: nil)),
+               hit is NSText || hit is NSTextField { return false }
+            return true
         }
+    }
+
+    /// `mosaicModifierDrag`: a ⌥⌘ press on a pane of the Mosaic on screen picks that pane up, through its toolbar's
+    /// anchor.
+    private func modifierDragAnchor(at event: NSEvent) -> TabDragAnchorView? {
+        guard event.clickCount == 1, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .option],
+              let window = event.window, let controller = window.windowController as? BrowserWindowController,
+              controller.model.config.mosaicModifierDrag, let selected = controller.model.selectedTab,
+              controller.model.split(of: selected) != nil,
+              let local = controller.contentPoint(fromScreen: window.convertPoint(toScreen: event.locationInWindow)),
+              let id = controller.model.paneFrames.first(where: { $0.value.contains(local) })?.key else { return nil }
+        return anchors.allObjects.first { $0.window === window && !$0.isStrip && $0.tab?.id == id && $0.enabled }
     }
 
     private func begin(from anchor: TabDragAnchorView, event: NSEvent) {
@@ -215,8 +244,10 @@ final class TabDragController: NSObject, NSDraggingSource {
         showsGhost = true
         target = nil
         targetIndex = nil
-        // A pane's site icon is tiny: its ghost is a title card, the pointer near its left end.
-        let frame = anchor.isStrip ? anchor.bounds : NSRect(x: -8, y: anchor.bounds.midY - 15, width: 240, height: 30)
+        // A pane's grip is small or far from the pointer (a whole toolbar, a ⌥⌘ press on the page): its ghost is a
+        // title card under the pointer, near its left end.
+        let pointer = anchor.convert(event.locationInWindow, from: nil)
+        let frame = anchor.isStrip ? anchor.bounds : NSRect(x: pointer.x - 16, y: pointer.y - 15, width: 240, height: 30)
         let ghost = Self.image(for: tab, size: frame.size)
         self.ghost = ghost
         let item = NSPasteboardItem()

@@ -29,6 +29,12 @@ public enum PaneArrangement: String, Sendable, CaseIterable {
     case mainAndStack
 }
 
+/// Where a pane that joins a Mosaic (Add Pane, ⌘T or a link set to open as a pane, a tab dropped on the strip item)
+/// goes: half of the largest pane, half of the focused pane, or beside the last pane in pane order.
+public enum PanePlacement: String, Codable, Sendable, CaseIterable {
+    case largest, focused, last
+}
+
 /// One node of a multi view: a tab (by its session id), or a split of two nodes at `ratio` (the first side's share).
 public indirect enum PaneNode: Equatable, Sendable {
     case tab(String)
@@ -244,6 +250,25 @@ public struct PaneLayout: Equatable, Sendable {
             ? (span.width > 0 ? Double((point.x - span.minX) / span.width) : 0.5)
             : (span.height > 0 ? Double((point.y - span.minY) / span.height) : 0.5)
         return clamped(value)
+    }
+
+    /// The pane a new pane splits for `placement`, and the side it takes: along that pane's longer side (right of a
+    /// wide pane, below a tall one). `focused` is used by `.focused`; a focused id that isn't shown falls back to the
+    /// largest pane.
+    public func slotForNewPane(_ placement: PanePlacement, focused: String?, in rect: CGRect, gap: CGFloat = 1) -> (target: String, edge: PaneEdge) {
+        let frames = frames(in: rect, gap: gap)
+        let target: String
+        switch placement {
+        case .focused where focused.map(contains) == true: target = focused!
+        case .last: target = tabs.last!
+        default:
+            target = frames.max { a, b in
+                let area = (a.value.width * a.value.height, b.value.width * b.value.height)
+                return area.0 == area.1 ? (tabs.firstIndex(of: a.key) ?? 0) > (tabs.firstIndex(of: b.key) ?? 0) : area.0 < area.1
+            }!.key
+        }
+        let frame = frames[target] ?? rect
+        return (target, frame.width >= frame.height ? .right : .bottom)
     }
 
     /// The shares a divider drag stops at with snapping on (`mosaicDividerSnapping`).

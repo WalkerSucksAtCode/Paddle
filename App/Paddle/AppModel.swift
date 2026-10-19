@@ -626,6 +626,14 @@ final class AppModel {
             case .mosaicDimAmount: old.mosaicDimAmount != new.mosaicDimAmount
             case .mosaicToolbarSize: old.mosaicToolbarSize != new.mosaicToolbarSize
             case .mosaicToolbarButtons: old.mosaicToolbarButtons != new.mosaicToolbarButtons
+            case .mosaicPaneGrab: old.mosaicPaneGrab != new.mosaicPaneGrab
+            case .mosaicModifierDrag: old.mosaicModifierDrag != new.mosaicModifierDrag
+            case .mosaicWindowDrag: old.mosaicWindowDrag != new.mosaicWindowDrag
+            case .mosaicNewTab: old.mosaicNewTab != new.mosaicNewTab
+            case .mosaicLinks: old.mosaicLinks != new.mosaicLinks
+            case .mosaicNewPanePlacement: old.mosaicNewPanePlacement != new.mosaicNewPanePlacement
+            case .mosaicDefaultLayout: old.mosaicDefaultLayout != new.mosaicDefaultLayout
+            case .mosaicAutoArrange: old.mosaicAutoArrange != new.mosaicAutoArrange
             case .appearance: old.appearance != new.appearance
             case .darkMode: old.darkMode != new.darkMode
             case .highContrastTabs: old.highContrastTabs != new.highContrastTabs

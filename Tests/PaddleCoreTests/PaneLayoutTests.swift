@@ -196,4 +196,13 @@ struct PaneLayoutTests {
         #expect(PaneLayout.snapped(0.69) == 2.0 / 3)
         #expect(PaneLayout.snapped(0.42) == 0.42)
     }
+
+    @Test func newPanesGoWhereThePlacementSays() throws {
+        var l = try layout()
+        l.insert("c", at: "b", edge: .bottom)  // a | (b over c)
+        #expect(l.slotForNewPane(.largest, focused: nil, in: rect) == ("a", .bottom))  // a is 500 x 600: taller
+        #expect(l.slotForNewPane(.focused, focused: "c", in: rect) == ("c", .right))   // c is 500 x 300: wider
+        #expect(l.slotForNewPane(.focused, focused: "zz", in: rect).target == "a")
+        #expect(l.slotForNewPane(.last, focused: "a", in: rect).target == "c")
+    }
 }

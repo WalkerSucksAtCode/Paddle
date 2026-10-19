@@ -49,8 +49,8 @@ struct MosaicToolbarArea: View {
             Spacer(minLength: 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Behind the bar: the empty space on both sides (and between its buttons) moves the window.
-        .background(WindowDragArea())
+        // Behind the bar: the empty space on both sides (and between its buttons) moves the window (`mosaicWindowDrag`).
+        .background(WindowDragArea().allowsHitTesting(app.config.mosaicWindowDrag))
     }
 }
 

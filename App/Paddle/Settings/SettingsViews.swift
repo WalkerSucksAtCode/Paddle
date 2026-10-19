@@ -104,6 +104,9 @@ enum SettingsPane: String, CaseIterable {
             "mosaicAnimationSpeed", "drag preview", "mosaicLiveDragPreview", "divider", "grip", "mosaicDividerGrips", "snap",
             "mosaicDividerSnapping", "double-click", "mosaicDividerDoubleClick", "corners", "square", "mosaicPaneCorners",
             "focus", "dim", "mosaicFocusMarker", "mosaicDimAmount", "compact", "mosaicToolbarSize", "buttons", "mosaicToolbarButtons",
+            "drag", "grip", "handle", "mosaicPaneGrab", "mosaicModifierDrag", "move window", "mosaicWindowDrag", "new tab",
+            "mosaicNewTab", "links", "mosaicLinks", "placement", "mosaicNewPanePlacement", "default layout", "mosaicDefaultLayout",
+            "re-tile", "arrange", "mosaicAutoArrange",
         ]
         case .privacy: [
             "blocking", "adblock", "ads", "trackers", "content blocking", "contentBlocking", "filter lists", "filterLists",

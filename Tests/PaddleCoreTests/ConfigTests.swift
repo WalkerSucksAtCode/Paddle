@@ -30,6 +30,17 @@ struct ConfigTests {
         #expect(PaddleConfig(mosaicMaxPanes: 99).mosaicMaxPanes == PaneLayout.maxPanes)
     }
 
+    @Test func mosaicOpeningAndDraggingKeysDecode() throws {
+        let d = PaddleConfig()
+        #expect(d.mosaicPaneGrab == .icon && d.mosaicModifierDrag && d.mosaicWindowDrag)
+        #expect(d.mosaicNewTab == .tab && d.mosaicLinks == .tab && d.mosaicNewPanePlacement == .largest)
+        #expect(d.mosaicDefaultLayout == .asDropped && !d.mosaicAutoArrange)
+        let c = try PaddleConfig.decode(Data(#"{"mosaicPaneGrab": "toolbar", "mosaicModifierDrag": false, "mosaicWindowDrag": false, "mosaicNewTab": "pane", "mosaicLinks": "pane", "mosaicNewPanePlacement": "focused", "mosaicDefaultLayout": "grid", "mosaicAutoArrange": true}"#.utf8))
+        #expect(c.mosaicPaneGrab == .toolbar && !c.mosaicModifierDrag && !c.mosaicWindowDrag)
+        #expect(c.mosaicNewTab == .pane && c.mosaicLinks == .pane && c.mosaicNewPanePlacement == .focused)
+        #expect(c.mosaicDefaultLayout.arrangement == .grid && c.mosaicAutoArrange)
+    }
+
     @Test func mosaicMotionAndLookKeysDecode() throws {
         let d = PaddleConfig()
         #expect(d.mosaicAnimation == .system && d.mosaicAnimationSpeed == .smooth && d.mosaicLiveDragPreview)

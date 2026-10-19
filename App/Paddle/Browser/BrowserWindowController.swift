@@ -190,7 +190,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - File
 
-    @objc func paddleNewTab(_ sender: Any?) { model.openNewTabPage() }
+    @objc func paddleNewTab(_ sender: Any?) { model.newTabCommand() }
     @objc func paddleOpenLocation(_ sender: Any?) { model.focusAddress() }
     @objc func paddleCloseTab(_ sender: Any?) { if let tab { model.close(tab) } }
     @objc func paddleReopenClosedTab(_ sender: Any?) { model.reopenClosedTab() }

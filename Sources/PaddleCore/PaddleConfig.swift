@@ -74,6 +74,33 @@ public enum MosaicToolbarSize: String, Codable, Sendable, CaseIterable {
     case regular, compact
 }
 
+/// How a Mosaic pane is grabbed to move it: by its site icon, by a grip handle at the start of its toolbar, or by
+/// any empty part of its toolbar.
+public enum MosaicPaneGrab: String, Codable, Sendable, CaseIterable {
+    case icon, grip, toolbar
+}
+
+/// Whether something new opens as a tab or as a pane of the Mosaic on screen (while it has room).
+public enum MosaicOpening: String, Codable, Sendable, CaseIterable {
+    case tab, pane
+}
+
+/// The layout a new Mosaic starts in (and, with `mosaicAutoArrange`, keeps as panes come and go); `asDropped` keeps the
+/// shape the drops make.
+public enum MosaicDefaultLayout: String, Codable, Sendable, CaseIterable {
+    case asDropped, columns, rows, grid, mainAndStack
+
+    public var arrangement: PaneArrangement? {
+        switch self {
+        case .asDropped: nil
+        case .columns: .columns
+        case .rows: .rows
+        case .grid: .grid
+        case .mainAndStack: .mainAndStack
+        }
+    }
+}
+
 /// The buttons a Mosaic pane's toolbar can show besides its site icon and address field.
 public enum MosaicToolbarButton: String, Codable, Sendable, CaseIterable {
     case back, forward, reload, close
@@ -303,6 +330,19 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var mosaicToolbarSize: MosaicToolbarSize
     /// The pane toolbar's buttons, in toolbar order; unknown names are left out.
     public var mosaicToolbarButtons: [MosaicToolbarButton]
+    public var mosaicPaneGrab: MosaicPaneGrab
+    /// ⌥⌘-drag anywhere on a pane's page moves the pane.
+    public var mosaicModifierDrag: Bool
+    /// The empty middle of the window toolbar drags the window while a Mosaic shows.
+    public var mosaicWindowDrag: Bool
+    /// ⌘T (File > New Tab) while a Mosaic shows.
+    public var mosaicNewTab: MosaicOpening
+    /// A link a pane opens in a new tab (⌘-click, middle-click, target=_blank).
+    public var mosaicLinks: MosaicOpening
+    public var mosaicNewPanePlacement: PanePlacement
+    public var mosaicDefaultLayout: MosaicDefaultLayout
+    /// A Mosaic goes back to `mosaicDefaultLayout` whenever a pane joins or leaves it.
+    public var mosaicAutoArrange: Bool
 
     public static let mosaicDimRange: ClosedRange<Double> = 0.05...0.7
 
@@ -348,6 +388,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         case fraudWarnings, swipeNavigation, pinchZoom, tabKeyHighlightsLinks, contactAutofill, newTabExtension, newTabFeeds, newTabNotifications, newTabHiddenNotifications, newTabSections, mosaicMaxPanes, mosaicPaneBars, mosaicGap, mosaicMinimumPaneWidth, mosaicMinimumPaneHeight, mosaicStaysReady, mosaicFreezeAfterMinutes, mosaicSleepAfterMinutes
         case mosaicAnimation, mosaicAnimationSpeed, mosaicLiveDragPreview, mosaicDividerGrips, mosaicDividerSnapping, mosaicDividerDoubleClick
         case mosaicPaneCorners, mosaicFocusMarker, mosaicDimAmount, mosaicToolbarSize, mosaicToolbarButtons
+        case mosaicPaneGrab, mosaicModifierDrag, mosaicWindowDrag, mosaicNewTab, mosaicLinks, mosaicNewPanePlacement, mosaicDefaultLayout, mosaicAutoArrange
         case appearance, darkMode, highContrastTabs, theme, accentColor, chromeTint, chromeTintStrength, interfaceTextSize, defaultZoom, minimumFontSize, reduceMotion, reduceTransparency
         case controlBridge, controlBridgeScripts
         case shortcuts
@@ -427,6 +468,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         mosaicDimAmount: Double = 0.25,
         mosaicToolbarSize: MosaicToolbarSize = .regular,
         mosaicToolbarButtons: [MosaicToolbarButton] = MosaicToolbarButton.allCases,
+        mosaicPaneGrab: MosaicPaneGrab = .icon,
+        mosaicModifierDrag: Bool = true,
+        mosaicWindowDrag: Bool = true,
+        mosaicNewTab: MosaicOpening = .tab,
+        mosaicLinks: MosaicOpening = .tab,
+        mosaicNewPanePlacement: PanePlacement = .largest,
+        mosaicDefaultLayout: MosaicDefaultLayout = .asDropped,
+        mosaicAutoArrange: Bool = false,
         appearance: AppearanceMode = .system,
         darkMode: DarkModePreference = .off,
         highContrastTabs: Bool = false,
@@ -521,6 +570,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.mosaicDimAmount = min(max(mosaicDimAmount.isFinite ? mosaicDimAmount : 0.25, Self.mosaicDimRange.lowerBound), Self.mosaicDimRange.upperBound)
         self.mosaicToolbarSize = mosaicToolbarSize
         self.mosaicToolbarButtons = Self.ordered(mosaicToolbarButtons)
+        self.mosaicPaneGrab = mosaicPaneGrab
+        self.mosaicModifierDrag = mosaicModifierDrag
+        self.mosaicWindowDrag = mosaicWindowDrag
+        self.mosaicNewTab = mosaicNewTab
+        self.mosaicLinks = mosaicLinks
+        self.mosaicNewPanePlacement = mosaicNewPanePlacement
+        self.mosaicDefaultLayout = mosaicDefaultLayout
+        self.mosaicAutoArrange = mosaicAutoArrange
         self.appearance = appearance
         self.darkMode = darkMode
         self.highContrastTabs = highContrastTabs
@@ -631,6 +688,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         let dim: Double = c.decodeValue(.mosaicDimAmount, d.mosaicDimAmount, issues)
         mosaicDimAmount = min(max(dim.isFinite ? dim : d.mosaicDimAmount, Self.mosaicDimRange.lowerBound), Self.mosaicDimRange.upperBound)
         mosaicToolbarSize = c.decodeValue(.mosaicToolbarSize, d.mosaicToolbarSize, issues)
+        mosaicPaneGrab = c.decodeValue(.mosaicPaneGrab, d.mosaicPaneGrab, issues)
+        mosaicModifierDrag = c.decodeValue(.mosaicModifierDrag, d.mosaicModifierDrag, issues)
+        mosaicWindowDrag = c.decodeValue(.mosaicWindowDrag, d.mosaicWindowDrag, issues)
+        mosaicNewTab = c.decodeValue(.mosaicNewTab, d.mosaicNewTab, issues)
+        mosaicLinks = c.decodeValue(.mosaicLinks, d.mosaicLinks, issues)
+        mosaicNewPanePlacement = c.decodeValue(.mosaicNewPanePlacement, d.mosaicNewPanePlacement, issues)
+        mosaicDefaultLayout = c.decodeValue(.mosaicDefaultLayout, d.mosaicDefaultLayout, issues)
+        mosaicAutoArrange = c.decodeValue(.mosaicAutoArrange, d.mosaicAutoArrange, issues)
         mosaicToolbarButtons = Self.ordered(c.decodeStrings(.mosaicToolbarButtons, d.mosaicToolbarButtons.map(\.rawValue), issues).compactMap(MosaicToolbarButton.init(rawValue:)))
         appearance = c.decodeValue(.appearance, d.appearance, issues)
         darkMode = c.decodeValue(.darkMode, d.darkMode, issues)

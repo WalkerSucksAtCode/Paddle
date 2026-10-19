@@ -162,6 +162,76 @@ struct MosaicPane: View {
             }
             .disabled(model.controlsDisabled)
 
+            Section("Dragging and handles") {
+                Picker("Move a pane by its", selection: Binding(
+                    get: { model.file.mosaicPaneGrab },
+                    set: { value in Task { await model.saveKey(.mosaicPaneGrab, .string(value.rawValue)) } }
+                )) {
+                    Text("Site icon").tag(MosaicPaneGrab.icon)
+                    Text("Grip handle").tag(MosaicPaneGrab.grip)
+                    Text("Whole toolbar").tag(MosaicPaneGrab.toolbar)
+                }
+                .help("mosaicPaneGrab in config.json. The address field always stays for typing.")
+                Toggle("⌥⌘-drag a page to move its pane", isOn: Binding(
+                    get: { model.file.mosaicModifierDrag },
+                    set: { value in Task { await model.saveKey(.mosaicModifierDrag, .bool(value)) } }
+                ))
+                .help("mosaicModifierDrag in config.json.")
+                Toggle("Drag the window by the empty toolbar", isOn: Binding(
+                    get: { model.file.mosaicWindowDrag },
+                    set: { value in Task { await model.saveKey(.mosaicWindowDrag, .bool(value)) } }
+                ))
+                .help("mosaicWindowDrag in config.json. Double-click follows your system setting (zoom or minimize).")
+                SettingsCaption("Drag a pane onto another pane's edge to put it on that side, or onto its middle to swap the two. The empty middle of the window toolbar moves the window, as the title bar does.")
+            }
+            .disabled(model.controlsDisabled)
+
+            Section("Opening") {
+                Picker("⌘T while a Mosaic shows", selection: Binding(
+                    get: { model.file.mosaicNewTab },
+                    set: { value in Task { await model.saveKey(.mosaicNewTab, .string(value.rawValue)) } }
+                )) {
+                    Text("Opens a tab").tag(MosaicOpening.tab)
+                    Text("Adds a pane").tag(MosaicOpening.pane)
+                }
+                .help("mosaicNewTab in config.json. A full Mosaic opens a tab.")
+                Picker("Links a pane opens in a new tab", selection: Binding(
+                    get: { model.file.mosaicLinks },
+                    set: { value in Task { await model.saveKey(.mosaicLinks, .string(value.rawValue)) } }
+                )) {
+                    Text("Open as tabs").tag(MosaicOpening.tab)
+                    Text("Open as panes").tag(MosaicOpening.pane)
+                }
+                .help("mosaicLinks in config.json. ⌘-click, middle-click and target=_blank links; windows a script opens (sign-ins) stay tabs.")
+                Picker("A new pane takes half of", selection: Binding(
+                    get: { model.file.mosaicNewPanePlacement },
+                    set: { value in Task { await model.saveKey(.mosaicNewPanePlacement, .string(value.rawValue)) } }
+                )) {
+                    Text("The largest pane").tag(PanePlacement.largest)
+                    Text("The focused pane").tag(PanePlacement.focused)
+                    Text("The last pane").tag(PanePlacement.last)
+                }
+                .help("mosaicNewPanePlacement in config.json.")
+                Picker("New Mosaics start as", selection: Binding(
+                    get: { model.file.mosaicDefaultLayout },
+                    set: { value in Task { await model.saveKey(.mosaicDefaultLayout, .string(value.rawValue)) } }
+                )) {
+                    Text("Wherever you drop").tag(MosaicDefaultLayout.asDropped)
+                    Text("Columns").tag(MosaicDefaultLayout.columns)
+                    Text("Rows").tag(MosaicDefaultLayout.rows)
+                    Text("Grid").tag(MosaicDefaultLayout.grid)
+                    Text("Main and Stack").tag(MosaicDefaultLayout.mainAndStack)
+                }
+                .help("mosaicDefaultLayout in config.json.")
+                Toggle("Re-tile when panes join or leave", isOn: Binding(
+                    get: { model.file.mosaicAutoArrange },
+                    set: { value in Task { await model.saveKey(.mosaicAutoArrange, .bool(value)) } }
+                ))
+                .help("mosaicAutoArrange in config.json. Uses the layout above.")
+                    .disabled(model.file.mosaicDefaultLayout == .asDropped)
+            }
+            .disabled(model.controlsDisabled)
+
             Section("In the background") {
                 Toggle("Keep the last Mosaic ready", isOn: Binding(
                     get: { model.file.mosaicStaysReady },

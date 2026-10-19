@@ -81,7 +81,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             let flags = navigationAction.modifierFlags
             if flags.contains(.command) || navigationAction.buttonNumber == 4 {
                 let select = flags.contains(.shift) == browser.config.openLinksInBackground
-                browser.newTab(url: url, select: select, after: Self.anchor(for: tab, in: browser))
+                let opened = browser.newTab(url: url, select: select, after: Self.anchor(for: tab, in: browser))
+                browser.placeLinkTab(opened, from: tab, select: select)
                 return (.cancel, preferences)
             }
             // Option-click (left button, which WebKit numbers 1): the link opens in the window's preview, any frame,
@@ -668,6 +669,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // A popup from an extension page shares its configuration (WebKit's `configuration` is that page's).
         newTab.attach(popup, extensionPageID: tab.extensionPageID)
         browser.insert(newTab, after: anchor, select: true)
+        // A target=_blank link clicked in a Mosaic pane may join the Mosaic (`mosaicLinks`); script windows stay tabs.
+        if navigationAction.navigationType == .linkActivated, let anchor { browser.placeLinkTab(newTab, from: anchor, select: true) }
         return popup
     }
 

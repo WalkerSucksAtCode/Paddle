@@ -252,12 +252,14 @@ private struct PaneBar: View {
     private var control: CGFloat { PaneMetrics.compactBar ? 18 : 22 }
 
     var body: some View {
+        let grab = PaneMetrics.config.mosaicPaneGrab
         HStack(spacing: 2) {
+            if grab == .grip { grip }
             FaviconView(url: tab.url, size: PaneMetrics.compactBar ? 11 : 12)
                 .frame(width: control, height: control)
                 .contentShape(Rectangle())
                 .help("Drag to move this pane")
-                .modifier(TabDrag(tab: tab, enabled: true, strip: false))
+                .modifier(TabDrag(tab: tab, enabled: grab == .icon, strip: false))
             if buttons.contains(.back) {
                 button("chevron.left", "Back", enabled: tab.canGoBack) { tab.webView?.goBack() }
             }
@@ -269,73 +271,7 @@ private struct PaneBar: View {
                     if tab.isLoading { tab.webView?.stopLoading() } else { tab.reload() }
                 }
             }
-            TextField("Address", text: $draft, prompt: Text("Search or enter address"))
-                .textFieldStyle(.plain)
-                .chromeFont(size: PaneMetrics.compactBar ? 11 : 12)
-                .lineLimit(1)
-                .focused($editing)
-                .padding(.horizontal, 8)
-                .frame(height: control)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(editing ? 0.10 : 0.06)))
-                .onSubmit {
-                    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { return }
-                    if model.selectedID != tab.id { model.select(tab, focusPage: false) }
-                    // The highlighted suggestion (the top row is what was typed), as in the window's field.
-                    if model.suggestions.isVisible, let row = model.suggestions.highlightedRow {
-                        model.open(row)
-                    } else {
-                        model.navigate(text)
-                    }
-                    model.suggestions.dismiss()
-                    editing = false
-                }
-                .onChange(of: editing) { _, now in
-                    if now {
-                        // The keyboard stays in this field: selecting a tab otherwise hands it to the page.
-                        if model.selectedID != tab.id { model.select(tab, focusPage: false) }
-                        model.editingPaneID = tab.id
-                        DispatchQueue.main.async { if editing { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) } }
-                    } else {
-                        if model.editingPaneID == tab.id {
-                            model.editingPaneID = nil
-                            model.suggestions.dismiss()
-                        }
-                        draft = shownAddress
-                    }
-                }
-                // Typing shows the window's suggestions under this field: open tabs, history, search phrases.
-                .onChange(of: draft) { _, text in
-                    if editing, text != shownAddress { model.suggestions.update(for: text, in: model) }
-                }
-                .onKeyPress(.downArrow) { moveHighlight(by: 1) }
-                .onKeyPress(.upArrow) { moveHighlight(by: -1) }
-                .onChange(of: shownAddress) { _, new in if !editing { draft = new } }
-                .onChange(of: model.paneAddressFocusRequest) { if focused { editing = true } }
-                .onAppear { draft = shownAddress }
-                // The first Escape closes the suggestions, the next gives up the edit.
-                .onExitCommand {
-                    if model.suggestions.isVisible, model.editingPaneID == tab.id {
-                        model.suggestions.dismiss()
-                        return
-                    }
-                    draft = shownAddress
-                    editing = false
-                }
-                .overlay(alignment: .topLeading) {
-                    if editing, model.editingPaneID == tab.id, model.suggestions.isVisible {
-                        SuggestionList(suggestions: model.suggestions) { row in
-                            model.open(row)
-                            model.suggestions.dismiss()
-                            editing = false
-                        }
-                        .systemText()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(minWidth: 340, alignment: .top)
-                        .offset(y: control + 4)
-                    }
-                }
-                .accessibilityLabel("Address of \(tab.displayTitle)")
+            addressField
                 .padding(.horizontal, 4)
             if buttons.contains(.close) {
                 Button {
@@ -354,10 +290,94 @@ private struct PaneBar: View {
         .padding(.horizontal, 4)
         .frame(height: PaneMetrics.barHeight)
         .frame(maxWidth: .infinity)
+        // `mosaicPaneGrab` "toolbar": any part of the bar but its address field picks the pane up.
+        .background(Color.clear.modifier(TabDrag(tab: tab, enabled: grab == .toolbar, strip: false, toolbar: true)))
         .background(theme?.toolbar ?? Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .bottom) {
             TabProgressBar(tab: tab, accent: theme?.accent ?? Color.accentColor, reducesMotion: AppModel.shared.reducesMotion)
         }
+    }
+
+    private var grip: some View {
+        Image(systemName: "line.3.horizontal")
+            .rotationEffect(.degrees(90))
+            .chromeFont(size: 10, weight: .semibold)
+            .foregroundStyle(.secondary)
+            .frame(width: 14, height: control)
+            .contentShape(Rectangle())
+            .help("Drag to move this pane")
+            .modifier(TabDrag(tab: tab, enabled: true, strip: false))
+            .accessibilityLabel("Move \(tab.displayTitle)")
+    }
+
+    private var addressField: some View {
+        TextField("Address", text: $draft, prompt: Text("Search or enter address"))
+            .textFieldStyle(.plain)
+            .chromeFont(size: PaneMetrics.compactBar ? 11 : 12)
+            .lineLimit(1)
+            .focused($editing)
+            .padding(.horizontal, 8)
+            .frame(height: control)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(editing ? 0.10 : 0.06)))
+            .onSubmit {
+                let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+                // The highlighted suggestion (the top row is what was typed), as in the window's field.
+                if model.suggestions.isVisible, let row = model.suggestions.highlightedRow {
+                    model.open(row)
+                } else {
+                    model.navigate(text)
+                }
+                model.suggestions.dismiss()
+                editing = false
+            }
+            .onChange(of: editing) { _, now in
+                if now {
+                    // The keyboard stays in this field: selecting a tab otherwise hands it to the page.
+                    if model.selectedID != tab.id { model.select(tab, focusPage: false) }
+                    model.editingPaneID = tab.id
+                    DispatchQueue.main.async { if editing { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) } }
+                } else {
+                    if model.editingPaneID == tab.id {
+                        model.editingPaneID = nil
+                        model.suggestions.dismiss()
+                    }
+                    draft = shownAddress
+                }
+            }
+            // Typing shows the window's suggestions under this field: open tabs, history, search phrases.
+            .onChange(of: draft) { _, text in
+                if editing, text != shownAddress { model.suggestions.update(for: text, in: model) }
+            }
+            .onKeyPress(.downArrow) { moveHighlight(by: 1) }
+            .onKeyPress(.upArrow) { moveHighlight(by: -1) }
+            .onChange(of: shownAddress) { _, new in if !editing { draft = new } }
+            .onChange(of: model.paneAddressFocusRequest) { if focused { editing = true } }
+            .onAppear { draft = shownAddress }
+            // The first Escape closes the suggestions, the next gives up the edit.
+            .onExitCommand {
+                if model.suggestions.isVisible, model.editingPaneID == tab.id {
+                    model.suggestions.dismiss()
+                    return
+                }
+                draft = shownAddress
+                editing = false
+            }
+            .overlay(alignment: .topLeading) {
+                if editing, model.editingPaneID == tab.id, model.suggestions.isVisible {
+                    SuggestionList(suggestions: model.suggestions) { row in
+                        model.open(row)
+                        model.suggestions.dismiss()
+                        editing = false
+                    }
+                    .systemText()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minWidth: 340, alignment: .top)
+                    .offset(y: control + 4)
+                }
+            }
+            .accessibilityLabel("Address of \(tab.displayTitle)")
     }
 
     private func moveHighlight(by delta: Int) -> KeyPress.Result {
