@@ -97,6 +97,7 @@ struct GeneralPane: View {
                     }
                     .help("newTabHiddenNotifications in config.json. Its banners still show; Settings > Sites decides those.")
                 }
+                NotifierRows(model: model)
                 FeedRows(model: model)
             }
             Section("Trackpad & Keyboard") {
@@ -134,6 +135,27 @@ struct GeneralPane: View {
                 .help("askWhereToDownload in config.json. Prompts for a destination before downloading instead of saving straight to ~/Downloads.")
                 .disabled(model.controlsDisabled)
             }
+        }
+    }
+}
+
+/// `SuggestedNotifiers`: one switch per site for `sites.<host>.notifications` "allow" (off sets it back to Paddle's
+/// default, which asks). Their notifications then show on New Tab, while the site's tab is open (no Web Push).
+private struct NotifierRows: View {
+    let model: SettingsModel
+
+    var body: some View {
+        ForEach(SuggestedNotifiers.all) { site in
+            Toggle(isOn: Binding(
+                get: { model.file.sitePolicy(forHost: site.host).notifications == .allow },
+                set: { on in Task { await model.setSiteField(.notifications, .string(on ? "allow" : "ask"), forKey: site.host) } }
+            )) {
+                Text("Notifications from \(site.name)")
+                Text(site.note.isEmpty ? "While its tab is open" : "While its tab is open. \(site.note)")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            .help("sites.\(site.host).notifications in config.json: allow lets the site notify without asking.")
+            .disabled(model.controlsDisabled)
         }
     }
 }
