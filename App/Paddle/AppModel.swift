@@ -83,6 +83,8 @@ final class AppModel {
     @ObservationIgnored private var cpuUsage = CPUUsageTracker()
     /// The last "kept running" line the sweep logged, so it logs only when that changes.
     @ObservationIgnored private var lastKeptRunning = ""
+    /// When the sweep first saw a WebContent process running service workers with no page in it (`stopOrphanServiceWorkers`).
+    @ObservationIgnored private var orphanWorkersSince: Date?
     /// Open readouts that want the 5 s sampler even with `showTabMemory` off (Activity, Settings' memory pane).
     @ObservationIgnored private var memoryReaders = 0
     /// Activation and window-occlusion observers that start and stop the sampler.
@@ -1564,6 +1566,7 @@ final class AppModel {
     /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),
     /// and tabs playing media or using the camera/mic stay awake.
     func sweepSleepingTabs(memoryPressure: Bool = false) {
+        stopOrphanServiceWorkers(now: Date())
         let policy = effectiveSleepPolicy
         Task {
             // Asking each page whether it is playing media is a round trip, and the user can switch tabs
@@ -1685,12 +1688,37 @@ final class AppModel {
         trimWebKitMemory()
     }
 
+    /// How long a WebContent process may run service workers with no page in it before they are stopped.
+    static let orphanWorkerGrace: TimeInterval = 3 * 60
+
+    /// Stops service workers once a process has run them with no page in it for `orphanWorkerGrace`: a site's
+    /// worker outlives its last tab in that tab's whole process (measured: 218 MB still up 3.5 min after closing
+    /// Reddit). WebKit can only stop every worker in a pool (private `-[WKProcessPool _terminateServiceWorkers]`),
+    /// so open sites' workers stop too; each starts again on its site's next request, as workers are meant to.
+    /// Without the process list or the selector nothing happens.
+    private func stopOrphanServiceWorkers(now: Date) {
+        guard let snapshot = ProcessMemory.snapshot() else { return }
+        let orphans = snapshot.webContent.filter { $0.runsServiceWorkers && $0.views.isEmpty }
+        guard !orphans.isEmpty else {
+            orphanWorkersSince = nil
+            return
+        }
+        let since = orphanWorkersSince ?? now
+        orphanWorkersSince = since
+        guard now.timeIntervalSince(since) >= Self.orphanWorkerGrace else { return }
+        orphanWorkersSince = nil
+        let pools = [WebEnvironment.processPool, WebEnvironment.privateProcessPool].compactMap { $0 }
+        let stopped = pools.filter { PrivateAPI.callVoid("_terminateServiceWorkers", on: $0) }.count
+        let megabytes = orphans.reduce(0) { $0 + $1.footprint } / 1_048_576
+        log.info("stopped service workers in \(stopped) pool(s): \(orphans.count) process(es) with no page, \(megabytes) MB")
+    }
+
     /// Trims WebKit memory: purges in-memory caches across website data stores, and asks
     /// WebKit to run JavaScript garbage collection and clear process caches.
     func trimWebKitMemory() {
         web.emptyMemoryCaches()
         // The trim acts on a web view's process pool (a forced collection in every one of its processes), so once per
-        // pool: tabs share WebKit's default pool, and once per tab repeated the same work for each.
+        // pool: tabs share `WebEnvironment.processPool`, and once per tab repeated the same work for each.
         var trimmed = Set<ObjectIdentifier>()
         for tab in allTabs {
             guard let webView = tab.webView else { continue }

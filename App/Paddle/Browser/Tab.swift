@@ -574,6 +574,10 @@ final class Tab: Identifiable {
         // every web process (the page on screen included) and dropping WebKit's cached processes, on each freeze.
         // Memory pressure still trims (`AppModel.trimWebKitMemory`).
         suspendRequested = true
+        // The pages WebKit keeps alive for an instant Back (its back-forward cache) go too: a page left for another
+        // site keeps a whole WebContent process (measured: 291 MB after Reddit -> Wikipedia). History stays; Back on
+        // this tab then loads the page again. Private `_clearBackForwardCache`; without it they stay.
+        PrivateAPI.callVoid("_clearBackForwardCache", on: webView)
         // Private WebKit API (`_suspendPage:`, a reply block with a BOOL), called the way `applyMute` calls its selectors.
         typealias Suspend = @convention(c) (AnyObject, Selector, @escaping @convention(block) (Bool) -> Void) -> Void
         let suspend = unsafeBitCast(webView.method(for: Self.suspendSelector), to: Suspend.self)

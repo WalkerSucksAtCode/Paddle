@@ -21,11 +21,13 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
     public let copiedBytes: Int64?
     /// The overlay from an earlier load was kept because the source folder hasn't changed since.
     public let reused: Bool
+    /// Content scripts rewritten to Latin-1 (`ScriptLatin1`), so WebKit keeps them as 8-bit text.
+    public let scriptsNarrowed: Int
 
     init(
         root: URL, persona: Persona = .none, backgroundPatched: Bool, contentScriptsPatched: Bool,
         unpatchedBackground: ExtensionCompat.UnpatchedBackground?, serviceWorkerWrapped: Bool = false,
-        pagesTagged: Int = 0, copiedBytes: Int64?, reused: Bool
+        pagesTagged: Int = 0, copiedBytes: Int64?, reused: Bool, scriptsNarrowed: Int = 0
     ) {
         self.root = root
         self.persona = persona
@@ -36,6 +38,7 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
         self.pagesTagged = pagesTagged
         self.copiedBytes = copiedBytes
         self.reused = reused
+        self.scriptsNarrowed = scriptsNarrowed
     }
 
     /// The prelude runs in at least one of the extension's contexts.
@@ -48,6 +51,7 @@ public struct ExtensionOverlayResult: Equatable, Sendable {
             if backgroundPatched { notes.append(serviceWorkerWrapped ? "service worker" : "background") }
             if pagesTagged > 0 { notes.append(pagesTagged == 1 ? "1 page" : "\(pagesTagged) pages") }
             if contentScriptsPatched { notes.append("content scripts") }
+            if scriptsNarrowed > 0 { notes.append(scriptsNarrowed == 1 ? "1 script in Latin-1" : "\(scriptsNarrowed) scripts in Latin-1") }
             if let copiedBytes { notes.append("copied, \(Self.size(copiedBytes))") }
             let base = "\(persona.rawValue) persona"
             return notes.isEmpty ? base : "\(base) (\(notes.joined(separator: "; ")))"
@@ -90,7 +94,7 @@ public enum ExtensionOverlay {
     }
 
     /// Bump when what `make` writes changes, so every kept overlay is remade once.
-    static let recipeVersion = 7
+    static let recipeVersion = 8
     /// Written last into a finished overlay: the source fingerprint it was made from and what it holds.
     static let stampFileName = ".paddle-overlay.json"
 
@@ -98,6 +102,7 @@ public enum ExtensionOverlay {
         let fingerprint: String
         let copiedBytes: Int64?
         var pagesTagged: Int?
+        var scriptsNarrowed: Int?
     }
 
     /// At most this many `.html` files get the prelude tag, each at most `maxPageBytes`.
@@ -144,12 +149,16 @@ public enum ExtensionOverlay {
                 (ExtensionCompat.contentFileName, CompatPrelude.source(for: plan, kind: .content)),
             ]
         }
-        func result(pagesTagged: Int, copiedBytes: Int64?, reused: Bool) -> ExtensionOverlayResult {
+        // Latin-1, like the extension's content scripts (`narrowContentScripts`): they carry the manifest's own text.
+        generated = generated.map { file, text in
+            if case .rewritten(let latin1) = ScriptLatin1.rewrite(text) { (file, latin1) } else { (file, text) }
+        }
+        func result(pagesTagged: Int, copiedBytes: Int64?, reused: Bool, scriptsNarrowed: Int) -> ExtensionOverlayResult {
             ExtensionOverlayResult(
                 root: target.standardizedFileURL, persona: v2 ? persona : .none, backgroundPatched: patch.backgroundPatched,
                 contentScriptsPatched: patch.contentScriptsPatched, unpatchedBackground: patch.unpatchedBackground,
                 serviceWorkerWrapped: patch.serviceWorkerWrapper != nil || (v2 && isWrapped(manifest)),
-                pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: reused
+                pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: reused, scriptsNarrowed: scriptsNarrowed
             )
         }
 
@@ -160,7 +169,10 @@ public enum ExtensionOverlay {
            fileManager.fileExists(atPath: target.appendingPathComponent("manifest.json").path),
            fileManager.fileExists(atPath: target.appendingPathComponent(ExtensionCompat.preludeFileName).path) {
             for (file, text) in generated { try writeIfChanged(target.appendingPathComponent(file), text: text, fileManager: fileManager) }
-            return result(pagesTagged: stamp.pagesTagged ?? 0, copiedBytes: stamp.copiedBytes, reused: true)
+            return result(
+                pagesTagged: stamp.pagesTagged ?? 0, copiedBytes: stamp.copiedBytes, reused: true,
+                scriptsNarrowed: stamp.scriptsNarrowed ?? 0
+            )
         }
 
         try fileManager.createDirectory(at: overlays, withIntermediateDirectories: true)
@@ -180,12 +192,13 @@ public enum ExtensionOverlay {
             try replaceFile(target.appendingPathComponent(wrapper.path), with: Data(wrapper.contents.utf8), fileManager: fileManager)
         }
         let pagesTagged = v2 ? try tagPages(in: target, fileManager: fileManager) : 0
+        let scriptsNarrowed = try narrowContentScripts(in: target, manifest: patch.data, fileManager: fileManager)
 
         // Last, so a half-made overlay is never taken for a finished one.
         let copiedBytes = cloned ? nil : sourceBytes
-        let stamp = Stamp(fingerprint: fingerprint, copiedBytes: copiedBytes, pagesTagged: pagesTagged)
+        let stamp = Stamp(fingerprint: fingerprint, copiedBytes: copiedBytes, pagesTagged: pagesTagged, scriptsNarrowed: scriptsNarrowed)
         try JSONEncoder().encode(stamp).write(to: stampURL, options: .atomic)
-        return result(pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: false)
+        return result(pagesTagged: pagesTagged, copiedBytes: copiedBytes, reused: false, scriptsNarrowed: scriptsNarrowed)
     }
 
     /// The source manifest's worker is already the wrapper (a folder copied from an overlay).
@@ -213,6 +226,26 @@ public enum ExtensionOverlay {
             if patched != html || String(data: html, encoding: .utf8)?.contains(ExtensionCompat.preludeScriptTag()) == true { tagged += 1 }
         }
         return tagged
+    }
+
+    /// Rewrites the manifest's content scripts (regular files reached through real folders) to Latin-1 with
+    /// `ScriptLatin1`: WebKit sends each to every WebContent process and keeps it 16-bit if one character isn't
+    /// Latin-1. Returns how many it rewrote; the others stay as they are.
+    static func narrowContentScripts(in root: URL, manifest: Data, fileManager: FileManager) throws -> Int {
+        guard let object = try? JSONSerialization.jsonObject(with: manifest) as? [String: Any] else { return 0 }
+        var paths: Set<String> = []
+        for entry in (object["content_scripts"] as? [[String: Any]]) ?? [] {
+            for js in (entry["js"] as? [String]) ?? [] { paths.insert(js) }
+        }
+        var narrowed = 0
+        for path in paths.sorted() {
+            guard let relative = ExtensionCompat.containedPath(path), let url = containedRegularFile(relative, under: root),
+                  let text = try? String(contentsOf: url, encoding: .utf8),
+                  case .rewritten(let latin1) = ScriptLatin1.rewrite(text) else { continue }
+            try replaceFile(url, with: Data(latin1.utf8), fileManager: fileManager)
+            narrowed += 1
+        }
+        return narrowed
     }
 
     /// Writes `text` to `url` unless the file already holds exactly that.

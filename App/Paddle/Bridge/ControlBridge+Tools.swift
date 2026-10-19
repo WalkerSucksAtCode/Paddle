@@ -88,6 +88,10 @@ extension ControlBridge {
 
     private func state() -> MCPToolResult {
         let app = AppModel.shared
+        // A fresh measurement, so the memory numbers below are this moment's.
+        app.measureMemory()
+        let memory = app.memoryBreakdown
+        func mb(_ bytes: UInt64) -> JSONValue { .number(Double(bytes / 1_048_576)) }
         let windows: [JSONValue] = visibleWindows.map { controller in
             let model = controller.model
             let spaces: [JSONValue] = model.spaces.map { space in
@@ -106,6 +110,11 @@ extension ControlBridge {
                         "asleep": .bool(tab.isAsleep), "selected": .bool(tab.id == model.selectedID),
                         "space": .string(space.name),
                     ]
+                    if let bytes = memory.perTab[tab.id] {
+                        entry["memoryMB"] = mb(bytes)
+                        if memory.sharedTabs.contains(tab.id) { entry["sharesProcess"] = .bool(true) }
+                    }
+                    if let webView = tab.webView, let pid = ProcessMemory.pid(of: webView) { entry["pid"] = .number(Double(pid)) }
                     if let split = model.split(of: tab) {
                         entry["view"] = [
                             "with": .array(model.others(of: tab).map { .string($0.id.uuidString) }),
@@ -130,6 +139,11 @@ extension ControlBridge {
             "configWarnings": .number(Double(app.configWarnings.count)),
             "configError": app.configError.map { .string($0) } ?? .null,
             "windows": .array(windows),
+            "memoryMB": [
+                "tabs": mb(memory.tabs), "extensions": mb(memory.extensions), "serviceWorkers": mb(memory.serviceWorkers),
+                "gpuAndNetworking": mb(memory.shared), "app": mb(memory.app), "other": mb(memory.other),
+                "helpers": mb(memory.helpers), "total": mb(memory.total),
+            ],
         ]
         return .text(Self.pageDataNote + state.render(unit: "  "))
     }

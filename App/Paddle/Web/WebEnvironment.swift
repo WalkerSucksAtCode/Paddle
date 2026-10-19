@@ -123,7 +123,7 @@ final class WebEnvironment {
     /// it and carry the default profile's controller.
     func makeConfiguration(isPrivate: Bool, extensions: Bool, profile: String = ProfileStore.defaultID) -> WKWebViewConfiguration {
         let c = WKWebViewConfiguration()
-        Self.configureProcessIdentity(c, displayName: "Paddle")
+        Self.configureProcessIdentity(c, displayName: "Paddle", isPrivate: isPrivate)
         // This configuration's process pool gets the page notification provider (WebsiteNotifications). KVC, not
         // `processPool`: that property is deprecated.
         WebsiteNotifications.shared.providePageNotifications(on: c.value(forKey: "processPool") as AnyObject?, isPrivate: isPrivate)
@@ -167,7 +167,7 @@ final class WebEnvironment {
     private static let warmInitialProcess = NSSelectorFromString("_warmInitialProcess")
     @ObservationIgnored private var warmTask: Task<Void, Never>?
 
-    /// Keeps one spare WebContent process launched in the shared pool, so a new tab or a woken tab can skip launching
+    /// Keeps one spare WebContent process launched in the shared pool (`processPool`), so a new tab or a woken tab can skip launching
     /// one (a cold wake's process start measured 20-40 ms; the saving itself is not measured). WebKit prewarms by itself only once it has swapped processes on a navigation, and
     /// `prewarmsProcessesAutomatically` lives on the pool configuration, which cannot change for a pool that exists;
     /// `-[WKProcessPool _warmInitialProcess]` is a no-op while a prewarmed process is already waiting, so calling it
@@ -263,16 +263,32 @@ final class WebEnvironment {
     /// let every script window reach `createWebViewWith` and block pages there itself.
     static let allowsScriptWindows = WKNavigationAction.instancesRespond(to: NSSelectorFromString("_isUserInitiated"))
 
-    static func configureProcessIdentity(_ c: WKWebViewConfiguration, displayName: String = "Paddle") {
+    static func configureProcessIdentity(_ c: WKWebViewConfiguration, displayName: String = "Paddle", isPrivate: Bool = false) {
         if c.responds(to: Selector(("_setProcessDisplayName:"))) {
             c.perform(Selector(("_setProcessDisplayName:")), with: displayName as NSString)
         }
         if c.responds(to: Selector(("_setAttributedBundleIdentifier:"))) {
             c.perform(Selector(("_setAttributedBundleIdentifier:")), with: "com.walker.Paddle" as NSString)
         }
-        if let pool = c.value(forKey: "processPool") as? NSObject {
-            configureProcessPoolIdentity(pool, displayName: displayName)
-        }
+        if let pool = isPrivate ? privateProcessPool : processPool { c.setValue(pool, forKey: "processPool") }
+    }
+
+    /// The one process pool every Paddle configuration outside private windows uses (tabs, extension pages, Reader). A fresh
+    /// `WKWebViewConfiguration` carries its own new pool (measured on macOS 27: three configurations, three pools), so
+    /// without this each wake had a private pool: its prewarmed spare could serve no other tab, and the per-pool work
+    /// (memory trim, stuck service workers, page notifications) reached only that tab. Pages still get one WebContent
+    /// process each either way (measured); data stores keep processes apart inside a pool. KVC: the property is
+    /// deprecated. nil if this WebKit has no `WKProcessPool`, and each configuration keeps its own.
+    static let processPool = makeProcessPool(displayName: "Paddle")
+    /// Private windows' pool: page notifications are answered per pool (`WebsiteNotifications`), and a private page
+    /// must get no permission and show nothing.
+    static let privateProcessPool = makeProcessPool(displayName: "Paddle Private")
+
+    private static func makeProcessPool(displayName: String) -> NSObject? {
+        guard let type = NSClassFromString("WKProcessPool") as? NSObject.Type else { return nil }
+        let pool = type.init()
+        configureProcessPoolIdentity(pool, displayName: displayName)
+        return pool
     }
 
     static func configureProcessPoolIdentity(_ pool: NSObject, displayName: String = "Paddle") {

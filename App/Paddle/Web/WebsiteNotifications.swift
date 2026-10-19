@@ -64,9 +64,9 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - WebKit: page notifications (the process pool's notification provider)
 
     /// Installs the page provider on a process pool that one of Paddle's configurations uses. WebEnvironment calls this as
-    /// it makes each configuration, before the web view loads. A fresh `WKWebViewConfiguration` gets its own pool, and each
-    /// pool has its own WebKit notification manager (measured: two fresh configurations give two different managers), so
-    /// every pool needs the provider. A private window's pool gets it too, answering no permission and showing nothing.
+    /// it makes each configuration, before the web view loads. Each pool has its own WebKit notification manager (measured:
+    /// two fresh configurations give two different managers), so each of Paddle's pools (`WebEnvironment.processPool`,
+    /// `privateProcessPool`) needs the provider. A private window's pool gets it too, answering no permission and showing nothing.
     func providePageNotifications(on pool: AnyObject?, isPrivate: Bool) {
         guard let pool else { return }
         guard let api = PageNotificationAPI.functions else {

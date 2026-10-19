@@ -18,7 +18,7 @@ final class StuckServiceWorkers {
             .dataRecords(ofTypes: [WKWebsiteDataTypeServiceWorkerRegistrations])
         guard stillWaiting(),
               watchdog.shouldStop(host: host, registeredSites: Set(records.map(\.displayName))) else { return }
-        // KVC, not `processPool`: that property is deprecated. Tabs share WebKit's default pool, so this stops every
+        // KVC, not `processPool`: that property is deprecated. Tabs share `WebEnvironment.processPool`, so this stops every
         // site's workers; each starts again on its site's next request.
         guard let pool = webView.configuration.value(forKey: "processPool") as? NSObject,
               PrivateAPI.callVoid("_terminateServiceWorkers", on: pool) else {

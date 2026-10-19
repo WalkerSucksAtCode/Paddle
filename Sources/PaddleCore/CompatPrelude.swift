@@ -501,7 +501,7 @@ public enum CompatPrelude {
         });
       });
 
-      // A content script's `<script src="moz-extension://…">` is the page's script, but the page's CSP
+      // A content script's `<script src="moz-extension://...">` is the page's script, but the page's CSP
       // (YouTube's script-src allowlist) refuses every extension scheme. Swallow the element and ask the
       // page-world bridge to run that web-accessible file. http(s) scripts are left alone.
       // YouTube's Trusted Types policy can throw on `script.src =`, which would skip appendChild entirely,
