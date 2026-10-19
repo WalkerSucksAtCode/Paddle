@@ -849,6 +849,8 @@ final class BrowserModel {
     var viewDropTargetID: UUID?
     /// The view whose Rename View popover is open in the strip or sidebar.
     var renamingViewID: UUID?
+    /// The Mosaic whose Choose Icon popover is open in the strip or sidebar.
+    var iconPickerViewID: UUID?
 
     /// What the strip calls `split`: its name, else the focused (or most recently used) pane's site.
     func displayName(of split: Split) -> String {
@@ -864,6 +866,15 @@ final class BrowserModel {
         guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         splits[at].layout.name = trimmed.isEmpty ? nil : String(trimmed.prefix(60))
+        AppModel.shared.sessionChanged()
+    }
+
+    /// Choose Icon…: `split`'s icon and its tint (nil: the grid symbol, the text color).
+    func setIcon(_ icon: MosaicIcon?, tint: ColorPreset?, of split: Split) {
+        guard let at = splits.firstIndex(where: { $0.id == split.id }) else { return }
+        guard splits[at].layout.icon != icon || splits[at].layout.iconTint != tint else { return }
+        splits[at].layout.icon = icon
+        splits[at].layout.iconTint = tint
         AppModel.shared.sessionChanged()
     }
 
@@ -970,9 +981,9 @@ final class BrowserModel {
                     guard layout.move(tid, to: gid, edge: edge) else { return nil }
                 } else {
                     return twoPanes(tid, at: gid, edge: edge).map { two in
-                        var named = two
-                        named.name = layout.name
-                        return named
+                        var same = two
+                        same.takeLooks(of: layout)
+                        return same
                     }
                 }
             } else {

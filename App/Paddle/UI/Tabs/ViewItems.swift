@@ -1,7 +1,7 @@
 import PaddleCore
 import SwiftUI
 
-/// A Mosaic in the tab strip: one item in place of its tabs, with a grid symbol, its name and how many panes it
+/// A Mosaic in the tab strip: one item in place of its tabs, with its icon (a grid symbol until one is chosen), its name and how many panes it
 /// has. A click shows the Mosaic; the chevron (or a right-click) opens its menu.
 struct ViewStripButton: View {
     let split: BrowserModel.Split
@@ -16,10 +16,7 @@ struct ViewStripButton: View {
     var body: some View {
         let ink: Color = theme?.text ?? .primary
         HStack(spacing: 6) {
-            Image(systemName: split.layout.count == 2 ? "rectangle.split.2x1" : "rectangle.split.2x2")
-                .chromeFont(size: 11)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+            MosaicIconView(layout: split.layout, size: 11)
             Text(model.displayName(of: split))
                 .chromeFont(size: 12, weight: highContrast && isShown ? .semibold : .regular)
                 .lineLimit(1)
@@ -57,6 +54,7 @@ struct ViewStripButton: View {
         .onHover { hovering = $0 }
         .contextMenu { ViewMenu(split: split, model: model) }
         .viewRenamePopover(split: split, model: model)
+        .mosaicIconPopover(split: split, model: model)
         // A tab dragged here joins the Mosaic.
         .background(ViewDropAnchor(model: model, viewID: split.id))
         .overlay {
@@ -89,11 +87,8 @@ struct ViewSidebarRow: View {
     var body: some View {
         let ink: Color = theme?.text ?? .primary
         HStack(spacing: 8) {
-            Image(systemName: split.layout.count == 2 ? "rectangle.split.2x1" : "rectangle.split.2x2")
-                .chromeFont(size: 12)
-                .foregroundStyle(.secondary)
+            MosaicIconView(layout: split.layout, size: 12)
                 .frame(width: 16)
-                .accessibilityHidden(true)
             if !iconsOnly {
                 Text(model.displayName(of: split))
                     .chromeFont(size: 12.5, weight: highContrast && isShown ? .semibold : .regular)
@@ -130,6 +125,7 @@ struct ViewSidebarRow: View {
         .onHover { hovering = $0 }
         .contextMenu { ViewMenu(split: split, model: model) }
         .viewRenamePopover(split: split, model: model)
+        .mosaicIconPopover(split: split, model: model)
         // A tab dragged here joins the Mosaic.
         .background(ViewDropAnchor(model: model, viewID: split.id))
         .overlay {
@@ -147,7 +143,7 @@ struct ViewSidebarRow: View {
 }
 
 /// A Mosaic's menu: its tabs (choose one to show it focused), then Rename Mosaic…, its layouts, Even Out Panes, Move
-/// Tab Out and End Mosaic.
+/// Tab Out and End Mosaic. Choose Icon… opens the icon picker.
 struct ViewMenu: View {
     let split: BrowserModel.Split
     let model: BrowserModel
@@ -161,6 +157,7 @@ struct ViewMenu: View {
         }
         Divider()
         Button("Rename Mosaic…") { model.renamingViewID = split.id }
+        Button("Choose Icon…") { model.iconPickerViewID = split.id }
         Menu("Layout") {
             ForEach(PaneArrangement.allCases, id: \.self) { arrangement in
                 Button {

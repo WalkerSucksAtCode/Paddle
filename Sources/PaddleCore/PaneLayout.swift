@@ -63,8 +63,12 @@ public struct PaneLayout: Equatable, Sendable {
     public static let ratioRange: ClosedRange<Double> = 0.15...0.85
 
     public private(set) var root: PaneNode
-    /// The view's name in the tab strip, set by Rename View; nil shows the focused pane's site.
+    /// The Mosaic's name in the tab strip, set by Rename Mosaic; nil shows the focused pane's site.
     public var name: String?
+    /// The Mosaic's icon (Choose Icon…); nil shows the grid symbol.
+    public var icon: MosaicIcon?
+    /// The icon's tint (a symbol's color); nil is the text color.
+    public var iconTint: ColorPreset?
 
     public init?(root: PaneNode) {
         guard let root = Self.cleaned(root), root.tabs.count >= 2, root.tabs.count <= Self.maxPanes,
@@ -91,6 +95,13 @@ public struct PaneLayout: Equatable, Sendable {
         return copy
     }
     public var count: Int { tabs.count }
+
+    /// Gives this layout `other`'s name, icon and tint (a layout rebuilt from scratch keeps how it looks).
+    public mutating func takeLooks(of other: PaneLayout) {
+        name = other.name
+        icon = other.icon
+        iconTint = other.iconTint
+    }
     public func contains(_ id: String) -> Bool { tabs.contains(id) }
     public var isFull: Bool { count >= Self.maxPanes }
 
@@ -147,7 +158,7 @@ public struct PaneLayout: Equatable, Sendable {
         let names = layout.tabs.compactMap(rename)
         guard Set(names).count == names.count else { return nil }
         var renamed = PaneLayout(root: Self.mapTabs(layout.root) { rename($0) ?? $0 })
-        renamed?.name = name
+        renamed?.takeLooks(of: self)
         return renamed
     }
 
@@ -427,9 +438,9 @@ extension PaneNode: Codable {
     }
 }
 
-/// The root node's object, with the view's `name` beside its keys when it has one.
+/// The root node's object, with the Mosaic's `name`, `icon` and `iconTint` beside its keys when it has them.
 extension PaneLayout: Codable {
-    private enum NameKey: String, CodingKey { case name }
+    private enum NameKey: String, CodingKey { case name, icon, iconTint }
 
     public init(from decoder: Decoder) throws {
         let node = try PaneNode(from: decoder)
@@ -439,15 +450,18 @@ extension PaneLayout: Codable {
         let c = try decoder.container(keyedBy: NameKey.self)
         let name = ((try? c.decodeIfPresent(String.self, forKey: .name)) ?? nil)?.trimmingCharacters(in: .whitespacesAndNewlines)
         layout.name = name?.isEmpty == false ? String(name!.prefix(60)) : nil
+        layout.icon = ((try? c.decodeIfPresent(String.self, forKey: .icon)) ?? nil).flatMap(MosaicIcon.init)
+        layout.iconTint = ((try? c.decodeIfPresent(String.self, forKey: .iconTint)) ?? nil).flatMap { ColorPreset(rawValue: $0.lowercased()) }
         self = layout
     }
 
     public func encode(to encoder: Encoder) throws {
         try root.encode(to: encoder)
-        if let name {
-            var c = encoder.container(keyedBy: NameKey.self)
-            try c.encode(name, forKey: .name)
-        }
+        guard name != nil || icon != nil || iconTint != nil else { return }
+        var c = encoder.container(keyedBy: NameKey.self)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encodeIfPresent(icon?.name, forKey: .icon)
+        try c.encodeIfPresent(iconTint?.rawValue, forKey: .iconTint)
     }
 
     /// A saved layout against the window's tabs now: tabs that are gone taken out (their siblings take the space);

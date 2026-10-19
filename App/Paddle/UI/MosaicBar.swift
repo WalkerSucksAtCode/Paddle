@@ -32,7 +32,8 @@ extension PaneArrangement {
 }
 
 /// The window toolbar's middle while a Mosaic shows (each pane has its own address field): empty space that drags the
-/// window like the title bar, with the Mosaic's controls in the middle: its name (click to rename) and pane count,
+/// window like the title bar, with the Mosaic's controls in the middle: its icon (click to choose one), its name
+/// (click to rename) and pane count,
 /// the layouts, Even Out, Rotate, Swap (two panes), Add Pane, Reload All, a settings menu and End Mosaic.
 struct MosaicToolbarArea: View {
     let model: BrowserModel
@@ -57,6 +58,7 @@ private struct MosaicBar: View {
     let split: BrowserModel.Split
     let app: AppModel
     @State private var renaming = false
+    @State private var choosingIcon = false
     @Environment(\.chromeTheme) private var theme
 
     private var count: Int { split.layout.count }
@@ -64,11 +66,19 @@ private struct MosaicBar: View {
 
     var body: some View {
         HStack(spacing: 1) {
+            Button { choosingIcon = true } label: {
+                MosaicIconView(layout: split.layout, size: 12)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Choose an icon for this Mosaic")
+            .accessibilityLabel("Choose Icon")
+            .popover(isPresented: $choosingIcon, arrowEdge: .bottom) {
+                MosaicIconPicker(model: model, splitID: split.id)
+            }
             Button { renaming = true } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: count == 2 ? "rectangle.split.2x1" : "rectangle.split.2x2")
-                        .chromeFont(size: 11)
-                        .foregroundStyle(.secondary)
                     Text(model.displayName(of: split))
                         .chromeFont(size: 12, weight: .medium)
                         .lineLimit(1)
@@ -79,7 +89,7 @@ private struct MosaicBar: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
-                .padding(.horizontal, 6)
+                .padding(.trailing, 6)
                 .frame(height: 24)
                 .contentShape(Rectangle())
             }
@@ -91,8 +101,10 @@ private struct MosaicBar: View {
             }
 
             separator
+            // One lit even when two layouts give the same shape (two panes: Columns and Grid).
+            let current = PaneArrangement.allCases.first(where: split.layout.isArranged)
             ForEach(PaneArrangement.allCases, id: \.self) { arrangement in
-                let current = split.layout.isArranged(arrangement)
+                let current = arrangement == current
                 icon(arrangement.symbol, arrangement.title, action: arrangement.actionName, selected: current) {
                     model.arrangeMosaic(arrangement)
                 }
