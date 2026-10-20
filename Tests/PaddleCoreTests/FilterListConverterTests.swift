@@ -394,7 +394,9 @@ struct FilterListConverterTests {
         |https://exact.test/x.js|
         """
         let result = FilterListConverter.convert(text)
-        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try #require(WKContentRuleListStore(url: directory))
         let list = try await store.compileContentRuleList(forIdentifier: "test", encodedContentRuleList: result.json)
         #expect(list != nil)
     }
@@ -407,7 +409,9 @@ struct FilterListConverterTests {
         let result = FilterListConverter.convert(try String(contentsOf: file, encoding: .utf8))
         #expect(result.json.contains("css-display-none"))
         #expect(result.json.contains("aria-label"))
-        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try #require(WKContentRuleListStore(url: directory))
         let list = try await store.compileContentRuleList(forIdentifier: "test", encodedContentRuleList: result.json)
         #expect(list != nil)
     }
@@ -417,7 +421,9 @@ struct FilterListConverterTests {
     @Test func negatedOnlyCosmeticExceptionCompiles() async throws {
         let result = FilterListConverter.convert("##.foo\n~a.com#@#.foo")
         #expect(!result.json.contains("\"unless-domain\":[]"))
-        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try #require(WKContentRuleListStore(url: directory))
         let list = try await store.compileContentRuleList(forIdentifier: "test", encodedContentRuleList: result.json)
         #expect(list != nil)
     }
@@ -444,7 +450,11 @@ struct FilterListConverterTests {
         #expect(!result.json.contains("bogus"))
         #expect(result.ruleCount == 3)
 
-        let store = try #require(WKContentRuleListStore(url: FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")))
+        let directory = FileManager.default.temporaryDirectory.appending(path: "paddle-test-rules-\(UUID().uuidString)")
+
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = try #require(WKContentRuleListStore(url: directory))
         let list = try await store.compileContentRuleList(forIdentifier: "validated", encodedContentRuleList: result.json)
         #expect(list != nil)
     }
