@@ -469,7 +469,7 @@ final class ExtensionHost {
                 notes = []
                 pruneOverlays()
                 let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
-                let pending = await loadEntries(entries, config: config)
+                let pending = await loadEntries(entries, config: config, parkingUnvisited: true)
                 loadsDone.resume()
                 for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
                 if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
@@ -709,7 +709,9 @@ final class ExtensionHost {
     }
 
     /// Steps 1 to 6 of the load pipeline for each entry. Returns the entries that need a prompt before loading.
-    private func loadEntries(_ entries: [ExtensionEntry], config: PaddleConfig) async -> [PendingPrompt] {
+    /// `parkingUnvisited` (launch): an on-demand extension with no awake tab on its sites starts unloaded instead of
+    /// running until the idle sweep; a tab that opens or wakes on one of its sites loads it (`loadOnDemand`).
+    private func loadEntries(_ entries: [ExtensionEntry], config: PaddleConfig, parkingUnvisited: Bool = false) async -> [PendingPrompt] {
         var pending: [PendingPrompt] = []
         // This load's failures replace only these folders' lines in the banner; other folders' lines stay.
         var failures: [String: String] = [:]
@@ -798,6 +800,12 @@ final class ExtensionHost {
             }
             if decisions.byFolder[entry.name]?.isFullyDeclined == true {
                 status[entry.name] = "permissions declined"
+                continue
+            }
+            if parkingUnvisited, config.extensionsOnDemand, let sites = unvisitedSites(of: webExtension) {
+                parked[entry.name] = sites
+                status[entry.name] = Self.parkedStatus
+                log.info("\(entry.name, privacy: .public): not started, no awake tab on its sites")
                 continue
             }
             activate(entry, setup, webExtension, manifest: manifest, problems: problems, requested: requested, config: config)
@@ -1186,6 +1194,14 @@ final class ExtensionHost {
 
     private static func matches(_ sites: [WKWebExtension.MatchPattern], _ url: URL) -> Bool {
         sites.contains { $0.matches(url) }
+    }
+
+    /// The sites of on-demand `webExtension` when no awake tab is on one of them; nil when it isn't on demand or one is.
+    private func unvisitedSites(of webExtension: WKWebExtension) -> [WKWebExtension.MatchPattern]? {
+        let sites = (OnDemandExtension.sitePatterns(manifest: webExtension.manifest) ?? []).compactMap { try? WKWebExtension.MatchPattern(string: $0) }
+        guard !sites.isEmpty else { return nil }
+        let awake = registeredWindows.compactMap(\.value).flatMap(\.model.allTabs).filter(\.isAwake).compactMap(\.url)
+        return awake.contains { Self.matches(sites, $0) } ? nil : sites
     }
 
     /// The sleep sweep's call, each minute: unloads each on-demand extension that has had no awake tab on its sites,
