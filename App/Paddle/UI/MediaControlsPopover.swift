@@ -7,7 +7,7 @@ struct MediaControlsButton: View {
     @State private var showPopover = false
 
     private var playingTabs: [Tab] {
-        app.allTabs.filter { $0.isAwake && $0.isPlayingAudio }
+        app.allTabs.filter { $0.isAwake && $0.isPlayingAudio && MediaControlsPopover.isListed($0, in: model) }
     }
 
     var body: some View {
@@ -37,8 +37,14 @@ struct MediaControlsPopover: View {
     let app: AppModel
     let currentModel: BrowserModel
 
+    /// As the activity popover lists tabs: this window's own, and other windows' of the same profile that aren't
+    /// private. A private tab's title, or another profile's, never shows in this window.
+    static func isListed(_ tab: Tab, in browser: BrowserModel) -> Bool {
+        tab.browser === browser || (!tab.isPrivate && !browser.isPrivate && tab.profileID == browser.profileID)
+    }
+
     private var playingTabs: [Tab] {
-        app.allTabs.filter { $0.isAwake && $0.isPlayingAudio }
+        app.allTabs.filter { $0.isAwake && $0.isPlayingAudio && Self.isListed($0, in: currentModel) }
     }
 
     var body: some View {

@@ -12,7 +12,8 @@ private struct TabSearchEntry: Identifiable {
     let tab: Tab
 }
 
-/// The popover behind Search Tabs… (Shift-Cmd-A): every open tab of the same kind of window, filtered as you type.
+/// The popover behind Search Tabs… (Shift-Cmd-A): every open tab of the same kind of window (private or not) and the
+/// same profile, filtered as you type.
 struct TabSearchView: View {
     let model: BrowserModel
     @State private var query = ""
@@ -22,7 +23,8 @@ struct TabSearchView: View {
 
     private var entries: [TabSearchEntry] {
         var result: [TabSearchEntry] = []
-        for controller in AppModel.shared.windows where controller.model.isPrivate == model.isPrivate {
+        for controller in AppModel.shared.windows
+            where controller.model.isPrivate == model.isPrivate && controller.model.profileID == model.profileID {
             let other = controller.model !== model
             let several = controller.model.spaces.count > 1
             for tab in controller.model.allTabs {
