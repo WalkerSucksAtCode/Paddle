@@ -11,6 +11,18 @@ public enum PrivateAPI {
         return object.value(forKey: key)
     }
 
+    /// Sets KVC `key` on `object` when it has the setter KVC would use (`set<Key>:` or `_set<Key>:`); returns
+    /// whether it set it. A missing one is skipped: `setValue(_:forKey:)` would raise NSUndefinedKeyException.
+    @discardableResult
+    public static func setValue(_ value: Any?, forKey key: String, on object: NSObject) -> Bool {
+        guard let first = key.first else { return false }
+        let capitalized = first.uppercased() + key.dropFirst()
+        guard object.responds(to: NSSelectorFromString("set\(capitalized):"))
+            || object.responds(to: NSSelectorFromString("_set\(capitalized):")) else { return false }
+        object.setValue(value, forKey: key)
+        return true
+    }
+
     /// `value(of:forKey:)` as a 32-bit integer (a pid), or nil when missing or not a number.
     public static func int32(of object: NSObject, forKey key: String) -> Int32? {
         (value(of: object, forKey: key) as? NSNumber)?.int32Value

@@ -148,7 +148,7 @@ final class WebEnvironment {
         // keeps blocking them silently, as before.
         c.preferences.javaScriptCanOpenWindowsAutomatically = Self.allowsScriptWindows
         c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
-        c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
+        PrivateAPI.setValue(config.developerTools, forKey: "developerExtrasEnabled", on: c.preferences)
         // A background tab is out of the window (`MountedWebPages` keeps only `BrowserModel.mountedWebTabs` in it). WebKit's default for such a view suspends its process; throttling keeps chat, mail and notification
         // pages receiving while it slows their timers and stops their drawing. Idle tabs still freeze and sleep
         // through Paddle's own policy.
@@ -252,7 +252,7 @@ final class WebEnvironment {
         c.websiteDataStore = dataStore(for: profile)
         c.applicationNameForUserAgent = applicationName
         c.preferences.minimumFontSize = CGFloat(config.minimumFontSize)
-        c.preferences.setValue(config.developerTools, forKey: "developerExtrasEnabled")
+        PrivateAPI.setValue(config.developerTools, forKey: "developerExtrasEnabled", on: c.preferences)
         Self.enableWebFeatures(c.preferences)
         return c
     }
@@ -292,7 +292,7 @@ final class WebEnvironment {
     }
 
     static func configureProcessPoolIdentity(_ pool: NSObject, displayName: String = "Paddle") {
-        if let cfg = pool.value(forKey: "_configuration") as? NSObject {
+        if let cfg = PrivateAPI.value(of: pool, forKey: "_configuration") as? NSObject {
             if cfg.responds(to: Selector(("setSourceApplicationBundleIdentifier:"))) {
                 cfg.perform(Selector(("setSourceApplicationBundleIdentifier:")), with: "com.walker.Paddle" as NSString)
             }
@@ -306,7 +306,7 @@ final class WebEnvironment {
     }
 
     static func configureDataStoreIdentity(_ store: WKWebsiteDataStore, displayName: String = "Paddle") {
-        if let cfg = store.value(forKey: "_configuration") as? NSObject {
+        if let cfg = PrivateAPI.value(of: store, forKey: "_configuration") as? NSObject {
             if cfg.responds(to: Selector(("setSourceApplicationBundleIdentifier:"))) {
                 cfg.perform(Selector(("setSourceApplicationBundleIdentifier:")), with: "com.walker.Paddle" as NSString)
             }

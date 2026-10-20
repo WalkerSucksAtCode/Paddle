@@ -109,6 +109,20 @@ struct PrivateAPITests {
         #expect(PrivateAPI.bool(of: process, forKey: "runningServiceWorkers"))
     }
 
+    /// KVC on a key the object lacks raises NSUndefinedKeyException, which Swift can't catch: a missing setter must be
+    /// skipped, and the keys Paddle sets today must still be set.
+    @Test func setValueSkipsMissingKeysAndSetsPresentOnes() {
+        #expect(PrivateAPI.setValue(true, forKey: "developerExtrasEnabled", on: BareObject()) == false)
+        #expect(PrivateAPI.value(of: BareObject(), forKey: "_configuration") == nil)
+        let preferences = WKPreferences()
+        #expect(PrivateAPI.setValue(true, forKey: "developerExtrasEnabled", on: preferences))
+        #expect((preferences.value(forKey: "developerExtrasEnabled") as? NSNumber)?.boolValue == true)
+        let webView = WKWebView()
+        #expect(PrivateAPI.setValue(false, forKey: "drawsBackground", on: webView))
+        #expect((webView.value(forKey: "drawsBackground") as? NSNumber)?.boolValue == false)
+        #expect(PrivateAPI.value(of: WKWebsiteDataStore.nonPersistent(), forKey: "_configuration") != nil)
+    }
+
     @Test func enableCallsSetterForEachFeature() {
         let preferences = PreferencesStandIn()
         let outcome = WebFeatureToggles.enable(
