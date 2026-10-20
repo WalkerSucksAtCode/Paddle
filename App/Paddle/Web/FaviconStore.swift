@@ -148,7 +148,7 @@ final class FaviconStore {
             if let icon, let png = Self.png(icon, pixels: Self.pixels), let image = Self.image(png, points: Self.pixels / 2) {
                 keep(image, for: key)
                 missing.remove(key)
-                store(png, key: key, in: Paths.favicons)
+                store(png, key: key, in: Paths.favicons, profile: profile)
             } else {
                 log.info("no usable icon for \(key, privacy: .public)")
             }
@@ -169,7 +169,7 @@ final class FaviconStore {
                 largeLuminance[key] = Self.meanLuminance(image)
                 largeImages[key] = image
                 largeMissing.remove(key)
-                store(png, key: key, in: Self.largeFolder)
+                store(png, key: key, in: Self.largeFolder, profile: profile)
             } else {
                 log.info("no large icon for \(key, privacy: .public)")
             }
@@ -195,8 +195,10 @@ final class FaviconStore {
         return largeFetchedAt[key].map { FaviconPicker.isStale(fetchedAt: $0, now: Date()) } ?? true
     }
 
-    private func store(_ png: Data, key: String, in folder: URL) {
-        guard AppModel.shared.historyEnabled || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
+    /// Kept on disk only while the page's profile records history (a profile with historyDays 0 leaves no icon
+    /// behind, even when another profile records), or for a bookmarked site.
+    private func store(_ png: Data, key: String, in folder: URL, profile: ProfileID) {
+        guard AppModel.shared.historyEnabled(for: profile) || AppModel.shared.bookmarks.siteKeys.contains(key) else { return }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try png.write(to: folder.appending(path: FaviconPicker.fileName(forKey: key)), options: .atomic)

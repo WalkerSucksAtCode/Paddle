@@ -77,6 +77,9 @@ struct ReaderView: View {
             headerBar
             Divider()
             ReaderContentWebView(
+                dataStore: tab.webView?.configuration.websiteDataStore
+                    ?? (tab.isPrivate ? .nonPersistent() : AppModel.shared.web.dataStore(for: tab.profileID)),
+                isPrivate: tab.isPrivate,
                 article: article,
                 baseURL: tab.url,
                 theme: theme,
@@ -189,6 +192,10 @@ struct ReaderView: View {
 }
 
 private struct ReaderContentWebView: NSViewRepresentable {
+    /// The tab's store, so the article's images load as the page's did: a private window's stay out of the
+    /// persistent store, and another profile's carry that profile's cookies, not the default profile's.
+    let dataStore: WKWebsiteDataStore
+    let isPrivate: Bool
     let article: ReaderArticle
     let baseURL: URL?
     let theme: ReaderTheme
@@ -197,10 +204,11 @@ private struct ReaderContentWebView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        WebEnvironment.configureProcessIdentity(config, displayName: "Paddle Reader")
+        WebEnvironment.configureProcessIdentity(config, displayName: "Paddle Reader", isPrivate: isPrivate)
+        config.websiteDataStore = dataStore
         config.preferences.minimumFontSize = 12
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground")
+        PrivateAPI.setValue(false, forKey: "drawsBackground", on: webView)
         updateHTML(in: webView)
         return webView
     }

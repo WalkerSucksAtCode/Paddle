@@ -304,7 +304,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
         Task {
             do {
-                let (tempURL, _) = try await URLSession.shared.download(from: url)
+                // Ephemeral: URLSession.shared caches on disk and keeps cookies, which a private window's PDF must not
+                // leave behind. (It never had the tab's cookies, so a PDF behind a login comes from the fallback below.)
+                let session = URLSession(configuration: .ephemeral)
+                defer { session.finishTasksAndInvalidate() }
+                let (tempURL, _) = try await session.download(from: url)
                 let filename = url.lastPathComponent.isEmpty ? (Self.fileName(for: tab) + ".pdf") : url.lastPathComponent
                 let destination = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
                 try? FileManager.default.removeItem(at: destination)
