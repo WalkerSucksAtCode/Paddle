@@ -5,15 +5,21 @@ import WebKit
 
 @MainActor
 struct ScrollRestoreScriptTests {
-    private func page(_ html: String) -> WKWebView {
+    private func page(_ html: String) -> (webView: WKWebView, folder: URL) {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.addUserScript(WKUserScript(
             source: ScrollRestoreScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page
         ))
         let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 240), configuration: configuration)
-        webView.loadHTMLString(html, baseURL: URL(string: "https://example.com/timeline"))
-        return webView
+        // A file, not loadHTMLString: a string load gets no back/forward item, so pushState adds no entry and Back
+        // has nothing to go to.
+        let folder = FileManager.default.temporaryDirectory.appending(path: "paddle-scroll-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appending(path: "timeline.html")
+        try? Data(html.utf8).write(to: file)
+        webView.loadFileURL(file, allowingReadAccessTo: folder)
+        return (webView, folder)
     }
 
     private func columnTop(_ webView: WKWebView) async -> Double? {
@@ -25,7 +31,7 @@ struct ScrollRestoreScriptTests {
 
     /// A column the site resets to the top on the way into a post comes back to where it was.
     @Test func columnComesBackAfterTheSiteResetsIt() async {
-        let webView = page("""
+        let (webView, folder) = page("""
         <style>
           html, body { margin: 0; height: 100%; overflow: hidden; }
           #col { height: 240px; overflow: auto; }
@@ -38,18 +44,40 @@ struct ScrollRestoreScriptTests {
           setTimeout(() => {
             history.pushState({}, '', '#post');
             col.scrollTop = 0;
-            setTimeout(() => history.back(), 40);
+            window.__reset = true;
           }, 80);
+          addEventListener('popstate', () => { window.__popped = true; });
         </script>
         """)
-        let deadline = ContinuousClock.now + .seconds(5)
+        // Back as the user takes it (the browser's Back, not the page's history.back()), once the site has reset the
+        // column; a poll before that would pass on the 800 the page set first. Under load the page can take seconds.
+        func flag(_ name: String) async -> Bool {
+            (try? await webView.evaluateJavaScript("window.\(name) === true")) as? Bool ?? false
+        }
+        let loadDeadline = ContinuousClock.now + .seconds(30)
+        var reset = false
+        while !reset, ContinuousClock.now < loadDeadline {
+            reset = await flag("__reset")
+            if !reset { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(reset, "the page never reset its column")
+        #expect(await columnTop(webView) == 0)
+        webView.goBack()
+        var popped = false
+        while reset, !popped, ContinuousClock.now < loadDeadline {
+            popped = await flag("__popped")
+            if !popped { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(popped, "Back never fired popstate")
+        let deadline = ContinuousClock.now + .seconds(2)
         var top: Double?
-        while ContinuousClock.now < deadline {
+        while popped, ContinuousClock.now < deadline {
             top = await columnTop(webView)
             if let top, top >= 700 { break }
             try? await Task.sleep(for: .milliseconds(50))
         }
         #expect(top ?? 0 >= 700)
         _ = webView
+        try? FileManager.default.removeItem(at: folder)
     }
 }
