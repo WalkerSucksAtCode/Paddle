@@ -797,13 +797,22 @@ final class Tab: Identifiable {
             guard isStillNeeded() else { return .abort }
             guard let window else { return alert.runModal() }
             guard window.attachedSheet != nil else { return await alert.beginSheetModal(for: window) }
-            for await _ in NotificationCenter.default.notifications(named: NSWindow.didEndSheetNotification, object: window) { break }
+            // Another sheet is up: wait for it to end. If the window closes first it never does.
+            guard await Self.sheetEnds(on: window) else { return .abort }
         }
     }
 
-    /// True once the tab is selected; false if it closes or sleeps first.
+    /// True when `window`'s sheet ends; false when the window closes first.
+    private static func sheetEnds(on window: NSWindow) async -> Bool {
+        let wait = SheetWait()
+        return await wait.wait(on: window)
+    }
+
+    /// True once the tab is selected; false if it closes or sleeps first. A tab already closed answers false at once:
+    /// it is never selected again, and nothing would resume the wait.
     func waitUntilSelected() async -> Bool {
         if browser?.isVisible(self) == true { return true }
+        guard browser?.allTabs.contains(where: { $0 === self }) == true else { return false }
         return await withCheckedContinuation { selectionWaiters.append($0) }
     }
 
@@ -1096,5 +1105,30 @@ final class AudioPlaybackObserver: NSObject {
     ) {
         let playing = (change?[.newKey] as? Bool) ?? false
         MainActor.assumeIsolated { onChange(playing) }
+    }
+}
+
+/// One wait for a window's sheet to end or the window to close, whichever comes first (`Tab.present`).
+private final class SheetWait {
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var observers: [any NSObjectProtocol] = []
+
+    func wait(on window: NSWindow) async -> Bool {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            for (name, ended) in [(NSWindow.didEndSheetNotification, true), (NSWindow.willCloseNotification, false)] {
+                // Posted on the main thread, as `queue: .main` delivers it.
+                observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.finish(ended) }
+                })
+            }
+        }
+    }
+
+    private func finish(_ ended: Bool) {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
+        continuation?.resume(returning: ended)
+        continuation = nil
     }
 }

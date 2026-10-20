@@ -14,9 +14,13 @@ enum WebInspector {
         inspector(of: webView) != nil
     }
 
-    /// Whether WebKit's inspector class has `selector` at all (decided without a page, to hide a menu item).
+    /// Whether a menu item for `selector` can work, decided without a page: the same checks `inspector(of:)` makes on
+    /// one (web views have `_inspector`, and WebKit's inspector class has `show` and `selector`), so an item never
+    /// shows while doing nothing.
     static func isAvailable(_ selector: Selector) -> Bool {
-        NSClassFromString("_WKInspector")?.instancesRespond(to: selector) ?? false
+        guard WKWebView.instancesRespond(to: NSSelectorFromString(inspectorKey)),
+              let type = NSClassFromString("_WKInspector") else { return false }
+        return type.instancesRespond(to: showSelector) && type.instancesRespond(to: selector)
     }
 
     /// Whether `WKWebExtensionContext` can hand out its background web view.
