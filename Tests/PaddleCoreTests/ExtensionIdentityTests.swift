@@ -3,6 +3,16 @@ import Foundation
 import Testing
 
 struct ExtensionIdentityTests {
+    /// An unreadable salt file is kept and refused, never replaced: a new salt would change every extension's id.
+    @Test func saltFileDecisions() {
+        let salt = "0123456789ABCDEF0123456789abcdef"
+        #expect(ExtensionIdentity.saltFile(exists: false, data: nil) == .make)
+        #expect(ExtensionIdentity.saltFile(exists: true, data: nil) == .refuse)
+        #expect(ExtensionIdentity.saltFile(exists: true, data: Data((salt + "\n").utf8)) == .use(salt.lowercased()))
+        #expect(ExtensionIdentity.saltFile(exists: true, data: Data("not a salt".utf8)) == .make)
+        #expect(ExtensionIdentity.saltFile(exists: true, data: Data()) == .make)
+    }
+
     private func isLowerHex32(_ s: String) -> Bool {
         s.count == 32 && s.allSatisfy { $0.isASCII && ($0.isNumber || ("a"..."f").contains($0)) }
     }

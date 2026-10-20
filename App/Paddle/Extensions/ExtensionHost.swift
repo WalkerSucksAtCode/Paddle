@@ -303,7 +303,7 @@ final class ExtensionHost {
             if !isDefaultProfile {
                 try FileManager.default.createDirectory(at: Paths.profileFolder(profileID), withIntermediateDirectories: true)
             }
-            try decisions.encoded().write(to: decisionsURL, options: .atomic)
+            try decisions.encoded().write(to: decisionsURL.resolvingSymlinksInPath(), options: .atomic)
         } catch {
             log.error("extension-permissions.json could not be written: \(error.localizedDescription, privacy: .public)")
         }
@@ -490,8 +490,13 @@ final class ExtensionHost {
             notes = []
             pruneOverlays()
             let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
-            // Turned off, or `extensionsOnDemand` off: no longer waiting for a site (the second loads below).
-            parked = config.extensionsOnDemand ? parked.filter { isEnabled($0.key, config: config) } : [:]
+            // Turned off, or `extensionsOnDemand` off: no longer waiting for a site (the second loads below). A removed
+            // folder is forgotten. One a store update replaced is parked again below from its new manifest, whose sites
+            // may differ.
+            let names = Set(entries.map(\.name))
+            let reparking = config.extensionsOnDemand ? Set(parked.keys).intersection(reloading) : []
+            parked = config.extensionsOnDemand
+                ? parked.filter { isEnabled($0.key, config: config) && names.contains($0.key) && !reloading.contains($0.key) } : [:]
 
             for ext in loaded {
                 let entry = entries.first { $0.name == ext.name }
@@ -532,7 +537,8 @@ final class ExtensionHost {
             }
 
             let running = Set(loaded.map(\.name))
-            let pending = await loadEntries(entries.filter { !running.contains($0.name) }, config: config)
+            var pending = await loadEntries(entries.filter { reparking.contains($0.name) }, config: config, parkingUnvisited: true)
+            pending += await loadEntries(entries.filter { !running.contains($0.name) && !reparking.contains($0.name) }, config: config)
             for ext in loaded where running.contains(ext.name) { status[ext.name] = loadedStatus(ext) }
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
             if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
@@ -618,6 +624,8 @@ final class ExtensionHost {
             decisions.forget(folder: folder)
             deniedThisSession[folder] = nil
             autoDenied[folder] = nil
+            // A parked folder is skipped by the load, which would leave nothing to ask; asking loads it now.
+            parked[folder] = nil
             if let current { unload(current, closingTabs: false) }
             let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
             let pending = await loadEntries([entry], config: config)
@@ -725,6 +733,10 @@ final class ExtensionHost {
             }
             if let decisionsError {
                 status[entry.name] = "not loaded: \(decisionsError)"
+                continue
+            }
+            if let saltError = shared.saltError {
+                status[entry.name] = "not loaded: \(saltError)"
                 continue
             }
             if parked[entry.name] != nil {
@@ -1206,21 +1218,25 @@ final class ExtensionHost {
 
     /// The sleep sweep's call, each minute: unloads each on-demand extension that has had no awake tab on its sites,
     /// none of its own pages open and no popup showing for `onDemandIdle`. Its background and the copy of its
-    /// scripts in every web process go (measured with three: 330 MB); `loadOnDemand` brings it back.
+    /// scripts in every web process go (measured with three, 2026-10-19: about 60 MB with one tab, 190 MB with six;
+    /// docs/measurements.md); `loadOnDemand` brings it back.
     func parkIdleExtensions(config: PaddleConfig, now: Date = Date()) {
         guard config.extensionsOnDemand, !loadInProgress else { return }
-        let tabs = registeredWindows.compactMap(\.value).flatMap(\.model.allTabs)
-        let awake = tabs.filter(\.isAwake).compactMap(\.url)
         for ext in loaded {
             guard let sites = onDemandSites[ext.name] else { continue }
-            if awake.contains(where: { Self.matches(sites, $0) }) || tabs.contains(where: { ext.owns($0.url) })
-                || popups.isShowing(for: ext.context) {
+            if isInUse(ext, sites: sites) {
                 lastOnItsSites[ext.name] = now
                 continue
             }
             guard now.timeIntervalSince(lastOnItsSites[ext.name] ?? now) >= Self.onDemandIdle else { continue }
             enqueue { [self] in
                 guard loaded.contains(where: { $0 === ext }) else { return }
+                // Asked again here: the queue may have waited (a prompt, another load), and a tab that opened one of its
+                // sites meanwhile already has it (`loadOnDemand` found nothing parked), so unloading would strand that tab.
+                if isInUse(ext, sites: sites) {
+                    lastOnItsSites[ext.name] = Date()
+                    return
+                }
                 unload(ext, closingTabs: false)
                 parked[ext.name] = sites
                 status[ext.name] = Self.parkedStatus
@@ -1229,6 +1245,15 @@ final class ExtensionHost {
                 log.info("\(ext.name, privacy: .public): unloaded until a tab opens one of its sites (none for \(Int(Self.onDemandIdle / 60)) min)")
             }
         }
+    }
+
+    /// Whether on-demand `ext` is needed now: an awake tab on one of its `sites`, any tab showing one of its own pages,
+    /// or its popup open.
+    private func isInUse(_ ext: LoadedExtension, sites: [WKWebExtension.MatchPattern]) -> Bool {
+        let tabs = registeredWindows.compactMap(\.value).flatMap(\.model.allTabs)
+        return tabs.contains { tab in tab.isAwake && tab.url.map { Self.matches(sites, $0) } == true }
+            || tabs.contains { ext.owns($0.url) }
+            || popups.isShowing(for: ext.context)
     }
 
     /// Starts loading the unloaded on-demand extensions that work on `url` and returns true; false when none waits

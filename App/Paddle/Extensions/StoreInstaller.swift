@@ -127,7 +127,8 @@ final class StoreInstaller {
     }
 
     private func writeSources(_ updated: ExtensionSources) throws {
-        try updated.encoded().write(to: Paths.extensionSources, options: .atomic)
+        // Through a symlink, as config.json is written: an atomic write to the link itself would replace it with a file.
+        try updated.encoded().write(to: Paths.extensionSources.resolvingSymlinksInPath(), options: .atomic)
         sources = updated
     }
 
@@ -384,7 +385,7 @@ final class StoreInstaller {
     }
 
     /// Files in `folder` that differ from what was installed there, off the main actor.
-    private func changedFiles(in folder: String) async -> [String] {
+    func changedFiles(in folder: String) async -> [String] {
         let recorded = sources.records[folder]?.fileHashes ?? [:]
         guard !recorded.isEmpty else { return [] }
         let url = Paths.extensions.appending(path: folder, directoryHint: .isDirectory)

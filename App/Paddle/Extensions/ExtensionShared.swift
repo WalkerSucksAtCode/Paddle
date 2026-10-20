@@ -14,6 +14,8 @@ final class ExtensionShared {
 
     /// The per-install salt every extension id starts from (`extension-id-salt`).
     private(set) var salt = ""
+    /// Why no extension loads this run: `extension-id-salt` exists but couldn't be read (it is left as it is).
+    private(set) var saltError: String?
     /// The folders in `extensions/` from the last scan.
     private(set) var entries: [ExtensionEntry] = []
     /// Folder name to why the scan couldn't use it.
@@ -52,14 +54,26 @@ final class ExtensionShared {
     }
 
     private func loadOrCreateSalt() -> String {
-        if let existing = try? String(contentsOf: Paths.extensionSalt, encoding: .utf8) {
-            let trimmed = existing.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.count == 32, trimmed.allSatisfy({ $0.isHexDigit }) { return trimmed.lowercased() }
-            log.error("extension-id-salt is not 32 hex characters; making a new one (extension ids change)")
+        let exists = FileManager.default.fileExists(atPath: Paths.extensionSalt.path)
+        let data: Data?
+        do {
+            data = exists ? try Data(contentsOf: Paths.extensionSalt) : nil
+        } catch {
+            data = nil
+            log.error("extension-id-salt can't be read: \(error.localizedDescription, privacy: .public)")
+        }
+        switch ExtensionIdentity.saltFile(exists: exists, data: data) {
+        case .use(let salt):
+            return salt
+        case .refuse:
+            saltError = "extension-id-salt can't be read, so no extension loads (a new one would change every extension's id)"
+            return ""
+        case .make:
+            if exists { log.error("extension-id-salt is not 32 hex characters; making a new one (extension ids change)") }
         }
         let salt = ExtensionIdentity.makeSalt()
         do {
-            try Data(salt.utf8).write(to: Paths.extensionSalt, options: .atomic)
+            try Data(salt.utf8).write(to: Paths.extensionSalt.resolvingSymlinksInPath(), options: .atomic)
         } catch {
             log.error("extension-id-salt could not be written: \(error.localizedDescription, privacy: .public)")
         }
@@ -103,7 +117,7 @@ final class ExtensionShared {
     private func writeInstalls() {
         guard let installs else { return }
         do {
-            try installs.encoded().write(to: Paths.extensionInstalls, options: .atomic)
+            try installs.encoded().write(to: Paths.extensionInstalls.resolvingSymlinksInPath(), options: .atomic)
         } catch {
             log.error("extension-installs.json could not be written: \(error.localizedDescription, privacy: .public)")
         }

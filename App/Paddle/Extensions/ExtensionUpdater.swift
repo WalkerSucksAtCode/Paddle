@@ -117,20 +117,24 @@ final class ExtensionUpdater {
         guard let installed = record.version else { return "not updated: no installed version is recorded" }
         let compare = record.store == .chromeWebStore ? ExtensionVersion.compareChrome : ExtensionVersion.compareToolkit
 
-        // The store's answer is the check. A failed request leaves the folder due for the next run.
+        // The check counts once it reaches an answer: up to date, declined, or updated. A failed request, download or
+        // package check leaves the folder due, so the next run tries again instead of a day later.
+        func done(_ status: String) -> String {
+            installer.changeRecord(folder) { $0.lastCheck = now }
+            return status
+        }
         let answer: StoreAnswer?
         do {
             answer = try await askStore(record, installed: installed)
         } catch {
             return "not updated: \(Self.reason(error))"
         }
-        installer.changeRecord(folder) { $0.lastCheck = now }
-        guard let answer else { return "up to date" }
+        guard let answer else { return done("up to date") }
         let newest = answer.version
-        guard let order = compare(newest, installed) else { return "not updated: version \(newest) isn't in the store's format" }
-        guard order == .orderedDescending else { return "up to date" }
+        guard let order = compare(newest, installed) else { return done("not updated: version \(newest) isn't in the store's format") }
+        guard order == .orderedDescending else { return done("up to date") }
         if installer.record(forFolder: folder)?.declinedVersion == newest {
-            return "update \(newest) declined; not asked again"
+            return done("update \(newest) declined; not asked again")
         }
 
         // The same download and checks as an install, into `.staged-<folder>` (names starting with "." never load).
@@ -192,19 +196,26 @@ final class ExtensionUpdater {
             return "not updated: extension-permissions.json is unreadable"
         }
 
-        // Asks for nothing new and verified: swap in quietly. Otherwise the installed copy keeps running and the alert decides.
+        // Asks for nothing new, verified and unedited: swap in quietly. Otherwise the installed copy keeps running and the
+        // alert decides; files the user changed in the folder are named there, as an install over them does.
         let unverified = !checked.verified
         let grants = !asks.permissions.isEmpty || !asks.hosts.isEmpty
-        if grants || unverified {
+        let edited = await installer.changedFiles(in: folder)
+        if grants || unverified || !edited.isEmpty {
             statuses[folder] = "update \(version) waiting for permission"
+            var notices: [String] = []
+            if unverified { notices.append(Self.unverifiedNotice) }
+            if !edited.isEmpty {
+                notices.append("You changed \(edited.count) file\(edited.count == 1 ? "" : "s") in its folder; updating replaces them.")
+            }
             let allowed = await AppModel.shared.extensions.confirmUpdate(
                 folder: folder, name: name, icon: webExtension.icon(for: CGSize(width: 64, height: 64)),
                 lines: ExtensionPermissionText.lines(permissions: asks.permissions, hosts: asks.hosts, allSites: allSites),
-                notice: unverified ? Self.unverifiedNotice : nil, from: installed, to: version
+                notice: notices.isEmpty ? nil : notices.joined(separator: " "), from: installed, to: version
             )
             guard allowed else {
                 installer.changeRecord(folder) { $0.declinedVersion = version }
-                return "update \(version) declined; not asked again"
+                return done("update \(version) declined; not asked again")
             }
         }
 
@@ -231,7 +242,7 @@ final class ExtensionUpdater {
         }
         let host = AppModel.shared
         Task { await host.reconcileExtensions(reloading: [folder]) }
-        return "updated to \(version)"
+        return done("updated to \(version)")
     }
 
     /// What the store named for an update: the newest version, and for an add-on the lookup it came from.

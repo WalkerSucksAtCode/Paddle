@@ -17,6 +17,26 @@ public enum ExtensionIdentity {
         hex(SymmetricKey(size: .bits128).withUnsafeBytes { Array($0) })
     }
 
+    /// What to do with `extension-id-salt` at launch, given whether the file exists and its bytes (nil when it
+    /// exists but couldn't be read).
+    public enum SaltFile: Equatable, Sendable {
+        /// The stored salt, lowercased.
+        case use(String)
+        /// No usable salt: make one and write it (no file yet, or its contents aren't a salt).
+        case make
+        /// The file is there but couldn't be read: keep it, and load no extension, since a new salt would give every
+        /// extension a new id and leave its storage behind.
+        case refuse
+    }
+
+    public static func saltFile(exists: Bool, data: Data?) -> SaltFile {
+        guard exists else { return .make }
+        guard let data else { return .refuse }
+        let trimmed = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count == 32, trimmed.allSatisfy(\.isHexDigit) else { return .make }
+        return .use(trimmed.lowercased())
+    }
+
     /// 32 lowercase hex characters: the first 16 bytes of SHA256(`salt` + ":" + `name`).
     public static func identifier(forFolder name: String, salt: String) -> String {
         hex(Array(SHA256.hash(data: Data("\(salt):\(name)".utf8)).prefix(16)))
