@@ -122,7 +122,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             return
         }
         guard isAllowed(url) else {
-            Self.log.notice("dropped a notification from \(host, privacy: .public): notifications are not allowed for it")
+            Self.log.notice("dropped a notification from \(host, privacy: .private): notifications are not allowed for it")
             return
         }
         let id = notice.id
@@ -234,7 +234,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             return
         }
         guard isAllowed(url) else {
-            Self.log.notice("dropped a notification from \(host, privacy: .public): notifications are not allowed for it")
+            Self.log.notice("dropped a notification from \(host, privacy: .private): notifications are not allowed for it")
             return
         }
 
