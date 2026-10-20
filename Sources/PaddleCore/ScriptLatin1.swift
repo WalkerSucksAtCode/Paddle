@@ -166,7 +166,6 @@ public enum ScriptLatin1 {
             afterExpression = !Self.operatorWords.contains(text)
         }
 
-        /// A string literal from its opening quote.
         mutating func quoted(until quote: Unicode.Scalar) throws {
             out.append(quote)
             at += 1
@@ -222,7 +221,6 @@ public enum ScriptLatin1 {
             }
         }
 
-        /// A regular expression literal from its `/`, with its flags.
         mutating func regularExpression() throws {
             out.append("/")
             at += 1
