@@ -60,7 +60,7 @@ struct FilterListConverterTests {
 
     @Test func cosmeticRulesAreChunkedAndScoped() throws {
         let generic = (0..<40).map { "##.ad\($0)" }.joined(separator: "\n")
-        let r = try rules(generic + "\nsite.test,~sub.site.test##.promo\n~other.test##.x")
+        let r = try rules(generic + "\nsite.test,~unrelated.test##.promo\n~other.test##.x")
         // 40 generic selectors in chunks of 32 = 2 rules, plus 2 domain rules.
         #expect(r.count == 4)
         #expect(action(r[0])["selector"] as? String == (0..<32).map { ".ad\($0)" }.joined(separator: ", "))
@@ -753,5 +753,37 @@ struct FilterListConverterTests {
         let json = String(decoding: try! JSONSerialization.data(withJSONObject: selectors), as: UTF8.self)
         let script = "(function (a) { return a.map(s => { try { document.querySelector(s); return true } catch (e) { return false } }) })(\(json))"
         return (try? await webView.evaluateJavaScript(script) as? [Bool]) ?? []
+    }
+
+    @Test func patternsWithoutLiteralCharactersAreSkipped() throws {
+        for line in ["||", "^", "**", "|*", "||^", "*^", "||*"] {
+            #expect(try rules(line).isEmpty, "\(line)")
+        }
+        #expect(try rules("||a.com^").count == 1)
+        #expect(try rules("/ads/*").count == 1)
+    }
+
+    @Test func negatedDomainUnderPositiveIsSkipped() throws {
+        #expect(try rules("/ads/$domain=a.com|~b.a.com").isEmpty)
+        #expect(try rules("a.com,~b.a.com##.ad").isEmpty)
+        #expect(try rules("/ads/$domain=a.com|~amazon.*|~b.com").isEmpty)
+        #expect(try rules("/ads/$domain=~amazon.*|~b.com").isEmpty)
+        let network = try rules("/ads/$domain=a.com|~b.com")
+        #expect(trigger(network[0])["if-domain"] as? [String] == ["*a.com"])
+        let cosmetic = try rules("a.com,~b.com##.ad")
+        #expect(trigger(cosmetic[0])["if-domain"] as? [String] == ["*a.com"])
+    }
+
+    @Test func documentExceptionWithOtherOptionsIsSkipped() throws {
+        for option in ["domain=a.com", "third-party", "~third-party", "first-party", "script"] {
+            #expect(try rules("@@||x.com^$document,\(option)").isEmpty, "\(option)")
+        }
+        #expect(try rules("@@||x.com^$document").count == 1)
+    }
+
+    @Test func commentOpenerSelectorIsRejected() throws {
+        let r = try rules("##a\n##b /*\n##c")
+        #expect(r.count == 1)
+        #expect(action(r[0])["selector"] as? String == "a, c")
     }
 }

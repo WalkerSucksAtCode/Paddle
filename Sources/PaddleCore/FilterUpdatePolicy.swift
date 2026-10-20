@@ -16,12 +16,14 @@ public enum FilterUpdatePolicy {
         return "\(name)-\(hash).txt"
     }
 
-    /// The last path component of an https list URL without its extension, or nil for anything else.
+    /// The last path component of an https list URL without its extension, or nil for anything else. The
+    /// component is percent-decoded, so `/`, `:` and leading dots are removed to keep it one safe file name.
     private static func stem(forList string: String) -> String? {
         guard let url = URL(string: string), url.scheme == "https" else { return nil }
         let name = url.deletingPathExtension().lastPathComponent
-        guard !name.isEmpty, name != "/" else { return nil }
-        return name
+        let safe = String(name.filter { $0 != "/" && $0 != ":" && $0 != "\0" }.drop { $0 == "." })
+        guard !safe.isEmpty else { return nil }
+        return safe
     }
 
     /// Files to rename once, `(from: "annoyances.txt", to: "annoyances-1a2b3c4d.txt")`: before file names carried

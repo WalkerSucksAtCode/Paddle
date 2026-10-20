@@ -33,7 +33,7 @@ public enum FilterListConverter {
     public static let maxRulesPerList = 150_000
     /// Part of the compiled-list cache key. Bump it whenever the JSON for the same list text changes, so lists
     /// compiled by the previous converter are recompiled instead of loaded from WebKit's cache.
-    public static let converterVersion = 7
+    public static let converterVersion = 8
 
     public struct Result: Sendable {
         public var json: String
@@ -436,7 +436,12 @@ public enum FilterListConverter {
         }
 
         if isDocumentAllowlist {
-            // `@@||example.com^$document`: turn blocking off for the whole site.
+            // `@@||example.com^$document`: turn blocking off for the whole site. Any other constraint (domain,
+            // party, type) cannot be kept, and allowing the whole site would over-apply the exception.
+            if trigger.loadType != nil || trigger.ifDomain != nil || trigger.unlessDomain != nil
+                || !resourceTypes.isEmpty || !excludedTypes.isEmpty {
+                return .unsupported(.option("document (with other options)"))
+            }
             guard let host = plainHost(pattern) else { return .unsupported(.option("document (not a site)")) }
             return .rules([siteAllowRule(host)])
         }
@@ -487,7 +492,8 @@ public enum FilterListConverter {
 
         let source = caseSensitive ? String(pattern) : pattern.lowercased()
         guard let filter = urlFilter(source, caseSensitive: caseSensitive) else { return .unsupported(.other) }
-        if filter == ".*", !narrowed { return .unsupported(.malformed) }
+        // A pattern of only `|`, `*` and `^` (`||`, `^`, `**`) has nothing to match on: it would block every load.
+        if !narrowed, filter == ".*" || !source.contains(where: { !"|*^".contains($0) }) { return .unsupported(.malformed) }
         return .rules(triggers.map { trigger in
             var trigger = trigger
             trigger.urlFilter = filter
@@ -582,7 +588,9 @@ public enum FilterListConverter {
     }
 
     /// Splits `a.com,~b.a.com` into WebKit `if-domain` / `unless-domain` lists (`*` prefix = include subdomains).
-    /// WebKit cannot combine both in one trigger, so when positives exist the negatives are dropped.
+    /// WebKit cannot combine both in one trigger, so when positives exist the negatives are dropped, which is
+    /// only right when each negative lies outside every positive. A negative that equals or sits under a positive
+    /// (`a.com|~b.a.com`), or an invalid negative (`~amazon.*`), has no form: nil, so the rule is skipped.
     static func parseDomains(_ list: String, separator: Character) -> ([String], [String])? {
         var ifs: [String] = []
         var unlesses: [String] = []
@@ -590,10 +598,16 @@ public enum FilterListConverter {
             let negated = raw.hasPrefix("~")
             let domain = (negated ? raw.dropFirst() : raw).lowercased()
             guard !domain.isEmpty, domain.allSatisfy({ ($0.isASCII && $0.isLetter) || $0.isNumber || $0 == "." || $0 == "-" }),
-                  !domain.hasSuffix(".") else { continue }
+                  !domain.hasSuffix(".") else {
+                if negated { return nil }
+                continue
+            }
             if negated { unlesses.append("*" + domain) } else { ifs.append("*" + domain) }
         }
         if ifs.isEmpty && unlesses.isEmpty { return nil }
+        if unlesses.contains(where: { negative in ifs.contains { negative == $0 || negative.hasSuffix("." + $0.dropFirst()) } }) {
+            return nil
+        }
         return (ifs, unlesses)
     }
 
@@ -617,6 +631,8 @@ public enum FilterListConverter {
         if selector.isEmpty { return .skipped(.malformed) }
         if extendedSelectorMarkers.contains(where: scan.unquoted.contains) { return .skipped(.extended) }
         if !selector.allSatisfy(\.isASCII) { return .skipped(.other) }
+        // A CSS comment opener would swallow the selectors joined after it.
+        if scan.unquoted.contains("/*") || scan.unquoted.contains("*/") { return .invalid }
         if !scan.balanced || scan.nestedHas { return .invalid }
         if split(selector, at: scan.topLevelCommas).contains(where: \.isEmpty) { return .invalid }
         return .selector

@@ -229,16 +229,34 @@ final class WebEnvironment {
     ///   `requestPictureInPicture()` fails with NotSupportedError (measured 2026-10).
     /// Private `_setEnabled:forFeature:`, guarded (`WebFeatureToggles`); without it nothing changes.
     private static func enableWebFeatures(_ preferences: WKPreferences) {
-        WebFeatureToggles.enable(enabledFeatures, in: preferences)
+        let outcome = WebFeatureToggles.enable(enabledFeatures, in: preferences)
+        guard !loggedFeatureOutcome else { return }
+        let log = Logger(subsystem: "com.walker.Paddle", category: "web")
+        switch outcome {
+        case .unavailable(let reason):
+            loggedFeatureOutcome = true
+            log.notice("web features not enabled: \(reason, privacy: .public)")
+        case .applied(let keys):
+            let missing = wantedFeatureKeys.filter { !keys.contains($0) }.sorted()
+            if !missing.isEmpty {
+                loggedFeatureOutcome = true
+                log.notice("web features missing from this WebKit: \(missing.joined(separator: ", "), privacy: .public)")
+            }
+        }
     }
+
+    /// Set once the feature outcome has been logged, so the notice appears once per process.
+    private static var loggedFeatureOutcome = false
+
+    private static let wantedFeatureKeys: Set<String> = [
+        "RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases",
+        "AllowsPictureInPictureMediaPlayback", "VideoPresentationManagerEnabled",
+    ]
 
     /// The `_WKFeature` objects for `enableWebFeatures`, looked up once: `+_features` builds an object for every
     /// WebKit feature (hundreds), which is wasted work on each new web view.
     private static let enabledFeatures: [NSObject] = WebFeatureToggles.features(
-        named: [
-            "RequestIdleCallbackEnabled", "HiddenPageDOMTimerThrottlingAutoIncreases",
-            "AllowsPictureInPictureMediaPlayback", "VideoPresentationManagerEnabled",
-        ],
+        named: wantedFeatureKeys,
         in: WKPreferences.self as AnyObject
     )
 
@@ -611,7 +629,7 @@ final class WebEnvironment {
 
         // Sites with `contentBlocking: false` join these as site-wide exceptions, so turning one off recompiles every
         // list with it rather than leaving those pages without the content controller.
-        let userFiltersText = (try? String(contentsOf: Paths.userFilters, encoding: .utf8)) ?? ""
+        let userFiltersText = Self.readUserFilters() ?? ""
         let blockingOff = config.blockingOffHosts
         let shared = await Task.detached(priority: .utility) {
             SharedExceptions(userFilters: userFiltersText, blockingOffHosts: blockingOff)
@@ -628,7 +646,7 @@ final class WebEnvironment {
         })
         for file in sources {
             let name = file.deletingPathExtension().lastPathComponent
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else {
+            guard let text = file == Paths.userFilters ? Self.readUserFilters() : try? String(contentsOf: file, encoding: .utf8) else {
                 let exists = FileManager.default.fileExists(atPath: file.path)
                 status.append(BlockerLine("\(name): \(exists ? "unreadable (not UTF-8 text)" : file == Paths.userFilters ? "no file" : "not downloaded yet")"))
                 continue
@@ -768,6 +786,13 @@ final class WebEnvironment {
                 fallback: error.localizedDescription
             )
             log.error("compile \(job.identifier, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            // Only WebKit refusing the rules is remembered; a disk or cancellation error says nothing about the list,
+            // so no sidecar is saved and the next launch tries again.
+            let nsError = error as NSError
+            guard nsError.domain == WKError.errorDomain, nsError.code == WKError.Code.contentRuleListStoreCompileFailed.rawValue else {
+                log.error("compile \(job.identifier, privacy: .public) not remembered as a failure: \(error.localizedDescription, privacy: .public)")
+                return CompileOutcome(job: job, line: "\(job.name): compile error, will retry next launch", installed: false, sidecar: false)
+            }
             // One rule WebKit refuses fails the whole list, and a translated regex is the likeliest culprit: compile
             // once more without the regex rules rather than leave the list blocking nothing.
             if result.containsRegexRules {
@@ -795,6 +820,12 @@ final class WebEnvironment {
             saveSummary(failed, identifier: job.identifier)
             return CompileOutcome(job: job, line: failed.statusLine(name: job.name, cached: false), installed: false, sidecar: true)
         }
+    }
+
+    /// `user-filters.txt` decoded by `FilterListText.decode` (UTF-8, UTF-16 with a BOM, else Latin-1); nil when it
+    /// can't be read, which includes a missing file.
+    private static func readUserFilters() -> String? {
+        (try? Data(contentsOf: Paths.userFilters)).map(FilterListText.decode)
     }
 
     /// Copies the bundled EasyList / EasyPrivacy snapshot into `filters/` for each configured default list whose
@@ -928,8 +959,9 @@ final class WebEnvironment {
                 let (data, response) = try await URLSession.shared.data(from: url)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 guard status == 200 else { failed("HTTP \(status)"); continue }
-                guard let text = String(data: data, encoding: .utf8), text.hasPrefix("[Adblock") || text.hasPrefix("!")
-                else { failed("not a filter list"); continue }
+                guard response.expectedContentLength <= Int64(FilterListText.maxBytes), data.count <= FilterListText.maxBytes
+                else { failed("larger than 50 MB"); continue }
+                guard FilterListText.mayReplaceStoredList(data) else { failed("not a filter list"); continue }
                 try data.write(to: destination, options: .atomic)
                 report.lines.append("\(name): \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
                 report.written += 1

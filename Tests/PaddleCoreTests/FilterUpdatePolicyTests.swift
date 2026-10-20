@@ -105,4 +105,14 @@ struct FilterUpdatePolicyTests {
         #expect(try PaddleConfig.decode(Data("{}".utf8)).filterUpdateDays == 7)
         #expect(try PaddleConfig.decode(Data(#"{"filterUpdateDays": 0}"#.utf8)).filterUpdateDays == 0)
     }
+
+    @Test func fileNameIsOneSafePathComponent() throws {
+        for list in ["https://x.com/..%2F..%2Fevil.txt", "https://x.com/a%2Fb.txt", "https://x.com/%2E%2Ehidden.txt"] {
+            let name = try #require(FilterUpdatePolicy.fileName(forList: list))
+            #expect(!name.contains("/") && !name.contains(":") && !name.hasPrefix("."))
+        }
+        #expect(FilterUpdatePolicy.fileName(forList: easyList) == "easylist.txt")
+        #expect(FilterUpdatePolicy.fileName(forList: easyPrivacy) == "easyprivacy.txt")
+        #expect(FilterUpdatePolicy.fileName(forList: added)?.hasPrefix("annoyances-") == true)
+    }
 }
