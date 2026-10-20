@@ -3,6 +3,46 @@
 Memory baselines, one section per measured release, newest first. Compare a new build against the latest section
 with the same method; the regression threshold is 10 % or 50 MB per scenario, whichever is larger.
 
+## 2026-10-19: on-demand extensions (`extensionsOnDemand`), audit branch
+
+Machine: Mac16,7, macOS 27.0.1 (26A434). Paddle 0.1.0 Debug build from `build/DerivedData.noindex` (main at 2fb59f9 plus
+the audit's uncommitted fixes), Walker's config and extensions: ClearURLs, Downie and Proton Pass always loaded;
+Reddit Enhancement Suite, Enhancer for YouTube and Return YouTube Dislike on demand. One window, no YouTube or Reddit tab.
+
+Method: `paddle_state` through the control bridge every 10 s, six samples, after the numbers settled (the first sample
+after a launch or a load runs high and is dropped). "Loaded" is `extensionsOnDemand: false` (every extension started);
+"parked" is the default, relaunched so the three start parked. The five tabs: en.wikipedia.org/wiki/WebKit,
+news.ycombinator.com, apple.com, developer.apple.com/documentation/webkit, example.com, opened together and all awake.
+
+| Scenario | `memoryMB.extensions` loaded / parked | `memoryMB.total` loaded / parked | Saved by parking |
+|---|---|---|---|
+| New Tab only | 65 / 14 | 233 / 175 | 58 MB |
+| New Tab + 5 sites | 290 / 232 | 935 / 742 | 193 MB |
+
+The saving grows with open pages (about 22 MB per extra web process here: each WebContent process carries the
+extensions' content scripts), so it is about 60 MB with one tab and passes 300 MB only at a dozen or so. The earlier
+"330 MB" in README and `ExtensionHost.parkIdleExtensions` had no recorded method or tab count.
+
+### Numbers in code comments without a record here
+
+These came from one-off checks named in the comment (tool and date where given); none has a section with its method.
+Re-measure before relying on one, and add a section when you do.
+
+| Claim | Where |
+|---|---|
+| ~+6 MB per process for 6,600 scriptlet user scripts vs +46 MB for one combined script | `App/Paddle/Web/Scriptlets.swift:10` |
+| Extension content scripts 15-31 MB per WebContent process, mostly Return YouTube Dislike's 4.3 MB script | `Sources/PaddleCore/ScriptLatin1.swift:6` |
+| malloc default zone held ~24 MB unused (vmmap, 2026-10-16) | `App/Paddle/AppModel.swift:1414` |
+| Service worker: 218 MB still up 3.5 min after closing Reddit; 647 MB a minute after the benchmark closed its tabs | `App/Paddle/AppModel.swift:1708` |
+| 291 MB kept by a WebContent process after Reddit -> Wikipedia | `App/Paddle/Browser/Tab.swift:589` |
+| One extra prewarmed WebContent process of about 7 MB; a cold wake's process start 20-40 ms | `App/Paddle/Web/WebEnvironment.swift:171-178` |
+| Compiled lists 74 MB instead of 43 MB and ~250 ms with the `(separator.*)?$` tail | `Sources/PaddleCore/FilterListConverter.swift:556` |
+| First page load waits 58 ms before scriptlets, ~310 ms with them (warm cache) | `App/Paddle/Browser/Tab.swift:306` |
+| ~350 ms per tab switch (TabStrip), 33-118 ms to show a tab (BrowserModel) | `App/Paddle/UI/Tabs/TabStrip.swift:212`, `App/Paddle/Browser/BrowserModel.swift:39` |
+
+The 2026-10-15 baseline below predates later changes (scriptlets, Latin-1 scripts, the service-worker grace period,
+on-demand extensions) and its steps are prose, not a script: re-run it before using it as a regression gate.
+
 ## 2026-10-15: main (263b85a) against build 49, Safari, Chrome and Firefox
 
 Machine: Mac16,7 (M4 Pro, 48 GB), macOS 27.0.1 (26A434).
