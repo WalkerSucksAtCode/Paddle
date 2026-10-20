@@ -28,6 +28,9 @@ final class ControlBridge {
     private(set) var startError: String?
 
     @ObservationIgnored private var server: BridgeSocketServer?
+    /// Which `start` the current server came from. A line waiting to run when the switch went off and on again belongs
+    /// to the old server, whose client numbers the new one reuses; it is dropped, not answered to someone else.
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored private let core = MCPServerCore(serverVersion: ControlBridge.appVersion)
     @ObservationIgnored let log = Logger(subsystem: "com.walker.Paddle", category: "bridge")
     /// The content world bridge scripts run in: never the page's own, and not the one user scripts or extensions use.
@@ -79,10 +82,12 @@ final class ControlBridge {
     }
 
     private func start() {
+        generation += 1
+        let generation = generation
         let server = BridgeSocketServer(
             path: Paths.controlSocket.path,
             onLine: { client, line in
-                Task { @MainActor in await ControlBridge.shared.received(line, from: client) }
+                Task { @MainActor in await ControlBridge.shared.received(line, from: client, generation: generation) }
             },
             onCount: { count in
                 Task { @MainActor in ControlBridge.shared.clientCount = count }
@@ -98,8 +103,8 @@ final class ControlBridge {
         }
     }
 
-    private func received(_ line: String, from client: Int) async {
-        guard let server else { return }
+    private func received(_ line: String, from client: Int, generation: Int) async {
+        guard let server, generation == self.generation else { return }
         // A nonisolated closure that hops to the main actor, so it can be handed to the core.
         let reply = await core.handle(line) { @Sendable name, arguments in
             await ControlBridge.shared.call(name, arguments)
