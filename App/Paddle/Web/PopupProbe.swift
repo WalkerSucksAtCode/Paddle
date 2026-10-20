@@ -22,6 +22,8 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
     private let openerID: UUID
     /// Captured at the start: the opener tab may close before the response arrives.
     private let isPrivate: Bool
+    /// The opener's profile, for a download the probe starts (the opener may be gone by then).
+    private let profileID: ProfileID
     /// The opener's page when the window opened; a page blocked after the opener navigated away isn't offered.
     private let openerPage: URL?
     private var finished = false
@@ -33,6 +35,7 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
         self.opener = opener
         self.openerID = opener.id
         self.isPrivate = opener.isPrivate
+        self.profileID = opener.profileID
         self.openerPage = opener.webView?.url
     }
 
@@ -69,7 +72,7 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
         if let url, scheme == "http", let secure = HTTPSOnlyPolicy.upgrade(
             url, enabled: app.config.httpsOnly,
             siteAllowsHTTP: !app.config.sitePolicy(forHost: url.host() ?? "").httpsOnly,
-            sessionExceptions: app.httpExceptions
+            sessionExceptions: app.httpExceptions(isPrivate: isPrivate)
         ) {
             if upgraded {
                 blocked(url)
@@ -110,7 +113,7 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
     }
 
     private func started(_ download: WKDownload) {
-        AppModel.shared.downloads.track(download, isPrivate: isPrivate, from: opener)
+        AppModel.shared.downloads.track(download, isPrivate: isPrivate, profile: profileID, from: opener)
         end("became a download")
     }
 

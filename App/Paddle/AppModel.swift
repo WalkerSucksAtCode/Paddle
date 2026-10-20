@@ -69,9 +69,17 @@ final class AppModel {
         get { isPrivate ? privatePermissions : sessionPermissions[profile] ?? SessionPermissions() }
         set { if isPrivate { privatePermissions = newValue } else { sessionPermissions[profile] = newValue } }
     }
-    /// Hosts (normalized, without `www.`) the user let load over http:// from the HTTPS-only notice, until Paddle
-    /// quits. Never written to disk; private windows share it.
+    /// Hosts (normalized, without `www.`) the user let load over http:// from the HTTPS-only notice in a normal
+    /// window, until Paddle quits. Never written to disk. Private windows use them too (`httpExceptions(isPrivate:)`).
     @ObservationIgnored var httpExceptions: Set<String> = []
+    /// The same, let through from a private window: they apply only in private windows and are dropped when the last
+    /// one closes, so a private choice doesn't carry into normal browsing.
+    @ObservationIgnored var privateHTTPExceptions: Set<String> = []
+
+    /// The http:// exceptions a tab of this kind of window follows.
+    func httpExceptions(isPrivate: Bool) -> Set<String> {
+        isPrivate ? httpExceptions.union(privateHTTPExceptions) : httpExceptions
+    }
     /// Zoom set in private windows, by `sites` key, for this run only: private windows write nothing to config.json.
     @ObservationIgnored var privateZooms: [String: Double] = [:]
     /// Zoom changes waiting to be written to config.json, by `sites` key (`rememberZoom`).
@@ -1166,6 +1174,7 @@ final class AppModel {
             downloads.forgetPrivate()
             privateZooms.removeAll()
             privatePermissions = SessionPermissions()
+            privateHTTPExceptions.removeAll()
             log.info("last private window closed: private data store released")
         }
         // At once rather than debounced: a closed window is a change worth having on disk right away.
@@ -1562,7 +1571,7 @@ final class AppModel {
         switch config.sitePolicy(forHost: host).freeze {
         case .never: return true
         case .always: return false
-        case .auto: return config.keepNotifyingSitesLive && !tab.isPrivate && WebsiteNotifications.shared.isAllowed(url)
+        case .auto: return config.keepNotifyingSitesLive && !tab.isPrivate && WebsiteNotifications.shared.isAllowed(url, profile: tab.profileID)
         }
     }
 

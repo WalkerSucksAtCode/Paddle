@@ -194,17 +194,20 @@ final class NotificationInbox {
         let title: String
         let body: String
         let date: Date
+        /// The profile whose page sent it: only that profile's New Tab lists it.
+        let profile: String
     }
 
     private(set) var entries: [Entry] = []
 
-    func record(origin: String, host: String, title: String, body: String) {
+    func record(origin: String, host: String, title: String, body: String, profile: String) {
         guard !host.isEmpty, !(title.isEmpty && body.isEmpty) else { return }
-        entries.insert(Entry(origin: origin, host: host, title: title, body: body, date: Date()), at: 0)
+        entries.insert(Entry(origin: origin, host: host, title: title, body: body, date: Date(), profile: profile), at: 0)
         if entries.count > Self.maxEntries { entries.removeLast(entries.count - Self.maxEntries) }
     }
 
-    func clear() { entries = [] }
+    /// Clears one profile's entries; the others' New Tab pages keep theirs.
+    func clear(profile: String) { entries.removeAll { $0.profile == profile } }
 
     func remove(_ entry: Entry) { entries.removeAll { $0.id == entry.id } }
 }

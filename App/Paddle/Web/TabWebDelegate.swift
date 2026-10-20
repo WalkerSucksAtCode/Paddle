@@ -149,7 +149,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let secure = HTTPSOnlyPolicy.upgrade(
             url, enabled: app.config.httpsOnly,
             siteAllowsHTTP: !tab.config.sitePolicy(forHost: host).httpsOnly,
-            sessionExceptions: app.httpExceptions
+            sessionExceptions: app.httpExceptions(isPrivate: tab.isPrivate)
         ) else { return false }
         let normalized = PaddleConfig.normalizedHost(host)
         // Sent back to http:// for the same host within 10 s, by a redirect, script or meta refresh (not by the user

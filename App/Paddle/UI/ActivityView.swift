@@ -213,11 +213,13 @@ struct DownloadsView: View {
     let store: DownloadStore
     /// The window's privacy: a normal window doesn't list private downloads.
     let isPrivate: Bool
+    /// The window's profile: other profiles' downloads aren't listed.
+    let profile: ProfileID
     /// The window's profile's folder (`downloadFolder` may be set per profile).
     var folder: URL = DownloadStore.folder
     @Environment(\.chromeScale) private var scale
 
-    private var listed: [DownloadItem] { store.items(forPrivateWindow: isPrivate) }
+    private var listed: [DownloadItem] { store.items(forPrivateWindow: isPrivate, profile: profile) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

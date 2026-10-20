@@ -53,7 +53,7 @@ struct HTTPSOnlyNotice: View {
     }
 
     private func continueOnce() {
-        AppModel.shared.httpExceptions.insert(key)
+        if tab.isPrivate { AppModel.shared.privateHTTPExceptions.insert(key) } else { AppModel.shared.httpExceptions.insert(key) }
         tab.load(url)
     }
 

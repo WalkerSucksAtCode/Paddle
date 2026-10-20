@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ObjectiveC
 import os
 import PaddleCore
 import UserNotifications
@@ -121,7 +122,9 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             Self.log.notice("dropped a page notification with no usable origin")
             return
         }
-        guard isAllowed(url) else {
+        // Every profile's pages share one pool, so the pool can't say whose page it was: the page's tab can.
+        let profile = Self.tab(forPage: notice.page)?.profileID ?? ProfileStore.defaultID
+        guard isAllowed(url, profile: profile) else {
             Self.log.notice("dropped a notification from \(host, privacy: .private): notifications are not allowed for it")
             return
         }
@@ -131,8 +134,9 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             "uuid": UUID().uuidString,
             "persistent": false,
             "pageNotificationID": NSNumber(value: id),
+            "profile": profile,
         ]
-        let identifier = post(title: notice.title, body: notice.body, tag: notice.tag, origin: origin, userInfo: userInfo) {
+        let identifier = post(title: notice.title, body: notice.body, tag: notice.tag, origin: origin, profile: profile, userInfo: userInfo) {
             WebsiteNotifications.shared.pageDidShow(id)
         }
         pageRequests[id] = PageRequest(identifier: identifier, slot: notice.slot)
@@ -233,7 +237,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             Self.log.notice("dropped a notification with no usable origin")
             return
         }
-        guard isAllowed(url) else {
+        guard isAllowed(url, profile: ProfileStore.defaultID) else {
             Self.log.notice("dropped a notification from \(host, privacy: .private): notifications are not allowed for it")
             return
         }
@@ -245,28 +249,40 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         // A service-worker notification has a registration URL; Web Push ones are not supported, only these.
         let persistent = (PrivateAPI.value(of: notification, forKey: "serviceWorkerRegistrationURL") as? URL) != nil
 
-        var userInfo: [AnyHashable: Any] = ["origin": origin, "uuid": uuid, "persistent": persistent]
+        var userInfo: [AnyHashable: Any] = ["origin": origin, "uuid": uuid, "persistent": persistent, "profile": ProfileStore.defaultID]
         if let dict = PrivateAPI.call("dictionaryRepresentation", on: notification) as? NSDictionary,
            PropertyListSerialization.propertyList(dict, isValidFor: .binary) {
             userInfo["dict"] = dict
         }
-        post(title: title, body: body, tag: tag, origin: origin, userInfo: userInfo)
+        post(title: title, body: body, tag: tag, origin: origin, profile: ProfileStore.defaultID, userInfo: userInfo)
     }
 
     // MARK: - Shared by both WebKit paths
 
-    /// Whether the site at `url` may show notifications now: its `sites` setting is allow, or it is `ask` and this run's
-    /// answer was yes.
-    func isAllowed(_ url: URL) -> Bool {
+    /// Whether the site at `url` may show notifications now in `profile`: its `sites` setting (the profile's own, if it
+    /// sets one) is allow, or it is `ask` and this run's answer in that profile was yes.
+    func isAllowed(_ url: URL, profile: ProfileID = ProfileStore.defaultID) -> Bool {
         guard let scheme = url.scheme?.lowercased(), let host = Self.host(of: url) else { return false }
         let app = AppModel.shared
-        switch app.config.sitePolicy(forHost: host).notifications {
+        switch app.config(for: profile).sitePolicy(forHost: host).notifications {
         case .allow: return true
         case .deny: return false
         case .ask:
             let port = url.port ?? (scheme == "https" ? 443 : 80)
-            return app[permissionsFor: false, profile: ProfileStore.defaultID].answer(site: "\(scheme)://\(host):\(port)", kind: .notifications) == true
+            return app[permissionsFor: false, profile: profile].answer(site: "\(scheme)://\(host):\(port)", kind: .notifications) == true
         }
+    }
+
+    /// The open tab whose web view is WebKit page `address` (a `WKPageRef`), through the guarded private
+    /// `_pageRefForTransitionToWKWebView`; nil when WebKit lacks it or no tab matches.
+    private static func tab(forPage address: UInt) -> Tab? {
+        guard address != 0 else { return nil }
+        for tab in AppModel.shared.allTabs {
+            guard let webView = tab.webView,
+                  let page = PrivateAPI.call("_pageRefForTransitionToWKWebView", on: webView) else { continue }
+            if UInt(bitPattern: Unmanaged.passUnretained(page).toOpaque()) == address { return tab }
+        }
+        return nil
     }
 
     /// Posts one notification through Notification Center. A tag replaces the same site's earlier notification with that
@@ -278,6 +294,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         body: String,
         tag: String,
         origin: String,
+        profile: ProfileID,
         userInfo: [AnyHashable: Any],
         onAdded: (@MainActor @Sendable () -> Void)? = nil
     ) -> String {
@@ -290,7 +307,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.threadIdentifier = host
         content.userInfo = userInfo
         let identifier = tag.isEmpty ? uuid : "\(origin)#\(tag)"
-        NotificationInbox.shared.record(origin: origin, host: host, title: title, body: body)
+        NotificationInbox.shared.record(origin: origin, host: host, title: title, body: body, profile: profile)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
@@ -349,9 +366,10 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func handleClick(userInfo: [AnyHashable: Any]) {
         let app = AppModel.shared
         if let origin = userInfo["origin"] as? String, let url = URL(string: origin), let host = Self.host(of: url) {
+            let profile = userInfo["profile"] as? String
             let matches = app.windows.flatMap { window in
                 window.model.allTabs
-                    .filter { !$0.isPrivate && $0.url.flatMap(Self.host(of:)) == host }
+                    .filter { !$0.isPrivate && $0.url.flatMap(Self.host(of:)) == host && (profile == nil || $0.profileID == profile) }
                     .map { (window: window, tab: $0) }
             }
             // The page that posted it still has its web view; another tab of the site may be asleep and would come
@@ -410,9 +428,25 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     #if DEBUG
     /// Every private selector this object and `TabWebDelegate` answer to, checked where WebKit sends them, and every WebKit
     /// C symbol the page provider calls. The Notification Center methods are protocol requirements, so the compiler checks those.
+    /// `TabWebDelegate`'s private delegate methods are also checked against WebKit's own private protocols: a name WebKit
+    /// renamed would otherwise go unanswered without a word (hover links, same-page navigation, crash recovery, the page menu).
     static func verifySelectors() {
         let delegateSelector = NSSelectorFromString("_webView:requestNotificationPermissionForSecurityOrigin:decisionHandler:")
-        let checks: [(String, Bool)] = [
+        let privateDelegateMethods: [(protocol: String, selector: String)] = [
+            ("WKUIDelegatePrivate", "_webView:requestNotificationPermissionForSecurityOrigin:decisionHandler:"),
+            ("WKUIDelegatePrivate", "_webView:mouseDidMoveOverElement:withFlags:userInfo:"),
+            ("WKUIDelegatePrivate", "_webView:getContextMenuFromProposedMenu:forElement:userInfo:completionHandler:"),
+            ("WKNavigationDelegatePrivate", "_webView:navigation:didSameDocumentNavigation:"),
+            ("WKNavigationDelegatePrivate", "_webView:webContentProcessDidTerminateWithReason:"),
+        ]
+        let declared = privateDelegateMethods.map { entry -> (String, Bool) in
+            let selector = NSSelectorFromString(entry.selector)
+            guard let proto = objc_getProtocol(entry.protocol) else { return ("WebKit protocol \(entry.protocol)", false) }
+            let isDeclared = protocol_getMethodDescription(proto, selector, false, true).name != nil
+                || protocol_getMethodDescription(proto, selector, true, true).name != nil
+            return ("\(entry.protocol) declares \(entry.selector)", isDeclared && TabWebDelegate.instancesRespond(to: selector))
+        }
+        let checks: [(String, Bool)] = declared + [
             ("TabWebDelegate \(delegateSelector)", TabWebDelegate.instancesRespond(to: delegateSelector)),
             ("notificationPermissionsForWebsiteDataStore:", instancesRespond(to: NSSelectorFromString("notificationPermissionsForWebsiteDataStore:"))),
             ("websiteDataStore:showNotification:", instancesRespond(to: NSSelectorFromString("websiteDataStore:showNotification:"))),
@@ -437,6 +471,8 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
 nonisolated struct PageNotice: Sendable {
     let id: UInt64
     let slot: Int
+    /// The `WKPageRef` that showed it, as an address (0 when WebKit gave none): finds the tab, and so its profile.
+    let page: UInt
     let title: String
     let body: String
     let tag: String
@@ -507,7 +543,7 @@ nonisolated struct PageNotificationProvider {
         PageNotificationProvider(
             version: 0,
             clientInfo: UnsafeRawPointer(bitPattern: slot),
-            show: { _, notification, info in PageNotificationCallbacks.show(notification, slot: Int(bitPattern: info)) },
+            show: { page, notification, info in PageNotificationCallbacks.show(notification, page: page, slot: Int(bitPattern: info)) },
             cancel: { notification, _ in PageNotificationCallbacks.cancel(notification) },
             didDestroyNotification: { notification, _ in PageNotificationCallbacks.didDestroy(notification) },
             addNotificationManager: { manager, info in PageNotificationCallbacks.addManager(manager, slot: Int(bitPattern: info)) },
@@ -617,13 +653,14 @@ nonisolated enum PageNotificationAPI {
 /// The provider's callbacks. WebKit calls them on the main thread; each copies what it needs out of WebKit's objects, then
 /// continues on the main actor in `WebsiteNotifications`.
 nonisolated enum PageNotificationCallbacks {
-    nonisolated static func show(_ notification: CRef?, slot: Int) {
+    nonisolated static func show(_ notification: CRef?, page: CRef?, slot: Int) {
         guard let api = PageNotificationAPI.functions, let notification else { return }
         // A service-worker notification comes through the data-store delegate instead.
         guard !api.isPersistent(notification) else { return }
         let notice = PageNotice(
             id: api.notificationID(notification),
             slot: slot,
+            page: UInt(bitPattern: page),
             title: string(api, api.copyTitle(notification)),
             body: string(api, api.copyBody(notification)),
             tag: string(api, api.copyTag(notification)),

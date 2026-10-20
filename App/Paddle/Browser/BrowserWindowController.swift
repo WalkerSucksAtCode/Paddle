@@ -406,7 +406,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     /// View > Show Downloads (⌥⌘L): the downloads popover, or the download folder when this window's list is empty.
     @objc func paddleShowDownloads(_ sender: Any?) {
-        if AppModel.shared.downloads.items(forPrivateWindow: model.isPrivate).isEmpty {
+        if AppModel.shared.downloads.items(for: model).isEmpty {
             NSWorkspace.shared.open(DownloadStore.folder(using: model.config))
         } else {
             model.downloadsVisible = true

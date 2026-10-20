@@ -22,7 +22,7 @@ struct NewTabPage: View {
     /// The inbox without the sites hidden from New Tab (`newTabHiddenNotifications`).
     private var shownNotifications: [NotificationInbox.Entry] {
         let hidden = Set(model.config.newTabHiddenNotifications.map { $0.lowercased() })
-        return inbox.entries.filter { !hidden.contains($0.host.lowercased()) }
+        return inbox.entries.filter { $0.profile == model.profileID && !hidden.contains($0.host.lowercased()) }
     }
     private var feeds: FeedStore { .shared }
 
@@ -93,7 +93,7 @@ struct NewTabPage: View {
             }
         case .notifications:
             if showsNotifications, !shownNotifications.isEmpty {
-                NotificationsSection(inbox: inbox, entries: shownNotifications, hidden: model.config.newTabHiddenNotifications)
+                NotificationsSection(inbox: inbox, profile: model.profileID, entries: shownNotifications, hidden: model.config.newTabHiddenNotifications)
             }
         case .news:
             if !model.config.newTabFeeds.isEmpty, !model.isPrivate {
@@ -128,6 +128,7 @@ struct NewTabPage: View {
 /// site's tab as clicking the notification does; right-click hides the site from New Tab.
 private struct NotificationsSection: View {
     let inbox: NotificationInbox
+    let profile: String
     let entries: [NotificationInbox.Entry]
     let hidden: [String]
 
@@ -139,7 +140,7 @@ private struct NotificationsSection: View {
                     .foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
-                Button("Clear") { inbox.clear() }
+                Button("Clear") { inbox.clear(profile: profile) }
                     .buttonStyle(.link)
                     .chromeFont(size: 11)
             }

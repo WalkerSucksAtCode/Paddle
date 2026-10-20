@@ -25,6 +25,8 @@ final class DownloadItem: Identifiable {
     var state: State = .running
     /// Started in a private window: dropped from the list when the last private window closes.
     let isPrivate: Bool
+    /// The profile of the window it started in: only that profile's windows list it.
+    let profileID: ProfileID
     /// A private download still running when the last private window closed: it leaves the list when it ends.
     @ObservationIgnored var outlivedPrivateWindows = false
 
@@ -36,9 +38,10 @@ final class DownloadItem: Identifiable {
     @ObservationIgnored let download: WKDownload
     @ObservationIgnored var progressObservation: NSKeyValueObservation?
 
-    init(download: WKDownload, isPrivate: Bool) {
+    init(download: WKDownload, isPrivate: Bool, profileID: ProfileID) {
         self.download = download
         self.isPrivate = isPrivate
+        self.profileID = profileID
         self.filename = download.originalRequest?.url?.lastPathComponent ?? "Download"
     }
 }
@@ -52,10 +55,16 @@ final class DownloadStore {
 
     var activeCount: Int { items.filter { $0.state == .running }.count }
 
-    /// What one window lists: a normal window never shows private downloads (their names and addresses would leak
-    /// out of private browsing); a private window shows everything.
-    func items(forPrivateWindow isPrivate: Bool) -> [DownloadItem] {
-        isPrivate ? items : items.filter { !$0.isPrivate }
+    /// What one window lists: its own profile's downloads, and in a private window the private ones too. A normal
+    /// window never shows private downloads (their names and addresses would leak out of private browsing), and no
+    /// window shows another profile's.
+    func items(forPrivateWindow isPrivate: Bool, profile: ProfileID) -> [DownloadItem] {
+        items.filter { $0.isPrivate ? isPrivate : $0.profileID == profile }
+    }
+
+    /// `items(forPrivateWindow:profile:)` for `browser`'s window.
+    func items(for browser: BrowserModel) -> [DownloadItem] {
+        items(forPrivateWindow: browser.isPrivate, profile: browser.profileID)
     }
 
     /// `downloadFolder` from config.json (`~` expanded), or ~/Downloads when it is empty or not an existing folder.
@@ -88,8 +97,11 @@ final class DownloadStore {
     }
 
     /// The list lives in memory only; Paddle keeps no download history on disk, private or not.
-    func track(_ download: WKDownload, isPrivate: Bool, from tab: Tab?) {
-        let item = DownloadItem(download: download, isPrivate: isPrivate)
+    func track(_ download: WKDownload, isPrivate: Bool, profile: ProfileID? = nil, from tab: Tab?) {
+        let item = DownloadItem(
+            download: download, isPrivate: isPrivate,
+            profileID: profile ?? tab?.profileID ?? tab?.browser?.profileID ?? ProfileStore.defaultID
+        )
         item.browser = tab?.browser
         item.window = tab?.window ?? NSApp.keyWindow
         download.delegate = delegate
@@ -127,10 +139,11 @@ final class DownloadStore {
         let browser = item.browser
         let window = item.window
         let isPrivate = item.isPrivate
+        let profile = item.profileID
         items.removeAll { $0 === item }
         webView.startDownload(using: request) { [weak self] download in
             guard let self else { return }
-            self.track(download, isPrivate: isPrivate, from: nil)
+            self.track(download, isPrivate: isPrivate, profile: profile, from: nil)
             if let restarted = self.item(for: download) {
                 restarted.browser = browser
                 restarted.window = window

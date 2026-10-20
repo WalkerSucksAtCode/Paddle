@@ -389,7 +389,7 @@ private struct NavigationBar: View {
                 if model.extensionsAllowed, let host = model.extensionHost {
                     ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
-                if app.config.alwaysShowDownloadsButton || !app.downloads.items(forPrivateWindow: model.isPrivate).isEmpty {
+                if app.config.alwaysShowDownloadsButton || !app.downloads.items(for: model).isEmpty {
                     downloadsButton
                 }
             }
@@ -654,11 +654,11 @@ private struct NavigationBar: View {
     }
 
     private var activeDownloads: Int {
-        app.downloads.items(forPrivateWindow: model.isPrivate).filter { $0.state == .running }.count
+        app.downloads.items(for: model).filter { $0.state == .running }.count
     }
 
     private var overallDownloadFraction: Double {
-        let active = app.downloads.items(forPrivateWindow: model.isPrivate).filter { $0.state == .running }
+        let active = app.downloads.items(for: model).filter { $0.state == .running }
         guard !active.isEmpty else { return 0 }
         let total = active.reduce(0.0) { $0 + $1.fraction }
         return total / Double(active.count)
@@ -694,7 +694,7 @@ private struct NavigationBar: View {
         .help(activeDownloads > 0 ? "Downloading (\(activeDownloads))" : "Downloads (⌥⌘L)")
         .accessibilityLabel("Downloads")
         .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
-            DownloadsView(store: app.downloads, isPrivate: model.isPrivate, folder: DownloadStore.folder(using: model.config)).systemText()
+            DownloadsView(store: app.downloads, isPrivate: model.isPrivate, profile: model.profileID, folder: DownloadStore.folder(using: model.config)).systemText()
         }
     }
 
