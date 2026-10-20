@@ -434,7 +434,7 @@ final class Tab: Identifiable {
     private func pageBackdropColor() -> NSColor {
         let isDark = AppModel.shared.effectiveAppearanceIsDark
         let host = siteHost ?? ""
-        let siteDark = !host.isEmpty && (darkModeOverride ?? AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode)
+        let siteDark = !host.isEmpty && (darkModeOverride ?? config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode)
         if siteDark {
             return NSColor(srgbRed: 0.094, green: 0.102, blue: 0.106, alpha: 1)
         }
@@ -960,14 +960,14 @@ final class Tab: Identifiable {
     var isSiteDarkModeActive: Bool {
         guard let host = siteHost else { return false }
         let isDark = AppModel.shared.effectiveAppearanceIsDark
-        return AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+        return config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
     }
 
     func applySiteDarkMode(systemIsDark: Bool) {
         refreshPageBackdrop()
         // Scripts raise on a suspended page; `unfreeze()` applies it.
         guard let webView, !isSuspendedInWebKit, let host = siteHost else { return }
-        let dark = darkModeOverride ?? AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: systemIsDark).darkMode
+        let dark = darkModeOverride ?? config.sitePolicy(forHost: host, systemIsDark: systemIsDark).darkMode
         let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(dark ? "true" : "false")); }"
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
@@ -979,14 +979,22 @@ final class Tab: Identifiable {
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
-    /// Toggles website dark mode for this tab's site and persists the change to config.json.
+    /// Toggles website dark mode for this tab's site and saves it in `sites` (the profile's own settings when it sets
+    /// the site's darkMode). A private window writes nothing to config.json: there it changes this tab only
+    /// (`darkModeOverride`).
     func toggleDarkMode() {
         guard let host = siteHost else { return }
         let isDark = AppModel.shared.effectiveAppearanceIsDark
-        let current = AppModel.shared.config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+        let current = isPrivate ? isDarkModeActive : config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
         let next = !current
-        Task {
-            await AppModel.shared.writeSiteSetting(.darkMode, .bool(next), forKey: host)
+        if isPrivate {
+            setDarkModeOverride(next)
+        } else {
+            let key = config.siteKey(forHost: host)
+            let profile = profileID
+            Task {
+                await AppModel.shared.writeSiteSetting(.darkMode, .bool(next), forKey: key, profile: profile)
+            }
         }
         guard let webView else { return }
         unfreeze()

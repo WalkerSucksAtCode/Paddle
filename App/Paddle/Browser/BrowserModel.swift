@@ -518,7 +518,8 @@ final class BrowserModel {
     /// ⇧⌘D in a Mosaic, by `mosaicDarkMode`: the site setting of `tab` (saved), every pane together, or `tab` alone.
     func toggleDarkMode(_ tab: Tab) {
         guard let split = split(of: tab), config.mosaicDarkMode != .site else {
-            tab.setDarkModeOverride(nil)
+            // A private tab keeps its toggle in the override (nothing is saved), so it isn't cleared here.
+            if !tab.isPrivate { tab.setDarkModeOverride(nil) }
             tab.toggleDarkMode()
             return
         }

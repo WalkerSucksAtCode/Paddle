@@ -151,11 +151,18 @@ struct SiteSecurityView: View {
             Text("Permissions for this site")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
+            // Private windows write nothing to config.json's `sites`: the values show, but change only in a normal window.
+            if tab.isPrivate {
+                Text("Private windows don’t save site settings. Change them in a normal window.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Toggle(isOn: Binding(
                 get: { policy.contentBlocking },
                 set: { value in
-                    Task { await app.writeSiteSetting(.contentBlocking, .bool(value), forKey: host) }
+                    Task { await app.writeSiteSetting(.contentBlocking, .bool(value), forKey: key, profile: profile) }
                 }
             )) {
                 Label("Content Blockers", systemImage: "shield")
@@ -233,6 +240,7 @@ struct SiteSecurityView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
         }
+        .disabled(tab.isPrivate)
     }
 
     // MARK: - Actions
