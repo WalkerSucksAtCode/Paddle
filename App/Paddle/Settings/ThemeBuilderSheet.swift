@@ -365,6 +365,15 @@ struct ThemeBuilderSheet: View {
             let data = try theme.encode()
             try FileManager.default.createDirectory(at: Paths.themes, withIntermediateDirectories: true)
             let fileURL = Paths.themes.appendingPathComponent("\(id).json")
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                // A theme with this id is already there, maybe hand-edited: ask before replacing it.
+                let alert = NSAlert()
+                alert.messageText = "Replace the theme “\(trimmed)”?"
+                alert.informativeText = "The file themes/\(id).json will be replaced."
+                alert.addButton(withTitle: "Replace")
+                alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+            }
             try data.write(to: fileURL, options: .atomic)
             AppModel.shared.themes.load()
             Task {

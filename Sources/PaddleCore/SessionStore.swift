@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 
 /// session.json plus each tab's back/forward state in `sessions/<tab id>.state`. session.json is small
 /// records that name those files: a save rewrites it in a few KB and writes a state file only when its
@@ -12,6 +13,9 @@ public struct SessionStore {
     private var stateDigests: [String: SHA256.Digest] = [:]
     /// session.json's bytes as last read or written, so an unchanged session isn't written again.
     private var sessionBytes: Data?
+    /// Set when session.json exists but can't be read: `save` then writes nothing this run, so the file isn't replaced.
+    private var unreadable = false
+    private static let log = Logger(subsystem: "com.walker.Paddle", category: "session")
 
     /// What one `save` did, for tests and logs.
     public struct SaveResult: Equatable, Sendable {
@@ -25,19 +29,47 @@ public struct SessionStore {
         self.stateDirectory = stateDirectory
     }
 
-    /// Where a session.json that didn't decode is moved.
+    /// The first name a session.json that didn't decode is moved to, and the one the app checks for. Later
+    /// copies get `-2`, `-3`, ... (see `badFiles`).
     public var badFile: URL { file.appendingPathExtension("bad") }
+
+    /// Every session.json.bad copy in the folder.
+    public var badFiles: [URL] {
+        let folder = file.deletingLastPathComponent()
+        let base = file.lastPathComponent + ".bad"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return names.filter { name in
+            name == base || (name.hasPrefix(base + "-") && Int(name.dropFirst(base.count + 1)) != nil)
+        }.sorted().map { folder.appending(path: $0) }
+    }
+
+    /// The first free session.json.bad name, so an earlier bad copy is never overwritten.
+    private func nextBadFile() -> URL {
+        var candidate = badFile
+        var n = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = file.appendingPathExtension("bad-\(n)")
+            n += 1
+        }
+        return candidate
+    }
 
     /// The saved session with every tab's state read back in, or nil when there is none or it doesn't decode.
     /// Tab ids that aren't UUIDs or repeat an earlier tab's are dropped (they name files), and so are state file
     /// names that aren't `<UUID>.state`; a missing state file leaves that tab to load its URL.
     public mutating func load() -> SessionRecord? {
-        guard let data = try? Data(contentsOf: file) else { return nil }
+        unreadable = false
+        // No file is a first launch. A file that is there but can't be read is left alone, and `save` won't replace it.
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        guard let data = try? Data(contentsOf: file) else {
+            unreadable = true
+            Self.log.error("session.json exists but can't be read; leaving it in place and not saving this run")
+            return nil
+        }
         guard var session = try? JSONDecoder().decode(SessionRecord.self, from: data) else {
-            // Kept as session.json.bad, and the state files it names are kept with it (`save`), so a hand-edit
-            // gone wrong can be fixed and renamed back without losing every tab's history.
-            try? FileManager.default.removeItem(at: badFile)
-            try? FileManager.default.moveItem(at: file, to: badFile)
+            // Kept as session.json.bad (or the next free session.json.bad-N), and the state files it names are kept
+            // with it (`save`), so a hand-edit gone wrong can be fixed and renamed back without losing every tab's history.
+            try? FileManager.default.moveItem(at: file, to: nextBadFile())
             return nil
         }
         sessionBytes = data
@@ -61,6 +93,8 @@ public struct SessionStore {
     /// deletes state files no tab names. Throws when a write fails; nothing is deleted then.
     @discardableResult
     public mutating func save(_ session: SessionRecord) throws -> SaveResult {
+        // An unreadable session.json is still on disk; writing now would replace it with this run's tabs.
+        guard !unreadable else { return SaveResult() }
         var result = SaveResult()
         var onDisk = session
         var referenced = Set<String>()
@@ -100,7 +134,7 @@ public struct SessionStore {
             result.wroteSession = true
         }
 
-        referenced.formUnion(statesNamedByBadFile())
+        referenced.formUnion(statesNamedByBadFiles())
         let names = (try? FileManager.default.contentsOfDirectory(atPath: stateDirectory.path)) ?? []
         for name in names.sorted() where name.hasSuffix(".state") && !referenced.contains(name) {
             try? FileManager.default.removeItem(at: stateDirectory.appending(path: name))
@@ -110,11 +144,15 @@ public struct SessionStore {
         return result
     }
 
-    /// State file names that appear anywhere in session.json.bad, read as text since it didn't decode.
-    private func statesNamedByBadFile() -> Set<String> {
-        guard let text = try? String(contentsOf: badFile, encoding: .utf8) else { return [] }
+    /// State file names that appear anywhere in any session.json.bad copy, read as text since it didn't decode.
+    private func statesNamedByBadFiles() -> Set<String> {
         let pattern = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.state/
-        return Set(text.matches(of: pattern).map { String($0.output) })
+        var names = Set<String>()
+        for url in badFiles {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            names.formUnion(text.matches(of: pattern).map { String($0.output) })
+        }
+        return names
     }
 
     /// `<UUID>.state`: the only names `load` reads, so a hand-edited session.json can't point outside sessions/.

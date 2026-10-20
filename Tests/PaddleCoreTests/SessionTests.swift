@@ -137,6 +137,46 @@ final class SessionStoreTests {
         #expect(Set(stateFiles()) == ["\(a).state", "\(b).state"])
     }
 
+    @Test func missingSessionLoadsAsNilAndSaves() throws {
+        var s = store()
+        #expect(s.load() == nil)
+        try s.save(session())
+        #expect(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @Test func unreadableSessionIsNotReplaced() throws {
+        var s = store()
+        try s.save(session())
+        let before = try Data(contentsOf: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) }
+        // As root, or on a filesystem that ignores modes, the file still reads and there is nothing to test.
+        guard (try? Data(contentsOf: file)) == nil else { return }
+        var reader = store()
+        #expect(reader.load() == nil)
+        let result = try reader.save(SessionRecord(windows: [WindowRecord(tabs: [TabRecord(url: "https://c.test", title: "")], selectedIndex: 0)]))
+        #expect(result == SessionStore.SaveResult())
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        #expect(try Data(contentsOf: file) == before)
+    }
+
+    @Test func everyUndecodableSessionIsKept() throws {
+        var s = store()
+        try s.save(session())
+        let first = Data("{\"stateFile\":\"\(a).state\"".utf8)
+        try first.write(to: file)
+        var one = store()
+        #expect(one.load() == nil)
+        let second = Data("{\"stateFile\":\"\(b).state\"".utf8)
+        try second.write(to: file)
+        var two = store()
+        #expect(two.load() == nil)
+        #expect(try Data(contentsOf: file.appendingPathExtension("bad")) == first)
+        #expect(try Data(contentsOf: file.appendingPathExtension("bad-2")) == second)
+        try two.save(SessionRecord(windows: [WindowRecord(tabs: [TabRecord(url: "https://c.test", title: "")], selectedIndex: 0)]))
+        #expect(Set(stateFiles()) == ["\(a).state", "\(b).state"])
+    }
+
     @Test func rewritesAStateFileRemovedBehindItsBack() throws {
         var s = store()
         try s.save(session())
