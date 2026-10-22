@@ -81,8 +81,9 @@ final class ContactCardStore {
 }
 
 /// Answers `ContactAutofillScript`'s request after a real click on its chip: the saved card's values for the kinds of
-/// field the form has, only for an http(s) frame of a browser tab while `contactAutofill` is on. It is registered only
-/// in the script's own content world, so a page's scripts can't reach it.
+/// field the form has, only for the https main frame of a browser tab while `contactAutofill` is on (an embedded frame
+/// or a plain-http page never gets them). It is registered only in the script's own content world, so a page's scripts
+/// can't reach it.
 final class ContactAutofillHandler: NSObject, WKScriptMessageHandlerWithReply {
     static let shared = ContactAutofillHandler()
     private static let log = Logger(subsystem: "com.walker.Paddle", category: "autofill")
@@ -94,7 +95,8 @@ final class ContactAutofillHandler: NSObject, WKScriptMessageHandlerWithReply {
         guard message.name == ContactAutofillScript.handlerName,
               let body = message.body as? [String: Any],
               let kinds = body["kinds"] as? [String], kinds.count <= ContactField.allCases.count,
-              ["http", "https"].contains(message.frameInfo.securityOrigin.protocol.lowercased()),
+              message.frameInfo.isMainFrame,
+              message.frameInfo.securityOrigin.protocol.lowercased() == "https",
               let webView = message.webView,
               let tab = AppModel.shared.allTabs.first(where: { $0.webView === webView }),
               tab.config.contactAutofill,

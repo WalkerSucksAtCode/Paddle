@@ -155,10 +155,14 @@ struct MCPTests {
     }
 
     /// A bridge client that could set these would save files in any folder without a prompt (downloadFolder with
-    /// askWhereToDownload off, then open_url to an attachment), grant sites location or notifications, or turn off
-    /// the HTTPS upgrade and fraud warnings.
+    /// askWhereToDownload off, then open_url to an attachment), grant sites location or notifications, turn off
+    /// the HTTPS upgrade, fraud warnings or content blocking, add a list whose scriptlets run in every page, or offer
+    /// pages the contact card.
     @Test func fileAndSafetyKeysAreSettingsOnly() {
-        for name in ["downloadFolder", "askWhereToDownload", "sites", "httpsOnly", "fraudWarnings"] {
+        for name in [
+            "downloadFolder", "askWhereToDownload", "sites", "httpsOnly", "fraudWarnings",
+            "contentBlocking", "filterLists", "scriptlets", "trustedLists", "contactAutofill",
+        ] {
             #expect(PaddleBridgeTools.settingsOnlyConfigKeys.contains(name), "\(name)")
         }
     }

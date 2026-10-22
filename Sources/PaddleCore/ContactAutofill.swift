@@ -86,12 +86,13 @@ public struct ContactCard: Codable, Equatable, Sendable {
     private func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
-/// The isolated-world page script behind contact autofill. When a field it recognises (by `autocomplete`, then by its
-/// type, name, id, placeholder and label) gets focus, it shows a "Fill contact info" chip under it, in a closed shadow
-/// root and with none of the contact info in it. Only a real click on the chip (`isTrusted`) asks Paddle for the
-/// values, and only for the kinds of field in that form; they go into the form's visible, empty, recognised fields,
-/// with input and change events as typing sends. Card and password fields are never touched. The handler lives only
-/// in the script's own content world, so the page can't ask for the values itself.
+/// The isolated-world page script behind contact autofill, for https main frames only. When a field it recognises (by
+/// `autocomplete`, then by its type, name, id, placeholder and label) gets focus, it shows a chip under it naming what
+/// it would fill ("Fill name, email, address"), in a closed shadow root and with none of the contact info in it. Only
+/// a real click on the chip (`isTrusted`) asks Paddle for the values, and only for the kinds the chip named; they go
+/// into the form's empty, recognised fields that are visible on screen right then (inside the window, not covered,
+/// faded out or with see-through text), with input and change events as typing sends. Card and password fields are
+/// never touched. The handler lives only in the script's own content world, so the page can't ask for the values.
 public enum ContactAutofillScript {
     public static let handlerName = "paddleContactAutofill"
     public static let worldName = "PaddleContactAutofill"
@@ -133,7 +134,7 @@ public enum ContactAutofillScript {
 
     public static let source = """
     (() => {
-      if (window.__paddleContactAutofill) return;
+      if (window.__paddleContactAutofill || location.protocol !== 'https:' || window.top !== window) return;
       window.__paddleContactAutofill = true;
       const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(handlerName);
       if (!handler) return;
@@ -152,22 +153,42 @@ public enum ContactAutofillScript {
         name: el.name || '', id: el.id || '', placeholder: el.getAttribute('placeholder') || '', label: labelText(el),
         tag: el.tagName.toLowerCase()
       }) : null;
-      // Hidden fields never get filled: a page could otherwise collect an address behind one visible field.
+      // Only fields the user can see right now get filled: a page could otherwise collect an address through fields
+      // moved off screen, clipped, covered by other content or made transparent, next to one visible field. The centre
+      // must be inside the window and hit the field itself (or its label), which also rules out clipping.
+      const clear = (c) => c === 'transparent' || /^rgba\\(.*,\\s*0(\\.0*)?\\)$/.test(c) || /\\/\\s*0(\\.0*)?\\)$/.test(c);
       const visible = (el) => {
         const r = el.getBoundingClientRect();
         if (r.width < 4 || r.height < 4) return false;
-        for (let n = el, i = 0; n && n.nodeType === 1 && i < 8; n = n.parentElement, i++) {
-          const s = getComputedStyle(n);
-          if (s.visibility === 'hidden' || s.display === 'none' || parseFloat(s.opacity) < 0.1) return false;
+        const x = r.left + r.width / 2, y = r.top + r.height / 2;
+        if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
+        const own = getComputedStyle(el);
+        if (own.visibility !== 'visible' || clear(own.color) || clear(own.webkitTextFillColor || '')) return false;
+        let opacity = 1;
+        for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+          opacity *= parseFloat(getComputedStyle(n).opacity);
+          if (!(opacity >= 0.1)) return false;
         }
-        return true;
+        const hit = document.elementFromPoint(x, y);
+        if (hit === el) return true;
+        try { for (const l of (el.labels || [])) if (l === hit || l.contains(hit)) return true; } catch (e) {}
+        return false;
       };
-      const fieldsFor = (el) => {
+      // The form's recognised fields that are empty (a select always has a value) and visible.
+      const fillable = (el) => {
         const root = el.form || el.closest('form') || document;
-        return Array.from(root.querySelectorAll('input, select, textarea')).filter(f => kindOf(f) && visible(f));
+        return Array.from(root.querySelectorAll('input, select, textarea'))
+          .filter(f => kindOf(f) && (f.tagName === 'SELECT' || !f.value) && visible(f));
       };
+      // What the chip names, in this order.
+      const groupOf = {
+        name: 'name', givenName: 'name', familyName: 'name', email: 'email', tel: 'phone', organization: 'company',
+        streetAddress: 'address', addressLine1: 'address', addressLine2: 'address', city: 'address', region: 'address',
+        postalCode: 'address', country: 'address'
+      };
+      const groupOrder = ['name', 'email', 'phone', 'company', 'address'];
 
-      let host = null, chip = null, target = null, dismissed = false;
+      let host = null, chip = null, target = null, dismissed = false, offered = new Set();
       const hide = () => { if (host) host.style.setProperty('display', 'none', 'important'); target = null; };
       const place = () => {
         if (!host || !target) return;
@@ -205,9 +226,11 @@ public enum ContactAutofillScript {
         return true;
       };
       const fill = (from) => {
-        const fields = fieldsFor(from).filter(f => f.tagName === 'SELECT' ? true : !f.value);
-        const kinds = Array.from(new Set(fields.map(kindOf)));
+        // Hidden first, so the chip doesn't cover a field it would fill. Only what the chip named, and only fields
+        // still visible now.
         hide();
+        const fields = fillable(from).filter(f => offered.has(groupOf[kindOf(f)]));
+        const kinds = Array.from(new Set(fields.map(kindOf)));
         if (!kinds.length) return;
         Promise.resolve(handler.postMessage({ kinds })).then((values) => {
           if (!values || typeof values !== 'object') return;
@@ -219,8 +242,13 @@ public enum ContactAutofillScript {
       };
       document.addEventListener('focusin', (e) => {
         const el = e.target;
-        if (dismissed || !kindOf(el) || !visible(el)) { hide(); return; }
+        hide();
+        if (dismissed || !kindOf(el) || !visible(el)) return;
+        const groups = new Set(fillable(el).map(f => groupOf[kindOf(f)]));
+        offered = new Set(groupOrder.filter(g => groups.has(g)));
+        if (!offered.size) return;
         if (!host) makeChip();
+        chip.querySelector('.fill').textContent = 'Fill ' + Array.from(offered).join(', ');
         target = el;
         host.style.setProperty('display', 'block', 'important');
         place();

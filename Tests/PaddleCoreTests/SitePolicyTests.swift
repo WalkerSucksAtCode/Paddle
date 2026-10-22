@@ -10,12 +10,16 @@ struct SitePolicyTests {
         #expect(policy.zoom == 1 && policy.javaScript && policy.autoplay == .muted && policy.contentBlocking && policy.location == .ask)
     }
 
-    @Test func notificationsDefaultToAskAndMergePerField() {
+    /// Location and notification answers belong to their own host: a parent's answer doesn't cover a subdomain.
+    @Test func permissionAnswersCoverOnlyTheirOwnHost() {
         #expect(SitePolicy.defaults.notifications == .ask)
         var config = PaddleConfig()
         config.sites = ["example.com": SiteSettings(notifications: .allow), "docs.example.com": SiteSettings(location: .deny)]
         let docs = config.sitePolicy(forHost: "docs.example.com")
-        #expect(docs.notifications == .allow && docs.location == .deny)
+        #expect(docs.notifications == .ask && docs.location == .deny)
+        #expect(config.sitePolicy(forHost: "Example.COM.").notifications == .allow)
+        #expect(config.sitePolicy(forHost: "a.docs.example.com").location == .ask)
+        #expect(config.notificationPermissions == ["https://example.com": true, "http://example.com": true])
         #expect(config.sitePolicy(forHost: "other.test").notifications == .ask)
         #expect(SiteSettings.entry(nil, setting: .notifications, to: "allow") == ["notifications": "allow"])
         #expect(SiteSettings.entry(nil, setting: .notifications, to: "ask") == nil)
@@ -42,7 +46,8 @@ struct SitePolicyTests {
         #expect(docs.zoom == 1.5)
         #expect(docs.javaScript)
         #expect(docs.autoplay == .block)
-        #expect(docs.location == .allow)
+        #expect(docs.location == .ask)
+        #expect(config.sitePolicy(forHost: "docs.example.com").location == .allow)
         #expect(docs.contentBlocking)
         let www = config.sitePolicy(forHost: "WWW.Example.com.")
         #expect(!www.javaScript && www.location == .ask)

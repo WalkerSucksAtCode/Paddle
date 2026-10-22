@@ -434,8 +434,8 @@ final class WebEnvironment {
             source: ScrollRestoreScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page
         ))
 
-        // `contactAutofill`: the fill chip on name, email, phone and address fields. Pages loaded while it was off get
-        // it when they next load.
+        // `contactAutofill`: the fill chip on name, email, phone and address fields, in https main frames only. Pages
+        // loaded while it was off get it when they next load.
         if config.contactAutofill {
             if !didInstallContactAutofill {
                 didInstallContactAutofill = true
@@ -444,7 +444,7 @@ final class WebEnvironment {
                 )
             }
             contentController.addUserScript(WKUserScript(
-                source: ContactAutofillScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: false,
+                source: ContactAutofillScript.source, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
                 in: Self.contactAutofillWorld
             ))
         }
@@ -747,6 +747,11 @@ final class WebEnvironment {
             }
         }
         return line
+    }
+
+    /// Adds the block lists tabs use now to `controller`, for a web view with a controller of its own (Reader).
+    func addContentRules(to controller: WKUserContentController) {
+        for list in installedRuleLists.values { controller.add(list) }
     }
 
     /// Adds a list to the content controller now, so later page loads use it before the rest of the load is done.

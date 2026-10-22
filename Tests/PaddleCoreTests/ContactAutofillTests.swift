@@ -2,6 +2,56 @@ import Foundation
 import JavaScriptCore
 @testable import PaddleCore
 import Testing
+import WebKit
+
+@MainActor
+private final class AutofillPage: NSObject, WKNavigationDelegate, WKScriptMessageHandlerWithReply {
+    static let world = WKContentWorld.world(name: ContactAutofillScript.worldName)
+    let webView: WKWebView
+    private var loaded: CheckedContinuation<Void, Never>?
+
+    /// A web view with the page script as Paddle installs it, plus `__probe(id)`: the ids `fillable` returns for
+    /// that field's form.
+    override init() {
+        let config = WKWebViewConfiguration()
+        let probe = ContactAutofillScript.source.replacingOccurrences(
+            of: "window.__paddleContactAutofill = true;",
+            with: "window.__paddleContactAutofill = true; window.__probe = (id) => fillable(document.getElementById(id)).map(f => f.id);"
+        )
+        config.userContentController.addUserScript(WKUserScript(
+            source: probe, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: Self.world
+        ))
+        webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+        super.init()
+        config.userContentController.addScriptMessageHandler(self, contentWorld: Self.world, name: ContactAutofillScript.handlerName)
+        webView.navigationDelegate = self
+    }
+
+    func load(_ html: String, baseURL: String) async {
+        await withCheckedContinuation { continuation in
+            loaded = continuation
+            webView.loadHTMLString(html, baseURL: URL(string: baseURL))
+        }
+    }
+
+    func probe(_ id: String) async throws -> [String]? {
+        try await webView.callAsyncJavaScript(
+            "return window.__probe ? window.__probe(id) : null", arguments: ["id": id], in: nil, contentWorld: Self.world
+        ) as? [String]
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        loaded?.resume()
+        loaded = nil
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController, didReceive message: WKScriptMessage,
+        replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void
+    ) {
+        replyHandler(nil, nil)
+    }
+}
 
 struct ContactAutofillTests {
     private func classify(_ field: [String: String]) throws -> String? {
@@ -51,6 +101,37 @@ struct ContactAutofillTests {
         context.setObject(ContactAutofillScript.source, forKeyedSubscript: "src" as NSString)
         context.evaluateScript("new Function(src)")
         #expect(failure == nil)
+    }
+
+    /// In real WebKit, only fields a person can see get filled: not ones moved off screen, clipped, covered by other
+    /// content, faded out through their ancestors, with see-through text, below the window or already filled. A field
+    /// under its own label still counts.
+    @MainActor
+    @Test func onlyFieldsVisibleOnScreenAreFillable() async throws {
+        let page = AutofillPage()
+        let html = """
+        <style>* { box-sizing: border-box; margin: 0 } input { display: block; width: 200px; height: 24px }</style>
+        <form>
+          <input id="name" autocomplete="name">
+          <input id="email" type="email">
+          <input id="offscreen" autocomplete="tel" style="position: absolute; left: -9999px">
+          <div style="overflow: hidden; width: 10px; height: 10px"><input id="clipped" autocomplete="street-address" style="margin-left: 100px"></div>
+          <input id="covered" autocomplete="postal-code" style="position: absolute; top: 400px; left: 0">
+          <div style="position: absolute; top: 390px; left: 0; width: 300px; height: 50px; background: white"></div>
+          <div style="opacity: .3"><div style="opacity: .3"><input id="faded" autocomplete="organization"></div></div>
+          <input id="clear" autocomplete="address-level2" style="color: transparent">
+          <input id="below" autocomplete="country" style="position: absolute; top: 2000px">
+          <input id="filled" autocomplete="family-name" value="Lovelace">
+          <div style="position: relative"><input id="floated" autocomplete="address-level1">
+            <label for="floated" style="position: absolute; left: 0; top: 0; width: 200px; height: 24px">State</label></div>
+        </form>
+        """
+        await page.load(html, baseURL: "https://autofill.test/")
+        #expect(try await page.probe("name") == ["name", "email", "floated"])
+
+        // A plain-http page never gets the script.
+        await page.load(html, baseURL: "http://autofill.test/")
+        #expect(try await page.probe("name") == nil)
     }
 
     @Test func replyCarriesOnlyAskedForNonEmptyValues() {

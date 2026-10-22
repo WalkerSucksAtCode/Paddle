@@ -54,12 +54,12 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             mainFrameResponded = false
         }
 
-        // mailto:, zoommtg:, slack: ... hand off to the right app. A real click opens it; a script or redirect
-        // (a "Launch meeting" page) asks first, so pages can't launch apps unprompted.
+        // mailto:, zoommtg:, slack: ... hand off to the right app, asking first unless a real click opened a mail,
+        // message or call link (`openExternally`), so pages can't launch apps unprompted.
         if let scheme = url.scheme?.lowercased(), !Self.webSchemes.contains(scheme) {
             let clicked = byUser && navigationAction.navigationType == .linkActivated
             let requester = Self.requester(navigationAction) ?? webView.url?.host()
-            Task { await openExternally(url, ask: !clicked, requester: requester) }
+            Task { await openExternally(url, clicked: clicked, requester: requester) }
             return (.cancel, preferences)
         }
 
@@ -241,15 +241,21 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     private var isAskingToOpenApp = false
-    /// Sites whose "open app" request was cancelled in this tab; they aren't asked about again.
+    /// Sites whose scripted "open app" request was cancelled in this tab; their scripts aren't asked about again.
     private var refusedAppRequesters: Set<String> = []
+    /// "site scheme" pairs allowed in this tab; they open without asking again.
+    private var allowedAppRequests: Set<String> = []
+    /// Schemes a real click opens without asking: each starts a mail, message or call the user still sends.
+    private static let clickOpensSchemes: Set<String> = ["mailto", "tel", "sms", "facetime", "facetime-audio"]
 
-    /// Opens a non-web URL in the app that handles it. When a page rather than a click started it, Paddle asks,
-    /// names the site, and ignores requests from tabs that aren't showing.
-    private func openExternally(_ url: URL, ask: Bool, requester: String?) async {
+    /// Opens a non-web URL in the app that handles it. Paddle asks first, naming the site, the link and the app,
+    /// unless a real click opened a `clickOpensSchemes` link: `smb:` would otherwise mount a share (sending your
+    /// login to its server) and `ssh:` open Terminal on one click. Scripted requests from tabs that aren't showing are
+    /// ignored; an Open is remembered for that site and scheme while the tab lasts.
+    private func openExternally(_ url: URL, clicked: Bool, requester: String?) async {
         guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else {
             // Pages probe for installed apps with scripted navigations; only say "no app" for a click.
-            guard !ask else { return }
+            guard clicked else { return }
             let alert = NSAlert()
             alert.messageText = "No app can open this link"
             alert.informativeText = url.absoluteString
@@ -257,21 +263,25 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             _ = await present(alert)
             return
         }
-        if ask {
-            let site = requester ?? "This page"
-            guard let tab, tab.browser?.selectedID == tab.id, !isAskingToOpenApp, !refusedAppRequesters.contains(site) else { return }
+        let scheme = url.scheme?.lowercased() ?? ""
+        let site = requester ?? "This page"
+        let request = "\(site) \(scheme)"
+        if !(clicked && Self.clickOpensSchemes.contains(scheme)), !allowedAppRequests.contains(request) {
+            guard let tab, tab.browser?.selectedID == tab.id, !isAskingToOpenApp,
+                  clicked || !refusedAppRequesters.contains(site) else { return }
             isAskingToOpenApp = true
             defer { isAskingToOpenApp = false }
             let name = FileManager.default.displayName(atPath: app.path)
             let alert = NSAlert()
             alert.messageText = "Open “\(name)”?"
-            alert.informativeText = "\(site) wants to open a \(url.scheme ?? "") link in \(name)."
+            alert.informativeText = "\(site) wants to open a \(scheme) link in \(name):\n\(url.absoluteString.prefix(200))"
             alert.addButton(withTitle: "Open")
             alert.addButton(withTitle: "Cancel")
             guard await present(alert) == .alertFirstButtonReturn else {
-                refusedAppRequesters.insert(site)
+                if !clicked { refusedAppRequesters.insert(site) }
                 return
             }
+            allowedAppRequests.insert(request)
         }
         NSWorkspace.shared.open(url)
     }
@@ -615,11 +625,11 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         // Popups (including sign-in windows) become tabs. Returning WebKit's own configuration keeps
         // window.opener working, which OAuth flows need.
         guard let tab, let browser = tab.browser else { return nil }
-        // window.open("mailto:...") opens the mail app instead of an empty tab, asking unless a real click did it.
+        // window.open("mailto:...") opens the mail app instead of an empty tab, asking as a link does.
         if let url = navigationAction.request.url, let scheme = url.scheme?.lowercased(), !Self.webSchemes.contains(scheme) {
-            let ask = !Self.isUserInitiated(navigationAction)
+            let clicked = Self.isUserInitiated(navigationAction)
             let requester = Self.requester(navigationAction) ?? webView.url?.host()
-            Task { await openExternally(url, ask: ask, requester: requester) }
+            Task { await openExternally(url, clicked: clicked, requester: requester) }
             return nil
         }
         // The same split as in navigation policy. An extension page opening a web page gets an ordinary tab. Its own
@@ -847,14 +857,15 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         }
         // Granted per device, so allowing camera and microphone also covers a later microphone-only request. Only
         // grants are kept: a refused site asks again next time.
-        let site = Self.site(of: origin)
+        let top = Self.embeddingHost(of: origin, frame: frame, in: webView)
+        let site = Self.site(of: origin, embeddedIn: top)
         let app = AppModel.shared
         let isPrivate = tab?.isPrivate ?? true
         let profile = tab?.profileID ?? ProfileStore.defaultID
         if app[permissionsFor: isPrivate, profile: profile].allows(site: site, kinds: devices) { return .grant }
 
         let alert = NSAlert()
-        alert.messageText = "Allow \(origin.host) to use your \(devices.map(\.rawValue).joined(separator: " and "))?"
+        alert.messageText = "Allow \(Self.requesterName(origin.host, embeddedIn: top)) to use your \(devices.map(\.rawValue).joined(separator: " and "))?"
         alert.informativeText = "If you allow, Paddle won’t ask again for this site until it quits."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
@@ -865,9 +876,22 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         return allowed ? .grant : .deny
     }
 
-    /// `https://example.com:443`: the key session answers for capture and location use.
-    private static func site(of origin: WKSecurityOrigin) -> String {
-        "\(origin.protocol)://\(origin.host):\(origin.port)"
+    /// `https://example.com:443`: the key session answers use. An embedded frame from another host (`embeddedIn`, the
+    /// top page's host) gets `#in:<top host>` added, so allowing it on one site doesn't allow it on every site that
+    /// embeds it; `SessionPermissions.Answer.host` still reads the frame's host from the key.
+    private static func site(of origin: WKSecurityOrigin, embeddedIn top: String? = nil) -> String {
+        "\(origin.protocol)://\(origin.host):\(origin.port)" + (top.map { "#in:\($0)" } ?? "")
+    }
+
+    /// The top page's host when `frame` is an embedded frame from another host; nil for the page itself.
+    private static func embeddingHost(of origin: WKSecurityOrigin, frame: WKFrameInfo, in webView: WKWebView) -> String? {
+        guard !frame.isMainFrame, let top = webView.url?.host(), !top.isEmpty, top != origin.host else { return nil }
+        return top
+    }
+
+    /// "maps.example" or, for an embedded frame, "maps.example (in news.example)"; "this page" without a host.
+    private static func requesterName(_ host: String, embeddedIn top: String?) -> String {
+        (host.isEmpty ? "this page" : host) + (top.map { " (in \($0))" } ?? "")
     }
 
     /// Geolocation: `sites.<host>.location` allow or deny answers without asking. Otherwise Paddle asks once per
@@ -885,11 +909,13 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         case .deny: return .deny
         case .ask: break
         }
+        let top = Self.embeddingHost(of: origin, frame: frame, in: webView)
         let allowed = await askSitePermission(
             .location,
             field: .location,
             origin: origin,
-            question: "Allow \(host.isEmpty ? "this page" : host) to use your location?"
+            embeddedIn: top,
+            question: "Allow \(Self.requesterName(host, embeddedIn: top)) to use your location?"
         )
         return allowed ? .grant : .deny
     }
@@ -929,16 +955,18 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// The Allow / Don't Allow prompt behind location and notifications. An answer already given for this origin and
     /// kind this run comes back without asking; else the prompt shows (a sheet, one at a time per window). "Remember
-    /// for <host>", offered outside private windows, also writes `field` for the host as "allow" or "deny".
+    /// for <host>", offered outside private windows and not to a frame embedded from another host (that would answer
+    /// for it on every site), also writes `field` for the host as "allow" or "deny".
     private func askSitePermission(
         _ kind: SessionPermissions.Kind,
         field: SiteSettings.Field,
         origin: WKSecurityOrigin,
+        embeddedIn top: String? = nil,
         question: String
     ) async -> Bool {
         let app = AppModel.shared
         let host = origin.host
-        let site = Self.site(of: origin)
+        let site = Self.site(of: origin, embeddedIn: top)
         let isPrivate = tab?.isPrivate ?? true
         let profile = tab?.profileID ?? ProfileStore.defaultID
         if let answer = app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: kind) { return answer }
@@ -948,7 +976,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         alert.informativeText = "Paddle won’t ask again for this site until it quits."
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
-        if !isPrivate, !host.isEmpty {
+        if !isPrivate, !host.isEmpty, top == nil {
             alert.showsSuppressionButton = true
             alert.suppressionButton?.title = "Remember for \(host)"
             alert.suppressionButton?.state = .off

@@ -302,26 +302,35 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             NSWorkspace.shared.open(url)
             return
         }
+        // Each export gets a new folder of its own, so nothing already on disk is replaced or removed. The URL's last
+        // component arrives percent-decoded (`x%2F..%2F..` is `x/../..`), so it is cleaned like a title first.
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Paddle Preview", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fallbackName = Self.fileName(for: tab) + ".pdf"
         Task {
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            } catch {
+                return
+            }
             do {
                 // Ephemeral: URLSession.shared caches on disk and keeps cookies, which a private window's PDF must not
                 // leave behind. (It never had the tab's cookies, so a PDF behind a login comes from the fallback below.)
                 let session = URLSession(configuration: .ephemeral)
                 defer { session.finishTasksAndInvalidate() }
                 let (tempURL, _) = try await session.download(from: url)
-                let filename = url.lastPathComponent.isEmpty ? (Self.fileName(for: tab) + ".pdf") : url.lastPathComponent
-                let destination = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-                try? FileManager.default.removeItem(at: destination)
+                let destination = folder.appendingPathComponent(Self.pdfFileName(url.lastPathComponent) ?? fallbackName)
                 try FileManager.default.moveItem(at: tempURL, to: destination)
-                NSWorkspace.shared.open(destination)
+                Self.openInPreview(destination)
             } catch {
                 if let webView = tab.webView {
                     let config = WKPDFConfiguration()
                     webView.createPDF(configuration: config) { result in
                         if case .success(let data) = result {
-                            let destination = FileManager.default.temporaryDirectory.appendingPathComponent(Self.fileName(for: tab) + ".pdf")
-                            try? data.write(to: destination)
-                            NSWorkspace.shared.open(destination)
+                            let destination = folder.appendingPathComponent(fallbackName)
+                            guard (try? data.write(to: destination)) != nil else { return }
+                            Self.openInPreview(destination)
                         }
                     }
                 }
@@ -378,10 +387,33 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     /// A file name from the page title (or host), without characters Finder or the shell trip over.
     private static func fileName(for tab: Tab) -> String {
-        let raw = tab.title.isEmpty ? (tab.url?.host() ?? "Page") : tab.title
+        let cleaned = cleanedFileName(tab.title.isEmpty ? (tab.url?.host() ?? "Page") : tab.title)
+        return cleaned.isEmpty ? "Page" : cleaned
+    }
+
+    /// `name` (a URL's decoded last component) as a file name that stays in its folder and ends in `.pdf`, so the
+    /// file can't become a `.command` or `.terminal`; nil when nothing usable is left.
+    private static func pdfFileName(_ name: String) -> String? {
+        let cleaned = cleanedFileName(name)
+        guard !cleaned.isEmpty else { return nil }
+        return cleaned.lowercased().hasSuffix(".pdf") ? cleaned : cleaned + ".pdf"
+    }
+
+    /// `raw` with path separators and newlines turned into dashes and no leading dots (no hidden file, no `..`), at
+    /// most 120 characters. May be empty.
+    private static func cleanedFileName(_ raw: String) -> String {
         let cleaned = raw.components(separatedBy: CharacterSet(charactersIn: "/:\\\0").union(.newlines)).joined(separator: "-")
             .trimmingCharacters(in: .whitespaces)
-        return String((cleaned.isEmpty ? "Page" : cleaned).prefix(120))
+        return String(cleaned.drop { $0 == "." }.prefix(120)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Opens a downloaded PDF in Preview itself rather than whatever app claims the file.
+    private static func openInPreview(_ file: URL) {
+        guard let preview = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview") else {
+            NSWorkspace.shared.open(file)
+            return
+        }
+        NSWorkspace.shared.open([file], withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration())
     }
 
     // MARK: - View

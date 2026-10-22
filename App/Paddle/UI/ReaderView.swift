@@ -207,6 +207,10 @@ private struct ReaderContentWebView: NSViewRepresentable {
         WebEnvironment.configureProcessIdentity(config, displayName: "Paddle Reader", isPrivate: isPrivate)
         config.websiteDataStore = dataStore
         config.preferences.minimumFontSize = 12
+        // The article is the page's own markup, shown at the page's address: none of its scripts run, and its images
+        // go through the same block lists as the tab.
+        config.defaultWebpagePreferences.allowsContentJavaScript = false
+        AppModel.shared.web.addContentRules(to: config.userContentController)
         let webView = WKWebView(frame: .zero, configuration: config)
         PrivateAPI.setValue(false, forKey: "drawsBackground", on: webView)
         updateHTML(in: webView)

@@ -164,11 +164,13 @@ public enum PaddleBridgeTools {
 
     /// config.json keys only Settings or the file itself can change: the bridge's own switch, which extensions run
     /// (they can read cookies) and whether in private windows, where searches (private ones too) are sent, where
-    /// downloads are saved and whether Paddle asks first (with open_url, any folder would get a file), and the
-    /// per-site permissions, HTTPS upgrade and fraud warnings.
+    /// downloads are saved and whether Paddle asks first (with open_url, any folder would get a file), the per-site
+    /// permissions, HTTPS upgrade and fraud warnings, content blocking and which lists (and their scriptlets) run in
+    /// pages, and whether pages are offered the saved contact card.
     public static let settingsOnlyConfigKeys: Set<String> = [
         "controlBridge", "controlBridgeScripts", "extensions", "extensionsInPrivate", "extensionCompat", "searchTemplate",
         "searchSuggestTemplate", "downloadFolder", "askWhereToDownload", "sites", "httpsOnly", "fraudWarnings",
+        "contentBlocking", "filterLists", "scriptlets", "trustedLists", "contactAutofill",
     ]
 
     public static let all: [MCPTool] = [

@@ -6,7 +6,8 @@ import os
 /// Temporary instrumentation: AppKit and SwiftUI swallow some exceptions, and an exception unwinding through a
 /// running main-actor job leaves Swift's current-executor record pointing into a dead stack frame; the crash then
 /// comes later in an unrelated isolation check. Each entry goes to the log (fault level, kept on disk) and to
-/// `~/Library/Logs/Paddle/exceptions.log`, which moves to `exceptions.log.1` once it passes 5 MB.
+/// `~/Library/Logs/Paddle/exceptions.log`, which moves to `exceptions.log.1` once it passes 5 MB. Addresses in the
+/// reason are written as `<url>`: a reason can quote a page's URL, a private window's included.
 nonisolated enum ExceptionLog {
     private static let log = Logger(subsystem: "com.walker.Paddle", category: "exception")
     nonisolated(unsafe) private static var previous: objc_exception_preprocessor?
@@ -31,7 +32,7 @@ nonisolated enum ExceptionLog {
     private static func record(_ object: Any?) {
         let exception = object as? NSException
         let name = exception?.name.rawValue ?? String(describing: type(of: object))
-        let reason = exception?.reason ?? ""
+        let reason = (exception?.reason ?? "").replacing(#/[A-Za-z][A-Za-z0-9+.-]*://\S+/#, with: "<url>")
         let stack = Thread.callStackSymbols.dropFirst(2).prefix(40).joined(separator: "\n")
         let thread = Thread.isMainThread ? "main" : "background"
         log.fault("exception \(name, privacy: .public) on \(thread, privacy: .public): \(reason, privacy: .public)\n\(stack, privacy: .public)")

@@ -59,9 +59,18 @@ public struct SitePolicy: Sendable, Equatable {
 }
 
 extension PaddleConfig {
-    /// The effective settings for `host` (see `SitePolicy`).
+    /// The effective settings for `host` (see `SitePolicy`). Location and notification answers are the exception: they
+    /// come only from `host`'s own entry, as browsers keep permissions per origin, so an answer for example.com doesn't
+    /// also answer for every subdomain of it.
     public func sitePolicy(forHost host: String, systemIsDark: Bool = false) -> SitePolicy {
-        SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom, defaultDarkMode: defaultDarkMode(systemIsDark: systemIsDark))
+        var policy = SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom, defaultDarkMode: defaultDarkMode(systemIsDark: systemIsDark))
+        let normalized = PaddleConfig.normalizedHost(host)
+        let own = siteSettingsKeys(forHost: host)
+            .filter { PaddleConfig.normalizedHost($0) == normalized }
+            .reduce(SiteSettings()) { merged, key in merged.overlaid(with: sites[key] ?? SiteSettings()) }
+        policy.location = own.location ?? .ask
+        policy.notifications = own.notifications ?? .ask
+        return policy
     }
 
     /// Hosts with `sites.<host>.contentBlocking: false`, for block-list exceptions (`SharedExceptions`) and
