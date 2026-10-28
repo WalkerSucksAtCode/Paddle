@@ -183,19 +183,20 @@ struct ExtensionsPane: View {
             icon(summary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary.displayName).font(.headline)
-                HStack(spacing: 4) {
-                    if !summary.version.isEmpty { Text("Version \(summary.version) ·") }
-                    Label(state.text, systemImage: state.symbol)
-                    Text("·")
-                    Label(origin.text, systemImage: origin.symbol)
-                    if let result {
-                        Text("·")
-                        Label(result.text, systemImage: result.symbol)
+                // Two lines of wrapping text, so the source and the last result stay readable in a half-width column.
+                let tail: Text = result.map { Text("  ·  \(Image(systemName: $0.symbol)) \($0.text)") } ?? Text("")
+                VStack(alignment: .leading, spacing: 1) {
+                    if summary.version.isEmpty {
+                        Text("\(Image(systemName: state.symbol)) \(state.text)")
+                    } else {
+                        Text("Version \(summary.version)  ·  \(Image(systemName: state.symbol)) \(state.text)")
                     }
+                    Text("\(Image(systemName: origin.symbol)) \(origin.text)\(tail)")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
                 .help([state.text, origin.text, result?.text].compactMap { $0 }.joined(separator: ". "))
             }
             Spacer(minLength: 8)
