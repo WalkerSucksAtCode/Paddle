@@ -69,12 +69,7 @@ struct ExtensionsPane: View {
             }
             .disabled(model.controlsDisabled)
             }
-            if isDefaultProfile {
-                Section {
-                    ConfigToggle("Update store extensions automatically", .extensionUpdates, \.extensionUpdates, model: model,
-                                 help: "Checks extensions installed from the Chrome Web Store or addons.mozilla.org once a day. Extensions > Check for Extension Updates works either way.")
-                }
-            }
+            updatesSection
             Section {
                 LabeledContent("Extension pages' memory") {
                     Text(memory.total > 0 ? ProcessMemory.format(memory.total) : "None open now")
@@ -95,6 +90,7 @@ struct ExtensionsPane: View {
             }
         }
         .task {
+            StoreInstaller.shared.reloadSources()
             while !Task.isCancelled {
                 memory = ExtensionMemory.sample()
                 try? await Task.sleep(for: .seconds(5))
@@ -102,10 +98,87 @@ struct ExtensionsPane: View {
         }
     }
 
-    /// The always-visible line: icon, name, "Version X · status" and the load switch on the right.
+    /// Updates for every profile (updates are per folder): Check All Now, when it last ran, and, on the default profile
+    /// only (as before, the setting is config.json's), the automatic-update switch.
+    @ViewBuilder private var updatesSection: some View {
+        let updater = ExtensionUpdater.shared
+        let _ = StoreInstaller.shared.sources
+        Section("Updates") {
+            HStack {
+                Button {
+                    Task { await updater.checkAllNow() }
+                } label: {
+                    Label("Check All Now", systemImage: "arrow.clockwise")
+                }
+                .disabled(updater.busy)
+                .help("Checks every extension installed from a store, and offers to keep hand-installed add-ons updated, now. Extensions > Check for Extension Updates does the same with a summary.")
+                if updater.checking || updater.adopting {
+                    ProgressView().controlSize(.small).accessibilityLabel("Checking for updates")
+                }
+                if let note = updater.note {
+                    Label(note, systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(note)
+                }
+            }
+            LabeledContent("Last checked") { Text(lastCheckedText) }
+                .help("The newest check among the extensions installed from a store.")
+            if isDefaultProfile {
+                ConfigToggle("Update store extensions automatically", .extensionUpdates, \.extensionUpdates, model: model,
+                             help: "Checks extensions installed from the Chrome Web Store or addons.mozilla.org once a day. Extensions > Check for Extension Updates works either way.")
+            }
+        }
+    }
+
+    private var lastCheckedText: String {
+        let dates = StoreInstaller.shared.allRecords.values
+            .filter { $0.store == .chromeWebStore || $0.store == .mozillaAddons }
+            .compactMap(\.lastCheck)
+        guard let newest = dates.max() else { return "Never" }
+        return newest.formatted(.relative(presentation: .named))
+    }
+
+    /// Where a folder updates from, as an icon plus words.
+    private func source(_ folder: String) -> (text: String, symbol: String) {
+        switch StoreInstaller.shared.record(forFolder: folder)?.store {
+        case .mozillaAddons: ("Updates from addons.mozilla.org", "arrow.triangle.2.circlepath")
+        case .chromeWebStore: ("Updates from the Chrome Web Store", "arrow.triangle.2.circlepath")
+        default: ("Not tracked for updates", "minus.circle")
+        }
+    }
+
+    private func isTracked(_ folder: String) -> Bool {
+        let store = StoreInstaller.shared.record(forFolder: folder)?.store
+        return store == .chromeWebStore || store == .mozillaAddons
+    }
+
+    /// The last update result for a folder, as an icon plus words (never colour alone).
+    private func lastResult(_ folder: String) -> (text: String, symbol: String)? {
+        guard let text = ExtensionUpdater.shared.statuses[folder] else { return nil }
+        let symbol: String
+        if text.hasPrefix("updated") || text.hasPrefix("up to date") { symbol = "checkmark.circle" }
+        else if text.contains("waiting for permission") { symbol = "hourglass" }
+        else if text.contains("declined") { symbol = "hand.raised" }
+        else { symbol = "exclamationmark.triangle" }
+        return (text.prefix(1).uppercased() + text.dropFirst(), symbol)
+    }
+
+    /// The add-on id of an untracked folder's manifest, when it has one (it may be kept updated).
+    private func geckoID(_ summary: ExtensionFolderSummary) -> String? {
+        let root = summary.root ?? Paths.extensions.appendingPathComponent(summary.folder, isDirectory: true)
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("manifest.json")) else { return nil }
+        return ExtensionAdoption.geckoID(manifest: data)
+    }
+
+    /// The always-visible line: icon, name, "Version X · status · source · last result", the check button and the load switch.
     @ViewBuilder private func row(_ summary: ExtensionFolderSummary) -> some View {
         let enabled = host.isEnabled(summary.folder, config: model.file)
         let state = status(summary, enabled: enabled)
+        let origin = source(summary.folder)
+        let result = lastResult(summary.folder)
+        let updater = ExtensionUpdater.shared
         HStack(spacing: 10) {
             icon(summary)
             VStack(alignment: .leading, spacing: 2) {
@@ -113,13 +186,32 @@ struct ExtensionsPane: View {
                 HStack(spacing: 4) {
                     if !summary.version.isEmpty { Text("Version \(summary.version) ·") }
                     Label(state.text, systemImage: state.symbol)
+                    Text("·")
+                    Label(origin.text, systemImage: origin.symbol)
+                    if let result {
+                        Text("·")
+                        Label(result.text, systemImage: result.symbol)
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .help(state.text)
+                .help([state.text, origin.text, result?.text].compactMap { $0 }.joined(separator: ". "))
             }
             Spacer(minLength: 8)
+            if isTracked(summary.folder) {
+                if updater.checkingFolders.contains(summary.folder) {
+                    ProgressView().controlSize(.small).accessibilityLabel("Checking \(summary.displayName) for an update")
+                }
+                Button {
+                    Task { await updater.checkNow(folder: summary.folder) }
+                } label: {
+                    Label("Check for Update", systemImage: "arrow.clockwise")
+                }
+                .controlSize(.small)
+                .disabled(updater.busy)
+                .help("Checks addons.mozilla.org or the Chrome Web Store for a newer version of \(summary.displayName) now.")
+            }
             Toggle("Load \(summary.displayName)", isOn: Binding(
                 get: { enabled },
                 set: { [profileID] on in run(summary.folder) { await model.setExtension(summary.folder, enabled: on, profile: profileID) } }
@@ -138,6 +230,27 @@ struct ExtensionsPane: View {
     @ViewBuilder private func details(_ summary: ExtensionFolderSummary) -> some View {
         let enabled = host.isEnabled(summary.folder, config: model.file)
         LabeledContent("Folder") { Text(summary.folder) }
+
+        let origin = source(summary.folder)
+        LabeledContent("Source") { Label(origin.text, systemImage: origin.symbol) }
+        let record = StoreInstaller.shared.record(forFolder: summary.folder)
+        if record?.adopted == true {
+            LabeledContent("Updates") {
+                Button("Stop Updating") {
+                    run(summary.folder) { _ = StoreInstaller.shared.stopUpdating(folder: summary.folder) }
+                }
+                .disabled(ExtensionUpdater.shared.busy || busy.contains(summary.folder))
+                .help("Removes this folder's update record; Paddle won't offer to keep it updated again. The next update, if you keep it, asks again.")
+            }
+        } else if record == nil, geckoID(summary) != nil {
+            LabeledContent("Updates") {
+                Button("Keep Updated") {
+                    run(summary.folder) { await ExtensionUpdater.shared.adoptNow(folder: summary.folder) }
+                }
+                .disabled(ExtensionUpdater.shared.busy || busy.contains(summary.folder))
+                .help("Installed by hand and not updated. Paddle looks the add-on up on addons.mozilla.org and, if it matches, checks it daily.")
+            }
+        }
 
         if summary.isLoaded {
             LabeledContent("Memory") { Text(memoryText(summary.folder)) }

@@ -129,4 +129,35 @@ struct ExtensionSourcesDeclinedVersionTests {
         let older = Data(#"{"sample":{"store":"chromeWebStore","id":"mnjggcdmjocbbbhaepdhchncahnbgone","version":"1.0","fileHashes":{}}}"#.utf8)
         #expect(try ExtensionSources.decode(older).records["sample"]?.declinedVersion == nil)
     }
+
+    @Test func adoptionFieldsRoundTripAndOldFilesDecode() throws {
+        var sources = ExtensionSources()
+        sources.adopt(folder: "protonpass", guid: "{abc}", slug: "proton-pass", version: "1.2", fileHashes: ["manifest.json": "aa"], now: Date(timeIntervalSince1970: 1_791_000_000.5))
+        sources.declineAdoption(folder: "other")
+        let back = try ExtensionSources.decode(try sources.encoded())
+        #expect(back == sources)
+        #expect(back.declinedAdoption == ["other"])
+        let record = try #require(back.records["protonpass"])
+        #expect(record.adopted == true && record.store == .mozillaAddons && record.id == "{abc}" && record.slug == "proton-pass")
+        #expect(record.version == "1.2" && record.verified == nil && record.lastCheck == nil && record.fileHashes == ["manifest.json": "aa"])
+        let old = try ExtensionSources.decode(Data(#"{"a":{"store":"mozillaAddons","id":"x@y"}}"#.utf8))
+        #expect(old.declinedAdoption == nil && old.records["a"]?.adopted == nil)
+        let text = String(decoding: try old.encoded(), as: UTF8.self)
+        #expect(!text.contains("declinedAdoption") && !text.contains("adopted"))
+    }
+
+    @Test func declineAndStopAreIdempotentAndAdoptClearsTheDecline() throws {
+        var sources = ExtensionSources()
+        sources.declineAdoption(folder: "x")
+        sources.declineAdoption(folder: "x")
+        #expect(sources.declinedAdoption == ["x"] && sources.hasDeclinedAdoption("x"))
+        sources.adopt(folder: "x", guid: "g@h", slug: nil, version: nil, fileHashes: [:], now: .now)
+        #expect(sources.declinedAdoption == nil && !sources.hasDeclinedAdoption("x"))
+        let stopped = sources.stopAdopted(folder: "x")
+        #expect(stopped)
+        #expect(sources.records["x"] == nil && sources.hasDeclinedAdoption("x"))
+        sources.records["s"] = .init(store: .mozillaAddons, id: "s@t")
+        let stoppedStore = sources.stopAdopted(folder: "s")
+        #expect(!stoppedStore && sources.records["s"] != nil)
+    }
 }

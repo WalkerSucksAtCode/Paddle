@@ -26,11 +26,16 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
         /// The addons.mozilla.org slug the install link named, so the store page's link matches this record. Absent for
         /// Chrome Web Store installs and for records written before it was recorded.
         public var slug: String?
+        /// True for a hand-installed add-on the user chose to keep updated; its first update always asks. Absent
+        /// otherwise, and cleared (absent) by the first update.
+        public var adopted: Bool?
 
         public init(
             store: Persona.Source, id: String, version: String? = nil, installedAt: Date? = nil, lastCheck: Date? = nil,
-            fileHashes: [String: String] = [:], verified: Bool? = nil, declinedVersion: String? = nil, slug: String? = nil
+            fileHashes: [String: String] = [:], verified: Bool? = nil, declinedVersion: String? = nil, slug: String? = nil,
+            adopted: Bool? = nil
         ) {
+            self.adopted = adopted
             self.store = store
             self.id = id
             self.version = version
@@ -53,22 +58,94 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
             verified = try c.decodeIfPresent(Bool.self, forKey: .verified)
             declinedVersion = try c.decodeIfPresent(String.self, forKey: .declinedVersion)
             slug = try c.decodeIfPresent(String.self, forKey: .slug)
+            adopted = try c.decodeIfPresent(Bool.self, forKey: .adopted)
         }
     }
 
     public var records: [String: Record]
+    /// Folder names whose hand-installed add-on the user said no to (Not Now, Stop Updating); they are not offered
+    /// again. Stored under the top-level key `declinedAdoption`; absent (nil) until there is one.
+    public var declinedAdoption: [String]?
 
-    public init(records: [String: Record] = [:]) {
+    /// The top-level key that holds `declinedAdoption` instead of a folder's record.
+    public static let declinedKey = "declinedAdoption"
+
+    public init(records: [String: Record] = [:], declinedAdoption: [String]? = nil) {
         self.records = records
+        self.declinedAdoption = declinedAdoption
     }
 
     public init(from decoder: any Decoder) throws {
-        records = try decoder.singleValueContainer().decode([String: Record].self)
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        var records: [String: Record] = [:]
+        var declined: [String]?
+        for key in c.allKeys {
+            if key.stringValue == Self.declinedKey {
+                declined = try c.decode([String].self, forKey: key)
+            } else {
+                records[key.stringValue] = try c.decode(Record.self, forKey: key)
+            }
+        }
+        self.records = records
+        declinedAdoption = declined
     }
 
     public func encode(to encoder: any Encoder) throws {
-        var c = encoder.singleValueContainer()
-        try c.encode(records)
+        var c = encoder.container(keyedBy: AnyKey.self)
+        for (folder, record) in records where folder != Self.declinedKey {
+            try c.encode(record, forKey: AnyKey(folder))
+        }
+        if let declinedAdoption { try c.encode(declinedAdoption, forKey: AnyKey(Self.declinedKey)) }
+    }
+
+    private struct AnyKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(_ string: String) { stringValue = string }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    /// Whether `folder` was declined for adoption.
+    public func hasDeclinedAdoption(_ folder: String) -> Bool {
+        declinedAdoption?.contains(folder) ?? false
+    }
+
+    /// Adds `folder` to the declined list (once).
+    public mutating func declineAdoption(folder: String) {
+        var list = declinedAdoption ?? []
+        if !list.contains(folder) { list.append(folder) }
+        declinedAdoption = list
+    }
+
+    /// Removes `folder` from the declined list; the list becomes absent when empty.
+    public mutating func clearDeclinedAdoption(folder: String) {
+        guard var list = declinedAdoption else { return }
+        list.removeAll { $0 == folder }
+        declinedAdoption = list.isEmpty ? nil : list
+    }
+
+    /// Records a hand-installed add-on as tracked: addons.mozilla.org, `guid` as id, the lookup's `slug`, the installed
+    /// manifest `version` and the hashes of the folder's current files (`StoreInstall.fileHashes`), unverified, adopted.
+    /// Clears the folder from the declined list. `lastCheck` stays absent so the first check is due at once.
+    public mutating func adopt(
+        folder: String, guid: String, slug: String?, version: String?, fileHashes: [String: String], now: Date
+    ) {
+        let now = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
+        records[folder] = Record(
+            store: .mozillaAddons, id: guid, version: version, installedAt: now, lastCheck: nil, fileHashes: fileHashes,
+            verified: nil, slug: slug, adopted: true
+        )
+        clearDeclinedAdoption(folder: folder)
+    }
+
+    /// Drops an adopted folder's record and keeps it from being offered again. Returns false (changing nothing) when
+    /// the folder has no adopted record.
+    public mutating func stopAdopted(folder: String) -> Bool {
+        guard records[folder]?.adopted == true else { return false }
+        records[folder] = nil
+        declineAdoption(folder: folder)
+        return true
     }
 
     /// Records an install or update into `folder`, replacing what was there. `installedAt` and `lastCheck` are

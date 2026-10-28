@@ -319,6 +319,61 @@ final class StoreInstaller {
         }
     }
 
+    // MARK: - Adoption of hand-installed add-ons
+
+    /// Records the hand-installed folder as tracked (`ExtensionSources.adopt`): the add-on `guid` must be the gecko id of
+    /// the folder's manifest. The file hashes are those an install records, taken from the folder as it is now. Returns
+    /// the reason it failed, or nil when the record is written.
+    func adopt(folder: String, guid: String, slug: String?) async -> String? {
+        reloadSources()
+        if let problem = sourcesError { return problem }
+        guard sources.records[folder] == nil else { return "it already has an update record" }
+        let url = Paths.extensions.appending(path: folder, directoryHint: .isDirectory)
+        guard let manifestData = try? Data(contentsOf: url.appending(path: "manifest.json")),
+              ExtensionAdoption.geckoID(manifest: manifestData) == guid else {
+            return "the folder's manifest doesn't name the add-on's id"
+        }
+        let version = ((try? JSONSerialization.jsonObject(with: manifestData)) as? [String: Any])?["version"] as? String
+        guard let hashes = await Task.detached(priority: .userInitiated, operation: { try? StoreInstall.fileHashes(in: url) }).value else {
+            return "its files couldn't be read"
+        }
+        reloadSources()
+        if let problem = sourcesError { return problem }
+        guard sources.records[folder] == nil, FileManager.default.fileExists(atPath: url.path) else {
+            return "the folder changed meanwhile"
+        }
+        var updated = sources
+        updated.adopt(folder: folder, guid: guid, slug: slug, version: version, fileHashes: hashes, now: Date())
+        do {
+            try writeSources(updated)
+        } catch {
+            return "extension-sources.json couldn't be written (\(error.localizedDescription))"
+        }
+        return nil
+    }
+
+    /// Adds `folder` to `declinedAdoption` so it isn't offered again. Returns false when the file couldn't be written.
+    @discardableResult
+    func declineAdoption(folder: String) -> Bool {
+        reloadSources()
+        guard sourcesError == nil else { return false }
+        var updated = sources
+        updated.declineAdoption(folder: folder)
+        do { try writeSources(updated) } catch { return false }
+        return true
+    }
+
+    /// Stop Updating: removes an adopted folder's record and adds it to `declinedAdoption`. Returns false when it isn't
+    /// an adopted folder or the file couldn't be written.
+    func stopUpdating(folder: String) -> Bool {
+        reloadSources()
+        guard sourcesError == nil else { return false }
+        var updated = sources
+        guard updated.stopAdopted(folder: folder) else { return false }
+        do { try writeSources(updated) } catch { return false }
+        return true
+    }
+
     /// Downloads the Chrome Web Store package for `id`, checks Google's signature, the developer's key and the ZIP, and
     /// unpacks it into `staging`.
     func fetchChrome(id: String, staging: URL, scratch: URL) async throws -> Checked {
