@@ -35,11 +35,12 @@ public enum ExtensionPermissionDiff {
     /// as granted. Empty means the version asks for nothing the user hasn't granted, so it can swap in without a question.
     /// `name` is the extension's display name as a load compares it; a different name means nothing was granted.
     public static func asks(
-        requested: Requests, added: Requests, decisions: ExtensionDecisions, folder: String, name: String
+        requested: Requests, added: Requests, decisions: ExtensionDecisions, folder: String, name: String,
+        identity: String? = nil
     ) -> Requests {
-        let undecided = decisions.undecided(folder: folder, name: name, permissions: requested.permissions, hosts: requested.hosts)
+        let undecided = decisions.undecided(folder: folder, name: name, identity: identity, permissions: requested.permissions, hosts: requested.hosts)
         var granted: Requests = ([], [])
-        if let snapshot = decisions.byFolder[folder], snapshot.name == name {
+        if let snapshot = decisions.byFolder[folder], snapshot.applies(name: name, identity: identity) {
             granted.permissions = Set(snapshot.permissions.filter { $0.value == .allow }.keys)
             granted.hosts = Set(snapshot.hosts.filter { $0.value != .deny }.keys)
         }

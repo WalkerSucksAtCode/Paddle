@@ -10,6 +10,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     let model: BrowserModel
     /// Ends address editing on a click outside the field and its suggestions (`endAddressEditing(after:)`).
     private var clickMonitor: Any?
+    /// This window's private-tab Open in Preview folders: deleted at the next export and when the window closes.
+    private var privatePreviewFolders: [URL] = []
 
     init(record: WindowRecord?, isPrivate: Bool = false, extensionsAllowed: Bool = true, profile: String = ProfileStore.defaultID) {
         model = BrowserModel(isPrivate: isPrivate, extensionsAllowed: extensionsAllowed, profile: profile)
@@ -166,6 +168,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
+        removePrivatePreviewFolders()
         // The preview first, so extensions hear it closed while the window is still theirs.
         model.closePreview()
         model.extensionHost?.windowClosing(self)
@@ -302,40 +305,50 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             NSWorkspace.shared.open(url)
             return
         }
+        // Leftovers go first: export folders older than a day, and this window's earlier private exports.
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Paddle Preview", isDirectory: true)
+        let isPrivate = tab.isPrivate
+        PreviewExport.removeStaleFolders(in: root)
+        if isPrivate { removePrivatePreviewFolders() }
         // Each export gets a new folder of its own, so nothing already on disk is replaced or removed. The URL's last
         // component arrives percent-decoded (`x%2F..%2F..` is `x/../..`), so it is cleaned like a title first.
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Paddle Preview", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fallbackName = Self.fileName(for: tab) + ".pdf"
         Task {
+            guard let folder = try? PreviewExport.makeFolder(in: root) else { return }
+            if isPrivate { self.privatePreviewFolders.append(folder) }
             do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            } catch {
-                return
-            }
-            do {
-                // Ephemeral: URLSession.shared caches on disk and keeps cookies, which a private window's PDF must not
-                // leave behind. (It never had the tab's cookies, so a PDF behind a login comes from the fallback below.)
+                // Only http and https pages are fetched. Ephemeral: URLSession.shared caches on disk and keeps cookies, which
+                // a private window's PDF must not leave behind. (It never had the tab's cookies, so a PDF behind a login comes
+                // from the fallback below.)
+                guard PreviewExport.canFetch(url) else { throw CocoaError(.fileReadUnsupportedScheme) }
                 let session = URLSession(configuration: .ephemeral)
                 defer { session.finishTasksAndInvalidate() }
                 let (tempURL, _) = try await session.download(from: url)
+                defer { try? FileManager.default.removeItem(at: tempURL) }
+                // Checked after the download: a file over the size cap, or one without a %PDF header, is refused.
+                guard PreviewExport.isAcceptable(file: tempURL) else { throw CocoaError(.fileReadCorruptFile) }
                 let destination = folder.appendingPathComponent(Self.pdfFileName(url.lastPathComponent) ?? fallbackName)
                 try FileManager.default.moveItem(at: tempURL, to: destination)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
                 Self.openInPreview(destination)
             } catch {
                 if let webView = tab.webView {
                     let config = WKPDFConfiguration()
                     webView.createPDF(configuration: config) { result in
-                        if case .success(let data) = result {
-                            let destination = folder.appendingPathComponent(fallbackName)
-                            guard (try? data.write(to: destination)) != nil else { return }
-                            Self.openInPreview(destination)
-                        }
+                        guard case .success(let data) = result, PreviewExport.isAcceptable(data) else { return }
+                        let destination = folder.appendingPathComponent(fallbackName)
+                        guard FileManager.default.createFile(atPath: destination.path, contents: data, attributes: [.posixPermissions: 0o600]) else { return }
+                        Self.openInPreview(destination)
                     }
                 }
             }
         }
+    }
+
+    /// Deletes this window's private-tab Open in Preview folders (at the next export, and when the window closes).
+    private func removePrivatePreviewFolders() {
+        for folder in privatePreviewFolders { try? FileManager.default.removeItem(at: folder) }
+        privatePreviewFolders.removeAll()
     }
 
     /// View > Translate Page…: presents the translation popover for the active tab.

@@ -514,7 +514,10 @@ final class ExtensionHost {
                     continue
                 }
                 // The user deleted or edited its record (or a new version asks for more): unload, ask, load again.
-                let needsPrompt = decisions.needsPrompt(folder: ext.name, name: ext.displayName, permissions: ext.requested.permissions, hosts: ext.requested.hosts)
+                let needsPrompt = decisions.needsPrompt(
+                    folder: ext.name, name: ext.displayName, identity: permissionIdentity(folder: ext.name, manifest: ext.webExtension.manifest),
+                    permissions: ext.requested.permissions, hosts: ext.requested.hosts
+                )
                 if needsPrompt || decisions.byFolder[ext.name]?.isFullyDeclined == true {
                     unload(ext, closingTabs: false)
                     continue
@@ -674,6 +677,7 @@ final class ExtensionHost {
         })
         return ExtensionSnapshot.from(
             name: ext.displayName, version: ext.version, run: current != nil ? current?.run : .allow,
+            identity: permissionIdentity(folder: ext.name, manifest: ext.webExtension.manifest) ?? current?.identity,
             granted: Dictionary(uniqueKeysWithValues: context.grantedPermissions.map { ($0.key.rawValue, $0.value) }),
             denied: Dictionary(uniqueKeysWithValues: context.deniedPermissions.map { ($0.key.rawValue, $0.value) }),
             grantedHosts: Dictionary(context.grantedPermissionMatchPatterns.map { ($0.key.string, $0.value) }, uniquingKeysWith: { a, _ in a }),
@@ -800,9 +804,15 @@ final class ExtensionHost {
                 hosts: Set(webExtension.allRequestedMatchPatterns.map(\.string))
             )
             // Asked before its first load, even when it asks for nothing (the record then says only that it may run).
-            if decisions.needsPrompt(folder: entry.name, name: displayName, permissions: requested.permissions, hosts: requested.hosts) {
+            // An older record has no identity: it keeps applying to the same extension (same folder and name) and takes
+            // the identity now, so nothing is asked again.
+            let identityKey = permissionIdentity(folder: entry.name, manifest: webExtension.manifest)
+            if decisionsError == nil, decisions.adopt(folder: entry.name, name: displayName, identity: identityKey) {
+                writeDecisions()
+            }
+            if decisions.needsPrompt(folder: entry.name, name: displayName, identity: identityKey, permissions: requested.permissions, hosts: requested.hosts) {
                 status[entry.name] = "waiting for permission answer"
-                let undecided = decisions.undecided(folder: entry.name, name: displayName, permissions: requested.permissions, hosts: requested.hosts)
+                let undecided = decisions.undecided(folder: entry.name, name: displayName, identity: identityKey, permissions: requested.permissions, hosts: requested.hosts)
                 let allSites = Set(webExtension.allRequestedMatchPatterns.filter { $0.matchesAllHosts || $0.matchesAllURLs }.map(\.string))
                 pending.append(PendingPrompt(
                     entry: entry, setup: setup, webExtension: webExtension, manifest: manifest, problems: problems,
@@ -886,7 +896,7 @@ final class ExtensionHost {
         // that hides it, and no native app is ever launched.
         context.setPermissionStatus(grantsBus ? .grantedExplicitly : .deniedExplicitly, for: .nativeMessaging)
 
-        moveStorage(for: entry.name, setup: setup, manifestKey: webExtension.manifest["key"] as? String)
+        moveStorage(for: entry.name, setup: setup)
         ensureController()
         guard let controller else { return }
         do {
@@ -922,14 +932,20 @@ final class ExtensionHost {
     /// gives a folder a new id, the storage from its earlier id moves to the new one before the context loads, so the
     /// extension keeps its data (sign-ins included). Only when the new id has none yet and exactly one earlier id has
     /// some, and never while a loaded context still uses that id.
-    private func moveStorage(for folder: String, setup: CompatSetup, manifestKey: String?) {
+    private func moveStorage(for folder: String, setup: CompatSetup) {
         let current = setup.identity.runtimeID
         let root = Paths.webExtensionStorage(profile: profileID)
         let fm = FileManager.default
         guard !fm.fileExists(atPath: root.appending(path: current).path) else { return }
-        let keyID = manifestKey.flatMap(ExtensionIdentity.chromeID(manifestKey:))
-        let candidates = ExtensionIdentity.priorStorageIDs(saltedID: setup.saltedID, publicIDs: [keyID].compactMap { $0 }, current: current)
-            .filter { id in fm.fileExists(atPath: root.appending(path: id).path) && !loaded.contains { $0.id == id } }
+        // The earlier public id is taken only from this folder's own install record (checked against its manifest),
+        // never from the manifest alone, and never when another folder's record or a loaded extension holds it.
+        var held = Set(loaded.map { $0.id.lowercased() })
+        for (otherFolder, record) in StoreInstaller.shared.allRecords where otherFolder != folder && record.store == .chromeWebStore {
+            held.insert(record.id.lowercased())
+        }
+        let candidates = ExtensionIdentity.storageMoveCandidates(
+            saltedID: setup.saltedID, ownStoreID: setup.verifiedStoreID, current: current, heldByOthers: held
+        ).filter { id in fm.fileExists(atPath: root.appending(path: id).path) }
         guard let old = candidates.first else { return }
         guard candidates.count == 1 else {
             log.error("\(folder, privacy: .public): storage under more than one earlier id (\(candidates.joined(separator: ", "), privacy: .public)); left as is, starting empty under \(current, privacy: .public)")
@@ -963,6 +979,8 @@ final class ExtensionHost {
         /// The overlay's plan: v2 for chrome/firefox, the 4b prelude for `none`; nil for `native` and compat off.
         let plan: CompatPlan?
         let compatOff: Bool
+        /// The folder's Chrome Web Store id, when its record agrees with the manifest.
+        let verifiedStoreID: String?
 
         var runsV2Prelude: Bool { plan?.persona.runsPersonaPrelude == true }
         var preludeMode: String {
@@ -988,7 +1006,12 @@ final class ExtensionHost {
         // A store install (extension-sources.json) runs as that store's browser and may use its public id.
         let source = StoreInstaller.shared.record(forFolder: entry.name)
         let persona = parsed == nil ? (compat.persona ?? .none) : Persona.detect(manifest: manifest, source: source?.store, override: compat.persona)
-        let storeID = source?.store == .chromeWebStore ? source?.id : nil
+        // The record's id counts only when the manifest doesn't contradict it (a different key or gecko id).
+        let verifiedID = ExtensionIdentity.verifiedStoreID(source?.id, store: source?.store, manifest: manifest)
+        if source != nil, verifiedID == nil {
+            log.error("\(entry.name, privacy: .public): the store id in extension-sources.json doesn't match its manifest; not used")
+        }
+        let storeID = source?.store == .chromeWebStore ? verifiedID : nil
         let identity = ExtensionIdentity.resolve(persona: persona, saltedID: salted, manifest: manifest, storeID: storeID, publicID: compat.wantsPublicID)
         let off = compatOff.contains(entry.name)
         var plan: CompatPlan?
@@ -1011,7 +1034,29 @@ final class ExtensionHost {
                 plan = nil
             }
         }
-        return CompatSetup(persona: persona, saltedID: salted, identity: identity, compat: compat, plan: plan, compatOff: off)
+        return CompatSetup(persona: persona, saltedID: salted, identity: identity, compat: compat, plan: plan, compatOff: off, verifiedStoreID: storeID)
+    }
+
+    /// Who the extension in `folder` is for the permissions file (`ExtensionIdentity.permissionIdentity`).
+    private func permissionIdentity(folder: String, manifest: [String: Any]) -> String? {
+        let record = StoreInstaller.shared.record(forFolder: folder)
+        let verified = ExtensionIdentity.verifiedStoreID(record?.id, store: record?.store, manifest: manifest)
+        return ExtensionIdentity.permissionIdentity(manifest: manifest, verifiedStoreID: verified)
+    }
+
+    /// Answers kept for a folder that was removed from `extensions/` are dropped, so a different extension put in a
+    /// folder with that name later starts with none. A folder still on disk (even a skipped `_` one) keeps its answers,
+    /// and nothing is dropped while `extensions/` is unreadable.
+    private func pruneDecisions() {
+        guard decisionsError == nil, FileManager.default.isReadableFile(atPath: Paths.extensions.path) else { return }
+        let keep = Set(decisions.byFolder.keys.filter {
+            FileManager.default.fileExists(atPath: Paths.extensions.appending(path: $0).path)
+                || (try? FileManager.default.destinationOfSymbolicLink(atPath: Paths.extensions.appending(path: $0).path)) != nil
+        })
+        if decisions.prune(keeping: keep) {
+            writeDecisions()
+            log.info("extension-permissions.json: answers of removed folders dropped")
+        }
     }
 
     /// Step 0 of the load pipeline: the patched clone under `extension-overlays/` for the folder's plan (v2 prelude,
@@ -1164,6 +1209,7 @@ final class ExtensionHost {
     /// Overlays of folders that are gone from `extensions/` are deleted (`ExtensionShared.pruneOverlays`). Only the
     /// default profile's host does it, so the shared files have one writer.
     private func pruneOverlays() {
+        pruneDecisions()
         guard isDefaultProfile else { return }
         shared.pruneOverlays()
     }
@@ -1291,7 +1337,8 @@ final class ExtensionHost {
         let displayName = ExtensionPermissionText.sanitize(item.webExtension.displayName ?? entry.name)
         let version = item.webExtension.displayVersion ?? item.webExtension.version ?? ""
         // Keep earlier answers for the same extension; a different extension in the folder starts over.
-        let existing = decisions.byFolder[entry.name].flatMap { $0.name == displayName ? $0 : nil }
+        let identityKey = permissionIdentity(folder: entry.name, manifest: item.webExtension.manifest)
+        let existing = decisions.byFolder[entry.name].flatMap { $0.applies(name: displayName, identity: identityKey) ? $0 : nil }
         let lines = ExtensionPermissionText.lines(
             permissions: item.undecided.permissions, hosts: item.undecided.hosts, allSites: item.allSites
         )
@@ -1304,6 +1351,7 @@ final class ExtensionHost {
 
         var snapshot = existing ?? ExtensionSnapshot(name: displayName, version: version, decided: Date())
         snapshot.version = version
+        snapshot.identity = identityKey ?? snapshot.identity
         snapshot.decided = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         snapshot.apply(answer, requested: item.requested, undecided: item.undecided)
         decisions.set(folder: entry.name, snapshot)
@@ -1325,7 +1373,9 @@ final class ExtensionHost {
         folder: String, name: String, requested: ExtensionPermissionDiff.Requests, added: ExtensionPermissionDiff.Requests
     ) -> ExtensionPermissionDiff.Requests? {
         guard decisionsError == nil else { return nil }
-        return ExtensionPermissionDiff.asks(requested: requested, added: added, decisions: decisions, folder: folder, name: name)
+        let identity = loaded.first { $0.name == folder }.flatMap { permissionIdentity(folder: folder, manifest: $0.webExtension.manifest) }
+            ?? decisions.byFolder[folder]?.identity
+        return ExtensionPermissionDiff.asks(requested: requested, added: added, decisions: decisions, folder: folder, name: name, identity: identity)
     }
 
     /// The update alert, in the queue the install alerts use so that two never overlap. True when the user allowed it.
@@ -1479,7 +1529,8 @@ final class ExtensionHost {
         let snapshot = liveSnapshot(ext)
         // `decided` is always "now"; only a change in the answers is worth a write.
         if let current = decisions.byFolder[ext.name], current.name == snapshot.name, current.version == snapshot.version,
-           current.permissions == snapshot.permissions, current.hosts == snapshot.hosts, current.run == snapshot.run {
+           current.permissions == snapshot.permissions, current.hosts == snapshot.hosts, current.run == snapshot.run,
+           current.identity == snapshot.identity {
             return
         }
         decisions.set(folder: ext.name, snapshot)

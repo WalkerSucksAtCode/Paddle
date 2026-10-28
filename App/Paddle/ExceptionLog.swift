@@ -1,6 +1,7 @@
 import Foundation
 import ObjectiveC
 import os
+import PaddleCore
 
 /// Logs every Objective-C exception at the moment it is thrown, with the throwing stack, before anything catches it.
 /// Temporary instrumentation: AppKit and SwiftUI swallow some exceptions, and an exception unwinding through a
@@ -17,8 +18,11 @@ nonisolated enum ExceptionLog {
     private static let maxBytes: UInt64 = 5 * 1024 * 1024
     private static let file: URL = {
         let folder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Paddle", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        return folder.appendingPathComponent("exceptions.log")
+        FilePermissions.createPrivateFolder(folder)
+        let file = folder.appendingPathComponent("exceptions.log")
+        FilePermissions.restrict(file, directory: false)
+        FilePermissions.restrict(file.appendingPathExtension("1"), directory: false)
+        return file
     }()
 
     static func install() {
@@ -32,7 +36,7 @@ nonisolated enum ExceptionLog {
     private static func record(_ object: Any?) {
         let exception = object as? NSException
         let name = exception?.name.rawValue ?? String(describing: type(of: object))
-        let reason = (exception?.reason ?? "").replacing(#/[A-Za-z][A-Za-z0-9+.-]*://\S+/#, with: "<url>")
+        let reason = LogRedaction.redactURLs(exception?.reason ?? "")
         let stack = Thread.callStackSymbols.dropFirst(2).prefix(40).joined(separator: "\n")
         let thread = Thread.isMainThread ? "main" : "background"
         log.fault("exception \(name, privacy: .public) on \(thread, privacy: .public): \(reason, privacy: .public)\n\(stack, privacy: .public)")
@@ -58,5 +62,6 @@ nonisolated enum ExceptionLog {
         } else {
             try? data.write(to: file)
         }
+        FilePermissions.restrict(file, directory: false)
     }
 }

@@ -53,4 +53,26 @@ struct UserScriptTests {
         #expect(script.wrappedSource.contains(#"new RegExp("^https://a\\.test(:[0-9]+)?/.*$")"#))
         #expect(script.wrappedSource.hasSuffix("run()\n})();"))
     }
+
+    @Test func refusedIncludeNeverRunsAndRefusedExcludeMatchesNothing() {
+        let include = UserScript(fileName: "r.js", source: "// ==UserScript==\n// @include /^(a+)+$/\n// ==/UserScript==")
+        #expect(!include.matches("https://a.test/aaaa"))
+        let exclude = UserScript(fileName: "x.js", source: "// ==UserScript==\n// @exclude /(a+)+$/\n// ==/UserScript==")
+        #expect(exclude.matches("https://a.test/aaaa"))
+    }
+
+    @Test func longURLsDoNotMatch() {
+        let script = UserScript(fileName: "a.js", source: "x")
+        #expect(script.matches("https://a.test/" + String(repeating: "x", count: 100)))
+        #expect(!script.matches("https://a.test/" + String(repeating: "x", count: 2100)))
+    }
+
+    @Test func wrappedSourceCarriesTheSameLimits() {
+        let script = UserScript(fileName: "a.js", source: "// ==UserScript==\n// @include /(a+)+/\n// @include https://a.test/*\n// ==/UserScript==\nrun()")
+        #expect(!script.wrappedSource.contains(#"new RegExp("(a+)+")"#))
+        #expect(script.wrappedSource.contains(#"a\\.test"#))
+        #expect(script.wrappedSource.contains("__paddleHref.length > 2048"))
+        let onlyRefused = UserScript(fileName: "b.js", source: "// ==UserScript==\n// @include /(a+)+/\n// ==/UserScript==\nrun()")
+        #expect(onlyRefused.wrappedSource.contains("if (![].some("))
+    }
 }

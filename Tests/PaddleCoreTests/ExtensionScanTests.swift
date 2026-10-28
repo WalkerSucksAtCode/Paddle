@@ -109,6 +109,50 @@ struct ExtensionScanTests {
         }
     }
 
+    @Test func symlinkIntoAProtectedFolderIsRefusedButTheExtensionsFolderItselfIsFine() throws {
+        try withTemp { dir in
+            // `home/.ssh/ext` is inside the protected home; `home/support/extensions` holds the real extensions.
+            try makeExtension(dir, "home/.ssh/ext")
+            try makeExtension(dir, "home/support/extensions/real")
+            let extensions = dir.appendingPathComponent("home/support/extensions")
+            try fm.createSymbolicLink(at: extensions.appendingPathComponent("sneaky"),
+                                      withDestinationURL: dir.appendingPathComponent("home/.ssh/ext"))
+            let result = ExtensionScan.scan(
+                extensions, forbiddenRoots: [dir.appendingPathComponent("home"), dir.appendingPathComponent("home/support")]
+            )
+            #expect(result.entries.map(\.name) == ["real"])
+            #expect(result.problems["sneaky"] == "points into a protected folder")
+        }
+    }
+
+    @Test func symlinkOutsideProtectedFoldersStillLoads() throws {
+        try withTemp { dir in
+            try makeExtension(dir, "elsewhere/dev")
+            let extensions = dir.appendingPathComponent("home/support/extensions")
+            try fm.createDirectory(at: extensions, withIntermediateDirectories: true)
+            try fm.createSymbolicLink(at: extensions.appendingPathComponent("dev"),
+                                      withDestinationURL: dir.appendingPathComponent("elsewhere/dev"))
+            let result = ExtensionScan.scan(extensions, forbiddenRoots: [dir.appendingPathComponent("home")])
+            #expect(result.entries.map(\.name) == ["dev"])
+        }
+    }
+
+    @Test func linkInsideAnExtensionThatLeavesItsFolderIsRefused() throws {
+        try withTemp { dir in
+            try makeExtension(dir, "ext")
+            try makeExtension(dir, "fine")
+            try Data("secret".utf8).write(to: dir.appendingPathComponent("secret.txt"))
+            try fm.createSymbolicLink(at: dir.appendingPathComponent("ext/leak.txt"),
+                                      withDestinationURL: dir.appendingPathComponent("secret.txt"))
+            // A link that stays inside the extension is fine.
+            try Data("x".utf8).write(to: dir.appendingPathComponent("fine/a.js"))
+            try fm.createSymbolicLink(at: dir.appendingPathComponent("fine/b.js"), withDestinationURL: dir.appendingPathComponent("fine/a.js"))
+            let result = ExtensionScan.scan(dir, forbiddenRoots: [])
+            #expect(result.entries.map(\.name) == ["fine"])
+            #expect(result.problems["ext"]?.hasPrefix("contains a link that leaves its folder") == true)
+        }
+    }
+
     @Test func symlinkToAForbiddenRootIsRefused() throws {
         try withTemp { dir in
             let home = dir.appendingPathComponent("home")

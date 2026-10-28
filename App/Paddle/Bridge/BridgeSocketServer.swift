@@ -1,16 +1,19 @@
 import Darwin
 import Foundation
 import os
+import PaddleCore
+import Security
 
 /// The control bridge's listener: an owner-only Unix socket (never a TCP or UDP port) carrying one message per line
-/// each way. It knows nothing about MCP. Every piece of state lives on `queue`; `ControlBridge` drives it.
+/// each way. It knows nothing about MCP. Every piece of state lives on `queue`; `ControlBridge` drives it. A
+/// connection is kept only if its peer is Paddle's own signed `paddle-mcp` helper (see `PeerRequirement`).
 nonisolated final class BridgeSocketServer: @unchecked Sendable {
     private struct Client {
         let fd: Int32
         let source: DispatchSourceRead
         /// Replies are written here, one client at a time, so a client that stops reading blocks only itself.
         let writer: DispatchQueue
-        var buffer = Data()
+        var splitter = BridgeLineSplitter()
         /// Lines handed to `onLine` and not yet answered with `reply`.
         var pending = 0
         /// The client finished sending: reading is suspended and it closes after its last answer.
@@ -20,9 +23,6 @@ nonisolated final class BridgeSocketServer: @unchecked Sendable {
     struct StartError: Error, CustomStringConvertible {
         let description: String
     }
-
-    /// The longest message taken without a newline; a client that sends more is dropped.
-    static let maxLineBytes = 16 << 20
 
     private let path: String
     private let onLine: @Sendable (Int, String) -> Void
@@ -76,19 +76,32 @@ nonisolated final class BridgeSocketServer: @unchecked Sendable {
             self.clients[id] = client
             defer { if client.halfClosed, client.pending <= 0 { self.drop(id, afterReplies: true) } }
             guard let line else { return }
-            let bytes = Array((line + "\n").utf8)
-            let fd = client.fd
-            client.writer.async {
-                bytes.withUnsafeBytes { buffer in
-                    var offset = 0
-                    while offset < buffer.count {
-                        let written = write(fd, buffer.baseAddress! + offset, buffer.count - offset)
-                        if written < 0 {
-                            if errno == EINTR { continue }
-                            return
-                        }
-                        offset += written
+            self.write(line, to: client, id: id)
+        }
+    }
+
+    /// Queues `line` and a newline on the client's writer. The socket has a send timeout, so a client that stops
+    /// reading is dropped after `writeTimeoutSeconds` instead of parking the writer for good.
+    private func write(_ line: String, to client: Client, id: Int) {
+        let bytes = Array((line + "\n").utf8)
+        let fd = client.fd
+        client.writer.async { [weak self] in
+            let ok = bytes.withUnsafeBytes { buffer -> Bool in
+                var offset = 0
+                while offset < buffer.count {
+                    let written = Darwin.write(fd, buffer.baseAddress! + offset, buffer.count - offset)
+                    if written < 0 {
+                        if errno == EINTR { continue }
+                        return false
                     }
+                    offset += written
+                }
+                return true
+            }
+            if !ok {
+                self?.queue.async {
+                    self?.log.error("control bridge client stopped reading or its write failed; dropped")
+                    self?.drop(id)
                 }
             }
         }
@@ -196,16 +209,21 @@ nonisolated final class BridgeSocketServer: @unchecked Sendable {
         while true {
             let fd = accept(listenerFD, nil, nil)
             if fd < 0 { return }
-            // Only the user's own processes; the folder and mode already keep others out, this checks the peer too.
-            var uid: uid_t = 0
-            var gid: gid_t = 0
-            guard getpeereid(fd, &uid, &gid) == 0, uid == getuid() else {
+            // Only Paddle's own signed helper, run by the user; the folder and mode already keep others out.
+            if case .refuse(let reason) = Self.checkPeer(fd) {
                 close(fd)
-                log.error("control bridge refused a connection from another user")
+                log.error("control bridge refused a connection: \(reason, privacy: .public)")
+                continue
+            }
+            guard clients.count < BridgeLimits.maxClients else {
+                close(fd)
+                log.error("control bridge refused a connection: \(BridgeLimits.maxClients, privacy: .public) clients are already connected")
                 continue
             }
             var on: Int32 = 1
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+            var timeout = timeval(tv_sec: BridgeLimits.writeTimeoutSeconds, tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
             _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK)
 
@@ -223,39 +241,71 @@ nonisolated final class BridgeSocketServer: @unchecked Sendable {
         }
     }
 
+    /// Whether the process on the other end of `fd` is the same user's `paddle-mcp` helper signed by Paddle's team.
+    /// Any failure refuses. The log line a refusal produces holds no URLs.
+    private static func checkPeer(_ fd: Int32) -> PeerRequirement.Verdict {
+        var uid: uid_t = 0
+        var gid: gid_t = 0
+        let peerUID: UInt32? = getpeereid(fd, &uid, &gid) == 0 ? uid : nil
+
+        var pid: pid_t = 0
+        var length = socklen_t(MemoryLayout<pid_t>.size)
+        let peerPID: Int32? = getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0 ? pid : nil
+
+        // The signature is only worth checking for a same-user peer with a known pid.
+        var valid: Bool?
+        if peerUID == getuid(), let peerPID, peerPID > 0 {
+            valid = signatureIsValid(pid: peerPID)
+        }
+        return PeerRequirement.verdict(peerUID: peerUID, ownUID: getuid(), peerPID: peerPID, signatureValid: valid)
+    }
+
+    /// True/false when the Security framework answered, nil on any error that isn't a plain "doesn't satisfy".
+    private static func signatureIsValid(pid: pid_t) -> Bool? {
+        guard let text = PeerRequirement.requirementString() else { return nil }
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement else { return nil }
+        var code: SecCode?
+        let attributes = [kSecGuestAttributePid: Int(pid)] as CFDictionary
+        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code else { return nil }
+        let status = SecCodeCheckValidity(code, [], requirement)
+        if status == errSecSuccess { return true }
+        // Not signed at all, or signed by someone else: a plain refusal. Anything else is also a refusal (fail closed).
+        return false
+    }
+
     private func read(from id: Int) {
-        guard var client = clients[id] else { return }
+        guard let fd = clients[id]?.fd else { return }
         var bytes = [UInt8](repeating: 0, count: 65536)
-        let count = Darwin.read(client.fd, &bytes, bytes.count)
+        let count = Darwin.read(fd, &bytes, bytes.count)
         if count < 0, errno == EINTR || errno == EAGAIN { return }
-        if count == 0, client.pending > 0 {
+        if count == 0, (clients[id]?.pending ?? 0) > 0 {
             // The client finished sending (the helper half-closes when its stdin ends): stop reading, and close
             // once the answers still being worked on are written.
-            client.source.suspend()
-            client.halfClosed = true
-            clients[id] = client
+            clients[id]?.source.suspend()
+            clients[id]?.halfClosed = true
             return
         }
         guard count > 0 else {
             drop(id)
             return
         }
-        client.buffer.append(contentsOf: bytes[0..<count])
-        while let newline = client.buffer.firstIndex(of: 0x0A) {
-            var line = String(decoding: client.buffer[client.buffer.startIndex..<newline], as: UTF8.self)
-            client.buffer = Data(client.buffer[(newline + 1)...])
-            if line.hasSuffix("\r") { line.removeLast() }
-            if !line.allSatisfy(\.isWhitespace) {
-                client.pending += 1
-                onLine(id, line)
-            }
-        }
-        guard client.buffer.count <= Self.maxLineBytes else {
+        // Mutated in place in the dictionary, so the splitter's buffer is never copied.
+        guard let output = clients[id]?.splitter.append(bytes[0..<count]) else { return }
+        if output.overflow {
             log.error("control bridge client sent an over-long message; dropped")
             drop(id)
             return
         }
-        clients[id] = client
+        for line in output.lines {
+            guard let client = clients[id] else { return }
+            if client.pending >= BridgeLimits.maxPendingCalls {
+                if let busy = BridgeLimits.busyReply(forLine: line) { write(busy, to: client, id: id) }
+                continue
+            }
+            clients[id]?.pending += 1
+            onLine(id, line)
+        }
     }
 
     /// Forgets client `id`. By default the connection is cut at once; `afterReplies` closes it once the answers

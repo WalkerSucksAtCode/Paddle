@@ -50,12 +50,11 @@ public struct UserScript: Sendable, Equatable {
         self.source = source
     }
 
+    /// Patterns that `RegexSafety` refuses never match (an `@include` that never matches means the script doesn't run;
+    /// a refused `@exclude` excludes nothing), and URLs over `RegexSafety.maxURLLength` don't match.
     public func matches(_ url: String) -> Bool {
         func any(_ patterns: [String]) -> Bool {
-            patterns.contains { pattern in
-                guard let re = try? NSRegularExpression(pattern: pattern) else { return false }
-                return re.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil
-            }
+            patterns.contains { RegexSafety.matches($0, url: url) }
         }
         return any(includeRegexes) && !any(excludeRegexes)
     }
@@ -63,7 +62,7 @@ public struct UserScript: Sendable, Equatable {
     /// The script wrapped so it only runs on matching URLs (WebKit injects user scripts into every page).
     public var wrappedSource: String {
         func jsArray(_ patterns: [String]) -> String {
-            let literals = patterns.map { pattern -> String in
+            let literals = patterns.filter(RegexSafety.isUsable).map { pattern -> String in
                 let data = (try? JSONSerialization.data(withJSONObject: [pattern], options: [.withoutEscapingSlashes])) ?? Data("[\"\"]".utf8)
                 let json = String(decoding: data, as: UTF8.self)
                 return "new RegExp(\(json.dropFirst().dropLast()))"
@@ -73,6 +72,7 @@ public struct UserScript: Sendable, Equatable {
         return """
         (function () {
         const __paddleHref = location.href;
+        if (__paddleHref.length > \(RegexSafety.maxURLLength)) return;
         if (!\(jsArray(includeRegexes)).some(r => r.test(__paddleHref))) return;
         if (\(jsArray(excludeRegexes)).some(r => r.test(__paddleHref))) return;
         \(source)

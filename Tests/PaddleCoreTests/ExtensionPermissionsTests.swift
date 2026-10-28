@@ -79,6 +79,95 @@ struct ExtensionPermissionsTests {
         #expect(result.hosts == ["https://a.com/*"])
     }
 
+    @Test func differentIdentityInTheSameFolderAndNameInheritsNothing() {
+        var decisions = ExtensionDecisions()
+        var old = snapshot(name: "N", permissions: ["tabs": .allow], hosts: ["https://a.com/*": .allow])
+        old.identity = "gecko:a@b"
+        decisions.set(folder: "f", old)
+        #expect(!decisions.needsPrompt(folder: "f", name: "N", identity: "gecko:a@b", permissions: ["tabs"], hosts: ["https://a.com/*"]))
+        #expect(decisions.needsPrompt(folder: "f", name: "N", identity: "gecko:other@b", permissions: ["tabs"], hosts: ["https://a.com/*"]))
+        #expect(decisions.needsPrompt(folder: "f", name: "N", identity: nil, permissions: ["tabs"], hosts: ["https://a.com/*"]))
+        let open = decisions.undecided(folder: "f", name: "N", identity: "chrome:x", permissions: ["tabs"], hosts: ["https://a.com/*"])
+        #expect(open.permissions == ["tabs"] && open.hosts == ["https://a.com/*"])
+    }
+
+    @Test func recordWithoutIdentityKeepsApplyingAndAdoptsIt() throws {
+        var decisions = ExtensionDecisions()
+        decisions.set(folder: "f", snapshot(name: "N", permissions: ["tabs": .allow], hosts: [:]))
+        // No re-prompt before or after the identity is filled in.
+        #expect(!decisions.needsPrompt(folder: "f", name: "N", identity: "gecko:a@b", permissions: ["tabs"], hosts: []))
+        let otherName = decisions.adopt(folder: "f", name: "Other", identity: "gecko:a@b")
+        let noIdentity = decisions.adopt(folder: "f", name: "N", identity: nil)
+        #expect(!otherName && !noIdentity)
+        let adopted = decisions.adopt(folder: "f", name: "N", identity: "gecko:a@b")
+        #expect(adopted)
+        #expect(decisions.byFolder["f"]?.identity == "gecko:a@b")
+        let replaced = decisions.adopt(folder: "f", name: "N", identity: "gecko:z@b")
+        #expect(!replaced, "an identity is never replaced")
+        #expect(!decisions.needsPrompt(folder: "f", name: "N", identity: "gecko:a@b", permissions: ["tabs"], hosts: []))
+        // Old files without the key decode, and the identity round-trips.
+        let json = #"{"x": {"name": "X", "version": "1", "decided": "2026-10-11T18:00:00Z"}}"#
+        #expect(try ExtensionDecisions.decode(Data(json.utf8)).byFolder["x"]?.identity == nil)
+        #expect(try ExtensionDecisions.decode(decisions.encoded()) == decisions)
+    }
+
+    @Test func pruneDropsRemovedFolders() {
+        var decisions = ExtensionDecisions()
+        decisions.set(folder: "keep", snapshot())
+        decisions.set(folder: "gone", snapshot())
+        let first = decisions.prune(keeping: ["keep", "other"])
+        #expect(first)
+        #expect(Set(decisions.byFolder.keys) == ["keep"])
+        let second = decisions.prune(keeping: ["keep"])
+        #expect(!second)
+        #expect(decisions.needsPrompt(folder: "gone", name: "Paddle Probe", permissions: [], hosts: []))
+    }
+
+    @Test func permissionIdentityPrefersGeckoThenKeyThenStoreID() {
+        let key = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH"
+        let gecko: [String: Any] = ["browser_specific_settings": ["gecko": ["id": "Ext@Example.org"]], "key": key]
+        #expect(ExtensionIdentity.permissionIdentity(manifest: gecko, verifiedStoreID: "abc") == "gecko:ext@example.org")
+        #expect(ExtensionIdentity.permissionIdentity(manifest: [:], verifiedStoreID: "ABC") == "store:abc")
+        #expect(ExtensionIdentity.permissionIdentity(manifest: [:], verifiedStoreID: nil) == nil)
+        let chrome = ExtensionIdentity.permissionIdentity(manifest: ["key": key], verifiedStoreID: "abc")
+        #expect(chrome == ExtensionIdentity.chromeID(manifestKey: key).map { "chrome:" + $0 })
+    }
+
+    @Test func storeIDMustAgreeWithTheManifest() {
+        let key = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcH"
+        let keyID = ExtensionIdentity.chromeID(manifestKey: key)
+        #expect(ExtensionIdentity.verifiedStoreID(keyID, store: .chromeWebStore, manifest: ["key": key]) == keyID)
+        #expect(ExtensionIdentity.verifiedStoreID("other", store: .chromeWebStore, manifest: ["key": key]) == nil)
+        #expect(ExtensionIdentity.verifiedStoreID("other", store: .chromeWebStore, manifest: [:]) == "other")
+        let gecko: [String: Any] = ["applications": ["gecko": ["id": "a@b.org"]]]
+        #expect(ExtensionIdentity.verifiedStoreID("a@b.org", store: .mozillaAddons, manifest: gecko) == "a@b.org")
+        #expect(ExtensionIdentity.verifiedStoreID("c@d.org", store: .mozillaAddons, manifest: gecko) == nil)
+        #expect(ExtensionIdentity.verifiedStoreID("some-slug", store: .mozillaAddons, manifest: gecko) == "some-slug")
+        #expect(ExtensionIdentity.verifiedStoreID(nil, store: .chromeWebStore, manifest: [:]) == nil)
+    }
+
+    @Test func storageMovesOnlyFromOwnIDsAndNeverFromOthers() {
+        let hex = "16c4e4dbfe721f2a74a46a0fd6ecbcb6"
+        let chrome = ExtensionIdentity.chromeID(hex: hex)!
+        let store = String(repeating: "a", count: 32)
+        // Persona change: the folder's own private ids stay candidates.
+        #expect(ExtensionIdentity.storageMoveCandidates(saltedID: hex, ownStoreID: nil, current: chrome, heldByOthers: []) == [hex])
+        // Its own store id counts; a crafted manifest key (no record) adds nothing.
+        #expect(ExtensionIdentity.storageMoveCandidates(saltedID: hex, ownStoreID: store, current: chrome, heldByOthers: []) == [hex, store])
+        // Held by another folder's record or a loaded extension: refused.
+        #expect(ExtensionIdentity.storageMoveCandidates(saltedID: hex, ownStoreID: store, current: chrome, heldByOthers: [store]) == [hex])
+    }
+
+    @Test func olderVersionIsADowngrade() {
+        #expect(ExtensionVersion.isDowngrade(from: "1.10", to: "1.9", store: .chromeWebStore))
+        #expect(!ExtensionVersion.isDowngrade(from: "1.9", to: "1.10", store: .chromeWebStore))
+        #expect(!ExtensionVersion.isDowngrade(from: "1.0", to: "1", store: .chromeWebStore))
+        #expect(ExtensionVersion.isDowngrade(from: "2.0", to: "2.0b1", store: .mozillaAddons))
+        #expect(!ExtensionVersion.isDowngrade(from: nil, to: "1", store: .mozillaAddons))
+        #expect(!ExtensionVersion.isDowngrade(from: "1", to: nil, store: .chromeWebStore))
+        #expect(!ExtensionVersion.isDowngrade(from: "junk", to: "1", store: .chromeWebStore))
+    }
+
     @Test func forgetMakesEverythingUndecidedAgain() {
         var decisions = ExtensionDecisions()
         decisions.set(folder: "f", snapshot(name: "N", permissions: ["tabs": .allow], hosts: [:]))

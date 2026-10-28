@@ -946,7 +946,13 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// The top page's host when `frame` is an embedded frame from another host; nil for the page itself.
     private static func embeddingHost(of origin: WKSecurityOrigin, frame: WKFrameInfo, in webView: WKWebView) -> String? {
-        guard !frame.isMainFrame, let top = webView.url?.host(), !top.isEmpty, top != origin.host else { return nil }
+        guard !frame.isMainFrame else { return nil }
+        return embeddingHost(of: origin, in: webView)
+    }
+
+    /// The top page's host when it differs from `origin`'s host (notifications get no frame to ask about); nil otherwise.
+    private static func embeddingHost(of origin: WKSecurityOrigin, in webView: WKWebView) -> String? {
+        guard let top = webView.url?.host(), !top.isEmpty, top != origin.host else { return nil }
         return top
     }
 
@@ -963,14 +969,17 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         requestGeolocationPermissionFor origin: WKSecurityOrigin,
         initiatedBy frame: WKFrameInfo
     ) async -> WKPermissionDecision {
-        let app = AppModel.shared
         let host = origin.host
-        switch app.config.sitePolicy(forHost: host).location {
-        case .allow: return .grant
+        let config = tab?.config ?? AppModel.shared.config
+        let top = Self.embeddingHost(of: origin, frame: frame, in: webView)
+        switch SitePermissionDecision.location(
+            site: config.sitePolicy(forHost: host).location,
+            embeddingPage: top.map { config.sitePolicy(forHost: $0).location }
+        ) {
+        case .grant: return .grant
         case .deny: return .deny
         case .ask: break
         }
-        let top = Self.embeddingHost(of: origin, frame: frame, in: webView)
         let allowed = await askSitePermission(
             .location,
             field: .location,
@@ -991,16 +1000,22 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         requestNotificationPermissionForSecurityOrigin origin: WKSecurityOrigin,
         decisionHandler: @escaping (Bool) -> Void
     ) {
-        Task { decisionHandler(await notificationDecision(for: origin)) }
+        Task { decisionHandler(await notificationDecision(for: origin, in: webView)) }
     }
 
-    private func notificationDecision(for origin: WKSecurityOrigin) async -> Bool {
+    private func notificationDecision(for origin: WKSecurityOrigin, in webView: WKWebView) async -> Bool {
         let isPrivate = tab?.isPrivate ?? true
         guard !isPrivate else { return false }
         let host = origin.host
+        let config = tab?.config ?? AppModel.shared.config
+        let top = Self.embeddingHost(of: origin, in: webView)
         let allowed: Bool
-        switch (tab?.config ?? AppModel.shared.config).sitePolicy(forHost: host).notifications {
-        case .allow: allowed = true
+        switch SitePermissionDecision.notifications(
+            scheme: origin.protocol,
+            site: config.sitePolicy(forHost: host).notifications,
+            embeddingPage: top.map { config.sitePolicy(forHost: $0).notifications }
+        ) {
+        case .grant: allowed = true
         case .deny: allowed = false
         case .ask:
             allowed = await askSitePermission(

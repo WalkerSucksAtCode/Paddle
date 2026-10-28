@@ -107,6 +107,11 @@ final class StoreInstaller {
         sourcesError == nil ? sources.records[folder] : nil
     }
 
+    /// Every install record by folder (none while the file is unreadable).
+    var allRecords: [String: ExtensionSources.Record] {
+        sourcesError == nil ? sources.records : [:]
+    }
+
     /// Whether a folder holds this store extension: a Chrome id, or an add-on's slug or guid, from its own store
     /// (`ExtensionSources.folder(forStoreID:store:)`).
     func isInstalled(_ link: StoreLink) -> Bool {
@@ -221,6 +226,12 @@ final class StoreInstaller {
                 checked, name: name, oldVersion: oldVersion, newVersion: newVersion, changed: changed, window: window
             ) else {
                 return .cancelled
+            }
+            // An older version, even a validly signed one, may carry a fixed flaw: the user must say so.
+            if ExtensionVersion.isDowngrade(from: oldVersion, to: newVersion, store: checked.store) {
+                guard await confirmOlder(name: name, oldVersion: oldVersion, newVersion: newVersion, window: window) else {
+                    return .cancelled
+                }
             }
             try Task.checkCancellation()
             folder = oldFolder
@@ -410,6 +421,18 @@ final class StoreInstaller {
             info += " You changed \(changed.count) file\(changed.count == 1 ? "" : "s") in its folder; they will be replaced."
         }
         alert.informativeText = info
+        alert.addButton(withTitle: "Replace")
+        alert.addButton(withTitle: "Cancel")
+        return await respond(alert, window: window) == .alertFirstButtonReturn
+    }
+
+    /// The question before an older version replaces a newer one: it may still have a flaw the newer one fixed.
+    private func confirmOlder(name: String, oldVersion: String?, newVersion: String?, window: NSWindow?) async -> Bool {
+        let installed = ExtensionPermissionText.sanitize(oldVersion ?? "(no version)", max: 30)
+        let older = ExtensionPermissionText.sanitize(newVersion ?? "(no version)", max: 30)
+        let alert = NSAlert()
+        alert.messageText = "Replace \(name) \(installed) with the older \(older)?"
+        alert.informativeText = "The version you have is newer. Older versions can still have security problems that newer ones fixed."
         alert.addButton(withTitle: "Replace")
         alert.addButton(withTitle: "Cancel")
         return await respond(alert, window: window) == .alertFirstButtonReturn

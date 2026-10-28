@@ -1859,7 +1859,7 @@ final class BrowserModel {
 
     /// The address field's text for `url`: empty for a blank page and an extension's New Tab page, as for Paddle's.
     static func displayString(_ url: URL) -> String {
-        url.absoluteString == "about:blank" || AppModel.shared.isNewTabOverridePage(url) ? "" : url.absoluteString
+        url.absoluteString == "about:blank" || AppModel.shared.isNewTabOverridePage(url) ? "" : DisplayURL.string(url)
     }
 
     // MARK: - Find

@@ -19,16 +19,29 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     /// The install alert's answer to "may it run at all". It tells an allowed extension that asks for nothing apart
     /// from one never asked about. nil in records written before it existed: the answers above decide.
     public var run: PermissionDecision?
+    /// Who the extension is (`ExtensionIdentity.permissionIdentity`): its gecko id, Chrome key id or store id. A
+    /// different extension that reuses the folder and display name doesn't inherit the answers. nil in records written
+    /// before it existed; the first load that knows the extension's identity fills it in (`ExtensionDecisions.adopt`).
+    public var identity: String?
 
     public init(name: String, version: String, decided: Date,
                 permissions: [String: PermissionDecision] = [:], hosts: [String: PermissionDecision] = [:],
-                run: PermissionDecision? = nil) {
+                run: PermissionDecision? = nil, identity: String? = nil) {
         self.name = name
         self.version = version
         self.decided = decided
         self.permissions = permissions
         self.hosts = hosts
         self.run = run
+        self.identity = identity
+    }
+
+    /// True when this record answers for the extension called `name` with `identity`. A record with no identity
+    /// (older file) matches on the name alone; one with an identity needs the same identity.
+    public func applies(name: String, identity: String?) -> Bool {
+        guard self.name == name else { return false }
+        guard let recorded = self.identity else { return true }
+        return recorded == identity
     }
 
     public init(from decoder: any Decoder) throws {
@@ -39,6 +52,7 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
         permissions = try c.decodeIfPresent([String: PermissionDecision].self, forKey: .permissions) ?? [:]
         hosts = try c.decodeIfPresent([String: PermissionDecision].self, forKey: .hosts) ?? [:]
         run = try c.decodeIfPresent(PermissionDecision.self, forKey: .run)
+        identity = try c.decodeIfPresent(String.self, forKey: .identity)
     }
 
     /// True when the extension must not load: the user said Don't Allow, or (in older records) nothing was allowed.
@@ -89,7 +103,7 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
     /// only Paddle's own compatibility bus (`ExtensionCompat.busID`), which Paddle grants on the context.
     public static let unrecorded: Set<String> = ["nativeMessaging"]
 
-    public static func from(name: String, version: String, run: PermissionDecision? = nil,
+    public static func from(name: String, version: String, run: PermissionDecision? = nil, identity: String? = nil,
                             granted: [String: Date], denied: [String: Date],
                             grantedHosts: [String: Date], deniedHosts: [String: Date],
                             clickHosts: Set<String> = [], now: Date) -> ExtensionSnapshot {
@@ -106,7 +120,7 @@ public struct ExtensionSnapshot: Codable, Sendable, Equatable {
         var hosts = decisions(grantedHosts, deniedHosts)
         for host in clickHosts where hosts[host] == nil { hosts[host] = .click }
         return ExtensionSnapshot(name: name, version: version, decided: stamp,
-                                 permissions: permissions, hosts: hosts, run: run)
+                                 permissions: permissions, hosts: hosts, run: run, identity: identity)
     }
 }
 
@@ -151,20 +165,37 @@ public struct ExtensionDecisions: Codable, Sendable, Equatable {
     }
 
     /// The permissions and hosts the user hasn't decided on yet. A folder with no record, or one that now holds an
-    /// extension with a different name, has decided nothing.
-    public func undecided(folder: String, name: String, permissions: Set<String>, hosts: Set<String>)
+    /// extension with a different name or identity, has decided nothing.
+    public func undecided(folder: String, name: String, identity: String? = nil, permissions: Set<String>, hosts: Set<String>)
         -> (permissions: Set<String>, hosts: Set<String>) {
         let permissions = permissions.subtracting(ExtensionSnapshot.unrecorded)
-        guard let snapshot = byFolder[folder], snapshot.name == name else { return (permissions, hosts) }
+        guard let snapshot = byFolder[folder], snapshot.applies(name: name, identity: identity) else { return (permissions, hosts) }
         return (permissions.subtracting(snapshot.permissions.keys), hosts.subtracting(snapshot.hosts.keys))
     }
 
     /// True when the user must be asked before the extension loads: never asked (an extension that asks for nothing
     /// included), a different extension in the folder now, or a newer version asking for more.
-    public func needsPrompt(folder: String, name: String, permissions: Set<String>, hosts: Set<String>) -> Bool {
-        guard let snapshot = byFolder[folder], snapshot.name == name else { return true }
-        let open = undecided(folder: folder, name: name, permissions: permissions, hosts: hosts)
+    public func needsPrompt(folder: String, name: String, identity: String? = nil, permissions: Set<String>, hosts: Set<String>) -> Bool {
+        guard let snapshot = byFolder[folder], snapshot.applies(name: name, identity: identity) else { return true }
+        let open = undecided(folder: folder, name: name, identity: identity, permissions: permissions, hosts: hosts)
         return !open.permissions.isEmpty || !open.hosts.isEmpty
+    }
+
+    /// Fills in the identity of an older record that has none, when the folder's record is for this extension (same
+    /// name) and the loaded extension has an identity. Returns whether the record changed (write the file then).
+    public mutating func adopt(folder: String, name: String, identity: String?) -> Bool {
+        guard let identity, var snapshot = byFolder[folder], snapshot.name == name, snapshot.identity == nil else { return false }
+        snapshot.identity = identity
+        byFolder[folder] = snapshot
+        return true
+    }
+
+    /// Drops the records of folders not in `folders` (folders removed from `extensions/`), so a different extension put
+    /// in a folder with the same name later starts with no answers. Returns whether anything was dropped.
+    public mutating func prune(keeping folders: Set<String>) -> Bool {
+        let before = byFolder.count
+        byFolder = byFolder.filter { folders.contains($0.key) }
+        return byFolder.count != before
     }
 
     public mutating func set(folder: String, _ snapshot: ExtensionSnapshot) {

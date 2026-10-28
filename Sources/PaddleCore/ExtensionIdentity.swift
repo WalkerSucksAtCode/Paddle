@@ -104,6 +104,52 @@ public enum ExtensionIdentity {
         return chromeID(publicKeyDER: der)
     }
 
+    /// `id` (from `extension-sources.json`) when the manifest doesn't contradict it, else nil: a Web Store id must be
+    /// the id of the manifest `key` when there is one, and an add-on guid must be the manifest's gecko id when there is
+    /// one. Slugs and manifests that name nothing can't be compared and pass.
+    public static func verifiedStoreID(_ id: String?, store: Persona.Source?, manifest: [String: Any]) -> String? {
+        guard let id, let store else { return nil }
+        switch store {
+        case .chromeWebStore:
+            if let key = manifest["key"] as? String, let keyID = chromeID(manifestKey: key), keyID != id.lowercased() { return nil }
+        case .mozillaAddons:
+            let isGUID = id.contains("@") || id.hasPrefix("{")
+            if isGUID, let gecko = geckoID(manifest: manifest), gecko.lowercased() != id.lowercased() { return nil }
+        case .appex, .folder:
+            break
+        }
+        return id
+    }
+
+    /// `browser_specific_settings.gecko.id` (or the older `applications.gecko.id`).
+    public static func geckoID(manifest: [String: Any]) -> String? {
+        for key in ["browser_specific_settings", "applications"] {
+            if let settings = manifest[key] as? [String: Any], let gecko = settings["gecko"] as? [String: Any],
+               let id = gecko["id"] as? String, !id.isEmpty { return id }
+        }
+        return nil
+    }
+
+    /// Who an extension is, for the permissions file: its gecko id, else the id of its manifest `key`, else its
+    /// verified store id (`verifiedStoreID`). nil when it has none of these.
+    public static func permissionIdentity(manifest: [String: Any], verifiedStoreID: String?) -> String? {
+        if let gecko = geckoID(manifest: manifest) { return "gecko:" + gecko.lowercased() }
+        if let key = manifest["key"] as? String, let id = chromeID(manifestKey: key) { return "chrome:" + id }
+        if let verifiedStoreID { return "store:" + verifiedStoreID.lowercased() }
+        return nil
+    }
+
+    /// Where an extension folder's storage may have been filed under an earlier id (`priorStorageIDs`), keeping only
+    /// ids that are safe to take: the public id comes from the folder's own install record (`ownStoreID`), never from
+    /// the folder's manifest, and an id that another folder's install record or a loaded extension holds is refused.
+    public static func storageMoveCandidates(
+        saltedID: String, ownStoreID: String?, current: String, heldByOthers: Set<String>
+    ) -> [String] {
+        let publicIDs = [ownStoreID?.lowercased()].compactMap { $0 }
+        return priorStorageIDs(saltedID: saltedID, publicIDs: publicIDs, current: current)
+            .filter { !heldByOthers.contains($0) }
+    }
+
     /// `https://<id>.chromiumapp.org/<path>`: Chrome's `identity.getRedirectURL`.
     public static func chromeRedirectURL(id: String, path: String = "") -> URL? {
         URL(string: "https://\(id).chromiumapp.org/" + path.drop { $0 == "/" })
@@ -257,5 +303,15 @@ public enum ExtensionIdentity {
 
     private static func hex(_ bytes: [UInt8]) -> String {
         bytes.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+extension ExtensionVersion {
+    /// True when `new` is lower than `installed` under the store's version rules (Chrome's for the Web Store, the
+    /// toolkit's for add-ons). False when either is missing or unreadable, or when they are equal or `new` is higher.
+    public static func isDowngrade(from installed: String?, to new: String?, store: Persona.Source) -> Bool {
+        guard let installed, let new else { return false }
+        let result = store == .mozillaAddons ? compareToolkit(new, installed) : compareChrome(new, installed)
+        return result == .orderedAscending
     }
 }

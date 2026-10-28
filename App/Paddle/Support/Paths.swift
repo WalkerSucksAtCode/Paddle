@@ -70,12 +70,30 @@ enum Paths {
         return parent.appending(path: name, directoryHint: .isDirectory)
     }
 
+    /// Makes the support folder, the profile folders and the history databases owner-only (0700 / 0600) at launch;
+    /// folders and files made by an older version were 0755 / 0644. Contents of other folders keep their modes.
+    static func tightenExisting() {
+        let fm = FileManager.default
+        FilePermissions.restrict(support, directory: true)
+        FilePermissions.restrictDatabase(history)
+        let profiles = support.appending(path: "profiles", directoryHint: .isDirectory)
+        FilePermissions.restrict(profiles, directory: true)
+        for name in (try? fm.contentsOfDirectory(atPath: profiles.path)) ?? [] {
+            let folder = profiles.appending(path: name, directoryHint: .isDirectory)
+            FilePermissions.restrict(folder, directory: true)
+            FilePermissions.restrictDatabase(folder.appending(path: "history.sqlite"))
+        }
+        for dir in [sessions, favicons] { FilePermissions.restrict(dir, directory: true) }
+        for file in [session, bookmarks, feedsCache, newTab, profilesFile] { FilePermissions.restrict(file, directory: false) }
+    }
+
     /// Creates the folder layout and starter files on first launch. Never overwrites existing files.
     static func ensure() {
         let fm = FileManager.default
         for dir in [support, userScripts, filters, compiledRules, favicons, extensions] {
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+        tightenExisting()
         // An empty object: every key falls back to its default, so the file only ever holds what the user changed.
         writeIfMissing(config, "{}\n")
         writeIfMissing(userCSS, """

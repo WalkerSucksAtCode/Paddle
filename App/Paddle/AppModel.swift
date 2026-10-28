@@ -969,8 +969,11 @@ final class AppModel {
         if let store = histories[profile] { return store }
         do {
             let url = historyPath(for: profile)
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let folder = url.deletingLastPathComponent()
+            if folder != Paths.support { FilePermissions.createPrivateFolder(folder) }
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let store = try HistoryStore(path: url.path)
+            FilePermissions.restrictDatabase(url)
             histories[profile] = store
             prune(store, profile: profile)
             return store
@@ -1237,6 +1240,11 @@ final class AppModel {
     /// `externalLinks` picks a new tab of the front window, a new window (the other links of the same batch become
     /// its tabs) or the front window's selected tab (the first link; the rest become tabs).
     func open(_ urls: [URL]) {
+        let urls = urls.filter { url in
+            let allowed = OpenableURL.isAllowed(url)
+            if !allowed { log.info("refused a link from another app: scheme \(url.scheme ?? "none", privacy: .public)") }
+            return allowed
+        }
         var target = config.externalLinks == .newWindow ? nil : frontNormalWindow
         var replaceSelected = config.externalLinks == .currentTab
         for url in urls {

@@ -961,16 +961,17 @@ final class WebEnvironment {
                 filterUpdateProblems[file] = "\(name): update failed (\(reason)), \(Self.downloadedAge(destination))"
             }
             do {
-                let (data, response) = try await URLSession.shared.data(from: url)
+                let (data, response) = try await BoundedDownload.data(
+                    for: URLRequest(url: url), session: URLSession.shared, limit: FilterListText.maxBytes)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 guard status == 200 else { failed("HTTP \(status)"); continue }
-                guard response.expectedContentLength <= Int64(FilterListText.maxBytes), data.count <= FilterListText.maxBytes
-                else { failed("larger than 50 MB"); continue }
                 guard FilterListText.mayReplaceStoredList(data) else { failed("not a filter list"); continue }
                 try data.write(to: destination, options: .atomic)
                 report.lines.append("\(name): \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
                 report.written += 1
                 filterUpdateProblems[file] = nil
+            } catch is BoundedDownload.TooLarge {
+                failed("larger than 50 MB")
             } catch {
                 failed(error.localizedDescription)
             }

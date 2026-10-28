@@ -236,5 +236,22 @@ struct SitePolicyTests {
         }
         #expect(toggled == true)
     }
+
+    /// An embedded frame's own `allow` needs the embedding page to allow too; a deny on either side denies.
+    @Test func locationNeedsTheEmbeddingPageToAllowToo() {
+        #expect(SitePermissionDecision.location(site: .allow, embeddingPage: nil) == .grant)
+        #expect(SitePermissionDecision.location(site: .allow, embeddingPage: .allow) == .grant)
+        #expect(SitePermissionDecision.location(site: .allow, embeddingPage: .ask) == .ask)
+        #expect(SitePermissionDecision.location(site: .allow, embeddingPage: .deny) == .deny)
+        #expect(SitePermissionDecision.location(site: .deny, embeddingPage: .allow) == .deny)
+        #expect(SitePermissionDecision.location(site: .ask, embeddingPage: nil) == .ask)
+    }
+
+    @Test func notificationsAreGrantedOnlyForHTTPS() {
+        #expect(SitePermissionDecision.notifications(scheme: "http", site: .allow, embeddingPage: nil) == .deny)
+        #expect(SitePermissionDecision.notifications(scheme: "https", site: .allow, embeddingPage: nil) == .grant)
+        #expect(SitePermissionDecision.notifications(scheme: "HTTPS", site: .ask, embeddingPage: nil) == .ask)
+        #expect(SitePermissionDecision.notifications(scheme: "https", site: .allow, embeddingPage: .ask) == .ask)
+    }
 }
 

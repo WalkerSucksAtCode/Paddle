@@ -4,6 +4,45 @@ import ImageIO
 import os
 import PaddleCore
 
+/// A download that is read as a stream and abandoned the moment it passes `limit` (or announces it will), so a
+/// hostile host cannot fill memory before a size check runs.
+nonisolated enum BoundedDownload {
+    struct TooLarge: Error {}
+
+    /// The response and its body. A non-2xx answer returns an empty body without reading it.
+    static func data(for request: URLRequest, session: URLSession, limit: Int,
+                     delegate: (any URLSessionTaskDelegate)? = nil) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request, delegate: delegate)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            bytes.task.cancel()
+            return (Data(), response)
+        }
+        var cap = DownloadCap(limit: limit)
+        if cap.announcedTooLarge(response.expectedContentLength) {
+            bytes.task.cancel()
+            throw TooLarge()
+        }
+        var data = Data()
+        for try await byte in bytes {
+            guard cap.add(1) else {
+                bytes.task.cancel()
+                throw TooLarge()
+            }
+            data.append(byte)
+        }
+        return (data, response)
+    }
+}
+
+/// Refuses a redirect from a feed picture to localhost or the local network.
+nonisolated final class FeedImageRedirectGuard: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        guard let url = request.url, FeedImagePolicy.allows(url) else { return nil }
+        return request
+    }
+}
+
 /// The New Tab page's News section: the newest stories of `newTabFeeds`, fetched by Paddle itself (no web view, no
 /// cookies) when a New Tab shows and the last fetch is over `refreshInterval` old, and cached in `feeds-cache.json`
 /// so they show at once after a launch.
@@ -19,7 +58,6 @@ final class FeedStore {
 
     static let refreshInterval: TimeInterval = 30 * 60
     static let maxItems = 24
-    private static let maxBytes = 2 * 1024 * 1024
     private static let log = Logger(subsystem: "com.walker.Paddle", category: "feeds")
 
     @ObservationIgnored private var lastRefresh: Date?
@@ -127,13 +165,14 @@ final class FeedStore {
         var request = URLRequest(url: url)
         request.setValue("application/rss+xml, application/atom+xml, application/xml;q=0.9, text/html;q=0.8, */*;q=0.5", forHTTPHeaderField: "Accept")
         do {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await BoundedDownload.data(for: request, session: session, limit: DownloadCap.feedBytes)
             guard let http = response as? HTTPURLResponse else { return .failure(FeedError(message: "No answer.")) }
             guard (200..<300).contains(http.statusCode) else {
                 return .failure(FeedError(message: "The site answered \(http.statusCode)."))
             }
-            guard data.count <= maxBytes else { return .failure(FeedError(message: "The feed is over 2 MB.")) }
             return .success((data, response.url ?? url))
+        } catch is BoundedDownload.TooLarge {
+            return .failure(FeedError(message: "The feed is over 2 MB."))
         } catch {
             return .failure(FeedError(message: error.localizedDescription))
         }
@@ -142,17 +181,17 @@ final class FeedStore {
     // MARK: - Pictures
 
     @ObservationIgnored private let images = NSCache<NSURL, NSImage>()
-    private static let maxImageBytes = 3 * 1024 * 1024
 
     /// A story's picture, fetched like the feeds (no cookies), at most 3 MB, scaled down to `maxPixel` on its longer
-    /// side and kept in memory for this run. Nil when it can't be had.
+    /// side and kept in memory for this run. Nil when it can't be had, and for localhost and local-network hosts.
     func image(for url: URL, maxPixel: CGFloat) async -> NSImage? {
         if let cached = images.object(forKey: url as NSURL) { return cached }
+        guard FeedImagePolicy.allows(url) else { return nil }
         var request = URLRequest(url: url)
         request.setValue("image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await Self.session.data(for: request),
+        guard let (data, response) = try? await BoundedDownload.data(
+                  for: request, session: Self.session, limit: DownloadCap.feedImageBytes, delegate: FeedImageRedirectGuard()),
               let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              data.count <= Self.maxImageBytes,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                   kCGImageSourceCreateThumbnailFromImageAlways: true,
