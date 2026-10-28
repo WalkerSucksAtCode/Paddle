@@ -34,6 +34,22 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         return (action.value(forKey: isUserInitiatedKey) as? Bool) ?? false
     }
 
+    /// Whether a main-frame navigation began with the user, so a download it ends in needs no prompt: a real click or
+    /// form submit, back/forward/reload, or a load Paddle started (address bar, bookmark, menu: `Tab.load` sets
+    /// `tab.url` to the target first, and typed loads set `typedNavigationPending`). A server redirect keeps the
+    /// answer of the navigation it continues. Anything else (page script, meta refresh) did not begin with the user.
+    private static func startedByUser(_ action: WKNavigationAction, byUser: Bool, paddleLoad: Bool, previous: Bool) -> Bool {
+        switch action.navigationType {
+        case .backForward, .reload, .formResubmitted: return true
+        case .linkActivated, .formSubmitted: return byUser
+        default: break
+        }
+        if byUser || paddleLoad { return true }
+        let key = "_isRedirect"
+        if action.responds(to: NSSelectorFromString(key)), (action.value(forKey: key) as? Bool) == true { return previous }
+        return false
+    }
+
     /// Host of the frame that asked for a navigation, read through KVC because WebKit can leave it nil.
     private static func requester(_ action: WKNavigationAction) -> String? {
         (action.value(forKey: "sourceFrame") as? WKFrameInfo)?.securityOrigin.host
@@ -44,7 +60,23 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         preferences: WKWebpagePreferences
     ) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
-        if navigationAction.shouldPerformDownload { return (.download, preferences) }
+        if navigationAction.shouldPerformDownload {
+            // A `<a download>` link a real click follows downloads as before. One a page script clicked (no user
+            // gesture) asks first, as a main-frame download a script started does; declining cancels it.
+            let byUser = Self.isUserInitiated(navigationAction)
+            let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? false
+            let userStarted = Self.startedByUser(navigationAction, byUser: byUser,
+                                                 paddleLoad: isMainFrame && (navigationAction.request.url == tab?.url || tab?.typedNavigationPending == true),
+                                                 previous: false)
+            if !userStarted {
+                let site = navigationAction.request.url?.host() ?? webView.url?.host() ?? "this page"
+                guard await allowsDownloads(from: site, filename: Self.promptFilename(navigationAction.request.url), scripted: true) else {
+                    Self.downloadLog.info("scripted download refused")
+                    return (.cancel, preferences)
+                }
+            }
+            return (.download, preferences)
+        }
         guard let url = navigationAction.request.url else { return (.allow, preferences) }
         let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? false
         let byUser = Self.isUserInitiated(navigationAction)
@@ -52,6 +84,9 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             mainFrameNavigationType = navigationAction.navigationType
             mainFrameIsPost = navigationAction.request.httpMethod?.uppercased() == "POST"
             mainFrameResponded = false
+            mainFrameStartedByUser = Self.startedByUser(navigationAction, byUser: byUser,
+                                                        paddleLoad: navigationAction.request.url == tab?.url || tab?.typedNavigationPending == true,
+                                                        previous: mainFrameStartedByUser)
         }
 
         // mailto:, zoommtg:, slack: ... hand off to the right app, asking first unless a real click opened a mail,
@@ -243,7 +278,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var isAskingToOpenApp = false
     /// Sites whose scripted "open app" request was cancelled in this tab; their scripts aren't asked about again.
     private var refusedAppRequesters: Set<String> = []
-    /// "site scheme" pairs allowed in this tab; they open without asking again.
+    /// "site url" pairs allowed in this tab; that exact link opens without asking again, a different one asks.
     private var allowedAppRequests: Set<String> = []
     /// Schemes a real click opens without asking: each starts a mail, message or call the user still sends.
     private static let clickOpensSchemes: Set<String> = ["mailto", "tel", "sms", "facetime", "facetime-audio"]
@@ -258,14 +293,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             guard clicked else { return }
             let alert = NSAlert()
             alert.messageText = "No app can open this link"
-            alert.informativeText = url.absoluteString
+            alert.informativeText = DisplayText.cleaned(url.absoluteString)
             alert.addButton(withTitle: "OK")
             _ = await present(alert)
             return
         }
         let scheme = url.scheme?.lowercased() ?? ""
         let site = requester ?? "This page"
-        let request = "\(site) \(scheme)"
+        let request = "\(site) \(url.absoluteString)"
         if !(clicked && Self.clickOpensSchemes.contains(scheme)), !allowedAppRequests.contains(request) {
             guard let tab, tab.browser?.selectedID == tab.id, !isAskingToOpenApp,
                   clicked || !refusedAppRequesters.contains(site) else { return }
@@ -274,7 +309,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             let name = FileManager.default.displayName(atPath: app.path)
             let alert = NSAlert()
             alert.messageText = "Open “\(name)”?"
-            alert.informativeText = "\(site) wants to open a \(scheme) link in \(name):\n\(url.absoluteString.prefix(200))"
+            alert.informativeText = "\(DisplayText.cleaned(site, limit: 100)) wants to open a \(DisplayText.cleaned(scheme, limit: 40)) link in \(name):\n\(DisplayText.cleaned(url.absoluteString))"
             alert.addButton(withTitle: "Open")
             alert.addButton(withTitle: "Cancel")
             guard await present(alert) == .alertFirstButtonReturn else {
@@ -297,6 +332,15 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let isAttachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
         guard isAttachment || !navigationResponse.canShowMIMEType else { return .allow }
+        // A main-frame download that page script or a redirect started, not the user, asks first (once per site per
+        // session); one the user started (click, form, address bar, bookmark, back/forward) goes ahead as before.
+        if navigationResponse.isForMainFrame, !mainFrameStartedByUser {
+            let site = navigationResponse.response.url?.host() ?? webView.url?.host() ?? "this page"
+            guard await allowsDownloads(from: site, filename: navigationResponse.response.suggestedFilename ?? "a file", scripted: true) else {
+                Self.downloadLog.info("scripted main-frame download refused")
+                return .cancel
+            }
+        }
         // Any frame can download: sites export files through hidden iframes. A frame from another site (an ad)
         // needs permission first, once per site per session, like Safari's "Allow downloads" prompt.
         // Same site means the same registrable domain, so Drive's drive.usercontent.google.com frame counts as Drive's.
@@ -310,14 +354,29 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         return .download
     }
 
-    private func allowsDownloads(from site: String, filename: String) async -> Bool {
+    /// The file name a download prompt names: the request URL's last path component, else "a file".
+    static func promptFilename(_ url: URL?) -> String {
+        let last = url?.lastPathComponent ?? ""
+        return last.isEmpty || last == "/" ? "a file" : last
+    }
+
+    /// Asks once per site per session (answers are remembered in the permission store). Internal so a script-opened
+    /// popup's download, which has no click behind it, asks through its opener's tab.
+    func allowsDownloads(from site: String, filename: String, scripted: Bool = false) async -> Bool {
         let app = AppModel.shared
         let isPrivate = tab?.isPrivate ?? true
         let profile = tab?.profileID ?? ProfileStore.defaultID
         if let answer = app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: .downloads) { return answer }
         let alert = NSAlert()
-        alert.messageText = "Allow downloads from \(site)?"
-        alert.informativeText = "A frame from \(site) on this page wants to download “\(filename)”."
+        let shownSite = DisplayText.cleaned(site, limit: 100)
+        let shownName = DisplayText.cleaned(filename, limit: 100)
+        if scripted {
+            alert.messageText = "Allow download of “\(shownName)” from \(shownSite)?"
+            alert.informativeText = "This page started the download without you clicking anything."
+        } else {
+            alert.messageText = "Allow downloads from \(shownSite)?"
+            alert.informativeText = "A frame from \(shownSite) on this page wants to download “\(shownName)”."
+        }
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Don't Allow")
         let response = await present(alert) { app[permissionsFor: isPrivate, profile: profile].answer(site: site, kind: .downloads) == nil }
@@ -428,6 +487,8 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// How the pending main-frame navigation started; reloads, back/forward and session restores aren't new visits.
     private var mainFrameNavigationType: WKNavigationType?
+    /// The pending main-frame navigation began with the user (`startedByUser`); unknown counts as not.
+    private var mainFrameStartedByUser = false
     /// The pending main-frame navigation sends a form post (`Tab.committedPost`).
     private var mainFrameIsPost = false
 

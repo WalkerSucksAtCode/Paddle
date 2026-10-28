@@ -98,6 +98,8 @@ final class Tab: Identifiable {
     /// Opaque stand-in over a web view that has not painted yet. A restored page is a blank white document for
     /// a beat; in the dark appearance that white is the whole window.
     @ObservationIgnored private var wakeCover: NSView?
+    /// The native "Fill contact info" chip over the web view (`ContactChipView`), outside the page.
+    @ObservationIgnored var contactChip: ContactChipView?
     @ObservationIgnored private var wakeCoverGeneration = 0
     @ObservationIgnored private var wakeCoverStarted: Date?
     @ObservationIgnored private var savedState: Any?
@@ -522,6 +524,7 @@ final class Tab: Identifiable {
 
     /// Drops the web view. WebKit exits the WebContent process once no web view uses it.
     func sleep() {
+        hideContactChip()
         endWakeCover()
         guard let webView else { return }
         // Before the first page commits there is no history worth keeping; waking then loads the URL again. The
@@ -1037,12 +1040,14 @@ final class Tab: Identifiable {
                 AppModel.shared.updateHistoryTitle(url, tab.title, profile: tab.profileID)
             },
             watch(\.url) { tab, webView in
+                tab.hideContactChip()
                 // The error page's about:blank must not replace the extension URL it stands in for.
                 guard let url = webView.url, !tab.showsExtensionUnavailable, tab.url != url else { return }
                 tab.url = url
                 tab.browser?.tabURLChanged(tab)
             },
             watch(\.isLoading) { tab, webView in
+                tab.hideContactChip()
                 guard tab.isLoading != webView.isLoading else { return }
                 tab.isLoading = webView.isLoading
                 AppModel.shared.existingExtensions(for: tab.profileID)?.tabChanged(tab, .loading)

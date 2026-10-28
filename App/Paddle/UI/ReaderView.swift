@@ -84,7 +84,8 @@ struct ReaderView: View {
                 baseURL: tab.url,
                 theme: theme,
                 font: font,
-                fontSize: fontSize
+                fontSize: fontSize,
+                onOpenLink: { [tab] url in tab.load(url) }
             )
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -201,6 +202,8 @@ private struct ReaderContentWebView: NSViewRepresentable {
     let theme: ReaderTheme
     let font: ReaderFont
     let fontSize: Double
+    /// A clicked http(s) link: the tab loads it.
+    let onOpenLink: (URL) -> Void
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -212,6 +215,7 @@ private struct ReaderContentWebView: NSViewRepresentable {
         config.defaultWebpagePreferences.allowsContentJavaScript = false
         AppModel.shared.web.addContentRules(to: config.userContentController)
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
         PrivateAPI.setValue(false, forKey: "drawsBackground", on: webView)
         updateHTML(in: webView)
         return webView
@@ -356,6 +360,33 @@ private struct ReaderContentWebView: NSViewRepresentable {
         </body>
         </html>
         """
+        (webView.navigationDelegate as? Coordinator)?.pendingLoads += 1
         webView.loadHTMLString(html, baseURL: baseURL)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onOpenLink: onOpenLink) }
+
+    /// Lets the article's own HTML load and nothing else: a clicked link would otherwise navigate this web view in
+    /// place while the address bar still showed the original page. The tab loads the link instead (leaving reader
+    /// view); only http and https links do anything.
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        let onOpenLink: (URL) -> Void
+        /// `loadHTMLString` calls not yet seen by the navigation delegate.
+        var pendingLoads = 0
+
+        init(onOpenLink: @escaping (URL) -> Void) { self.onOpenLink = onOpenLink }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            // Subframes can't be reached (no scripts, sanitized markup); only the main frame's address matters.
+            if let frame = navigationAction.targetFrame, !frame.isMainFrame { return .allow }
+            if pendingLoads > 0, navigationAction.navigationType == .other {
+                pendingLoads -= 1
+                return .allow
+            }
+            if let url = navigationAction.request.url, let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) {
+                onOpenLink(url)
+            }
+            return .cancel
+        }
     }
 }

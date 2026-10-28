@@ -59,7 +59,15 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, preferences: WKWebpagePreferences) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
-        if navigationAction.shouldPerformDownload { return (.download, preferences) }
+        if navigationAction.shouldPerformDownload {
+            // No click reaches a hidden probe window, so its download asks first, through the opener's tab.
+            let site = navigationAction.request.url?.host() ?? webView.url?.host() ?? "this page"
+            guard await allowsDownload(site: site, filename: TabWebDelegate.promptFilename(navigationAction.request.url)) else {
+                end("download refused")
+                return (.cancel, preferences)
+            }
+            return (.download, preferences)
+        }
         let url = navigationAction.request.url
         let scheme = url?.scheme?.lowercased() ?? ""
         guard ["http", "https"].contains(scheme) else {
@@ -89,7 +97,14 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
         guard navigationResponse.isForMainFrame else { return .cancel }
         let disposition = (navigationResponse.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? ""
         let isAttachment = disposition.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
-        if isAttachment || !navigationResponse.canShowMIMEType { return .download }
+        if isAttachment || !navigationResponse.canShowMIMEType {
+            let site = navigationResponse.response.url?.host() ?? webView.url?.host() ?? "this page"
+            guard await allowsDownload(site: site, filename: navigationResponse.response.suggestedFilename ?? "a file") else {
+                end("download refused")
+                return .cancel
+            }
+            return .download
+        }
         // A page: it never renders here. The opener's toolbar offers it.
         blocked(navigationResponse.response.url)
         return .cancel
@@ -110,6 +125,16 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
         if error.domain == NSURLErrorDomain, error.code == NSURLErrorCancelled { return }
         if error.domain == "WebKitErrorDomain", error.code == 102 { return }
         end("load failed")
+    }
+
+    /// Asks before a download this window starts, with the opener tab's download prompt (once per site per session).
+    /// With no opener left (its tab closed) there is nowhere to ask, so the download is refused.
+    private func allowsDownload(site: String, filename: String) async -> Bool {
+        guard let delegate = opener?.webView?.navigationDelegate as? TabWebDelegate else {
+            Self.log.info("script-opened download refused: no tab to ask")
+            return false
+        }
+        return await delegate.allowsDownloads(from: site, filename: filename, scripted: true)
     }
 
     private func started(_ download: WKDownload) {

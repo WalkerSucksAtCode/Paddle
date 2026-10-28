@@ -220,7 +220,7 @@ final class DownloadStore {
 
     /// A free name in ~/Downloads: "name (1).ext" when "name.ext" exists on disk or belongs to a running download.
     func uniqueDestination(for filename: String, in folder: URL = DownloadStore.folder) -> URL {
-        let safe = filename.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        let safe = DownloadFilename.sanitized(filename)
         let base = (safe as NSString).deletingPathExtension
         let ext = (safe as NSString).pathExtension
         // Lowercased: the Downloads volume is normally case-insensitive.

@@ -353,8 +353,8 @@ extension ControlBridge {
 
     private func menuAction(_ args: [String: JSONValue]) throws -> MCPToolResult {
         guard let name = string(args, "name") else { throw BridgeToolError("name is required") }
-        guard !PaddleBridgeTools.refusedMenuActions.contains(name) else {
-            throw BridgeToolError("\(name) isn't available through the bridge")
+        guard PaddleBridgeTools.bridgeAllowedMenuActions.contains(name) else {
+            throw BridgeToolError("\(name) is Settings-only: the bridge can't run it")
         }
         guard let item = MainMenu.item(named: name) else { throw BridgeToolError("no menu action named \(name)") }
         guard !item.isHiddenOrHasHiddenAncestor else { throw BridgeToolError("\(name) is hidden in the menu") }
@@ -399,8 +399,8 @@ extension ControlBridge {
         var keys: Set<PaddleConfig.CodingKeys> = []
         for name in changes.keys {
             guard let key = PaddleConfig.CodingKeys(rawValue: name) else { throw BridgeToolError("unknown config key \(name)") }
-            guard !PaddleBridgeTools.settingsOnlyConfigKeys.contains(name) else {
-                throw BridgeToolError("\(name) can only be changed in Settings or config.json itself")
+            guard PaddleBridgeTools.bridgeSettableConfigKeys.contains(name) else {
+                throw BridgeToolError("\(name) is Settings-only: change it in Settings or config.json itself")
             }
             keys.insert(key)
         }

@@ -144,13 +144,55 @@ struct MCPTests {
         #expect(wrapped.contains("Do this"))
     }
 
-    @Test func refusalsAreListedAndReal() {
+    @Test func allowListsAreListedInTheToolDescriptions() {
         let menu = PaddleBridgeTools.all.first { $0.name == "menu_action" }?.description ?? ""
-        for name in PaddleBridgeTools.refusedMenuActions { #expect(menu.contains(name)) }
+        for name in PaddleBridgeTools.bridgeAllowedMenuActions { #expect(menu.contains(name)) }
         let config = PaddleBridgeTools.all.first { $0.name == "set_config" }?.description ?? ""
-        for name in PaddleBridgeTools.settingsOnlyConfigKeys {
-            #expect(config.contains(name))
-            #expect(PaddleConfig.CodingKeys(rawValue: name) != nil)
+        for name in PaddleBridgeTools.bridgeSettableConfigKeys { #expect(config.contains(name)) }
+    }
+
+    /// Every config.json key is classified exactly once: a key added to PaddleConfig fails here until someone puts it
+    /// in bridgeSettableConfigKeys or settingsOnlyConfigKeys. Until then the bridge refuses it anyway.
+    @Test func everyConfigKeyIsClassifiedExactlyOnce() {
+        let settable = PaddleBridgeTools.bridgeSettableConfigKeys
+        let refused = PaddleBridgeTools.settingsOnlyConfigKeys
+        #expect(settable.isDisjoint(with: refused))
+        for key in PaddleConfig.CodingKeys.allCases {
+            let count = (settable.contains(key.rawValue) ? 1 : 0) + (refused.contains(key.rawValue) ? 1 : 0)
+            #expect(count == 1, "\(key.rawValue) must be in bridgeSettableConfigKeys or settingsOnlyConfigKeys, exactly once")
+        }
+        let known = Set(PaddleConfig.CodingKeys.allCases.map(\.rawValue))
+        for name in settable.union(refused) { #expect(known.contains(name), "\(name) isn't a PaddleConfig key") }
+    }
+
+    @Test func bridgeRefusesTheExamples() {
+        let settable = PaddleBridgeTools.bridgeSettableConfigKeys
+        for name in ["homepage", "newTabPage", "shortcuts", "userAgentSuffix", "resumeMediaOnSelect"] { #expect(!settable.contains(name), "\(name)") }
+        let allowed = PaddleBridgeTools.bridgeAllowedMenuActions
+        for name in ["exportPDF", "openInPreview", "reloadWithoutContentBlockers", "quit", "copy", "sharePage"] {
+            #expect(!allowed.contains(name), "\(name)")
+        }
+    }
+
+    /// Action names MainMenu.swift declares (`"name", "Title", #selector(...)`), read from the checked-in source,
+    /// because the app target isn't reachable from these tests.
+    private static func mainMenuActionNames() throws -> Set<String> {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("App/Paddle/MainMenu.swift"), encoding: .utf8)
+        let regex = try NSRegularExpression(pattern: #""([A-Za-z0-9]+)", "[^"\n]*", #selector"#)
+        return Set(regex.matches(in: source, range: NSRange(source.startIndex..., in: source)).compactMap { match in
+            Range(match.range(at: 1), in: source).map { String(source[$0]) }
+        })
+    }
+
+    /// Each allowed action must be a real MainMenu item, so a rename fails here. A new MainMenu action needs no entry:
+    /// the bridge refuses every name that isn't in bridgeAllowedMenuActions.
+    @Test func allowedMenuActionsAreRealMenuItems() throws {
+        let names = try Self.mainMenuActionNames()
+        #expect(names.count > 100)
+        for name in PaddleBridgeTools.bridgeAllowedMenuActions {
+            #expect(names.contains(name), "\(name) isn't a MainMenu action")
         }
     }
 

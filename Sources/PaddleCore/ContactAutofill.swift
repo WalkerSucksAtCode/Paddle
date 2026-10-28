@@ -86,13 +86,68 @@ public struct ContactCard: Codable, Equatable, Sendable {
     private func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
+/// What a chip can name; the order is the order it is written in.
+public enum ContactGroup: String, CaseIterable, Sendable {
+    case name, email, phone, company, address
+}
+
+public extension ContactField {
+    /// The group the chip names this field under.
+    var group: ContactGroup {
+        switch self {
+        case .name, .givenName, .familyName: .name
+        case .email: .email
+        case .tel: .phone
+        case .organization: .company
+        case .streetAddress, .addressLine1, .addressLine2, .city, .region, .postalCode, .country: .address
+        }
+    }
+}
+
+/// What the native chip offers, from what the page script reported (the page script's words are never trusted
+/// further than this).
+public enum ContactChipOffer {
+    /// The known groups in `raw`, once each, in chip order.
+    public static func groups(from raw: [String]) -> [ContactGroup] {
+        let given = Set(raw.compactMap(ContactGroup.init(rawValue:)))
+        return ContactGroup.allCases.filter(given.contains)
+    }
+
+    /// "Fill name, email, address"; nil when there is nothing to fill.
+    public static func label(for groups: [ContactGroup]) -> String? {
+        groups.isEmpty ? nil : "Fill " + groups.map(\.rawValue).joined(separator: ", ")
+    }
+
+    /// The raw `ContactField` names the card is asked for: every kind in `groups`.
+    public static func kinds(for groups: [ContactGroup]) -> [String] {
+        ContactField.allCases.filter { groups.contains($0.group) }.map(\.rawValue)
+    }
+
+    /// Where the chip goes, top-left origin, in web-view points: just under the field and clamped inside `bounds`,
+    /// or above it when there is no room below. Nil for a rect that is not finite, empty, or entirely outside.
+    public static func frame(field: CGRect, chip: CGSize, in bounds: CGSize, margin: CGFloat = 4) -> CGRect? {
+        let values = [field.origin.x, field.origin.y, field.width, field.height, chip.width, chip.height, bounds.width, bounds.height]
+        guard values.allSatisfy(\.isFinite), field.width > 0, field.height > 0, chip.width > 0, chip.height > 0 else { return nil }
+        guard field.maxX > 0, field.maxY > 0, field.minX < bounds.width, field.minY < bounds.height else { return nil }
+        let maxX = max(margin, bounds.width - chip.width - margin)
+        let maxY = max(margin, bounds.height - chip.height - margin)
+        let x = min(max(field.minX, margin), maxX)
+        var y = field.maxY + margin
+        if y > maxY { y = field.minY - margin - chip.height }
+        y = min(max(y, margin), maxY)
+        return CGRect(x: x, y: y, width: chip.width, height: chip.height)
+    }
+}
+
 /// The isolated-world page script behind contact autofill, for https main frames only. When a field it recognises (by
-/// `autocomplete`, then by its type, name, id, placeholder and label) gets focus, it shows a chip under it naming what
-/// it would fill ("Fill name, email, address"), in a closed shadow root and with none of the contact info in it. Only
-/// a real click on the chip (`isTrusted`) asks Paddle for the values, and only for the kinds the chip named; they go
-/// into the form's empty, recognised fields that are visible on screen right then (inside the window, not covered,
-/// faded out or with see-through text), with input and change events as typing sends. Card and password fields are
-/// never touched. The handler lives only in the script's own content world, so the page can't ask for the values.
+/// `autocomplete`, then by its type, name, id, placeholder and label) gets focus, it tells Paddle (the content-world
+/// handler) which groups it could fill and where the field is; it adds nothing to the page. Paddle draws a native chip
+/// over the web view naming what it would fill ("Fill name, email, address"), which page code can neither restyle,
+/// move nor hide. Only a real click on that chip makes Paddle call `__paddleFill` in this world with the values for
+/// the groups it named; they go into the form's empty, recognised fields of those groups that are visible on screen
+/// right then (inside the window, not covered, faded out or with see-through text), with input and change events as
+/// typing sends. Card and password fields are never touched. The handler and `__paddleFill` live only in the script's
+/// own content world, so the page can reach neither the values nor the fill.
 public enum ContactAutofillScript {
     public static let handlerName = "paddleContactAutofill"
     public static let worldName = "PaddleContactAutofill"
@@ -188,27 +243,14 @@ public enum ContactAutofillScript {
       };
       const groupOrder = ['name', 'email', 'phone', 'company', 'address'];
 
-      let host = null, chip = null, target = null, dismissed = false, offered = new Set();
-      const hide = () => { if (host) host.style.setProperty('display', 'none', 'important'); target = null; };
-      const place = () => {
-        if (!host || !target) return;
-        const r = target.getBoundingClientRect();
-        host.style.setProperty('top', Math.round(r.bottom + 4) + 'px', 'important');
-        host.style.setProperty('left', Math.round(Math.max(4, r.left)) + 'px', 'important');
-      };
-      const makeChip = () => {
-        host = document.createElement('paddle-contact-autofill');
-        const style = 'position: fixed !important; z-index: 2147483647 !important; display: none !important; opacity: 1 !important; visibility: visible !important; pointer-events: auto !important;';
-        host.setAttribute('style', style);
-        const shadow = host.attachShadow({ mode: 'closed' });
-        shadow.innerHTML = '<style>div{display:flex;gap:2px;align-items:center;font:13px -apple-system,system-ui,sans-serif;background:Canvas;color:CanvasText;border:1px solid rgba(128,128,128,.45);border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.18);padding:2px}button{font:inherit;border:0;background:transparent;color:inherit;padding:4px 8px;border-radius:5px;cursor:default}button:hover{background:rgba(128,128,128,.18)}.x{padding:4px 6px;opacity:.6}</style><div><button class="fill">Fill contact info</button><button class="x" title="Not on this page">✕</button></div>';
-        chip = shadow;
-        const keepFocus = (e) => e.preventDefault();
-        shadow.querySelector('.fill').addEventListener('mousedown', keepFocus);
-        shadow.querySelector('.x').addEventListener('mousedown', keepFocus);
-        shadow.querySelector('.x').addEventListener('click', (e) => { if (e.isTrusted) { dismissed = true; hide(); } });
-        shadow.querySelector('.fill').addEventListener('click', (e) => { if (e.isTrusted && target) fill(target); });
-        (document.body || document.documentElement).appendChild(host);
+      // No element is ever added to the page. The chip is a native view Paddle draws over the web view; this script
+      // only tells Paddle which groups it could fill and where the field is (a page that lies about that can at most
+      // move a visible native chip that names what it fills), and fills when Paddle asks after a real click.
+      let target = null, dismissed = false, shown = false, offered = new Set();
+      const send = (message) => { try { Promise.resolve(handler.postMessage(message)).catch(() => {}); } catch (e) {} };
+      const hide = () => {
+        target = null;
+        if (shown) { shown = false; send({ type: 'hide' }); }
       };
       const setValue = (el, value) => {
         if (el.tagName === 'SELECT') {
@@ -225,21 +267,20 @@ public enum ContactAutofillScript {
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       };
-      const fill = (from) => {
-        // Hidden first, so the chip doesn't cover a field it would fill. Only what the chip named, and only fields
-        // still visible now.
+      // Called by Paddle after a real click on its chip, with the values for the kinds of the groups it named. Only
+      // fields of the groups offered, still empty and visible now, get a value.
+      window.__paddleFill = (values) => {
+        const from = target;
         hide();
-        const fields = fillable(from).filter(f => offered.has(groupOf[kindOf(f)]));
-        const kinds = Array.from(new Set(fields.map(kindOf)));
-        if (!kinds.length) return;
-        Promise.resolve(handler.postMessage({ kinds })).then((values) => {
-          if (!values || typeof values !== 'object') return;
-          for (const f of fields) {
-            const v = values[kindOf(f)];
-            if (typeof v === 'string' && v) setValue(f, v);
-          }
-        }).catch(() => {});
+        if (!from || !from.isConnected || !values || typeof values !== 'object' || !offered.size) return 0;
+        let count = 0;
+        for (const f of fillable(from).filter(f => offered.has(groupOf[kindOf(f)]))) {
+          const v = values[kindOf(f)];
+          if (typeof v === 'string' && v && setValue(f, v)) count++;
+        }
+        return count;
       };
+      window.__paddleDismiss = () => { dismissed = true; hide(); };
       document.addEventListener('focusin', (e) => {
         const el = e.target;
         hide();
@@ -247,17 +288,16 @@ public enum ContactAutofillScript {
         const groups = new Set(fillable(el).map(f => groupOf[kindOf(f)]));
         offered = new Set(groupOrder.filter(g => groups.has(g)));
         if (!offered.size) return;
-        if (!host) makeChip();
-        chip.querySelector('.fill').textContent = 'Fill ' + Array.from(offered).join(', ');
+        const r = el.getBoundingClientRect();
         target = el;
-        host.style.setProperty('display', 'block', 'important');
-        place();
+        shown = true;
+        send({ type: 'show', groups: Array.from(offered), rect: { x: r.left, y: r.top, width: r.width, height: r.height } });
       }, true);
       document.addEventListener('focusout', () => setTimeout(() => {
         if (!document.activeElement || !kindOf(document.activeElement)) hide();
       }, 150), true);
-      window.addEventListener('scroll', place, true);
-      window.addEventListener('resize', place);
+      window.addEventListener('scroll', hide, true);
+      window.addEventListener('resize', hide);
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide(); }, true);
     })();
     """

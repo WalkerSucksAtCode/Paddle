@@ -153,24 +153,62 @@ public enum PaddleBridgeTools {
 
     private static let tab = string("Tab id from paddle_state.")
 
-    /// Menu actions the bridge never runs: quitting, the clipboard (a paste would hand over whatever the user
-    /// copied), commands that read or write files outside Paddle or install an extension, and ones that act on
-    /// other apps.
-    public static let refusedMenuActions: Set<String> = [
-        "quit", "cut", "copy", "paste", "pasteAndMatchStyle", "useSelectionForFind", "importFromBrowser",
-        "importBookmarks", "exportBookmarks", "savePage", "print", "installExtensionFromLink", "makeDefaultBrowser",
-        "hideOthers",
+    /// Menu actions the bridge may run. An allow-list: any action not here is refused as Settings-only, including
+    /// actions added later. Navigation, tabs and windows, Mosaic layout, zoom, find and view toggles only. Left out on
+    /// purpose: anything that exports, shares, prints or saves, opens a file or another app (PDF, Preview, Share,
+    /// Translate), changes what is blocked, installs, imports, quits, uses the clipboard, changes New Tab content,
+    /// bookmarks, history or caches, or opens developer tools.
+    public static let bridgeAllowedMenuActions: Set<String> = [
+        "back", "forward", "reload", "hardReload", "stop", "openLocation", "reopenClosedTab",
+        "newTab", "newWindow", "closeTab", "closeWindow", "nextTab", "previousTab", "moveTabLeft", "moveTabRight",
+        "togglePin", "duplicateTab", "renameTab", "addTabToNewGroup", "removeTabFromGroup", "toggleMute", "muteOtherTabs",
+        "searchTabs", "sleepBackgroundTabs", "openLinkPreviewAsTab", "closeLinkPreview", "newSpace", "nextSpace",
+        "previousSpace", "minimize", "fullScreen",
+        "toggleMosaic", "arrangeColumns", "arrangeRows", "arrangeGrid", "arrangeMainAndStack", "toggleFreeform", "tidyUp",
+        "evenOutPanes", "rotatePanes", "swapMosaicPanes", "zoomPane", "movePaneLeft", "movePaneRight", "movePaneUp",
+        "movePaneDown", "muteOtherPanes", "addPane", "reloadAllPanes", "focusNextPane", "focusPaneLeft", "focusPaneRight",
+        "focusPaneUp", "focusPaneDown", "removeFromMosaic",
+        "zoomIn", "zoomOut", "actualSize",
+        "find", "findNext", "findPrevious", "jumpToSelection",
+        "toggleVerticalTabs", "toggleSidebarCollapsed", "toggleBookmarksBar", "toggleDarkMode", "toggleInvertTextImages",
+        "toggleReaderMode", "togglePictureInPicture",
     ]
 
-    /// config.json keys only Settings or the file itself can change: the bridge's own switch, which extensions run
-    /// (they can read cookies) and whether in private windows, where searches (private ones too) are sent, where
-    /// downloads are saved and whether Paddle asks first (with open_url, any folder would get a file), the per-site
-    /// permissions, HTTPS upgrade and fraud warnings, content blocking and which lists (and their scriptlets) run in
-    /// pages, and whether pages are offered the saved contact card.
+    /// config.json keys a bridge client may change: an allow-list of display and behaviour keys that cannot redirect
+    /// traffic, load or run code, change what is blocked, permissions, downloads, paths, history retention or identity.
+    /// Any key not listed is refused as Settings-only.
+    public static let bridgeSettableConfigKeys: Set<String> = [
+        "tabFreezeAfterMinutes", "tabSleepAfterMinutes", "maxAwakeTabs", "sleepPinnedTabs", "cpuSleepPercent",
+        "keepPageWorkRunning", "keepNotifyingSitesLive", "linkPreview",
+        "showTabMemory", "showFullAddress", "tabLayout", "underlineLinks", "alwaysShowTabCloseButtons", "showHomeButton",
+        "alwaysShowDownloadsButton", "newTabPosition", "openLinksInBackground", "afterClosingTab", "swipeNavigation",
+        "pinchZoom", "tabKeyHighlightsLinks", "soundEffects",
+        "mosaicMaxPanes", "mosaicPaneBars", "mosaicGap", "mosaicMinimumPaneWidth", "mosaicMinimumPaneHeight",
+        "mosaicStaysReady", "mosaicFreezeAfterMinutes", "mosaicSleepAfterMinutes", "mosaicAnimation",
+        "mosaicAnimationSpeed", "mosaicLiveDragPreview", "mosaicDividerGrips", "mosaicDividerSnapping",
+        "mosaicDividerDoubleClick", "mosaicPaneCorners", "mosaicFocusMarker", "mosaicDimAmount", "mosaicToolbarSize",
+        "mosaicToolbarButtons", "mosaicPaneGrab", "mosaicModifierDrag", "mosaicWindowDrag", "mosaicNewTab", "mosaicLinks",
+        "mosaicNewPanePlacement", "mosaicDefaultLayout", "mosaicAutoArrange", "mosaicDarkMode", "mosaicZoom",
+        "mosaicFocusFollowsPointer", "mosaicSound", "mosaicCloseKey", "mosaicStripIcon", "mosaicStripName",
+        "mosaicStripShading", "mosaicStripColor", "mosaicStripStrength", "mosaicStripStyle",
+        "appearance", "darkMode", "invertTextImages", "highContrastTabs", "accentColor", "chromeTint",
+        "chromeTintStrength", "interfaceTextSize", "defaultZoom", "minimumFontSize", "reduceMotion", "reduceTransparency",
+    ]
+
+    /// The config.json keys the bridge refuses, classified so that a new key fails the test until someone decides.
+    /// Start page and search; history retention and session state; speculative loading (fetches pages before a click);
+    /// filter lists, scriptlets and user agents; sites and personas; developer tools; HTTPS and fraud checks; downloads;
+    /// the quit and close guards; external links; the saved contact card; New Tab content; the theme (a file name);
+    /// the bridge's own switches; shortcuts; extensions and onboarding of them.
     public static let settingsOnlyConfigKeys: Set<String> = [
-        "controlBridge", "controlBridgeScripts", "extensions", "extensionsInPrivate", "extensionCompat", "searchTemplate",
-        "searchSuggestTemplate", "downloadFolder", "askWhereToDownload", "sites", "httpsOnly", "fraudWarnings",
-        "contentBlocking", "filterLists", "scriptlets", "trustedLists", "contactAutofill",
+        "resumeMediaOnSelect", "homepage", "newTabPage", "searchTemplate", "searchSuggestTemplate", "historyDays", "sessionHistoryTabs",
+        "speculativeLoading", "contentBlocking", "filterLists", "filterUpdateDays", "scriptlets", "trustedLists",
+        "userAgentSuffix", "siteUserAgents", "sites", "sitePersonas", "developerTools", "httpsOnly",
+        "newTabFrequentSites", "askWhereToDownload", "downloadFolder", "onLaunch", "askBeforeQuitting",
+        "askBeforeClosingWindow", "externalLinks", "fraudWarnings", "contactAutofill", "newTabExtension", "newTabFeeds",
+        "newTabNotifications", "newTabHiddenNotifications", "newTabSections", "theme", "controlBridge",
+        "controlBridgeScripts", "shortcuts", "extensions", "extensionToolbar", "extensionsInPrivate", "extensionsOnDemand",
+        "extensionCompat", "extensionUpdates",
     ]
 
     public static let all: [MCPTool] = [
@@ -228,11 +266,11 @@ public enum PaddleBridgeTools {
             inputSchema: schema([("tab", tab), ("timeoutSeconds", integer("Longest wait, in seconds."))], required: ["tab"])),
         MCPTool(
             name: "menu_action",
-            description: "Runs a menu command by its action name (as used by config.json shortcuts), with the menu's own validation; a disabled command returns an error. Refused: " + refusedMenuActions.sorted().joined(separator: ", ") + ".",
+            description: "Runs a menu command by its action name (as used by config.json shortcuts), with the menu's own validation; a disabled command returns an error. Only these run through the bridge: " + bridgeAllowedMenuActions.sorted().joined(separator: ", ") + ". Any other command is refused as Settings-only.",
             inputSchema: schema([("name", string("Action name, for example \"newTab\"."))], required: ["name"])),
         MCPTool(
             name: "set_config",
-            description: "Changes config.json keys through the same conflict-checked writer as Settings. changes maps key names to new values; unknown keys are refused, and so are these, which only Settings changes: " + settingsOnlyConfigKeys.sorted().joined(separator: ", ") + ".",
+            description: "Changes config.json keys through the same conflict-checked writer as Settings. changes maps key names to new values. Only these keys can be changed through the bridge: " + bridgeSettableConfigKeys.sorted().joined(separator: ", ") + ". Any other key is refused as Settings-only (change it in Settings or config.json itself).",
             inputSchema: schema([("changes", ["type": "object", "description": "Config keys and their new values."])], required: ["changes"])),
         MCPTool(
             name: "run_js",
