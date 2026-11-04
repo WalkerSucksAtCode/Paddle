@@ -10,6 +10,45 @@ public enum BridgeLimits {
     public static let writeTimeoutSeconds = 5
     /// The longest single line taken (1 MB); a client that sends more is dropped.
     public static let maxLineBytes = 1 << 20
+    /// The most characters of text one tool result carries (about 200 KB): page text, script results and anything a
+    /// page can inflate are cut to it before the reply is built.
+    public static let maxReplyChars = 200_000
+    /// The most characters of a page-written title in a tool result.
+    public static let maxTitleChars = 300
+
+    /// `text` cut to `limit` characters with a note saying how much was dropped, or `text` itself when it fits.
+    public static func truncated(_ text: String, limit: Int) -> String {
+        // UTF-16 length bounds the character count from above: most replies are decided without walking the string.
+        guard text.utf16.count > limit else { return text }
+        let total = text.count
+        guard total > limit else { return text }
+        return String(text.prefix(limit)) + "\n[truncated: \(limit) of \(total) characters]"
+    }
+
+    /// A page title cut to `maxTitleChars`, ending in an ellipsis when cut.
+    public static func title(_ text: String) -> String {
+        guard text.utf16.count > maxTitleChars, text.count > maxTitleChars else { return text }
+        return String(text.prefix(maxTitleChars - 1)) + "\u{2026}"
+    }
+
+    /// Room past `maxReplyChars` for what a tool adds around text it already cut: the untrusted-content tags, a
+    /// heading note, the truncation note.
+    public static let replyOverheadChars = 1_000
+
+    /// The backstop for every reply: each text item cut to `maxReplyChars` once it passes that plus
+    /// `replyOverheadChars` (a tool that cut its own text stays as it is), the closing untrusted-content tag kept.
+    public static func clamped(_ result: MCPToolResult) -> MCPToolResult {
+        var result = result
+        result.content = result.content.map { item in
+            guard case .text(let text) = item, text.utf16.count > maxReplyChars + replyOverheadChars,
+                  text.count > maxReplyChars + replyOverheadChars else { return item }
+            let close = "\n</untrusted-page-content>"
+            let wrapped = text.hasSuffix(close)
+            let cut = truncated(wrapped ? String(text.dropLast(close.count)) : text, limit: maxReplyChars)
+            return .text(wrapped ? cut + close : cut)
+        }
+        return result
+    }
 
     /// The JSON-RPC error answering a request line refused for being over the pending-calls limit, carrying the
     /// request's id. Nil for a line with no id (a notification) or one that isn't a JSON object: nothing to answer.

@@ -249,7 +249,7 @@ final class AppModel {
         if windows.isEmpty { openWindow() }
         open(urls)
         let elapsed = (ContinuousClock.now - launched).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
-        log.info("startup: \(self.windows.count, privacy: .public) windows open \(elapsed, privacy: .public) after start")
+        log.notice("startup: \(self.windows.count, privacy: .public) windows open \(elapsed, privacy: .public) after start")
 
         startMonitoring()
         ControlBridge.shared.update(enabled: config.controlBridge)
@@ -900,10 +900,10 @@ final class AppModel {
 
         guard let configError else {
             if configWarnings.isEmpty {
-                log.info("config reloaded")
+                log.notice("config reloaded")
                 AccessibilityNotification.Announcement("Config reloaded").post()
             } else {
-                log.info("config reloaded with \(self.configWarnings.count) wrong-typed values")
+                log.notice("config reloaded with \(self.configWarnings.count) wrong-typed values")
                 AccessibilityNotification.Announcement(
                     "Config reloaded. \(configWarningPhrase) (Settings > Advanced > Problems)."
                 ).post()
@@ -921,7 +921,7 @@ final class AppModel {
     /// No alert: an extension that fails shows in the window's banner and the Extensions menu's status lines.
     func reloadExtensions() async {
         for host in extensionHosts { await host.reloadAll(config: config) }
-        log.info("extensions reloaded: \(self.extensions.statusLines.joined(separator: " | "), privacy: .public)")
+        log.notice("extensions reloaded: \(self.extensions.statusLines.joined(separator: " | "), privacy: .public)")
         AccessibilityNotification.Announcement("Extensions reloaded").post()
     }
 
@@ -1178,7 +1178,7 @@ final class AppModel {
             privateZooms.removeAll()
             privatePermissions = SessionPermissions()
             privateHTTPExceptions.removeAll()
-            log.info("last private window closed: private data store released")
+            log.notice("last private window closed: private data store released")
         }
         // At once rather than debounced: a closed window is a change worth having on disk right away.
         saveSessionNow()
@@ -1311,7 +1311,7 @@ final class AppModel {
         defer { didRestore = true }
         // `onLaunch` newWindow: the saved session is replaced by this launch's windows at the first save.
         guard config.onLaunch == .restore else {
-            log.info("startup: onLaunch is newWindow, the saved session is not restored")
+            log.notice("startup: onLaunch is newWindow, the saved session is not restored")
             return
         }
         guard let session = sessionStore.load() else {
@@ -1415,7 +1415,7 @@ final class AppModel {
         let source = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         source.setEventHandler {
             MainActor.assumeIsolated {
-                AppModel.shared.log.info("memory pressure: sleeping background tabs and trimming WebKit memory")
+                AppModel.shared.log.notice("memory pressure: sleeping background tabs and trimming WebKit memory")
                 AppModel.shared.lastMemoryPressure = Date()
                 AppModel.shared.sweepSleepingTabs(memoryPressure: true)
                 AppModel.shared.trimWebKitMemory()
@@ -1540,11 +1540,11 @@ final class AppModel {
         power = now
         if let reason = now.reason {
             let policy = effectiveSleepPolicy
-            log.info("power constrained by \(reason, privacy: .public): tabs sleep after \(Int(policy.sleepAfter / 60), privacy: .public) min idle, at most \(policy.maxAwakeTabs, privacy: .public) awake (0 = off)")
+            log.notice("power constrained by \(reason, privacy: .public): tabs sleep after \(Int(policy.sleepAfter / 60), privacy: .public) min idle, at most \(policy.maxAwakeTabs, privacy: .public) awake (0 = off)")
             sweepSleepingTabs()
             trimWebKitMemory()
         } else if wasConstrained {
-            log.info("power back to normal: the configured sleep settings apply")
+            log.notice("power back to normal: the configured sleep settings apply")
         }
     }
 
@@ -1672,7 +1672,7 @@ final class AppModel {
                     // A frozen page uses no CPU, so its busy clock must not straddle the freeze.
                     cpuUsage.reset(tab.id)
                 }
-                if froze > 0 { log.info("froze \(froze) tab(s)") }
+                if froze > 0 { log.notice("froze \(froze) tab(s)") }
             }
             guard !ids.isEmpty else { return }
             // Tabs the CPU rule chose, worked out before any of them sleeps: they had been busy for the sustain period.
@@ -1683,12 +1683,12 @@ final class AppModel {
             for tab in tabs where ids.contains(tab.id) {
                 if cpuSlept.contains(tab.id) {
                     let percent = Int(((shares[tab.id] ?? limit) * 100).rounded())
-                    log.info("slept \(tab.title) for CPU: \(percent, privacy: .public)% of a core for 3+ min")
+                    log.notice("slept \(tab.title) for CPU: \(percent, privacy: .public)% of a core for 3+ min")
                 }
                 tab.sleep()
                 cpuUsage.reset(tab.id)
             }
-            log.info("slept \(ids.count) tab(s)\(memoryPressure ? " under memory pressure" : "", privacy: .public)")
+            log.notice("slept \(ids.count) tab(s)\(memoryPressure ? " under memory pressure" : "", privacy: .public)")
             sampleMemory()
         }
     }
@@ -1731,7 +1731,7 @@ final class AppModel {
         let pools = [WebEnvironment.processPool, WebEnvironment.privateProcessPool].compactMap { $0 }
         let stopped = pools.filter { PrivateAPI.callVoid("_terminateServiceWorkers", on: $0) }.count
         let megabytes = orphans.reduce(0) { $0 + $1.footprint } / 1_048_576
-        log.info("stopped service workers in \(stopped) pool(s): \(orphans.count) process(es) with no page, \(megabytes) MB")
+        log.notice("stopped service workers in \(stopped) pool(s): \(orphans.count) process(es) with no page, \(megabytes) MB")
     }
 
     /// Trims WebKit memory: purges in-memory caches across website data stores, and asks

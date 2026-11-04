@@ -218,7 +218,7 @@ public enum PaddleBridgeTools {
             inputSchema: schema()),
         MCPTool(
             name: "page_text",
-            description: "Returns a tab's visible text, marked as untrusted page content. Truncated to maxChars (default 20000). http(s) and about: pages only; a sleeping tab returns an error (select_tab wakes it).",
+            description: "Returns a tab's visible text, marked as untrusted page content. Truncated to maxChars (default 20000, at most 200000). http(s) and about: pages only; a sleeping tab returns an error (select_tab wakes it).",
             inputSchema: schema([("tab", tab), ("maxChars", integer("Most characters to return."))], required: ["tab"])),
         MCPTool(
             name: "page_snapshot",

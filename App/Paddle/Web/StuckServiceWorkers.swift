@@ -22,9 +22,9 @@ final class StuckServiceWorkers {
         // site's workers; each starts again on its site's next request.
         guard let pool = webView.configuration.value(forKey: "processPool") as? NSObject,
               PrivateAPI.callVoid("_terminateServiceWorkers", on: pool) else {
-            log.info("a service worker is holding \(host) but WebKit can't stop workers")
+            log.notice("a service worker is holding \(host) but WebKit can't stop workers")
             return
         }
-        log.info("a service worker held \(host) for \(Int(ServiceWorkerWatchdog.patience), privacy: .public) s: stopped service workers")
+        log.notice("a service worker held \(host) for \(Int(ServiceWorkerWatchdog.patience), privacy: .public) s: stopped service workers")
     }
 }

@@ -7,7 +7,12 @@ import WebKit
 /// The bridge's tools. Every lookup goes through `visibleWindows`, so a private window, its tabs and their ids
 /// don't exist as far as Claude can tell.
 extension ControlBridge {
+    /// Every reply is cut to `BridgeLimits.maxReplyChars`, so no page can grow a result without bound.
     func perform(_ name: String, _ args: [String: JSONValue]) async throws -> MCPToolResult {
+        BridgeLimits.clamped(try await dispatch(name, args))
+    }
+
+    private func dispatch(_ name: String, _ args: [String: JSONValue]) async throws -> MCPToolResult {
         switch name {
         case "paddle_state": return state()
         case "page_text": return try await pageText(args)
@@ -104,7 +109,7 @@ extension ControlBridge {
             let tabs: [JSONValue] = model.spaces.flatMap { space in
                 model.tabs(inSpace: space.id).map { tab -> JSONValue in
                     var entry: [String: JSONValue] = [
-                        "id": .string(tab.id.uuidString), "title": .string(tab.displayTitle),
+                        "id": .string(tab.id.uuidString), "title": .string(BridgeLimits.title(tab.displayTitle)),
                         "url": .string(tab.url?.absoluteString ?? ""), "pinned": .bool(tab.isPinned),
                         "group": model.anyGroup(of: tab).map { .string($0.name) } ?? .null,
                         "asleep": .bool(tab.isAsleep), "selected": .bool(tab.id == model.selectedID),
@@ -130,7 +135,7 @@ extension ControlBridge {
                 "activeSpace": .string(model.activeSpace.name), "spaces": .array(spaces), "tabs": .array(tabs),
                 "visibleTabs": .array(model.visibleTabs.map { .string($0.id.uuidString) }),
                 "preview": model.preview.map { preview -> JSONValue in
-                    ["url": .string(preview.url?.absoluteString ?? ""), "title": .string(preview.displayTitle)]
+                    ["url": .string(preview.url?.absoluteString ?? ""), "title": .string(BridgeLimits.title(preview.displayTitle))]
                 } ?? .null,
             ]
         }
@@ -155,17 +160,13 @@ extension ControlBridge {
     private func pageText(_ args: [String: JSONValue]) async throws -> MCPToolResult {
         let found = try tab(args)
         let webView = try readableWebView(found.tab)
-        let limit = max(int(args, "maxChars") ?? 20000, 1)
+        let limit = min(max(int(args, "maxChars") ?? 20000, 1), BridgeLimits.maxReplyChars)
         let script = """
             const root = document.body ?? document.documentElement;
             return String(root ? root.innerText : "");
             """
-        var text = try await evaluate(script, in: webView, seconds: 10)
-        if text.count > limit {
-            let total = text.count
-            text = String(text.prefix(limit)) + "\n[truncated: \(limit) of \(total) characters]"
-        }
-        return .text(MCPServerCore.untrusted(text))
+        let text = try await evaluate(script, in: webView, seconds: 10)
+        return .text(MCPServerCore.untrusted(BridgeLimits.truncated(text, limit: limit)))
     }
 
     private func pageSnapshot(_ args: [String: JSONValue]) async throws -> MCPToolResult {
@@ -356,7 +357,7 @@ extension ControlBridge {
         }
         guard found.tab.browser != nil else { throw BridgeToolError("the tab closed") }
         let result: JSONValue = [
-            "title": .string(found.tab.displayTitle), "url": .string(found.tab.url?.absoluteString ?? ""),
+            "title": .string(BridgeLimits.title(found.tab.displayTitle)), "url": .string(found.tab.url?.absoluteString ?? ""),
             "loading": .bool(found.tab.isLoading), "asleep": .bool(found.tab.isAsleep),
         ]
         return .text(Self.pageDataNote + MCPServerCore.untrusted(result.render(unit: "  ")))
@@ -484,19 +485,22 @@ extension ControlBridge {
         return .text(MCPServerCore.untrusted(await Self.redactCookies(in: json, for: webView)))
     }
 
-    /// `text` with the value of each of the site's cookies (8 characters or more) replaced by `[cookie]`, so a
-    /// script that gets past the guard doesn't hand a cookie back verbatim. Encoded copies still get through.
+    /// `text` with the site's cookie values (8 characters or more) replaced by `[cookie]`, cut to
+    /// `BridgeLimits.maxReplyChars`. It is cut once before redacting, keeping room for the longest cookie, so
+    /// redaction walks a bounded string and a cookie that starts inside the kept part is still caught whole. Encoded
+    /// copies still get through.
     private static func redactCookies(in text: String, for webView: WKWebView) async -> String {
-        guard let host = webView.url?.host()?.lowercased() else { return text }
-        let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-        var text = text
-        for cookie in cookies where cookie.value.count >= 8 {
+        guard let host = webView.url?.host()?.lowercased() else { return BridgeLimits.truncated(text, limit: BridgeLimits.maxReplyChars) }
+        let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies().filter { cookie in
             let domain = String(cookie.domain.lowercased().trimmingPrefix("."))
-            guard host == domain || host.hasSuffix("." + domain) else { continue }
-            text = text.replacingOccurrences(of: cookie.value, with: "[cookie]")
+            return cookie.value.count >= 8 && (host == domain || host.hasSuffix("." + domain))
         }
-        return text
+        let room = cookies.map(\.value.count).max() ?? 0
+        var text = text.count > BridgeLimits.maxReplyChars + room ? String(text.prefix(BridgeLimits.maxReplyChars + room)) : text
+        for cookie in cookies { text = text.replacingOccurrences(of: cookie.value, with: "[cookie]") }
+        return BridgeLimits.truncated(text, limit: BridgeLimits.maxReplyChars)
     }
+
 
     /// Installed in the bridge's world before every script: cookies, the cookie store and password fields read as
     /// unavailable or empty there, and frames' documents are out of reach. Locked (non-configurable) so a later

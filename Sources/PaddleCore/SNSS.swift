@@ -89,12 +89,14 @@ enum SNSS {
                 tabs = tabs.filter { $0.value.window != v[0] }
             case 24:  // TabNavigationPathPruned: tab, first removed, count
                 guard let v = ints(3), v[2] > 0, var tab = tabs[v[0]] else { continue }
+                // In Int: a corrupt record's first + count can pass Int32's range.
+                let first = Int(v[1]), count = Int(v[2])
                 var kept: [Int32: (url: String, title: String)] = [:]
                 for (index, entry) in tab.navs {
-                    if index < v[1] {
+                    if Int(index) < first {
                         kept[index] = entry
-                    } else if index >= v[1] + v[2] {
-                        kept[index - v[2]] = entry
+                    } else if Int(index) >= first + count {
+                        kept[Int32(Int(index) - count)] = entry  // >= first, <= index: fits
                     }
                 }
                 tab.navs = kept

@@ -310,7 +310,7 @@ final class Tab: Identifiable {
             // "startup block lists installed in" (WebEnvironment), and "compiled" (none on a warm start).
             await gate.wait()
             let waited = (ContinuousClock.now - started).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
-            Self.log.info("first page load waited \(waited, privacy: .public) for the block lists (\(gate.isReady ? "installed" : "timed out", privacy: .public))")
+            Self.log.notice("first page load waited \(waited, privacy: .public) for the block lists (\(gate.isReady ? "installed" : "timed out", privacy: .public))")
             guard let self, self.webView === webView, awaitingBlockers else { return }
             awaitingBlockers = false
             startFirstLoad(webView)
@@ -603,7 +603,7 @@ final class Tab: Identifiable {
                     self.isFrozen = true
                 } else {
                     self.suspendRequested = false
-                    Self.log.info("WebKit did not freeze a background page")
+                    Self.log.notice("WebKit did not freeze a background page")
                 }
             }
         }
@@ -620,7 +620,7 @@ final class Tab: Identifiable {
         typealias Resume = @convention(c) (AnyObject, Selector, @escaping @convention(block) (Bool) -> Void) -> Void
         let resume = unsafeBitCast(webView.method(for: Self.resumeSelector), to: Resume.self)
         resume(webView, Self.resumeSelector) { resumed in
-            if !resumed { Self.log.info("WebKit did not resume a frozen page") }
+            if !resumed { Self.log.notice("WebKit did not resume a frozen page") }
         }
         // Zoom and dark mode changes skipped while it was frozen (`applySiteZoom`, `applySiteDarkMode`).
         applySiteZoom()
@@ -680,6 +680,7 @@ final class Tab: Identifiable {
     /// visible tab shows a crash page with a Reload button instead of reloading by itself, so a page that crashes as
     /// it loads can't loop; it says why when WebKit does (too much memory or CPU).
     func processTerminated(reason: TerminationReason? = nil) {
+        Self.log.notice("web content process ended: \(reason.map { String(describing: $0) } ?? "no reason given", privacy: .public), \(self.browser?.isVisible(self) == true ? "visible, reloading" : "background, sleeping", privacy: .public)")
         guard browser?.isVisible(self) == true, let webView else {
             sleep()
             return

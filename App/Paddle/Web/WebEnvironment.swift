@@ -113,7 +113,7 @@ final class WebEnvironment {
         for store in stores {
             store.removeData(ofTypes: memoryCacheType, modifiedSince: .distantPast) { }
         }
-        log.info("evicted in-memory WebKit caches across \(stores.count) store(s)")
+        log.notice("evicted in-memory WebKit caches across \(stores.count) store(s)")
     }
 
     /// Web views of private windows get the private store and, unless `extensions` (the window carries extensions,
@@ -552,9 +552,9 @@ final class WebEnvironment {
             let late = blockersReady.markReady()
             let took = (ContinuousClock.now - started).formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow))
             if first {
-                log.info("startup block lists installed in \(took, privacy: .public)\(late ? "; the gate had timed out, so pages that loaded meanwhile reload once" : "", privacy: .public)")
+                log.notice("startup block lists installed in \(took, privacy: .public)\(late ? "; the gate had timed out, so pages that loaded meanwhile reload once" : "", privacy: .public)")
             } else {
-                log.info("block lists reloaded in \(took, privacy: .public)")
+                log.notice("block lists reloaded in \(took, privacy: .public)")
             }
         }
         blockerLoadTail = load
