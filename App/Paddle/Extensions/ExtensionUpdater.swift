@@ -208,9 +208,12 @@ final class ExtensionUpdater {
             guard !checking, installer.installing == nil, !frontWindowIsPrivate else { break }
             let directory = Paths.extensions.appending(path: folder, directoryHint: .isDirectory)
             var isDirectory: ObjCBool = false
-            guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue,
+            guard fm.fileExists(atPath: directory.path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            // The tests `candidateGeckoID` makes before it needs the manifest: a folder with a record or a declined answer
+            // is skipped without reading manifest.json. `sources` was reloaded above the loop.
+            guard !folder.isEmpty, !folder.hasPrefix("."), !folder.contains("/"), folder != ExtensionSources.declinedKey,
+                  installer.sources.records[folder] == nil, !installer.sources.hasDeclinedAdoption(folder),
                   let data = try? Data(contentsOf: directory.appending(path: "manifest.json")) else { continue }
-            installer.reloadSources()
             guard installer.sourcesError == nil,
                   let gecko = ExtensionAdoption.candidateGeckoID(folder: folder, manifest: data, sources: installer.sources) else { continue }
             let addon: AMO.Addon

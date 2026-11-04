@@ -401,7 +401,10 @@ private struct SidebarTabRow: View {
     @Environment(\.chromeTheme) private var theme
 
     private var isSelected: Bool { model.selectedID == tab.id }
-    private var isShown: Bool { isSelected || model.visibleTabs.contains { $0.id == tab.id } }
+    /// Same as `visibleTabs` containing the tab (a tab is in at most one multi view), without building that list per row.
+    private var isShown: Bool {
+        isSelected || model.selectedID.map { id in model.split(of: tab)?.tabIDs.contains(id) ?? false } ?? false
+    }
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }
 
     var body: some View {

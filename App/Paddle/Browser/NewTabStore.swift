@@ -103,7 +103,14 @@ final class NewTabStore {
     /// History was cleared (one profile's) or turned off (every profile's, `profile` nil): drop the cached row.
     func forgetFrequentSites(profile: ProfileID? = nil) {
         frequentEpoch += 1
-        if let profile { frequentCache[profile] = nil } else { frequentCache.removeAll() }
+        if let profile {
+            frequentCache[profile] = nil
+            let path = AppModel.shared.historyPath(for: profile).path
+            Task { await FrequentSitesQuery.shared.forget(path: path) }
+        } else {
+            frequentCache.removeAll()
+            Task { await FrequentSitesQuery.shared.forgetAll() }
+        }
     }
 
     /// Icon cache keys (`FaviconPicker.cacheKey`) of the sites New Tab shows as tiles for `profile`: pinned ones and
@@ -209,15 +216,37 @@ final class NewTabStore {
 }
 
 /// Runs the Frequently visited query off the main thread. An actor, so queries run one after another and
-/// requests cancelled while waiting are skipped instead of piling up. Each query opens its own connection to the
-/// WAL database: `HistoryStore` is not shared across threads.
+/// requests cancelled while waiting are skipped instead of piling up. `HistoryStore` is not shared across threads,
+/// so each history file gets one connection, opened on first use and kept here for later queries. It is closed by
+/// `forget(path:)` / `forgetAll()` (history cleared, turned off or profile deleted), and dropped when its file is gone.
 private actor FrequentSitesQuery {
     static let shared = FrequentSitesQuery()
 
+    private var stores: [String: HistoryStore] = [:]
+
     /// Nil when the caller was cancelled or the database can't be read.
     func run(path: String, limit: Int, excluding: Set<String>) -> [HistoryEntry]? {
-        guard !Task.isCancelled, FileManager.default.fileExists(atPath: path),
-              let history = try? HistoryStore(path: path) else { return nil }
+        guard FileManager.default.fileExists(atPath: path) else {
+            stores[path] = nil
+            return nil
+        }
+        guard !Task.isCancelled else { return nil }
+        let history: HistoryStore
+        if let open = stores[path] {
+            history = open
+        } else {
+            guard let opened = try? HistoryStore(path: path) else { return nil }
+            stores[path] = opened
+            history = opened
+        }
         return try? history.topSites(limit: limit, days: 30, now: Date(), excludingHosts: excluding)
+    }
+
+    func forget(path: String) {
+        stores[path] = nil
+    }
+
+    func forgetAll() {
+        stores.removeAll()
     }
 }

@@ -22,7 +22,8 @@ struct MultiPanes<Pane: View>: View {
             var frames = layout.frames(in: rect, gap: PaneMetrics.gap)
             // Freeform cards keep their own sizes, so a small window doesn't fall back to one pane.
             let freeform = layout.isFreeform
-            let narrow = !freeform && PaneMetrics.isNarrow(split.layout.frames(in: rect, gap: PaneMetrics.gap))
+            // Without a drag preview `frames` already is the split's own layout; don't lay it out twice.
+            let narrow = !freeform && PaneMetrics.isNarrow(preview == nil ? frames : split.layout.frames(in: rect, gap: PaneMetrics.gap))
             let stack = layout.freeform?.order ?? []
             let shown = model.panes(of: split)
             let dragged = preview == nil ? nil : model.paneDragTabID

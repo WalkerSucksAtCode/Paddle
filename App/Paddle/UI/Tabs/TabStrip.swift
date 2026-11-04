@@ -23,7 +23,7 @@ struct TabStrip: View {
 
     /// The strip in order: a label before each group's first tab, one item for each multi view where its first tab
     /// is, and no tabs of collapsed groups.
-    private var stripItems: [StripItem] {
+    private func stripItems(groupsByID: [UUID: TabGroup]) -> [StripItem] {
         var items: [StripItem] = []
         var lastGroup: UUID?
         var shownViews = Set<UUID>()
@@ -35,7 +35,7 @@ struct TabStrip: View {
             }
         }
         for tab in model.tabs {
-            if let group = model.group(of: tab) {
+            if let group = tab.groupID.flatMap({ groupsByID[$0] }) {
                 if group.id != lastGroup { items.append(StripItem(group: group)) }
                 if !group.isCollapsed { add(tab) }
             } else {
@@ -52,7 +52,9 @@ struct TabStrip: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let items = stripItems
+            // One lookup table per render instead of a scan of `groups` per tab (`model.group(of:)`).
+            let groupsByID = Dictionary(model.groups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let items = stripItems(groupsByID: groupsByID)
             let pinnedCount = CGFloat(model.tabs.filter(\.isPinned).count)
             let shownUnpinned = CGFloat(items.filter { $0.view != nil || ($0.tab.map { !$0.isPinned } ?? false) }.count)
             let labelsWidth = items.reduce(CGFloat(0)) { $0 + ($1.group.map(labelWidth) ?? 0) }
@@ -81,7 +83,7 @@ struct TabStrip: View {
                                     ViewStripButton(split: view, model: model, width: width)
                                         .transition(.opacity)
                                 } else if let tab = item.tab {
-                                    TabButton(tab: tab, model: model, group: model.group(of: tab), isRenaming: model.renamingTabID == tab.id,
+                                    TabButton(tab: tab, model: model, group: tab.groupID.flatMap { groupsByID[$0] }, isRenaming: model.renamingTabID == tab.id,
                                               width: tab.isPinned ? pinnedWidth : width)
                                         .accessibilityRotorEntry(id: tab.id, in: rotor)
                                         .transition(.opacity)
@@ -100,7 +102,7 @@ struct TabStrip: View {
                     // VoiceOver's rotor lists the tabs with their state ("selected", "asleep", "muted").
                     .accessibilityRotor("Tabs") {
                         ForEach(items.compactMap(\.tab)) { tab in
-                            AccessibilityRotorEntry(Text(TabButton.spokenEntry(tab, selected: model.selectedID == tab.id, group: model.group(of: tab))), id: tab.id, in: rotor)
+                            AccessibilityRotorEntry(Text(TabButton.spokenEntry(tab, selected: model.selectedID == tab.id, group: tab.groupID.flatMap { groupsByID[$0] })), id: tab.id, in: rotor)
                         }
                     }
                     // With more tabs than fit, keep the selected one on screen (Ctrl-Tab, Cmd-9, new tabs).
@@ -190,7 +192,10 @@ struct TabButton: View {
 
     private var isSelected: Bool { model.selectedID == tab.id }
     /// Shown now: the selected tab, or another pane of its multi view.
-    private var isShown: Bool { isSelected || model.visibleTabs.contains { $0.id == tab.id } }
+    /// Same as `visibleTabs` containing the tab (a tab is in at most one multi view), without building that list per row.
+    private var isShown: Bool {
+        isSelected || model.selectedID.map { id in model.split(of: tab)?.tabIDs.contains(id) ?? false } ?? false
+    }
     /// From this width (at text size 100 %) every tab shows its close button.
     static let alwaysCloseWidth: CGFloat = 110
     private var audio: AudioIndicator { AudioIndicator(isPlayingAudio: tab.isPlayingAudio, isMuted: tab.isMuted) }

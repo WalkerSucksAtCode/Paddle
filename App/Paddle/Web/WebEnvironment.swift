@@ -335,10 +335,17 @@ final class WebEnvironment {
     }
 
     /// Applies a (re)loaded config. New tabs pick up user agent changes; scripts and CSS apply on next load.
-    func apply(_ config: PaddleConfig) {
+    /// `reloadScripts: false` keeps the installed user scripts: the caller has checked that no key they are built from
+    /// changed (`AppModel.apply`). The system appearance can change with no config key, so it is checked here too.
+    func apply(_ config: PaddleConfig, reloadScripts: Bool = true) {
         self.config = config
-        reloadUserScripts()
+        if reloadScripts || AppModel.shared.effectiveAppearanceIsDark != scriptsBuiltDark {
+            reloadUserScripts()
+        }
     }
+
+    /// The system appearance the installed user scripts were built with (dark mode's script bakes it in).
+    private var scriptsBuiltDark = false
 
     // MARK: - User CSS and scripts
 
@@ -477,6 +484,7 @@ final class WebEnvironment {
         }
 
         let isDark = AppModel.shared.effectiveAppearanceIsDark
+        scriptsBuiltDark = isDark
         let darkModeScript = DarkModeScript.source(for: config.sites, defaultDarkMode: config.defaultDarkMode(systemIsDark: isDark), invertTextImages: config.invertTextImages)
         contentController.addUserScript(WKUserScript(
             source: darkModeScript,

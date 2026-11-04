@@ -488,9 +488,17 @@ final class AppModel {
         if !profilesChanged.isEmpty, keys.isEmpty { await profileConfigsChanged(profilesChanged, from: oldProfiles) }
         guard !keys.isEmpty else { return }
 
-        // Every key: the web environment keeps its own copy (user agents, inspector, block lists). This also
-        // re-reads user.css and userscripts/.
-        web.apply(new)
+        // Every key: the web environment keeps its own copy (user agents, inspector, block lists). User scripts and
+        // user.css are re-read only for the keys they are built from (`scriptKeys`, from WebEnvironment.reloadUserScripts)
+        // or on Reload Config.
+        let scriptKeys: Set<PaddleConfig.CodingKeys> = [
+            .appearance, .darkMode, .sites, .invertTextImages, .underlineLinks, .contactAutofill, .sitePersonas, .keepPageWorkRunning,
+        ]
+        // A profile's keepPageWorkRunning feeds `anyProfileKeepsPageWork`, which the page-work script depends on.
+        let profileKeepsPageWorkChanged = profilesChanged.contains {
+            (oldProfiles[$0] ?? old).keepPageWorkRunning != config(for: $0).keepPageWorkRunning
+        }
+        web.apply(new, reloadScripts: reloading || !keys.isDisjoint(with: scriptKeys) || profileKeepsPageWorkChanged)
         if keys.contains(.historyDays) { openHistory() }
         if keys.contains(.shortcuts) { MainMenu.applyShortcuts(new.shortcuts) }
         if keys.contains(.controlBridge) { ControlBridge.shared.update(enabled: new.controlBridge) }

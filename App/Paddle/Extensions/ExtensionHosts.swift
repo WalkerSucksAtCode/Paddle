@@ -46,7 +46,8 @@ extension AppModel {
     /// Reconciles every profile's host (a store install or update changed `extensions/`). `reloading`: folders whose
     /// files were replaced, unloaded and loaded again wherever they run.
     func reconcileExtensions(reloading: Set<String> = []) async {
-        for host in extensionHosts { await host.reconcile(config: config, reloading: reloading) }
+        let overlays = OverlayMemo()
+        for host in extensionHosts { await host.reconcile(config: config, reloading: reloading, overlayMemo: overlays) }
     }
 
     /// The hosts whose answers a store update of `folder` must respect: the default profile's (as before profiles)
@@ -123,4 +124,21 @@ extension AppModel {
 extension BrowserModel {
     /// The extension host of this window's profile (the default one for a private window), once it has been made.
     var extensionHost: ExtensionHost? { AppModel.shared.existingExtensions(for: profileID) }
+}
+
+/// The overlay `ExtensionOverlay.make` gave each folder during one reconcile pass. Every profile's host reconciles
+/// with the same memo, so a folder is fingerprinted once per pass rather than once per profile. Made by
+/// `AppModel.reconcileExtensions` and dropped when the pass ends; nothing carries over to the next pass.
+final class OverlayMemo {
+    private var made: [String: (root: URL, plan: CompatPlan, result: Result<ExtensionOverlayResult?, any Error>)] = [:]
+
+    /// What this pass already made for `name` from `root` with `plan`, if that is what it was asked for.
+    func result(for name: String, root: URL, plan: CompatPlan) -> Result<ExtensionOverlayResult?, any Error>? {
+        guard let entry = made[name], entry.root == root, entry.plan == plan else { return nil }
+        return entry.result
+    }
+
+    func store(_ result: Result<ExtensionOverlayResult?, any Error>, for name: String, root: URL, plan: CompatPlan) {
+        made[name] = (root, plan, result)
+    }
 }

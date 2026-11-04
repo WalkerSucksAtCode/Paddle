@@ -226,6 +226,13 @@ private struct ReaderContentWebView: NSViewRepresentable {
     }
 
     private func updateHTML(in webView: WKWebView) {
+        // SwiftUI calls update right after make and on every chrome re-render; reload only when what's shown changed,
+        // so the article isn't fetched twice on open or reset to the top by an unrelated redraw.
+        let shown = ShownContent(article: article, baseURL: baseURL, theme: theme, font: font, fontSize: fontSize)
+        if let coordinator = webView.navigationDelegate as? Coordinator {
+            if coordinator.shown == shown { return }
+            coordinator.shown = shown
+        }
         func escape(_ s: String) -> String {
             s.replacingOccurrences(of: "&", with: "&amp;")
              .replacingOccurrences(of: "<", with: "&lt;")
@@ -366,6 +373,14 @@ private struct ReaderContentWebView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(onOpenLink: onOpenLink) }
 
+    struct ShownContent: Equatable {
+        let article: ReaderArticle
+        let baseURL: URL?
+        let theme: ReaderTheme
+        let font: ReaderFont
+        let fontSize: Double
+    }
+
     /// Lets the article's own HTML load and nothing else: a clicked link would otherwise navigate this web view in
     /// place while the address bar still showed the original page. The tab loads the link instead (leaving reader
     /// view); only http and https links do anything.
@@ -373,6 +388,8 @@ private struct ReaderContentWebView: NSViewRepresentable {
         let onOpenLink: (URL) -> Void
         /// `loadHTMLString` calls not yet seen by the navigation delegate.
         var pendingLoads = 0
+        /// What the last `loadHTMLString` showed.
+        var shown: ShownContent?
 
         init(onOpenLink: @escaping (URL) -> Void) { self.onOpenLink = onOpenLink }
 

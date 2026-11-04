@@ -91,11 +91,20 @@ extension ControlBridge {
 
     // MARK: - Reading
 
+    /// The last memory breakdown `state()` measured, and when. Reused for 1.5 s, so a client polling `paddle_state`
+    /// doesn't walk every process on each call. The UI sampler measures on its own and doesn't read this.
+    @MainActor private static var stateMemory: (measured: ContinuousClock.Instant, breakdown: ProcessBreakdown)?
+
     private func state() -> MCPToolResult {
         let app = AppModel.shared
-        // A fresh measurement, so the memory numbers below are this moment's.
-        app.measureMemory()
-        let memory = app.memoryBreakdown
+        let memory: ProcessBreakdown
+        if let reused = Self.stateMemory, ContinuousClock.now - reused.measured < .milliseconds(1500) {
+            memory = reused.breakdown
+        } else {
+            app.measureMemory()
+            memory = app.memoryBreakdown
+            Self.stateMemory = (ContinuousClock.now, memory)
+        }
         func mb(_ bytes: UInt64) -> JSONValue { .number(Double(bytes / 1_048_576)) }
         let windows: [JSONValue] = visibleWindows.map { controller in
             let model = controller.model

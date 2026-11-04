@@ -50,6 +50,10 @@ final class LoadedExtension: Identifiable {
     /// buttons redraw.
     var actionGeneration = 0
     @ObservationIgnored weak var host: ExtensionHost?
+    /// `ExtensionIdentity.privateHosts(saltedID:)`, computed once: `owns` checks it on every call.
+    private let privateHosts: Set<String>
+    /// The folder's own icon for each size, read on first use (nil too): `icon(side:action:)` falls back to it on every redraw.
+    @ObservationIgnored private var fallbackIcons: [CGFloat: NSImage?] = [:]
 
     init(name: String, setup: ExtensionHost.CompatSetup, entry: ExtensionEntry, manifest: ExtensionManifest, webExtension: WKWebExtension,
          context: WKWebExtensionContext, requested: (permissions: Set<String>, hosts: Set<String>), problems: [String]) {
@@ -57,6 +61,7 @@ final class LoadedExtension: Identifiable {
         self.id = setup.identity.runtimeID
         self.persona = setup.persona
         self.saltedID = setup.saltedID
+        self.privateHosts = ExtensionIdentity.privateHosts(saltedID: setup.saltedID)
         self.baseURL = setup.identity.baseURL
         self.urlHost = setup.identity.urlHost
         self.isPublicID = setup.identity.isPublic
@@ -80,7 +85,7 @@ final class LoadedExtension: Identifiable {
     /// host its private id has had.
     func owns(_ url: URL?) -> Bool {
         guard let host = ExtensionIdentity.identifier(of: url)?.lowercased() else { return false }
-        return host == urlHost.lowercased() || ExtensionIdentity.privateHosts(saltedID: saltedID).contains(host)
+        return host == urlHost.lowercased() || privateHosts.contains(host)
     }
     var version: String { ExtensionPermissionText.sanitize(webExtension.displayVersion ?? webExtension.version ?? "", max: 24) }
 
@@ -93,11 +98,19 @@ final class LoadedExtension: Identifiable {
             ?? action?.icon(for: points)
             ?? webExtension.icon(for: retina)
             ?? webExtension.icon(for: points)
-            ?? Self.icon(in: Paths.extensions.appendingPathComponent(name, isDirectory: true), side: side)
+            ?? fallbackIcon(side: side)
         guard let raw else { return nil }
         let image = (raw.copy() as? NSImage) ?? raw
         image.size = NSSize(width: side, height: side)
         image.isTemplate = false
+        return image
+    }
+
+    /// The folder's own icon at `side`, read on first use and kept for this LoadedExtension's life (nil too).
+    private func fallbackIcon(side: CGFloat) -> NSImage? {
+        if let cached = fallbackIcons[side] { return cached }
+        let image = Self.icon(in: Paths.extensions.appendingPathComponent(name, isDirectory: true), side: side)
+        fallbackIcons[side] = image
         return image
     }
 
@@ -481,7 +494,7 @@ final class ExtensionHost {
     /// Paddle > Reload Config: picks up added, removed, enabled and disabled folders and a changed permissions
     /// file. Edited extension files need Reload Extensions. Folders in `reloading` (a store update just replaced
     /// them) are unloaded and loaded again.
-    func reconcile(config: PaddleConfig, reloading: Set<String> = []) async {
+    func reconcile(config: PaddleConfig, reloading: Set<String> = [], overlayMemo: OverlayMemo? = nil) async {
         await enqueue { [self] in
             loadInProgress = true
             readDecisions()
@@ -540,8 +553,10 @@ final class ExtensionHost {
             }
 
             let running = Set(loaded.map(\.name))
-            var pending = await loadEntries(entries.filter { reparking.contains($0.name) }, config: config, parkingUnvisited: true)
-            pending += await loadEntries(entries.filter { !running.contains($0.name) && !reparking.contains($0.name) }, config: config)
+            var pending = await loadEntries(
+                entries.filter { reparking.contains($0.name) }, config: config, parkingUnvisited: true, overlayMemo: overlayMemo)
+            pending += await loadEntries(
+                entries.filter { !running.contains($0.name) && !reparking.contains($0.name) }, config: config, overlayMemo: overlayMemo)
             for ext in loaded where running.contains(ext.name) { status[ext.name] = loadedStatus(ext) }
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
             if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
@@ -723,7 +738,9 @@ final class ExtensionHost {
     /// Steps 1 to 6 of the load pipeline for each entry. Returns the entries that need a prompt before loading.
     /// `parkingUnvisited` (launch): an on-demand extension with no awake tab on its sites starts unloaded instead of
     /// running until the idle sweep; a tab that opens or wakes on one of its sites loads it (`loadOnDemand`).
-    private func loadEntries(_ entries: [ExtensionEntry], config: PaddleConfig, parkingUnvisited: Bool = false) async -> [PendingPrompt] {
+    private func loadEntries(
+        _ entries: [ExtensionEntry], config: PaddleConfig, parkingUnvisited: Bool = false, overlayMemo: OverlayMemo? = nil
+    ) async -> [PendingPrompt] {
         var pending: [PendingPrompt] = []
         // This load's failures replace only these folders' lines in the banner; other folders' lines stay.
         var failures: [String: String] = [:]
@@ -755,7 +772,7 @@ final class ExtensionHost {
             // Step 0: persona and identity, then (unless it is a Safari build or compat is off) a patched clone that
             // runs the compat prelude first.
             let setup = compatSetup(for: entry, config: config)
-            let (loadRoot, overlayProblem) = await prepareOverlay(for: entry, setup: setup)
+            let (loadRoot, overlayProblem) = await prepareOverlay(for: entry, setup: setup, overlayMemo: overlayMemo)
             let webExtension: WKWebExtension
             do {
                 webExtension = try await WKWebExtension(resourceBaseURL: loadRoot)
@@ -1065,7 +1082,9 @@ final class ExtensionHost {
     /// a folder on another volume is copied in full. Returns the folder to load from, plus a problem line when the
     /// overlay couldn't be made and the original folder is used. Identity, permissions and storage don't depend on
     /// where it loads from.
-    private func prepareOverlay(for entry: ExtensionEntry, setup: CompatSetup) async -> (root: URL, problem: String?) {
+    private func prepareOverlay(
+        for entry: ExtensionEntry, setup: CompatSetup, overlayMemo: OverlayMemo? = nil
+    ) async -> (root: URL, problem: String?) {
         // One writer per overlay folder: a pending install-reason rewrite finishes before the folder is remade.
         if let pending = shared.overlayWrites.removeValue(forKey: entry.name) { await pending.value }
         overlays[entry.name] = nil
@@ -1079,10 +1098,19 @@ final class ExtensionHost {
         let source = entry.root
         let name = entry.name
         let plan = setup.plan ?? CompatPlan(persona: .native, runtimeID: setup.identity.runtimeID)
-        let made = await shared.overlayWork(name) {
-            await Task.detached(priority: .userInitiated) {
-                Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: plan) }
-            }.value
+        // The same folder and plan made earlier in this reconcile pass (another profile's host) is not fingerprinted again.
+        // Not for a first install: `clearInstallReason` rewrites that overlay after the first host loads it.
+        let memo = plan.installReason == nil ? overlayMemo : nil
+        let made: Result<ExtensionOverlayResult?, any Error>
+        if let remembered = memo?.result(for: name, root: source, plan: plan) {
+            made = remembered
+        } else {
+            made = await shared.overlayWork(name) {
+                await Task.detached(priority: .userInitiated) {
+                    Result { try ExtensionOverlay.make(from: source, name: name, in: overlaysFolder, plan: plan) }
+                }.value
+            }
+            memo?.store(made, for: name, root: source, plan: plan)
         }
         switch made {
         case .success(nil):

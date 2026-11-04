@@ -128,6 +128,9 @@ public final class HistoryStore {
         _ = try rows("PRAGMA secure_delete = ON", []) { _ in 0 }
         if path != ":memory:", !path.isEmpty {
             try execute("PRAGMA journal_mode = WAL")
+            // SQLite's recommended WAL pairing: commits skip the fsync (an app crash still loses nothing; only an OS
+            // crash or power loss can drop the latest visits). Visits and title updates commit on the main actor.
+            try execute("PRAGMA synchronous = NORMAL")
         }
         try migrate()
     }

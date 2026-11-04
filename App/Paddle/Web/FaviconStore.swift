@@ -10,8 +10,8 @@ import WebKit
 /// own networking, in its sandboxed web process), so Paddle never parses page-chosen image bytes itself.
 @Observable
 final class FaviconStore {
-    /// Loaded icons by site key. Observed, so views redraw when an icon arrives.
-    private var images: [String: NSImage] = [:]
+    /// Loaded icons by site key, in 16 observed shards (`IconShards`): an arrival redraws only that shard's readers.
+    private let images = IconShards()
     /// Mean relative luminance (0-1) of each loaded icon's visible pixels, measured once when it loads.
     @ObservationIgnored private var luminance: [String: Double] = [:]
     @ObservationIgnored private var fetchedAt: [String: Date] = [:]
@@ -19,7 +19,7 @@ final class FaviconStore {
     @ObservationIgnored private var pendingDiskLoads: Set<String> = []
     @ObservationIgnored private var inFlight: Set<String> = []
     /// The large tile icons, kept apart from the small ones: same rules, own files and dates.
-    private var largeImages: [String: NSImage] = [:]
+    private let largeImages = IconShards()
     @ObservationIgnored private var largeLuminance: [String: Double] = [:]
     @ObservationIgnored private var largeFetchedAt: [String: Date] = [:]
     @ObservationIgnored private var largeMissing: Set<String> = []
@@ -121,7 +121,10 @@ final class FaviconStore {
         let profile = Tab.owning(webView)?.profileID ?? ProfileStore.defaultID
         // Most loads are on a site whose icons are fresh or already being fetched: settle that from the address
         // before running a script in the page. The document's own address below still decides where an icon goes.
-        if let key = FaviconPicker.cacheKey(for: url), !needsSmall(key), !needsLarge(key, profile: profile) { return }
+        if let key = FaviconPicker.cacheKey(for: url) {
+            let smallWanted = await needsSmall(key)
+            if !smallWanted, !needsLarge(key, profile: profile) { return }
+        }
         // Read from an isolated script world, out of the page's reach. The address comes from the document
         // itself, so a navigation starting meanwhile can't file this icon under another site.
         // The page may have frozen since it finished loading; scripts and the image loader raise on a suspended page.
@@ -134,7 +137,7 @@ final class FaviconStore {
         let allowed = Set((page.hosts + [pageURL.host() ?? ""]).map { $0.lowercased() })
         func permitted(_ url: URL) -> Bool { url.scheme == "data" || allowed.contains(url.host()?.lowercased() ?? "") }
 
-        if needsSmall(key), inFlight.insert(key).inserted {
+        if await needsSmall(key), inFlight.insert(key).inserted {
             defer { inFlight.remove(key) }
             // The site's own /favicon.ico is also the fallback when the chosen icon fails.
             var choices: [URL] = []
@@ -176,9 +179,9 @@ final class FaviconStore {
         }
     }
 
-    /// The small icon isn't fresh (it is read from disk first) and isn't being fetched.
-    private func needsSmall(_ key: String) -> Bool {
-        if images[key] == nil, !missing.contains(key) { loadFromDisk(key) }
+    /// The small icon isn't fresh (it is read from disk first, off the main thread) and isn't being fetched.
+    private func needsSmall(_ key: String) async -> Bool {
+        if images[key] == nil, !missing.contains(key) { await loadSmallFromDisk(key) }
         if inFlight.contains(key) { return false }
         return fetchedAt[key].map { FaviconPicker.isStale(fetchedAt: $0, now: Date()) } ?? true
     }
@@ -219,11 +222,11 @@ final class FaviconStore {
                 if date.map({ modified >= $0 }) ?? true { try? FileManager.default.removeItem(at: file) }
             }
         }
-        images = images.filter { keys.contains($0.key) }
+        images.retain(keys)
         luminance = luminance.filter { keys.contains($0.key) }
         fetchedAt = fetchedAt.filter { keys.contains($0.key) }
         missing.removeAll()
-        largeImages = largeImages.filter { keys.contains($0.key) }
+        largeImages.retain(keys)
         largeLuminance = largeLuminance.filter { keys.contains($0.key) }
         largeFetchedAt = largeFetchedAt.filter { keys.contains($0.key) }
         largeMissing.removeAll()
@@ -273,6 +276,25 @@ final class FaviconStore {
         }
         keep(image, for: key)
         let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+        fetchedAt[key] = modified
+    }
+
+    /// `loadFromDisk` for the page-finish path: the file is read off the main thread, then decoded once on the main
+    /// actor (a 32 px icon, so the decode is cheap). Skips the result when an icon landed in the meantime.
+    private func loadSmallFromDisk(_ key: String) async {
+        let file = Paths.favicons.appending(path: FaviconPicker.fileName(forKey: key))
+        let read = await Task.detached(priority: .utility) { () -> (Data, Date)? in
+            guard let data = try? Data(contentsOf: file) else { return nil }
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return (data, modified)
+        }.value
+        pendingDiskLoads.remove(key)
+        guard images[key] == nil else { return }
+        guard let (data, modified) = read, let image = Self.image(data) else {
+            missing.insert(key)
+            return
+        }
+        keep(image, for: key)
         fetchedAt[key] = modified
     }
 
@@ -338,6 +360,37 @@ final class FaviconStore {
         image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])
+    }
+}
+
+@Observable
+private final class IconShard {
+    var icons: [String: NSImage] = [:]
+}
+
+/// An icon dictionary split into 16 shards by a stable hash (FNV-1a over the key's UTF-8) of the site key. Each shard
+/// is observed on its own, so a view reading one site's icon redraws only when its shard changes.
+final class IconShards {
+    private static let shardCount = 16
+    private let shards = (0..<IconShards.shardCount).map { _ in IconShard() }
+
+    subscript(key: String) -> NSImage? {
+        get { shards[Self.shard(for: key)].icons[key] }
+        set { shards[Self.shard(for: key)].icons[key] = newValue }
+    }
+
+    /// Drops every icon whose key isn't in `keys`.
+    func retain(_ keys: Set<String>) {
+        for shard in shards {
+            let kept = shard.icons.filter { keys.contains($0.key) }
+            if kept.count != shard.icons.count { shard.icons = kept }
+        }
+    }
+
+    private static func shard(for key: String) -> Int {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in key.utf8 { hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3 }
+        return Int(hash % UInt64(shardCount))
     }
 }
 

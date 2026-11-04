@@ -59,7 +59,8 @@ struct BrowserView: View {
         .environment(\.chromeTheme, theme)
         .tint(theme?.accent)
         .ignoresSafeArea(.container, edges: .top)
-        .onChange(of: model.windowTitle, initial: true) { _, title in model.controller?.window?.title = title }
+        // In its own view: reading the title here would re-render the whole chrome on every title change.
+        .background(WindowTitleSync(model: model))
         // The switch rebuilds the chrome and moves the content under a new parent. A split's outgoing panes can take
         // the pages back as they leave, so both sides take them again once the switch has settled (as `settleSplit`
         // does). Then the keyboard goes back to the page, only in the window being worked in: the others may hold a
@@ -247,6 +248,19 @@ struct BrowserView: View {
         } else {
             NewTabPage(model: model, app: app)
         }
+    }
+}
+
+/// Keeps the window's title (Mission Control, the Window menu) on the selected tab's. Only this empty view depends
+/// on the title, so a page that retitles itself often (unread counts, now playing) doesn't redraw the chrome.
+private struct WindowTitleSync: View {
+    let model: BrowserModel
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onChange(of: model.windowTitle, initial: true) { _, title in model.controller?.window?.title = title }
     }
 }
 
