@@ -1,0 +1,43 @@
+date: 2026-11-05 09:16:16 EST
+
+git status --short:
+?? docs/audits/
+?? docs/evidence/
+
+wc -l docs/audits/_worker-settings.md:
+     288 docs/audits/_worker-settings.md
+
+FA-SET finding count:
+18
+
+FA-SET IDs:
+### FA-SET-01 — Sites pane subtitle overclaims per-site camera control
+### FA-SET-02 — Mosaic preferences unscannable (flat multi-section dump)
+### FA-SET-03 — Four-column Settings masonry on dense panes
+### FA-SET-04 — Theme accent tints menu/picker values
+### FA-SET-05 — Caption walls instead of progressive disclosure
+### FA-SET-06 — Sites table too wide (11 columns)
+### FA-SET-07 — Sites footer essay below table
+### FA-SET-08 — Default browser status layout truncates
+### FA-SET-09 — Pane header icon uses accent fill
+### FA-SET-10 — Sidebar search does not explain matches
+### FA-SET-11 — Sites session block and action status lack designed states
+### FA-SET-12 — Mosaic strip shading captions still inline (residual)
+### FA-SET-13 — Shortcuts pane not grouped Form cards
+### FA-SET-14 — `extensionsOnDemand` not exposed in Settings UI
+### FA-SET-15 — `sitePersonas` not exposed in Settings UI
+### FA-SET-16 — Per-site `sites.<host>.httpsOnly` not editable in Sites UI
+### FA-SET-17 — `extensionCompat` advanced fields view-only
+### FA-SET-18 — Many extensions → long scroll (card-per-folder)
+
+10 pane files on main (basename):
+  GeneralPane.swift OK
+  AppearancePane.swift OK
+  ProfilesPane.swift OK
+  TabsMemoryPane.swift OK
+  MosaicPane.swift OK
+  PrivacyPane.swift OK
+  SitesPane.swift OK
+  ExtensionsPane.swift OK
+  ShortcutsPane.swift OK
+  AdvancedPane.swift OK

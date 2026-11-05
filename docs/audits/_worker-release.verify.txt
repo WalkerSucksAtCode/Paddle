@@ -1,0 +1,11 @@
+date: 2026-11-05 09:09:38 EST
+git status --short (worktree full-audit-readonly):
+?? docs/audits/
+?? docs/evidence/
+wc -l _worker-release.md:      234
+count ### FA-REL-: 12
+
+codesign -d --entitlements (installed /Applications/Paddle.app):
+  com.apple.developer.web-browser.public-key-credential: ABSENT
+  com.apple.security.get-task-allow: ABSENT
+  active: camera, audio-input, location, addressbook (true)

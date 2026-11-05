@@ -1,0 +1,20 @@
+date: 2026-11-05 09:10:22 EST
+tree: main @ 015dc73
+
+passkeys entitlement (grep Paddle.entitlements):
+14:	<key>com.apple.developer.web-browser.public-key-credential</key>
+
+plutil -p Paddle.entitlements (passkeys key must be absent):
+{
+  "com.apple.security.device.audio-input" => true
+  "com.apple.security.device.camera" => true
+  "com.apple.security.personal-information.addressbook" => true
+  "com.apple.security.personal-information.location" => true
+}
+
+git status --short (audit worktree):
+?? docs/audits/
+?? docs/evidence/
+
+wc -l _worker-privacy.md:      288
+count ### FA-SEC-: 16

@@ -1,0 +1,18 @@
+date: 2026-11-05 (America/New_York)
+
+git status --short (audit worktree /Users/Walker/Code/Projects/Paddle-wt/full-audit-readonly):
+?? docs/audits/
+?? docs/evidence/
+
+git HEAD: 015dc73a2c04beeb7308c3e77e3148dc075f680b
+last commit: 015dc73 Port Track B lightness (scroll, SW grace, tabs mute, passkeys)
+
+wc -l docs/audits/_worker-network.md:
+274
+
+FA-NET section count (grep '^### FA-NET-'):
+16
+
+NSAllowsArbitraryLoadsInWebContent in Info.plist:
+Observed: App/Paddle/Info.plist lines 31-35, NSAppTransportSecurity > NSAllowsArbitraryLoadsInWebContent = true.
+ATS severity/rationale: defer to privacy audit worker (one-sentence pointer only; no FA-ATS ID in this artifact).

@@ -1,0 +1,14 @@
+2026-11-05 09:12:00 EST
+
+git status --short (full-audit-readonly worktree):
+?? docs/audits/
+?? docs/evidence/
+
+main @ 015dc73a2c04beeb7308c3e77e3148dc075f680b (product + audit worktree)
+
+wc -l docs/audits/_worker-extensions.md: 275
+
+### FA-EXT- count: 14
+
+rg -l 'chrome\\.' Sources/PaddleCore/ExtensionCompat.swift App/Paddle/Extensions | head:
+(no matches — ExtensionCompat and App/Paddle/Extensions contain no literal `chrome.` tokens; chrome API shims live in generated JS via CompatPrelude.swift / CompatPrelude template)

@@ -1,0 +1,6 @@
+date: 2026-11-05 09:09:39 EST
+git status --short:
+?? docs/audits/
+?? docs/evidence/
+wc -l _worker-hygiene.md:      183
+FA-HYG heading count: 11
