@@ -62,6 +62,10 @@ struct GeneralPane: View {
             .disabled(model.controlsDisabled)
             Section("Search") {
                 SearchRows(model: model)
+                SettingsLearnMore(
+                    summary: "Only search words typed key by key are sent to the engine, never addresses or pastes.",
+                    detail: "Custom search URLs need %s where the query goes. Suggestions need OpenSearch or DuckDuckGo JSON; leave the suggestions URL empty to send nothing while you type."
+                )
             }
             .disabled(model.controlsDisabled)
             Section("Browser") {
@@ -100,6 +104,10 @@ struct GeneralPane: View {
                 }
                 NotifierRows(model: model)
                 FeedRows(model: model)
+                SettingsLearnMore(
+                    summary: "Pinned sites, feeds and notifications on New Tab follow section order; private windows hide most rows.",
+                    detail: "Per-site notification toggles write sites.<host>.notifications. News feeds refresh when New Tab opens and the cache is stale."
+                )
             }
             Section("Trackpad & Keyboard") {
                 ConfigToggle("Swipe between pages", .swipeNavigation, \.swipeNavigation, model: model,
@@ -460,6 +468,7 @@ private struct SearchRows: View {
             Divider()
             Text("Custom").tag(SearchEngine.Preset.custom)
         }
+        .settingsMenuValueLabel()
         .help("searchTemplate and searchSuggestTemplate in config.json")
         .onAppear {
             searchDraft = model.file.searchTemplate
@@ -500,11 +509,10 @@ private struct SearchRows: View {
             }
             .help("searchSuggestTemplate in config.json")
             ConfigIssueList(issues: suggestIssues)
-            SettingsCaption("Put %s where the search words go. The suggestions URL must return OpenSearch or DuckDuckGo JSON; leave it empty to send nothing while you type.")
         } else {
             Toggle("Show search suggestions", isOn: Binding(get: { suggestionsOn }, set: setSuggestions))
+                .settingsAccentToggle()
                 .help("searchSuggestTemplate in config.json (\"\" turns suggestions off)")
-            SettingsCaption("Only search words typed key by key are sent to the search engine, never addresses, paths or pastes.")
         }
     }
 
@@ -555,24 +563,30 @@ private struct DefaultBrowserRow: View {
     @State private var isDefault = DefaultBrowser.isDefault
 
     var body: some View {
-        LabeledContent("Default browser") {
-            HStack {
-                Label(
-                    isDefault ? "Paddle is the default browser" : "Another browser is the default",
-                    systemImage: isDefault ? "checkmark.circle.fill" : "circle"
-                )
-                if !isDefault {
-                    Button("Make Default…") { DefaultBrowser.make() }
-                        .disabled(!DefaultBrowser.isInstalled)
-                        .help("Paddle > Make Paddle the Default Browser…")
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Default browser")
+            Label(
+                isDefault ? "Paddle is the default browser" : "Another browser is the default",
+                systemImage: isDefault ? "checkmark.circle.fill" : "circle"
+            )
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(.secondary)
+            .symbolRenderingMode(.monochrome)
+            .fixedSize(horizontal: false, vertical: true)
+            if !isDefault {
+                Button("Make Default…") { DefaultBrowser.make() }
+                    .disabled(!DefaultBrowser.isInstalled)
+                    .help("Paddle > Make Paddle the Default Browser…")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             isDefault = DefaultBrowser.isDefault
         }
         if !isDefault, !DefaultBrowser.isInstalled {
-            SettingsCaption("Only a copy installed in /Applications can become the default browser.")
+            SettingsLearnMore(
+                summary: "Only a copy in /Applications can become the default browser.",
+                detail: "Debug builds and copies outside Applications can't be set as the system default."
+            )
         }
     }
 }

@@ -30,9 +30,22 @@ final class ExtensionsMenuDelegate: NSObject, NSMenuDelegate {
             }
             add(statusItem, to: menu)
         }
-        // Store updates, one line per folder checked (`ExtensionUpdater`).
+        // Store updates: durable last results from extension-sources.json, then in-flight session lines.
+        let installer = StoreInstaller.shared
+        var shown: Set<String> = []
+        for folder in installer.allRecords.keys.sorted() {
+            guard let record = installer.record(forFolder: folder),
+                  record.store == .chromeWebStore || record.store == .mozillaAddons,
+                  let outcome = record.lastOutcome else { continue }
+            shown.insert(folder)
+            let line = "\(folder): \(outcome.settingsSummary(record: record))"
+            let updateItem = NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 120), action: nil, keyEquivalent: "")
+            updateItem.image = icon(forFolder: folder)
+            updateItem.preferredImageVisibility = .visible
+            add(updateItem, to: menu)
+        }
         let updates = ExtensionUpdater.shared.statuses
-        for folder in updates.keys.sorted() {
+        for folder in updates.keys.sorted() where !shown.contains(folder) {
             let line = "\(folder): \(updates[folder] ?? "")"
             let updateItem = NSMenuItem(title: ExtensionPermissionText.sanitize(line, max: 80), action: nil, keyEquivalent: "")
             updateItem.image = icon(forFolder: folder)

@@ -14,7 +14,7 @@ struct ProfilesPane: View {
     private var store: ProfileStore { AppModel.shared.profiles }
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             if let error = store.loadError {
                 Section {
                     Text("\(error). Paddle leaves the file alone until it is fixed.")
@@ -37,7 +37,10 @@ struct ProfilesPane: View {
             Section {
                 Button("Add Profile", systemImage: "plus") { add() }
                     .disabled(store.loadError != nil)
-                SettingsCaption("Separate in each profile: cookies, logins, site data, cache, history (and so address suggestions and Frequently visited) and extensions. Shared by all: bookmarks, New Tab pinned sites and block lists. Settings come from config.json; a profile can set its own search engine, pages, downloads, history length, theme and tint, tab freeze and sleep timers, and per-site permissions, listed under its name. A tab can't be moved to a window of another profile.")
+                SettingsLearnMore(
+                    summary: "Each profile keeps its own cookies, history, extensions and overrides; bookmarks and block lists are shared.",
+                    detail: "Settings come from config.json; a profile can override search, pages, downloads, theme, tab sleep timers and per-site permissions. Tabs can't move between profiles."
+                )
             }
         }
         .sheet(item: $addingSite) { profile in

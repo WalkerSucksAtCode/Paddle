@@ -153,9 +153,22 @@ public enum AppearanceMode: String, Codable, Sendable, CaseIterable {
     case system, light, dark
 }
 
-/// Whether websites are forced into dark mode: follow Paddle's appearance, always dark, or off.
+/// Global website dark mode: off, follow system appearance, smart invert, or native `color-scheme` only.
 public enum DarkModePreference: String, Codable, Sendable, CaseIterable {
-    case off, system, always
+    case off, system, smart, native
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if raw == "always" {
+            self = .smart
+            return
+        }
+        guard let value = DarkModePreference(rawValue: raw) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown darkMode \"\(raw)\"")
+        }
+        self = value
+    }
 }
 
 /// How large Paddle's own text (tabs, toolbar, bars) is.
@@ -253,7 +266,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var tabLayout: TabLayout
     /// Light, dark, or follow macOS. Pages follow through their color scheme.
     public var appearance: AppearanceMode
-    /// Website dark mode: `off`, `system` (follows appearance), or `always`.
+    /// Website dark mode: `off`, `system`, `smart`, or `native`.
     public var darkMode: DarkModePreference
     /// Inverts images that are clearly dark text on a bright background (screenshots of text, documents) when dark mode is on.
     public var invertTextImages: Bool
@@ -937,18 +950,14 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         return min(max(size.rounded(), 9), 24)
     }
 
+    /// The page dark engine for sites set to Auto with no per-site override.
+    public func pageDarkEngine(systemIsDark: Bool = false) -> PageDarkEngine {
+        PageDarkEngine.resolved(site: .auto, global: darkMode, systemIsDark: systemIsDark)
+    }
+
     /// Whether websites without a per-site dark mode setting should be dark.
     public func defaultDarkMode(systemIsDark: Bool = false) -> Bool {
-        switch darkMode {
-        case .off: return false
-        case .always: return true
-        case .system:
-            switch appearance {
-            case .system: return systemIsDark
-            case .light: return false
-            case .dark: return true
-            }
-        }
+        pageDarkEngine(systemIsDark: systemIsDark) != .off
     }
 
     /// Whether the extension in folder `folder` should load. Folders absent from `extensions` are on.

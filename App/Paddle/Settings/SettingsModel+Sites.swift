@@ -130,7 +130,12 @@ extension SettingsModel {
         case (.httpsOnly, .bool(let on)): entry.httpsOnly = on
         case (.popups, .bool(let on)): entry.popups = on
         case (.freeze, .string(let text)): entry.freeze = SiteSettings.Freeze(rawValue: text)
-        case (.darkMode, .bool(let on)): entry.darkMode = on
+        case (.darkMode, .string(let text)):
+            guard let mode = SiteSettings.SiteDarkMode(rawValue: text) else {
+                return "\(field.rawValue) can't be set to that value."
+            }
+            entry.darkMode = mode == .auto ? nil : mode
+        case (.darkMode, .bool(let on)): entry.darkMode = on ? .dark : .light
         default: return "\(field.rawValue) can't be set to that value."
         }
         candidate.sites[key] = entry
@@ -140,11 +145,15 @@ extension SettingsModel {
 
         var without = file
         without.sites[key] = nil
-        // Dark mode set to follow the system inherits macOS's look, so "off" on a dark Mac is a real choice.
-        let inherited = Self.json(field, of: without.sitePolicy(forHost: key, systemIsDark: AppModel.shared.effectiveAppearanceIsDark))
+        let inheritedPolicy = without.sitePolicy(forHost: key, systemIsDark: AppModel.shared.effectiveAppearanceIsDark)
+        let inherited = Self.json(field, of: inheritedPolicy)
         await save(building: { base in
             var object = ((try? JSONSpans.scan(base))?.object["sites"]?.objectValue?[key]?.objectValue) ?? [:]
-            object[field.rawValue] = value == inherited ? nil : value
+            if field == .darkMode, case .string(let text) = value, text == SiteSettings.SiteDarkMode.auto.rawValue {
+                object[field.rawValue] = nil
+            } else {
+                object[field.rawValue] = value == inherited ? nil : value
+            }
             return [ConfigChange("sites", key, .object(object))]
         })
         return nil
@@ -180,7 +189,7 @@ extension SettingsModel {
         case .notifications: .string(policy.notifications.rawValue)
         case .httpsOnly: .bool(policy.httpsOnly)
         case .popups: .bool(policy.popups)
-        case .darkMode: .bool(policy.darkMode)
+        case .darkMode: .string(policy.darkModeOverride.rawValue)
         case .freeze: .string(policy.freeze.rawValue)
         }
     }

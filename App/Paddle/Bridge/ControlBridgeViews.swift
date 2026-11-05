@@ -43,6 +43,7 @@ struct ControlBridgeSection: View {
             }
             .help("controlBridge in config.json")
             .disabled(model.controlsDisabled)
+            .settingsAccentToggle()
             Toggle(isOn: Binding(
                 get: { model.file.controlBridgeScripts },
                 set: { on in Task { await model.save([ConfigChange(PaddleConfig.CodingKeys.controlBridgeScripts.rawValue, .bool(on))]) } }
@@ -52,6 +53,7 @@ struct ControlBridgeSection: View {
             }
             .help("controlBridgeScripts in config.json. Off by default, even with the bridge on.")
             .disabled(model.controlsDisabled || !model.file.controlBridge)
+            .settingsAccentToggle()
 
             if AppModel.shared.config.controlBridge {
                 LabeledContent {
@@ -93,7 +95,10 @@ struct ControlBridgeSection: View {
         } header: {
             Text("Control bridge")
         } footer: {
-            SettingsCaption("Private windows are invisible to the bridge. No tool reads the keychain, downloads or files outside Paddle's folder, and none but Run JavaScript can reach cookies or typed passwords: its guard is not a sandbox, so a script can reach what the page's own scripts can. The clipboard is off limits. Page text, titles and script results are marked as untrusted page content.")
+            SettingsLearnMore(
+                summary: "Private windows are invisible; no tool reads the keychain, downloads or files outside Paddle's folder.",
+                detail: "Only run_js can reach cookies or typed passwords, and its guard is not a sandbox — scripts can reach what the page's own scripts can. The clipboard is off limits. Page text, titles and script results are marked as untrusted page content."
+            )
         }
     }
 }

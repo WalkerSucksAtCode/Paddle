@@ -9,7 +9,7 @@ struct PrivacyPane: View {
     @State private var showingWebsiteData = false
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             Section("Content blocking") {
                 BlockingRows(model: model)
             }
@@ -58,9 +58,13 @@ private struct BlockingRows: View {
             get: { model.file.httpsOnly },
             set: { value in Task { await model.saveKey(.httpsOnly, .bool(value)) } }
         ))
+        .settingsAccentToggle()
         .help("httpsOnly in config.json; sites.<host>.httpsOnly: false exempts one site")
         .disabled(model.controlsDisabled)
-        SettingsCaption("An http:// address loads over https:// instead. A site that can't be reached securely gets a notice with Continue to HTTP (until Paddle quits) and Always Allow. Local addresses are exempt.")
+        SettingsLearnMore(
+            summary: "http:// addresses upgrade to https://; failures offer Continue to HTTP or Always Allow.",
+            detail: "Local addresses are exempt. A site that can't be reached securely shows a notice until you choose."
+        )
 
         Toggle("Connect to sites before you open them", isOn: Binding(
             get: { model.file.speculativeLoading },
@@ -68,7 +72,11 @@ private struct BlockingRows: View {
         ))
         .help("speculativeLoading in config.json")
         .disabled(model.controlsDisabled)
-        SettingsCaption("Opens the connection to the address bar's top suggestion as you type and to a link you point at, so the page starts sooner. The site sees a connection but no request. Never in private windows.")
+        .settingsAccentToggle()
+        SettingsLearnMore(
+            summary: "Warms DNS and connections for the address bar's top hit and links you hover.",
+            detail: "The site sees a connection but no request. Never runs in private windows."
+        )
 
         Toggle("Block ads and trackers", isOn: Binding(
             get: { model.file.contentBlocking },
@@ -76,6 +84,7 @@ private struct BlockingRows: View {
         ))
         .help("contentBlocking in config.json")
         .disabled(model.controlsDisabled)
+        .settingsAccentToggle()
 
         Toggle("Run the lists' scriptlets", isOn: Binding(
             get: { model.file.scriptlets },
@@ -83,6 +92,7 @@ private struct BlockingRows: View {
         ))
         .help("scriptlets in config.json. ##+js(…) lines: Paddle's own small scripts for a fixed set of names, run on the sites the lines name, which defuse ad scripts and anti-adblock walls that blocking alone can't.")
         .disabled(model.controlsDisabled || !model.file.contentBlocking)
+        .settingsAccentToggle()
         if model.file.scriptlets, model.file.contentBlocking,
            let line = web.blockerStatus.first(where: { $0.hasPrefix("scriptlets: ") }) {
             SettingsCaption(scriptletSummary(line))
@@ -100,6 +110,7 @@ private struct BlockingRows: View {
                 Text("Every \(model.file.filterUpdateDays) days").tag(model.file.filterUpdateDays)
             }
         }
+        .settingsMenuValueLabel()
         .help("filterUpdateDays in config.json (0 = only by hand; a list never downloaded is still fetched)")
         .disabled(model.controlsDisabled || !model.file.contentBlocking)
 
@@ -207,7 +218,10 @@ private struct FilterListRows: View {
         if let trashResult {
             SettingsCaption(trashResult)
         }
-        SettingsCaption("Only these lists and your own rules block; removing a list stops it at once, and its file stays in filters/ until you use Remove Unused List Files.")
+        SettingsLearnMore(
+            summary: "Only these lists and your rules block; removing a list stops it at once.",
+            detail: "Its file stays in filters/ until you use Remove Unused List Files."
+        )
             .sheet(isPresented: Binding(get: { unusedFiles != nil }, set: { if !$0 { unusedFiles = nil } })) {
                 UnusedFilesSheet(files: unusedFiles ?? []) { confirmed in
                     if confirmed, let files = unusedFiles {
@@ -374,9 +388,15 @@ private struct UserFilterRows: View {
             }
         }
         if empty {
-            SettingsCaption("Your rules block nothing yet: the file is empty or only comments.")
+            SettingsLearnMore(
+                summary: "Your rules block nothing yet.",
+                detail: "The file is empty or only comments."
+            )
         }
-        SettingsCaption("@@ and #@# exceptions here also apply to EasyList and the other lists, so changing them rebuilds every list.")
+        SettingsLearnMore(
+            summary: "@@ and #@# exceptions here apply to EasyList and the other lists too.",
+            detail: "Changing them rebuilds every compiled list."
+        )
     }
 }
 
@@ -407,6 +427,7 @@ private struct HistoryRows: View {
         }
         .help("historyDays in config.json (0 = no history)")
         .disabled(model.controlsDisabled)
+        .settingsMenuValueLabel()
         .confirmationDialog(
             pending.map { "Keep history for \(Self.title($0.days))?" } ?? "",
             isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
@@ -425,7 +446,10 @@ private struct HistoryRows: View {
         }
 
         if model.file.historyDays == 0 {
-            SettingsCaption("History is off: nothing is recorded, and existing history stays until you clear it.")
+            SettingsLearnMore(
+                summary: "History is off: nothing new is recorded.",
+                detail: "Existing visits stay until you clear history."
+            )
         }
         LabeledContent("Remove visited pages") {
             Button("Clear History…") { ClearHistoryPrompt.run(for: NSApp.keyWindow) }
@@ -467,6 +491,8 @@ private struct StatusLine: View {
         let summary = foldedRuleCount(text)
         let label = Label(summary ?? text, systemImage: symbol)
             .font(font)
+            .foregroundStyle(.secondary)
+            .symbolRenderingMode(.monochrome)
             .fixedSize(horizontal: false, vertical: true)
         if summary != nil {
             label.help(text)
@@ -520,7 +546,10 @@ private struct ContactAutofillRows: View {
         } message: {
             Text("It is deleted from your Keychain. Fields already filled on pages stay as they are.")
         }
-        SettingsCaption("Kept in your login Keychain. A page gets nothing until you click Fill contact info, then only what its form has fields for, and only visible empty fields are filled. Passwords and cards stay with your password manager.")
+        SettingsLearnMore(
+            summary: "Saved in your login Keychain; filled only when you click Fill contact info.",
+            detail: "Only visible empty fields that match the form are filled. Passwords and cards stay with your password manager."
+        )
     }
 }
 

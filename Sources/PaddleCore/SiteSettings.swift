@@ -22,6 +22,11 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         case auto, never, always
     }
 
+    /// Per-site dark mode; unset (`nil`) means Auto (follow global rules).
+    public enum SiteDarkMode: String, Sendable, Equatable, CaseIterable {
+        case auto, light, dark, native
+    }
+
     /// Page zoom as a factor; 1 is 100 %.
     public var zoom: Double?
     /// Whether pages on this site run JavaScript.
@@ -40,8 +45,8 @@ public struct SiteSettings: Codable, Sendable, Equatable {
     /// True lets pages on this site open windows without a click (pop-ups). Unset or false: a window a script opens
     /// on its own may still download a file, but a page in it is blocked, with a Pop-up blocked button to open it.
     public var popups: Bool?
-    /// Whether website dark mode is forced on (true) or off (false) on this site; unset follows the global setting.
-    public var darkMode: Bool?
+    /// Per-site dark mode: `light`, `dark`, or `native`; unset follows the global setting (Auto).
+    public var darkMode: SiteDarkMode?
     /// Whether background tabs on this site freeze (see `Freeze`).
     public var freeze: Freeze?
 
@@ -54,7 +59,7 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         notifications: Permission? = nil,
         httpsOnly: Bool? = nil,
         popups: Bool? = nil,
-        darkMode: Bool? = nil,
+        darkMode: SiteDarkMode? = nil,
         freeze: Freeze? = nil
     ) {
         self.zoom = zoom
@@ -67,6 +72,52 @@ public struct SiteSettings: Codable, Sendable, Equatable {
         self.popups = popups
         self.darkMode = darkMode
         self.freeze = freeze
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case zoom, javaScript, autoplay, contentBlocking, location, notifications, httpsOnly, popups, darkMode, freeze
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        zoom = try container.decodeIfPresent(Double.self, forKey: .zoom)
+        javaScript = try container.decodeIfPresent(Bool.self, forKey: .javaScript)
+        autoplay = try container.decodeIfPresent(Autoplay.self, forKey: .autoplay)
+        contentBlocking = try container.decodeIfPresent(Bool.self, forKey: .contentBlocking)
+        location = try container.decodeIfPresent(Permission.self, forKey: .location)
+        notifications = try container.decodeIfPresent(Permission.self, forKey: .notifications)
+        httpsOnly = try container.decodeIfPresent(Bool.self, forKey: .httpsOnly)
+        popups = try container.decodeIfPresent(Bool.self, forKey: .popups)
+        freeze = try container.decodeIfPresent(Freeze.self, forKey: .freeze)
+        darkMode = try Self.decodeDarkMode(from: container)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(zoom, forKey: .zoom)
+        try container.encodeIfPresent(javaScript, forKey: .javaScript)
+        try container.encodeIfPresent(autoplay, forKey: .autoplay)
+        try container.encodeIfPresent(contentBlocking, forKey: .contentBlocking)
+        try container.encodeIfPresent(location, forKey: .location)
+        try container.encodeIfPresent(notifications, forKey: .notifications)
+        try container.encodeIfPresent(httpsOnly, forKey: .httpsOnly)
+        try container.encodeIfPresent(popups, forKey: .popups)
+        try container.encodeIfPresent(freeze, forKey: .freeze)
+        if let darkMode { try container.encode(darkMode.rawValue, forKey: .darkMode) }
+    }
+
+    private static func decodeDarkMode(from container: KeyedDecodingContainer<CodingKeys>) throws -> SiteDarkMode? {
+        guard container.contains(.darkMode) else { return nil }
+        if try container.decodeNil(forKey: .darkMode) { return nil }
+        if let bool = try? container.decode(Bool.self, forKey: .darkMode) {
+            return bool ? .dark : .light
+        }
+        let raw = try container.decode(String.self, forKey: .darkMode)
+        if raw == "auto" { return nil }
+        guard let mode = SiteDarkMode(rawValue: raw), mode != .auto else {
+            throw DecodingError.dataCorruptedError(forKey: .darkMode, in: container, debugDescription: "Unknown darkMode \"\(raw)\"")
+        }
+        return mode
     }
 
     /// True when no field is set, so the entry says nothing and can be dropped.

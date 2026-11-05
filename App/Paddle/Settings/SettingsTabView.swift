@@ -55,16 +55,29 @@ struct SettingsTabView: View {
                 .padding(10)
             List(selection: Binding(get: { tab.settingsPane }, set: { if let pane = $0 { tab.browser?.showPane(pane, in: tab) } })) {
                 ForEach(matches, id: \.self) { pane in
-                    Label(pane.title, systemImage: pane.symbol)
-                        .tag(pane)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(pane.title, systemImage: pane.symbol)
+                        if !search.isEmpty, let hint = SettingsPane.matchHint(for: pane, query: search) {
+                            Text("Matches “\(hint)”")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .tag(pane)
                 }
             }
             .listStyle(.sidebar)
             .accessibilityLabel("Settings panes")
             if matches.isEmpty {
-                Text("No settings match")
-                    .foregroundStyle(.secondary)
-                    .padding(12)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("No settings match")
+                        .foregroundStyle(.secondary)
+                    Text("Try a config key, menu name, or feature (e.g. “mosaic sleep”, “filter list”).")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(12)
             }
             Divider()
             HStack {

@@ -514,6 +514,30 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         model.toggleDarkMode(tab)
     }
 
+    /// View > Dark Mode > Auto / Light / Dark / Native for this tab's host.
+    @objc func paddleSetSiteDarkMode(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem, let name = item.identifier?.rawValue,
+              let mode = Self.siteDarkMode(forAction: name), let tab else { return }
+        if !tab.isPrivate { tab.setDarkModeOverride(nil) }
+        tab.setSiteDarkMode(mode)
+    }
+
+    /// View > Dark Mode > Looks Wrong → Keep Light.
+    @objc func paddleKeepPageLight(_ sender: Any?) {
+        guard let tab else { return }
+        if !tab.isPrivate { tab.setDarkModeOverride(nil) }
+        tab.keepPageLight()
+    }
+
+    private static func siteDarkMode(forAction name: String) -> SiteSettings.SiteDarkMode? {
+        switch name {
+        case "siteDarkModeAuto": return .auto
+        case "siteDarkModeLight": return .light
+        case "siteDarkModeDark": return .dark
+        case "siteDarkModeNative": return .native
+        default: return nil
+        }
+    }
     // MARK: - History
 
     @objc func paddleBack(_ sender: Any?) { webView?.goBack() }
@@ -815,6 +839,16 @@ extension BrowserWindowController: NSMenuItemValidation {
             guard let tab, tab.siteHost != nil else { return false }
             menuItem.state = tab.isDarkModeActive ? .on : .off
             return true
+        case #selector(paddleSetSiteDarkMode(_:)):
+            guard let tab, let host = tab.siteHost, !tab.isPrivate,
+                  let name = menuItem.identifier?.rawValue,
+                  let mode = Self.siteDarkMode(forAction: name) else { return false }
+            let isDark = AppModel.shared.effectiveAppearanceIsDark
+            let current = AppModel.shared.config(for: model.profileID).sitePolicy(forHost: host, systemIsDark: isDark).darkModeOverride
+            menuItem.state = mode == current ? .on : .off
+            return true
+        case #selector(paddleKeepPageLight(_:)):
+            return tab?.siteHost != nil
         case #selector(paddlePrint(_:)), #selector(paddleSavePage(_:)), #selector(paddleExportPDF(_:)),
              #selector(paddleTranslatePage(_:)), #selector(paddleCopyLinkToHighlight(_:)),
              #selector(paddleSearchSelectedText(_:)), #selector(paddleCreateQRCode(_:)),

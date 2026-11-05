@@ -29,7 +29,7 @@ enum SettingsPane: String, CaseIterable {
         case .tabsMemory: "Tab freezing, automatic memory sleep, and background performance."
         case .mosaic: "Several tabs at once: layout, pane toolbars, and how a Mosaic behaves in the background."
         case .privacy: "Ad and tracker blocking, filter lists, HTTPS upgrades, and browsing history."
-        case .sites: "Per-site permissions for zoom, JavaScript, autoplay, location, and camera."
+        case .sites: "Per-site overrides for zoom, JavaScript, autoplay, blocking, pop-ups, location, notifications, freeze, and user agent."
         case .extensions: "WebExtensions management, permissions, and private window access."
         case .shortcuts: "Custom keyboard shortcuts for menu items and browser actions."
         case .advanced: "Developer tools, configuration editor, and control bridge automation."
@@ -147,6 +147,25 @@ enum SettingsPane: String, CaseIterable {
             return words.allSatisfy { word in fields.contains { $0.localizedCaseInsensitiveContains(word) } }
         }
     }
+
+    /// A short hint for the sidebar when `query` matched this pane (first matching field per search word).
+    static func matchHint(for pane: SettingsPane, query: String) -> String? {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return nil }
+        var hints: [String] = []
+        for word in words {
+            if pane.title.localizedCaseInsensitiveContains(word) {
+                hints.append(pane.title)
+                continue
+            }
+            if let keyword = pane.keywords.first(where: { $0.localizedCaseInsensitiveContains(word) }) {
+                hints.append(keyword)
+                continue
+            }
+            return nil
+        }
+        return hints.isEmpty ? nil : hints.joined(separator: ", ")
+    }
 }
 
 /// One pane: the banner above the pane, filling the window; forms scroll inside it, tables scroll themselves.
@@ -169,9 +188,9 @@ struct SettingsPaneView: View {
         HStack(spacing: 12) {
             Image(systemName: pane.symbol)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.primary)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
             VStack(alignment: .leading, spacing: 2) {
                 Text(pane.title)
                     .font(.title2.weight(.bold))
@@ -228,19 +247,34 @@ struct SettingsDisclosure<Content: View>: View {
 /// grouped form, so its rows keep a form's styling (switches, trailing values); the outer scroll view does the
 /// scrolling.
 struct SettingsForm<Content: View>: View {
+    /// At most two columns so dense panes match General/Appearance rhythm (no four-column dumps).
+    var maxColumns: Int = 2
+    var minColumnWidth: CGFloat = 400
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollView {
-            MasonryLayout(minColumnWidth: 380, maxColumns: 4, spacing: 0) {
-                Group(sections: content) { sections in
-                    ForEach(sections.indices, id: \.self) { index in
-                        card(index, hasHeader: !sections[index].header.isEmpty)
+            if maxColumns == 1 {
+                VStack(spacing: 0) {
+                    Group(sections: content) { sections in
+                        ForEach(sections.indices, id: \.self) { index in
+                            card(index, hasHeader: !sections[index].header.isEmpty)
+                        }
                     }
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
+            } else {
+                MasonryLayout(minColumnWidth: minColumnWidth, maxColumns: maxColumns, spacing: 0) {
+                    Group(sections: content) { sections in
+                        ForEach(sections.indices, id: \.self) { index in
+                            card(index, hasHeader: !sections[index].header.isEmpty)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 12)
         }
     }
 
@@ -262,6 +296,7 @@ struct SettingsForm<Content: View>: View {
             }
         }
         .formStyle(.grouped)
+        .tint(.primary)
         .scrollDisabled(true)
         .scrollContentBackground(.hidden)
         // A grouped form keeps a clear inset above and below its section, more above when the section has no
@@ -332,6 +367,7 @@ struct ConfigToggle: View {
             get: { model.file[keyPath: value] },
             set: { on in Task { await model.saveKey(key, .bool(on)) } }
         ))
+        .settingsAccentToggle()
         .help("\(key.rawValue) in config.json. \(help)")
         .disabled(model.controlsDisabled)
     }
