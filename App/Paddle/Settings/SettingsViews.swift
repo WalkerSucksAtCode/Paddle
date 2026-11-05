@@ -147,6 +147,25 @@ enum SettingsPane: String, CaseIterable {
             return words.allSatisfy { word in fields.contains { $0.localizedCaseInsensitiveContains(word) } }
         }
     }
+
+    /// A short hint for the sidebar when `query` matched this pane (first matching field per search word).
+    static func matchHint(for pane: SettingsPane, query: String) -> String? {
+        let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return nil }
+        var hints: [String] = []
+        for word in words {
+            if pane.title.localizedCaseInsensitiveContains(word) {
+                hints.append(pane.title)
+                continue
+            }
+            if let keyword = pane.keywords.first(where: { $0.localizedCaseInsensitiveContains(word) }) {
+                hints.append(keyword)
+                continue
+            }
+            return nil
+        }
+        return hints.isEmpty ? nil : hints.joined(separator: ", ")
+    }
 }
 
 /// One pane: the banner above the pane, filling the window; forms scroll inside it, tables scroll themselves.
@@ -169,9 +188,9 @@ struct SettingsPaneView: View {
         HStack(spacing: 12) {
             Image(systemName: pane.symbol)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.primary)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
             VStack(alignment: .leading, spacing: 2) {
                 Text(pane.title)
                     .font(.title2.weight(.bold))
@@ -235,15 +254,27 @@ struct SettingsForm<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            MasonryLayout(minColumnWidth: minColumnWidth, maxColumns: maxColumns, spacing: 0) {
-                Group(sections: content) { sections in
-                    ForEach(sections.indices, id: \.self) { index in
-                        card(index, hasHeader: !sections[index].header.isEmpty)
+            if maxColumns == 1 {
+                VStack(spacing: 0) {
+                    Group(sections: content) { sections in
+                        ForEach(sections.indices, id: \.self) { index in
+                            card(index, hasHeader: !sections[index].header.isEmpty)
+                        }
                     }
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
+            } else {
+                MasonryLayout(minColumnWidth: minColumnWidth, maxColumns: maxColumns, spacing: 0) {
+                    Group(sections: content) { sections in
+                        ForEach(sections.indices, id: \.self) { index in
+                            card(index, hasHeader: !sections[index].header.isEmpty)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 8)
-            .padding(.bottom, 12)
         }
     }
 

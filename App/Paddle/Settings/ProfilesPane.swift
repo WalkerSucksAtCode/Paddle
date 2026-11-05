@@ -14,7 +14,7 @@ struct ProfilesPane: View {
     private var store: ProfileStore { AppModel.shared.profiles }
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             if let error = store.loadError {
                 Section {
                     Text("\(error). Paddle leaves the file alone until it is fixed.")

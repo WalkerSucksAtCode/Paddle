@@ -10,7 +10,7 @@ struct AdvancedPane: View {
     @State private var tidyPaths: TidyList?
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             developerSection
             ControlBridgeSection(model: model)
             fileSection

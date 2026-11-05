@@ -9,7 +9,7 @@ struct PrivacyPane: View {
     @State private var showingWebsiteData = false
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             Section("Content blocking") {
                 BlockingRows(model: model)
             }

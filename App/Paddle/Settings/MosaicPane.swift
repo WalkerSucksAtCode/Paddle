@@ -10,26 +10,36 @@ struct MosaicPane: View {
     @State private var openOpening = true
     @State private var openToolbars = false
     @State private var openFocus = false
-    @State private var openMotion = false
-    @State private var openDragging = false
-    @State private var openStrip = false
-    @State private var openBorders = false
-    @State private var openBackground = false
+    @State private var openAdvanced = false
 
     var body: some View {
         SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             Section {
                 mosaicJumpBar
+                SettingsLearnMore(
+                    summary: "Layout and Opening cover everyday Mosaic behavior.",
+                    detail: "Advanced tuning holds motion, dividers, tab strip, and background power knobs — collapsed until you need them."
+                )
             }
             mosaicCard("Layout", expanded: $openLayout) { layoutRows }
             mosaicCard("Opening", expanded: $openOpening) { openingRows }
             mosaicCard("Pane toolbars", expanded: $openToolbars) { toolbarRows }
             mosaicCard("Panes and focus", expanded: $openFocus) { focusRows }
-            mosaicCard("Motion", expanded: $openMotion) { motionRows }
-            mosaicCard("Dragging and handles", expanded: $openDragging) { draggingRows }
-            mosaicCard("Tab strip", expanded: $openStrip) { stripRows }
-            mosaicCard("Borders and look", expanded: $openBorders) { bordersRows }
-            mosaicCard("In the background", expanded: $openBackground) { backgroundRows }
+            Section {
+                SettingsDisclosure(title: "Advanced tuning", isExpanded: $openAdvanced) {
+                    mosaicGroupHeading("Motion")
+                    motionRows
+                    mosaicGroupHeading("Dragging and handles")
+                    draggingRows
+                    mosaicGroupHeading("Tab strip")
+                    stripRows
+                    mosaicGroupHeading("Borders and look")
+                    bordersRows
+                    mosaicGroupHeading("In the background")
+                    backgroundRows
+                }
+            }
+            .disabled(model.controlsDisabled)
         }
     }
 
@@ -40,11 +50,7 @@ struct MosaicPane: View {
                 jump("Opening", $openOpening)
                 jump("Toolbars", $openToolbars)
                 jump("Focus", $openFocus)
-                jump("Motion", $openMotion)
-                jump("Dragging", $openDragging)
-                jump("Tab strip", $openStrip)
-                jump("Borders", $openBorders)
-                jump("Background", $openBackground)
+                jump("Advanced") { withAnimation { openAdvanced = true } }
             }
             .padding(.vertical, 2)
         }
@@ -55,6 +61,19 @@ struct MosaicPane: View {
         Button(title) { withAnimation { expanded.wrappedValue = true } }
             .buttonStyle(.bordered)
             .controlSize(.small)
+    }
+
+    private func jump(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+    }
+
+    private func mosaicGroupHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
     }
 
     @ViewBuilder

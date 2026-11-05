@@ -8,7 +8,7 @@ struct TabsMemoryPane: View {
     let model: SettingsModel
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             Section("Sleeping tabs") {
                 Picker("Freeze background tabs after", selection: Binding(
                     get: { model.file.tabFreezeAfterMinutes },
@@ -73,7 +73,10 @@ struct TabsMemoryPane: View {
                     set: { value in Task { await model.saveKey(.resumeMediaOnSelect, .bool(value)) } }
                 ))
                 .help("resumeMediaOnSelect in config.json. Off, switching tabs leaves whatever is already playing alone.")
-                SettingsCaption("Leave this off and switching tabs does not start or stop audio. On, the tab you switch to plays and the one you left pauses.")
+                SettingsLearnMore(
+                    summary: "Off: switching tabs does not start or stop audio.",
+                    detail: "On: the tab you switch to plays and the one you left pauses."
+                )
             }
             .disabled(model.controlsDisabled)
 
