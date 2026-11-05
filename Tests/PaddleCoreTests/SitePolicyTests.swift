@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 @testable import PaddleCore
 import Testing
@@ -295,6 +296,122 @@ struct SitePolicyTests {
         #expect(SitePermissionDecision.notifications(scheme: "https", site: .allow, embeddingPage: nil) == .grant)
         #expect(SitePermissionDecision.notifications(scheme: "HTTPS", site: .ask, embeddingPage: nil) == .ask)
         #expect(SitePermissionDecision.notifications(scheme: "https", site: .allow, embeddingPage: .ask) == .ask)
+    }
+
+    /// Opt-in WKWebView snapshots for `docs/evidence/smart-dark-mode-2026-11-05/`. Skipped in ordinary `swift test`.
+    @MainActor
+    @Test func smartDarkModeEvidenceSnapshots() async throws {
+        guard ProcessInfo.processInfo.environment["PADDLE_DARK_EVIDENCE"] == "1" else { return }
+        let dir = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "docs/evidence/smart-dark-mode-2026-11-05")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        struct Shot {
+            var name: String
+            var html: String
+            var expectInvert: Bool
+        }
+        let shots: [Shot] = [
+            Shot(
+                name: "native-dark",
+                html: """
+                <html data-theme="dark" class="dark" style="background:#111;color:#eee">
+                <body class="dark" style="background:#111;color:#eee;margin:24px;font:20px/1.4 -apple-system,sans-serif">
+                <h1>Native dark</h1>
+                <p>GitHub-style already-dark page. Smart should skip invert.</p>
+                </body></html>
+                """,
+                expectInvert: false
+            ),
+            Shot(
+                name: "light-article",
+                html: """
+                <html style="background:#fff;color:#111">
+                <body style="background:#fff;color:#111;margin:24px;font:20px/1.5 Georgia,serif">
+                <article>
+                <h1>A light article</h1>
+                <p>Bright page that Smart should invert. Body text stays readable, photographs stay un-inverted.</p>
+                <p>Second paragraph with a <a href="#">link</a> and some more copy so the filter has real content.</p>
+                </article>
+                </body></html>
+                """,
+                expectInvert: true
+            ),
+            Shot(
+                name: "map-canvas",
+                html: """
+                <html style="background:#fff">
+                <body style="margin:0;background:#fff">
+                <div class="gm-style" style="width:800px;height:400px;background:linear-gradient(90deg,#4caf50 0 25%,#2196f3 25% 50%,#ffeb3b 50% 75%,#f44336 75% 100%)"></div>
+                <canvas class="mapboxgl-canvas" width="800" height="200"></canvas>
+                <script>const c=document.querySelector('canvas');const x=c.getContext('2d');x.fillStyle='#0a7';x.fillRect(0,0,800,200);x.fillStyle='#fff';x.font='28px sans-serif';x.fillText('map canvas', 24, 110);</script>
+                </body></html>
+                """,
+                expectInvert: true
+            ),
+            Shot(
+                name: "code-editor",
+                html: """
+                <html style="background:#fff;color:#111">
+                <body style="margin:16px;background:#fff;font:16px/1.4 ui-monospace,monospace">
+                <p>Page chrome is light (should invert). Editor should reverse back.</p>
+                <div class="monaco-editor" style="background:#1e1e1e;color:#d4d4d4;padding:16px;min-height:200px">function hello() { return 'native editor theme'; }</div>
+                </body></html>
+                """,
+                expectInvert: true
+            ),
+        ]
+        var notes: [String] = []
+        for shot in shots {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = .nonPersistent()
+            let script = DarkModeScript.source(for: [:], defaultEngine: .smart, globalDarkMode: .smart)
+            configuration.userContentController.addUserScript(WKUserScript(
+                source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient
+            ))
+            let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 500), configuration: configuration)
+            webView.loadHTMLString(shot.html, baseURL: URL(string: "https://example.com/"))
+            let deadline = ContinuousClock.now + .seconds(10)
+            var attr: String?
+            while ContinuousClock.now < deadline {
+                attr = try? await withCheckedThrowingContinuation { (cont: CheckedContinuation<String?, Error>) in
+                    webView.callAsyncJavaScript(
+                        "return document.documentElement.getAttribute('data-paddle-dark-mode') || ''",
+                        arguments: [:], in: nil, in: .defaultClient
+                    ) { result in
+                        switch result {
+                        case .success(let val): cont.resume(returning: val as? String)
+                        case .failure(let err): cont.resume(throwing: err)
+                        }
+                    }
+                }
+                if attr != nil { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            try await Task.sleep(for: .milliseconds(500))
+            attr = try? await withCheckedThrowingContinuation { (cont: CheckedContinuation<String?, Error>) in
+                webView.callAsyncJavaScript(
+                    "return document.documentElement.getAttribute('data-paddle-dark-mode') || ''",
+                    arguments: [:], in: nil, in: .defaultClient
+                ) { result in
+                    switch result {
+                    case .success(let val): cont.resume(returning: val as? String)
+                    case .failure(let err): cont.resume(throwing: err)
+                    }
+                }
+            }
+            let inverted = attr == "active"
+            #expect(inverted == shot.expectInvert, "\(shot.name) invert=\(inverted) attr=\(attr ?? "nil")")
+            let image = try await webView.takeSnapshot(configuration: nil)
+            guard let tiff = image.tiffRepresentation,
+                  let rep = NSBitmapImageRep(data: tiff),
+                  let png = rep.representation(using: .png, properties: [:]) else {
+                throw NSError(domain: "PaddleEvidence", code: 1)
+            }
+            try png.write(to: dir.appending(path: "\(shot.name).png"))
+            notes.append("\(shot.name): data-paddle-dark-mode=\(attr ?? "nil") invert=\(inverted)")
+        }
+        try notes.joined(separator: "\n").write(to: dir.appending(path: "probes.txt"), atomically: true, encoding: .utf8)
     }
 }
 
