@@ -1,0 +1,4 @@
+native-dark: data-paddle-dark-mode= invert=false
+light-article: data-paddle-dark-mode=active invert=true
+map-canvas: data-paddle-dark-mode=active invert=true
+code-editor: data-paddle-dark-mode=active invert=true

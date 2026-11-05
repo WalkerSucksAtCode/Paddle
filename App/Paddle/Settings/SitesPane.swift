@@ -69,10 +69,8 @@ struct SitesPane: View {
                 .width(min: 120, ideal: 150)
                 TableColumn("Zoom") { row in zoomPicker(row) }
                     .width(80)
-                TableColumn("Dark mode") { row in
-                    toggle(row, .darkMode, isOn: row.policy.darkMode, label: "Dark mode")
-                }
-                .width(70)
+                TableColumn("Dark mode") { row in darkModePicker(row) }
+                    .width(88)
                 TableColumn("JavaScript") { row in
                     toggle(row, .javaScript, isOn: row.policy.javaScript, label: "JavaScript")
                 }
@@ -166,6 +164,22 @@ struct SitesPane: View {
     }
 
     // MARK: - Cells
+
+    private func darkModePicker(_ row: SiteRow) -> some View {
+        Picker("Dark mode for \(row.key)", selection: Binding(
+            get: { model.file.sites[row.key]?.darkMode ?? .auto },
+            set: { mode in set(.darkMode, .string(mode.rawValue), on: row) }
+        )) {
+            Text("Auto").tag(SiteSettings.SiteDarkMode.auto)
+            Text("Light").tag(SiteSettings.SiteDarkMode.light)
+            Text("Dark").tag(SiteSettings.SiteDarkMode.dark)
+            Text("Native").tag(SiteSettings.SiteDarkMode.native)
+        }
+        .labelsHidden()
+        .disabled(model.controlsDisabled)
+        .help(source(row, .darkMode))
+        .accessibilityLabel("Dark mode for \(row.key)")
+    }
 
     private func zoomPicker(_ row: SiteRow) -> some View {
         let current = Int((row.policy.zoom * 100).rounded())

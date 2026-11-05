@@ -494,7 +494,12 @@ final class WebEnvironment {
 
         let isDark = AppModel.shared.effectiveAppearanceIsDark
         scriptsBuiltDark = isDark
-        let darkModeScript = DarkModeScript.source(for: config.sites, defaultDarkMode: config.defaultDarkMode(systemIsDark: isDark), invertTextImages: config.invertTextImages)
+        let darkModeScript = DarkModeScript.source(
+            for: config.sites,
+            defaultEngine: config.pageDarkEngine(systemIsDark: isDark),
+            globalDarkMode: config.darkMode,
+            invertTextImages: config.invertTextImages
+        )
         contentController.addUserScript(WKUserScript(
             source: darkModeScript,
             injectionTime: .atDocumentStart,
