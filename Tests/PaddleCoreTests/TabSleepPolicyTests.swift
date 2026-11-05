@@ -91,6 +91,13 @@ struct TabSleepPolicyTests {
         #expect(freezeOnly.tabsToFreeze([discarded, kept], now: now, excluding: [discarded.id]) == [kept.id])
     }
 
+    @Test func freezeLeavesOutMountedTabs() {
+        let previous = tab(60)
+        let mounted = previous.id
+        let idle = tab(60)
+        #expect(freezeOnly.tabsToFreeze([previous, idle], now: now, excluding: [], mounted: [mounted]) == [idle.id])
+    }
+
     @Test func freezeIsLeastRecentlyUsedFirst() {
         let a = tab(10), b = tab(20), c = tab(7)
         #expect(freezeOnly.tabsToFreeze([a, b, c], now: now, excluding: []) == [b.id, a.id, c.id])
