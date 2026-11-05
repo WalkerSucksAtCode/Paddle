@@ -2,7 +2,7 @@
 
 Personal macOS browser on the system WebKit (`WKWebView`). Config is plain files. Idle background tabs freeze, then sleep.
 
-It identifies as the installed Safari. EasyList and EasyPrivacy compile to WebKit content-blocker lists.
+It identifies as the installed Safari. EasyList and EasyPrivacy compile to WebKit content-blocker lists. Long-form docs: [wiki](https://github.com/WalkerSucksAtCode/Paddle/wiki).
 
 Config, filters, userscripts and themes live in `~/Library/Application Support/Paddle/` (Paddle > Open Config Folder). Edit, then Paddle > Reload Config (⌥⌘,). Settings (⌘,) writes `config.json`.
 
