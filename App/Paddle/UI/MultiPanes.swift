@@ -335,9 +335,9 @@ private struct PaneBar: View {
                 get: { tab.darkModeOverride.map { $0 ? 1 : 0 } ?? -1 },
                 set: { tab.setDarkModeOverride($0 < 0 ? nil : $0 == 1) }
             )) {
-                Text("Follow the Site Setting").tag(-1)
-                Text("On for This Pane").tag(1)
-                Text("Off for This Pane").tag(0)
+                Text("Follow Site").tag(-1)
+                Text("Dark").tag(1)
+                Text("Light").tag(0)
             }
             Button("Remove from Mosaic") { model.removeFromView(tab) }
         }

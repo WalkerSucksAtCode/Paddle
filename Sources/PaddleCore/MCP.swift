@@ -170,7 +170,7 @@ public enum PaddleBridgeTools {
         "focusPaneUp", "focusPaneDown", "removeFromMosaic",
         "zoomIn", "zoomOut", "actualSize",
         "find", "findNext", "findPrevious", "jumpToSelection",
-        "toggleVerticalTabs", "toggleSidebarCollapsed", "toggleBookmarksBar", "toggleDarkMode", "toggleInvertTextImages",
+        "toggleVerticalTabs", "toggleSidebarCollapsed", "toggleBookmarksBar", "toggleDarkMode", "keepPageLight", "toggleInvertTextImages",
         "toggleReaderMode", "togglePictureInPicture",
     ]
 

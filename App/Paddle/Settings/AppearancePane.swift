@@ -92,9 +92,11 @@ struct AppearancePane: View {
                 )) {
                     Text("Off").tag(DarkModePreference.off)
                     Text("System").tag(DarkModePreference.system)
-                    Text("Always").tag(DarkModePreference.always)
+                    Text("Smart").tag(DarkModePreference.smart)
+                    Text("Native").tag(DarkModePreference.native)
                 }
-                .help("darkMode in config.json. Off leaves sites alone. System follows appearance. Always forces it. A per-site setting still wins.")
+                .pickerStyle(.segmented)
+                .help("darkMode in config.json. Smart is the recommendation: inverts bright pages and skips sites that are already dark. Native only sets color-scheme and never inverts. System follows the window appearance. Off leaves sites alone. A per-site setting in Settings > Sites still wins.")
                 Toggle("Invert bright text images in dark mode", isOn: Binding(
                     get: { model.file.invertTextImages },
                     set: { value in Task { await model.saveKey(.invertTextImages, .bool(value)) } }

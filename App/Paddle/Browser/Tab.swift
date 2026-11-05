@@ -446,7 +446,7 @@ final class Tab: Identifiable {
     private func pageBackdropColor() -> NSColor {
         let isDark = AppModel.shared.effectiveAppearanceIsDark
         let host = siteHost ?? ""
-        let siteDark = !host.isEmpty && (darkModeOverride ?? config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode)
+        let siteDark = !host.isEmpty && resolvedPageDarkEngine(systemIsDark: isDark) != .off
         if siteDark {
             return NSColor(srgbRed: 0.094, green: 0.102, blue: 0.106, alpha: 1)
         }
@@ -998,7 +998,19 @@ final class Tab: Identifiable {
     var darkModeOverride: Bool?
 
     /// Dark mode as this tab shows it: `darkModeOverride`, else the site setting.
-    var isDarkModeActive: Bool { darkModeOverride ?? isSiteDarkModeActive }
+    var isDarkModeActive: Bool {
+        resolvedPageDarkEngine(systemIsDark: AppModel.shared.effectiveAppearanceIsDark) != .off
+    }
+
+    /// Effective dark-mode engine for this tab (Mosaic pane override, then site + global rules).
+    func resolvedPageDarkEngine(systemIsDark: Bool) -> PageDarkEngine {
+        guard let host = siteHost else { return .off }
+        if let override = darkModeOverride {
+            if !override { return .off }
+            return config.darkMode == .native ? .native : .smart
+        }
+        return config.sitePolicy(forHost: host, systemIsDark: systemIsDark).pageDarkEngine
+    }
 
     /// Sets `darkModeOverride` and applies it to the open page.
     func setDarkModeOverride(_ dark: Bool?) {
@@ -1010,15 +1022,22 @@ final class Tab: Identifiable {
     var isSiteDarkModeActive: Bool {
         guard let host = siteHost else { return false }
         let isDark = AppModel.shared.effectiveAppearanceIsDark
-        return config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
+        return config.sitePolicy(forHost: host, systemIsDark: isDark).pageDarkEngine != .off
     }
 
     func applySiteDarkMode(systemIsDark: Bool) {
+        applyPageDarkEngine(resolvedPageDarkEngine(systemIsDark: systemIsDark))
+    }
+
+    private func applyPageDarkEngine(_ engine: PageDarkEngine) {
         refreshPageBackdrop()
         // Scripts raise on a suspended page; `unfreeze()` applies it.
-        guard let webView, !isSuspendedInWebKit, let host = siteHost else { return }
-        let dark = darkModeOverride ?? config.sitePolicy(forHost: host, systemIsDark: systemIsDark).darkMode
-        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(dark ? "true" : "false")); }"
+        guard let webView, !isSuspendedInWebKit, siteHost != nil else { return }
+        unfreeze()
+        let invert = AppModel.shared.config.invertTextImages
+        let js = """
+        if (window.__paddleDarkMode) { window.__paddleDarkMode.setPolicy({ engine: '\(engine.rawValue)', invertTextImages: \(invert ? "true" : "false") }); }
+        """
         webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
     }
 
@@ -1031,26 +1050,57 @@ final class Tab: Identifiable {
 
     /// Toggles website dark mode for this tab's site and saves it in `sites` (the profile's own settings when it sets
     /// the site's darkMode). A private window writes nothing to config.json: there it changes this tab only
-    /// (`darkModeOverride`).
+    /// (`darkModeOverride`). Off becomes Dark; any active engine becomes Light.
     func toggleDarkMode() {
         guard let host = siteHost else { return }
         let isDark = AppModel.shared.effectiveAppearanceIsDark
-        let current = isPrivate ? isDarkModeActive : config.sitePolicy(forHost: host, systemIsDark: isDark).darkMode
-        let next = !current
+        let turningOn = resolvedPageDarkEngine(systemIsDark: isDark) == .off
         if isPrivate {
-            setDarkModeOverride(next)
+            setDarkModeOverride(turningOn)
+            unfreeze()
+            return
+        }
+        let key = config.siteKey(forHost: host)
+        let mode: SiteSettings.SiteDarkMode = turningOn ? .dark : .light
+        Task {
+            await AppModel.shared.writeSiteSetting(.darkMode, .string(mode.rawValue), forKey: key, profile: profileID)
+        }
+        let engine = PageDarkEngine.resolved(site: mode, global: config.darkMode, systemIsDark: isDark)
+        applyPageDarkEngine(engine)
+    }
+
+    /// View > Dark Mode > Looks Wrong → Keep Light: forces this site to stay light (saved unless the window is private).
+    func keepPageLight() {
+        guard siteHost != nil else { return }
+        if isPrivate {
+            setDarkModeOverride(false)
         } else {
+            guard let host = siteHost else { return }
             let key = config.siteKey(forHost: host)
-            let profile = profileID
             Task {
-                await AppModel.shared.writeSiteSetting(.darkMode, .bool(next), forKey: key, profile: profile)
+                await AppModel.shared.writeSiteSetting(.darkMode, .string(SiteSettings.SiteDarkMode.light.rawValue), forKey: key, profile: profileID)
             }
         }
-        guard let webView else { return }
+        guard let webView, !isSuspendedInWebKit else { return }
         unfreeze()
-        let js = "if (window.__paddleDarkMode) { window.__paddleDarkMode.setDarkMode(\(next ? "true" : "false")); }"
-        webView.evaluateJavaScript(js, in: nil, in: .defaultClient, completionHandler: nil)
+        webView.evaluateJavaScript(
+            "if (window.__paddleDarkMode) { window.__paddleDarkMode.setKeepLight(); }",
+            in: nil, in: .defaultClient, completionHandler: nil
+        )
         refreshPageBackdrop()
+    }
+
+    /// View > Dark Mode submenu: sets this host's `sites.<host>.darkMode` (Auto removes the key).
+    func setSiteDarkMode(_ mode: SiteSettings.SiteDarkMode) {
+        guard let host = siteHost, !isPrivate else { return }
+        darkModeOverride = nil
+        let key = config.siteKey(forHost: host)
+        Task {
+            await AppModel.shared.writeSiteSetting(.darkMode, .string(mode.rawValue), forKey: key, profile: profileID)
+        }
+        let isDark = AppModel.shared.effectiveAppearanceIsDark
+        let engine = PageDarkEngine.resolved(site: mode, global: config.darkMode, systemIsDark: isDark)
+        applyPageDarkEngine(engine)
     }
 
     // MARK: - KVO
