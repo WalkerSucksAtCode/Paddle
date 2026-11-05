@@ -29,11 +29,13 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
         /// True for a hand-installed add-on the user chose to keep updated; its first update always asks. Absent
         /// otherwise, and cleared (absent) by the first update.
         public var adopted: Bool?
+        /// The last store update check result, for Settings and the Extensions menu after relaunch.
+        public var lastOutcome: ExtensionUpdateOutcome?
 
         public init(
             store: Persona.Source, id: String, version: String? = nil, installedAt: Date? = nil, lastCheck: Date? = nil,
             fileHashes: [String: String] = [:], verified: Bool? = nil, declinedVersion: String? = nil, slug: String? = nil,
-            adopted: Bool? = nil
+            adopted: Bool? = nil, lastOutcome: ExtensionUpdateOutcome? = nil
         ) {
             self.adopted = adopted
             self.store = store
@@ -45,6 +47,7 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
             self.verified = verified
             self.declinedVersion = declinedVersion
             self.slug = slug
+            self.lastOutcome = lastOutcome
         }
 
         public init(from decoder: any Decoder) throws {
@@ -59,6 +62,7 @@ public struct ExtensionSources: Codable, Sendable, Equatable {
             declinedVersion = try c.decodeIfPresent(String.self, forKey: .declinedVersion)
             slug = try c.decodeIfPresent(String.self, forKey: .slug)
             adopted = try c.decodeIfPresent(Bool.self, forKey: .adopted)
+            lastOutcome = try c.decodeIfPresent(ExtensionUpdateOutcome.self, forKey: .lastOutcome)
         }
     }
 

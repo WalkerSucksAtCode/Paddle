@@ -19,6 +19,7 @@ struct SitesPane: View {
     /// The row whose custom user agent is being typed, and the text so far.
     @State private var editingAgent: SiteRow?
     @State private var agentText = ""
+    @State private var moreSite: SiteRow?
 
     /// Zoom levels the picker offers (percent); a value set by hand or with Zoom In / Out is added to them.
     private static let zoomLevels = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300]
@@ -75,25 +76,21 @@ struct SitesPane: View {
                     toggle(row, .javaScript, isOn: row.policy.javaScript, label: "JavaScript")
                 }
                 .width(70)
-                TableColumn("Autoplay") { row in autoplayPicker(row) }
-                    .width(84)
                 TableColumn("Blocking") { row in blockingToggle(row) }
                     .width(58)
-                TableColumn("Pop-ups") { row in
-                    toggle(row, .popups, isOn: row.policy.popups, label: "Pop-ups")
+                TableColumn("Autoplay") { row in autoplayPicker(row) }
+                    .width(84)
+                TableColumn("Location") { row in locationPicker(row) }
+                    .width(74)
+                TableColumn("Notifications") { row in notificationsPicker(row) }
+                    .width(92)
+                TableColumn("") { row in
+                    Button("More…") { moreSite = row }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.primary)
+                        .accessibilityLabel("More settings for \(row.key)")
                 }
-                .width(56)
-                // A second group: one table builder block type-checks at most ten columns.
-                Group {
-                    TableColumn("Location") { row in locationPicker(row) }
-                        .width(74)
-                    TableColumn("Notifications") { row in notificationsPicker(row) }
-                        .width(92)
-                    TableColumn("Freeze") { row in freezePicker(row) }
-                        .width(74)
-                    TableColumn("User agent") { row in userAgentPicker(row) }
-                        .width(90)
-                }
+                .width(52)
             }
             // No striped placeholder rows below the last site.
             .alternatingRowBackgrounds(.disabled)
@@ -132,10 +129,10 @@ struct SitesPane: View {
 
             sessionSection
 
-            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies at once, the rest from the next page load. Freeze Auto follows keepNotifyingSitesLive for notify-allowed sites (WebContent process and RAM until cpuSleepPercent, maxAwakeTabs or memory pressure); Never keeps the same live cost; Always or keepNotifyingSitesLive off saves RAM and CPU but misses in-tab notifications in the background. \(Self.builtInAgents) Web Push (notifications while a site is closed) isn't supported.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsLearnMore(
+                summary: "Each host entry covers its subdomains; zoom applies at once, other fields on the next load.",
+                detail: "Freeze Auto follows keepNotifyingSitesLive for sites allowed to notify. \(Self.builtInAgents) Web Push (notifications while a site is closed) isn't supported."
+            )
         }
         .padding(16)
         .frame(maxHeight: .infinity, alignment: .top)
@@ -155,12 +152,44 @@ struct SitesPane: View {
         .sheet(item: Binding(get: { editingAgent.map(AgentEdit.init) }, set: { if $0 == nil { editingAgent = nil } })) { edit in
             customAgentSheet(edit.row)
         }
+        .sheet(item: Binding(get: { moreSite.map(MoreSiteEdit.init) }, set: { if $0 == nil { moreSite = nil } })) { edit in
+            siteMoreSheet(edit.row)
+        }
     }
 
     /// `sheet(item:)` needs an Identifiable value.
     private struct AgentEdit: Identifiable {
         let row: SiteRow
         var id: String { row.key }
+    }
+
+    private struct MoreSiteEdit: Identifiable {
+        let row: SiteRow
+        var id: String { row.key }
+    }
+
+    private func siteMoreSheet(_ row: SiteRow) -> some View {
+        NavigationStack {
+            Form {
+                Section("Pop-ups") {
+                    toggle(row, .popups, isOn: row.policy.popups, label: "Pop-ups")
+                }
+                Section("Freeze") {
+                    freezePicker(row)
+                }
+                Section("User agent") {
+                    userAgentPicker(row)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle(row.key)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { moreSite = nil }
+                }
+            }
+        }
+        .frame(minWidth: 360, minHeight: 280)
     }
 
     // MARK: - Cells
@@ -377,9 +406,10 @@ struct SitesPane: View {
         return VStack(alignment: .leading, spacing: 4) {
             Text("This session").font(.headline)
             if groups.isEmpty {
-                Text("No camera, microphone, location, notification or download answers yet. They last until Paddle quits.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                SettingsLearnMore(
+                    summary: "No camera, microphone, location, notification or download answers yet.",
+                    detail: "They last until Paddle quits; use Forget below to reset a host for this run."
+                )
             } else {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 4) {

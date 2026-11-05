@@ -8,7 +8,7 @@ struct TabsMemoryPane: View {
     let model: SettingsModel
 
     var body: some View {
-        SettingsForm {
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
             Section("Sleeping tabs") {
                 Picker("Freeze background tabs after", selection: Binding(
                     get: { model.file.tabFreezeAfterMinutes },
@@ -18,16 +18,19 @@ struct TabsMemoryPane: View {
                         Text(minutes == 0 ? "Off" : "\(minutes.formatted()) minute\(minutes == 1 ? "" : "s")").tag(minutes)
                     }
                 }
+                .settingsMenuValueLabel()
                 .help("tabFreezeAfterMinutes in config.json (0 = off)")
                 Toggle("Keep uploads and unsaved changes running", isOn: Binding(
                     get: { model.file.keepPageWorkRunning },
                     set: { value in Task { await model.saveKey(.keepPageWorkRunning, .bool(value)) } }
                 ))
+                .settingsAccentToggle()
                 .help("keepPageWorkRunning in config.json. A tab uploading a file never freezes or sleeps; one with unsaved changes doesn't sleep for being idle. Pages already open pick it up when they next load.")
                 Toggle("Keep sites that can notify you live", isOn: Binding(
                     get: { model.file.keepNotifyingSitesLive },
                     set: { value in Task { await model.saveKey(.keepNotifyingSitesLive, .bool(value)) } }
                 ))
+                .settingsAccentToggle()
                 .help("keepNotifyingSitesLive in config.json. When on, a site you allowed to notify stays unfrozen and awake in the background: its WebContent process keeps RAM and page JavaScript keeps running so messages can still arrive in the tab. cpuSleepPercent, maxAwakeTabs and memory pressure still apply. Turn this off, or set that site's Freeze to Always in Settings > Sites, to freeze it like any other tab; while frozen or asleep in the background you miss new messages there (Paddle has no Web Push).")
                 SleepAfterRows(model: model)
                 MaxAwakeRow(model: model)
@@ -35,6 +38,7 @@ struct TabsMemoryPane: View {
                     get: { model.file.sleepPinnedTabs },
                     set: { value in Task { await model.saveKey(.sleepPinnedTabs, .bool(value)) } }
                 ))
+                .settingsAccentToggle()
                 .help("sleepPinnedTabs in config.json")
                 Picker("Sleep a background tab using", selection: Binding(
                     get: { model.file.cpuSleepPercent },
@@ -44,6 +48,7 @@ struct TabsMemoryPane: View {
                         Text(percent == 0 ? "Off" : "\(percent)% of a core for 3 minutes").tag(percent)
                     }
                 }
+                .settingsMenuValueLabel()
                 .help("cpuSleepPercent in config.json (0 = off)")
                 Picker("Save Back history for", selection: Binding(
                     get: { model.file.sessionHistoryTabs },
@@ -53,8 +58,12 @@ struct TabsMemoryPane: View {
                         Text(count == 0 ? "Pinned tabs only" : "\(count) most recent tabs, plus pinned").tag(count)
                     }
                 }
+                .settingsMenuValueLabel()
                 .help("sessionHistoryTabs in config.json: other tabs reopen at next launch on their page, with no Back history")
-                SettingsCaption("A frozen tab keeps its page and stops running it, and shows again instantly with no reload. A sleeping tab's web process exits, and it reloads when you show it. The tab you are looking at, and tabs playing sound or using the camera or microphone, stay awake. Uploads and unsaved changes stay running while keepPageWorkRunning is on. With keepNotifyingSitesLive on, a site allowed to notify stays unfrozen and awake in the background: its WebContent process keeps RAM and JavaScript keeps running until cpuSleepPercent, maxAwakeTabs or memory pressure applies, so in-tab messages can still arrive. Turn keepNotifyingSitesLive off, or set Freeze to Always for that site in Settings > Sites, to freeze it like other tabs and free that RAM and CPU; while it is frozen or asleep in the background you miss new messages there (Paddle has no Web Push). Freeze Never keeps a site live regardless. A background tab that keeps a CPU core busy also sleeps.")
+                SettingsLearnMore(
+                    summary: "Frozen tabs keep the page in memory but stop running; sleeping tabs reload when shown.",
+                    detail: "The visible tab and tabs using sound, camera or microphone stay awake. keepPageWorkRunning and keepNotifyingSitesLive change when background tabs may freeze or sleep; cpuSleepPercent, maxAwakeTabs and memory pressure still apply. Freeze Never on a site (Sites) keeps it live. Paddle has no Web Push for background notification delivery."
+                )
             }
             .disabled(model.controlsDisabled)
 
@@ -64,7 +73,10 @@ struct TabsMemoryPane: View {
                     set: { value in Task { await model.saveKey(.resumeMediaOnSelect, .bool(value)) } }
                 ))
                 .help("resumeMediaOnSelect in config.json. Off, switching tabs leaves whatever is already playing alone.")
-                SettingsCaption("Leave this off and switching tabs does not start or stop audio. On, the tab you switch to plays and the one you left pauses.")
+                SettingsLearnMore(
+                    summary: "Off: switching tabs does not start or stop audio.",
+                    detail: "On: the tab you switch to plays and the one you left pauses."
+                )
             }
             .disabled(model.controlsDisabled)
 
@@ -156,6 +168,7 @@ private struct SleepAfterRows: View {
             Divider()
             Text("Custom").tag(Self.custom)
         }
+        .settingsMenuValueLabel()
         .help("tabSleepAfterMinutes in config.json (0 = never)")
         .onAppear { draft = saved }
         .onChange(of: saved) { _, value in

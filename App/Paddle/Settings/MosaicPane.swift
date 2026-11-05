@@ -2,323 +2,439 @@ import AppKit
 import PaddleCore
 import SwiftUI
 
-/// Settings > Mosaic: how a Mosaic is laid out, its panes' toolbars, and how it behaves while you're on another tab
-/// (its own freeze and sleep timers, which it follows as one, and whether it stays ready for an instant return).
+/// Settings > Mosaic: collapsible groups with a jump bar; single-column form rhythm.
 struct MosaicPane: View {
     let model: SettingsModel
 
+    @State private var openLayout = true
+    @State private var openOpening = true
+    @State private var openToolbars = false
+    @State private var openFocus = false
+    @State private var openAdvanced = false
+
     var body: some View {
-        SettingsForm {
-            Section("Layout") {
-                Picker("Most tabs in one Mosaic", selection: Binding(
-                    get: { model.file.mosaicMaxPanes },
-                    set: { value in Task { await model.save([ConfigChange("mosaicMaxPanes", .number(Double(value))), ConfigChange("multiViewMaxPanes", nil)]) } }
-                )) {
-                    ForEach(2...PaneLayout.maxPanes, id: \.self) { count in Text("\(count) tabs").tag(count) }
-                }
-                .help("mosaicMaxPanes in config.json. Every pane is a live page, so each one takes memory and CPU like a tab you're looking at. A Mosaic already bigger stays as it is.")
-                Picker("Space between panes", selection: Binding(
-                    get: { model.file.mosaicGap },
-                    set: { value in Task { await model.saveKey(.mosaicGap, .number(value)) } }
-                )) {
-                    ForEach(MosaicBar.gaps, id: \.points) { gap in Text(gap.title).tag(gap.points) }
-                    if !MosaicBar.gaps.contains(where: { $0.points == model.file.mosaicGap }) {
-                        Text("\(Int(model.file.mosaicGap)) pt").tag(model.file.mosaicGap)
-                    }
-                }
-                .help("mosaicGap in config.json, 2 to 16 points. The gap is also where you grab a divider.")
-                Stepper(value: Binding(
-                    get: { model.file.mosaicMinimumPaneWidth },
-                    set: { value in Task { await model.saveKey(.mosaicMinimumPaneWidth, .number(value)) } }
-                ), in: PaddleConfig.mosaicMinimumPaneRange, step: 20) {
-                    Text("Smallest pane width: \(Int(model.file.mosaicMinimumPaneWidth)) pt")
-                }
-                .help("mosaicMinimumPaneWidth in config.json.")
-                Stepper(value: Binding(
-                    get: { model.file.mosaicMinimumPaneHeight },
-                    set: { value in Task { await model.saveKey(.mosaicMinimumPaneHeight, .number(value)) } }
-                ), in: PaddleConfig.mosaicMinimumPaneRange, step: 20) {
-                    Text("Smallest pane height: \(Int(model.file.mosaicMinimumPaneHeight)) pt")
-                }
-                .help("mosaicMinimumPaneHeight in config.json.")
-                SettingsCaption("When the window would make any pane smaller than this, the Mosaic shows only its focused pane until there is room again. Freeform Mosaics (the Mosaic bar's Freeform button) keep their cards' own sizes; Tidy Up tiles them again in the layout new Mosaics start as below, or a grid.")
+        SettingsForm(maxColumns: 1, minColumnWidth: 520) {
+            Section {
+                mosaicJumpBar
+                SettingsLearnMore(
+                    summary: "Layout and Opening cover everyday Mosaic behavior.",
+                    detail: "Advanced tuning holds motion, dividers, tab strip, and background power knobs — collapsed until you need them."
+                )
             }
-            .disabled(model.controlsDisabled)
-
-            Section("Motion") {
-                Picker("Animation", selection: Binding(
-                    get: { model.file.mosaicAnimation },
-                    set: { value in Task { await model.saveKey(.mosaicAnimation, .string(value.rawValue)) } }
-                )) {
-                    Text("Follow Reduce Motion").tag(MosaicAnimation.system)
-                    Text("Full").tag(MosaicAnimation.full)
-                    Text("Reduced (no movement)").tag(MosaicAnimation.reduced)
-                    Text("Off").tag(MosaicAnimation.off)
+            mosaicCard("Layout", expanded: $openLayout) { layoutRows }
+            mosaicCard("Opening", expanded: $openOpening) { openingRows }
+            mosaicCard("Pane toolbars", expanded: $openToolbars) { toolbarRows }
+            mosaicCard("Panes and focus", expanded: $openFocus) { focusRows }
+            Section {
+                SettingsDisclosure(title: "Advanced tuning", isExpanded: $openAdvanced) {
+                    mosaicGroupHeading("Motion")
+                    motionRows
+                    mosaicGroupHeading("Dragging and handles")
+                    draggingRows
+                    mosaicGroupHeading("Tab strip")
+                    stripRows
+                    mosaicGroupHeading("Borders and look")
+                    bordersRows
+                    mosaicGroupHeading("In the background")
+                    backgroundRows
                 }
-                .help("mosaicAnimation in config.json.")
-                Picker("Speed", selection: Binding(
-                    get: { model.file.mosaicAnimationSpeed },
-                    set: { value in Task { await model.saveKey(.mosaicAnimationSpeed, .string(value.rawValue)) } }
-                )) {
-                    Text("Snappy").tag(MosaicAnimationSpeed.snappy)
-                    Text("Smooth").tag(MosaicAnimationSpeed.smooth)
-                    Text("Relaxed").tag(MosaicAnimationSpeed.relaxed)
-                }
-                .help("mosaicAnimationSpeed in config.json.")
-                .disabled(model.file.mosaicAnimation == .off || model.file.mosaicAnimation == .reduced)
-                Toggle("Move panes aside while dragging", isOn: Binding(
-                    get: { model.file.mosaicLiveDragPreview },
-                    set: { value in Task { await model.saveKey(.mosaicLiveDragPreview, .bool(value)) } }
-                ))
-                .help("mosaicLiveDragPreview in config.json.")
-                SettingsCaption("Full animates layout changes with a spring. Reduced moves nothing: panes jump to their new places and only toolbars and highlights fade. Follow Reduce Motion is Full, or Reduced while macOS's Reduce Motion (or Settings > Appearance) is on. Off, while dragging, only a highlight shows where a tab will land.")
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("Borders and look") {
-                Picker("Divider grips", selection: Binding(
-                    get: { model.file.mosaicDividerGrips },
-                    set: { value in Task { await model.saveKey(.mosaicDividerGrips, .string(value.rawValue)) } }
-                )) {
-                    Text("Always shown").tag(MosaicDividerGrips.always)
-                    Text("Shown on hover").tag(MosaicDividerGrips.hover)
-                    Text("Hidden").tag(MosaicDividerGrips.hidden)
-                }
-                .help("mosaicDividerGrips in config.json. The divider still resizes when its grip is hidden.")
-                Toggle("Snap dividers to halves and thirds", isOn: Binding(
-                    get: { model.file.mosaicDividerSnapping },
-                    set: { value in Task { await model.saveKey(.mosaicDividerSnapping, .bool(value)) } }
-                ))
-                .help("mosaicDividerSnapping in config.json.")
-                Picker("Double-clicking a divider", selection: Binding(
-                    get: { model.file.mosaicDividerDoubleClick },
-                    set: { value in Task { await model.saveKey(.mosaicDividerDoubleClick, .string(value.rawValue)) } }
-                )) {
-                    Text("Evens out that divider").tag(MosaicDividerDoubleClick.divider)
-                    Text("Evens out every pane").tag(MosaicDividerDoubleClick.all)
-                    Text("Does nothing").tag(MosaicDividerDoubleClick.nothing)
-                }
-                .help("mosaicDividerDoubleClick in config.json.")
-                Picker("Pane corners", selection: Binding(
-                    get: { model.file.mosaicPaneCorners },
-                    set: { value in Task { await model.saveKey(.mosaicPaneCorners, .string(value.rawValue)) } }
-                )) {
-                    Text("Rounded").tag(MosaicPaneCorners.rounded)
-                    Text("Square").tag(MosaicPaneCorners.square)
-                }
-                .help("mosaicPaneCorners in config.json.")
-                Picker("Focused pane", selection: Binding(
-                    get: { model.file.mosaicFocusMarker },
-                    set: { value in Task { await model.saveKey(.mosaicFocusMarker, .string(value.rawValue)) } }
-                )) {
-                    Text("Has an edge").tag(MosaicFocusMarker.ring)
-                    Text("Others are dimmed").tag(MosaicFocusMarker.dim)
-                    Text("Isn't marked").tag(MosaicFocusMarker.none)
-                }
-                .help("mosaicFocusMarker in config.json.")
-                if model.file.mosaicFocusMarker == .dim {
-                    LabeledContent("Dim the others by") {
-                        Slider(value: Binding(
-                            get: { model.file.mosaicDimAmount },
-                            set: { value in Task { await model.saveKey(.mosaicDimAmount, .number((value * 100).rounded() / 100)) } }
-                        ), in: PaddleConfig.mosaicDimRange)
-                        .frame(width: 160)
-                        Text("\(Int((model.file.mosaicDimAmount * 100).rounded())) %").monospacedDigit().frame(width: 40, alignment: .trailing)
-                    }
-                    .help("mosaicDimAmount in config.json, 0.05 to 0.7.")
-                }
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("Pane toolbars") {
-                Picker("Back, forward, reload and address", selection: Binding(
-                    get: { model.file.mosaicPaneBars },
-                    set: { value in Task { await model.saveKey(.mosaicPaneBars, .string(value.rawValue)) } }
-                )) {
-                    Text("Always shown").tag(MosaicPaneBars.always)
-                    Text("Shown on hover").tag(MosaicPaneBars.hover)
-                }
-                .help("mosaicPaneBars in config.json.")
-                Picker("Size", selection: Binding(
-                    get: { model.file.mosaicToolbarSize },
-                    set: { value in Task { await model.saveKey(.mosaicToolbarSize, .string(value.rawValue)) } }
-                )) {
-                    Text("Regular").tag(MosaicToolbarSize.regular)
-                    Text("Compact").tag(MosaicToolbarSize.compact)
-                }
-                .help("mosaicToolbarSize in config.json.")
-                ForEach(MosaicToolbarButton.allCases, id: \.self) { button in
-                    Toggle(Self.title(of: button), isOn: Binding(
-                        get: { model.file.mosaicToolbarButtons.contains(button) },
-                        set: { on in
-                            var chosen = Set(model.file.mosaicToolbarButtons)
-                            if on { chosen.insert(button) } else { chosen.remove(button) }
-                            let ordered = MosaicToolbarButton.allCases.filter(chosen.contains).map { JSONValue.string($0.rawValue) }
-                            Task { await model.saveKey(.mosaicToolbarButtons, .array(ordered)) }
-                        }
-                    ))
-                }
-                .help("mosaicToolbarButtons in config.json.")
-                SettingsCaption("On hover, each pane's toolbar shows over the top of its page while the pointer is in the pane; ⌘L shows the focused one's. The site icon (drag it to move the pane) and the address field are always there.")
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("Dragging and handles") {
-                Picker("Move a pane by its", selection: Binding(
-                    get: { model.file.mosaicPaneGrab },
-                    set: { value in Task { await model.saveKey(.mosaicPaneGrab, .string(value.rawValue)) } }
-                )) {
-                    Text("Site icon").tag(MosaicPaneGrab.icon)
-                    Text("Grip handle").tag(MosaicPaneGrab.grip)
-                    Text("Whole toolbar").tag(MosaicPaneGrab.toolbar)
-                }
-                .help("mosaicPaneGrab in config.json. The address field always stays for typing.")
-                Toggle("⌥⌘-drag a page to move its pane", isOn: Binding(
-                    get: { model.file.mosaicModifierDrag },
-                    set: { value in Task { await model.saveKey(.mosaicModifierDrag, .bool(value)) } }
-                ))
-                .help("mosaicModifierDrag in config.json.")
-                Toggle("Drag the window by the empty toolbar", isOn: Binding(
-                    get: { model.file.mosaicWindowDrag },
-                    set: { value in Task { await model.saveKey(.mosaicWindowDrag, .bool(value)) } }
-                ))
-                .help("mosaicWindowDrag in config.json. Double-click follows your system setting (zoom or minimize).")
-                SettingsCaption("Drag a pane onto another pane's edge to put it on that side, or onto its middle to swap the two. The empty middle of the window toolbar moves the window, as the title bar does.")
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("Opening") {
-                Picker("⌘T while a Mosaic shows", selection: Binding(
-                    get: { model.file.mosaicNewTab },
-                    set: { value in Task { await model.saveKey(.mosaicNewTab, .string(value.rawValue)) } }
-                )) {
-                    Text("Opens a tab").tag(MosaicOpening.tab)
-                    Text("Adds a pane").tag(MosaicOpening.pane)
-                }
-                .help("mosaicNewTab in config.json. A full Mosaic opens a tab.")
-                Picker("Links a pane opens in a new tab", selection: Binding(
-                    get: { model.file.mosaicLinks },
-                    set: { value in Task { await model.saveKey(.mosaicLinks, .string(value.rawValue)) } }
-                )) {
-                    Text("Open as tabs").tag(MosaicOpening.tab)
-                    Text("Open as panes").tag(MosaicOpening.pane)
-                }
-                .help("mosaicLinks in config.json. ⌘-click, middle-click and target=_blank links; windows a script opens (sign-ins) stay tabs.")
-                Picker("A new pane takes half of", selection: Binding(
-                    get: { model.file.mosaicNewPanePlacement },
-                    set: { value in Task { await model.saveKey(.mosaicNewPanePlacement, .string(value.rawValue)) } }
-                )) {
-                    Text("The largest pane").tag(PanePlacement.largest)
-                    Text("The focused pane").tag(PanePlacement.focused)
-                    Text("The last pane").tag(PanePlacement.last)
-                }
-                .help("mosaicNewPanePlacement in config.json.")
-                Picker("New Mosaics start as", selection: Binding(
-                    get: { model.file.mosaicDefaultLayout },
-                    set: { value in Task { await model.saveKey(.mosaicDefaultLayout, .string(value.rawValue)) } }
-                )) {
-                    Text("Wherever you drop").tag(MosaicDefaultLayout.asDropped)
-                    Text("Columns").tag(MosaicDefaultLayout.columns)
-                    Text("Rows").tag(MosaicDefaultLayout.rows)
-                    Text("Grid").tag(MosaicDefaultLayout.grid)
-                    Text("Main and Stack").tag(MosaicDefaultLayout.mainAndStack)
-                }
-                .help("mosaicDefaultLayout in config.json.")
-                Toggle("Re-tile when panes join or leave", isOn: Binding(
-                    get: { model.file.mosaicAutoArrange },
-                    set: { value in Task { await model.saveKey(.mosaicAutoArrange, .bool(value)) } }
-                ))
-                .help("mosaicAutoArrange in config.json. Uses the layout above.")
-                    .disabled(model.file.mosaicDefaultLayout == .asDropped)
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("Panes and focus") {
-                Picker("⇧⌘D (Dark Mode) in a Mosaic", selection: Binding(
-                    get: { model.file.mosaicDarkMode },
-                    set: { value in Task { await model.saveKey(.mosaicDarkMode, .string(value.rawValue)) } }
-                )) {
-                    Text("Switches the focused pane's site").tag(MosaicDarkMode.site)
-                    Text("Switches every pane together").tag(MosaicDarkMode.unified)
-                    Text("Switches the focused pane only").tag(MosaicDarkMode.perPane)
-                }
-                .help("mosaicDarkMode in config.json. Unified and per pane aren't saved; right-click a pane's toolbar to set one pane.")
-                Picker("Zoom (⌘+ ⌘− ⌘0) changes", selection: Binding(
-                    get: { model.file.mosaicZoom },
-                    set: { value in Task { await model.saveKey(.mosaicZoom, .string(value.rawValue)) } }
-                )) {
-                    Text("The focused pane").tag(MosaicZoom.focused)
-                    Text("Every pane").tag(MosaicZoom.all)
-                }
-                .help("mosaicZoom in config.json.")
-                Toggle("Focus the pane under the pointer", isOn: Binding(
-                    get: { model.file.mosaicFocusFollowsPointer },
-                    set: { value in Task { await model.saveKey(.mosaicFocusFollowsPointer, .bool(value)) } }
-                ))
-                .help("mosaicFocusFollowsPointer in config.json. After the pointer rests on it for a moment; never while you type in an address.")
-                Picker("Sound plays from", selection: Binding(
-                    get: { model.file.mosaicSound },
-                    set: { value in Task { await model.saveKey(.mosaicSound, .string(value.rawValue)) } }
-                )) {
-                    Text("Every pane").tag(MosaicSound.all)
-                    Text("The focused pane only").tag(MosaicSound.focused)
-                }
-                .help("mosaicSound in config.json. The other panes are muted while unfocused; muting or unmuting one yourself takes it out of this.")
-                Picker("⌘W in a pane", selection: Binding(
-                    get: { model.file.mosaicCloseKey },
-                    set: { value in Task { await model.saveKey(.mosaicCloseKey, .string(value.rawValue)) } }
-                )) {
-                    Text("Closes the tab").tag(MosaicCloseKey.closeTab)
-                    Text("Takes it out of the Mosaic").tag(MosaicCloseKey.removePane)
-                }
-                .help("mosaicCloseKey in config.json.")
-                SettingsCaption("Right-click a pane's toolbar to turn dark mode on or off for that pane alone.")
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("Tab strip") {
-                Picker("A Mosaic's item shows", selection: Binding(
-                    get: { model.file.mosaicStripIcon },
-                    set: { value in Task { await model.saveKey(.mosaicStripIcon, .string(value.rawValue)) } }
-                )) {
-                    Text("Its icon").tag(MosaicStripIcon.icon)
-                    Text("Its panes' site icons").tag(MosaicStripIcon.favicons)
-                }
-                .help("mosaicStripIcon in config.json.")
-                Picker("An unnamed Mosaic is called by", selection: Binding(
-                    get: { model.file.mosaicStripName },
-                    set: { value in Task { await model.saveKey(.mosaicStripName, .string(value.rawValue)) } }
-                )) {
-                    Text("The focused pane's site").tag(MosaicStripName.focused)
-                    Text("Every pane's site").tag(MosaicStripName.all)
-                }
-                .help("mosaicStripName in config.json. Rename Mosaic… gives it a name of its own.")
-                Toggle("Shade Mosaic items so they stand out from tabs", isOn: Binding(
-                    get: { model.file.mosaicStripShading },
-                    set: { value in Task { await model.saveKey(.mosaicStripShading, .bool(value)) } }
-                ))
-                .help("mosaicStripShading in config.json.")
-                if model.file.mosaicStripShading {
-                    MosaicShadingRows(model: model)
-                }
-            }
-            .disabled(model.controlsDisabled)
-
-            Section("In the background") {
-                Toggle("Keep the last Mosaic ready", isOn: Binding(
-                    get: { model.file.mosaicStaysReady },
-                    set: { value in Task { await model.saveKey(.mosaicStaysReady, .bool(value)) } }
-                ))
-                .help("mosaicStaysReady in config.json.")
-                SettingsCaption("On, every page of the Mosaic you just left stays attached, so going back is instant and no page is told it was hidden (some sites, like X, refresh when they are). Off, only its focused pane stays attached, which saves a little CPU.")
-                MosaicTimerPicker(model: model, key: .mosaicFreezeAfterMinutes, title: "Freeze a Mosaic after",
-                                  tabValue: model.file.tabFreezeAfterMinutes, value: model.file.mosaicFreezeAfterMinutes)
-                MosaicTimerPicker(model: model, key: .mosaicSleepAfterMinutes, title: "Put a Mosaic to sleep after",
-                                  tabValue: model.file.tabSleepAfterMinutes, value: model.file.mosaicSleepAfterMinutes)
-                SettingsCaption("A Mosaic you aren't looking at freezes and sleeps as one: when one pane would, all of them do, timed from the last pane you used. A pane that plays sound, uploads, has unsaved changes or can notify you keeps the whole Mosaic awake.")
             }
             .disabled(model.controlsDisabled)
         }
+    }
+
+    private var mosaicJumpBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                jump("Layout", $openLayout)
+                jump("Opening", $openOpening)
+                jump("Toolbars", $openToolbars)
+                jump("Focus", $openFocus)
+                jump("Advanced") { withAnimation { openAdvanced = true } }
+            }
+            .padding(.vertical, 2)
+        }
+        .accessibilityLabel("Jump to Mosaic section")
+    }
+
+    private func jump(_ title: String, _ expanded: Binding<Bool>) -> some View {
+        Button(title) { withAnimation { expanded.wrappedValue = true } }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+    }
+
+    private func jump(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+    }
+
+    private func mosaicGroupHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private func mosaicCard<Content: View>(_ title: String, expanded: Binding<Bool>, @ViewBuilder content: () -> Content) -> some View {
+        Section {
+            SettingsDisclosure(title: title, isExpanded: expanded) {
+                content()
+            }
+        }
+        .disabled(model.controlsDisabled)
+    }
+
+    // MARK: - Groups
+
+    @ViewBuilder private var layoutRows: some View {
+        Picker("Most tabs in one Mosaic", selection: Binding(
+            get: { model.file.mosaicMaxPanes },
+            set: { value in Task { await model.save([ConfigChange("mosaicMaxPanes", .number(Double(value))), ConfigChange("multiViewMaxPanes", nil)]) } }
+        )) {
+            ForEach(2...PaneLayout.maxPanes, id: \.self) { count in Text("\(count) tabs").tag(count) }
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicMaxPanes in config.json. Every pane is a live page, so each one takes memory and CPU like a tab you're looking at. A Mosaic already bigger stays as it is.")
+        Picker("Space between panes", selection: Binding(
+            get: { model.file.mosaicGap },
+            set: { value in Task { await model.saveKey(.mosaicGap, .number(value)) } }
+        )) {
+            ForEach(MosaicBar.gaps, id: \.points) { gap in Text(gap.title).tag(gap.points) }
+            if !MosaicBar.gaps.contains(where: { $0.points == model.file.mosaicGap }) {
+                Text("\(Int(model.file.mosaicGap)) pt").tag(model.file.mosaicGap)
+            }
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicGap in config.json, 2 to 16 points. The gap is also where you grab a divider.")
+        Stepper(value: Binding(
+            get: { model.file.mosaicMinimumPaneWidth },
+            set: { value in Task { await model.saveKey(.mosaicMinimumPaneWidth, .number(value)) } }
+        ), in: PaddleConfig.mosaicMinimumPaneRange, step: 20) {
+            Text("Smallest pane width: \(Int(model.file.mosaicMinimumPaneWidth)) pt")
+        }
+        .help("mosaicMinimumPaneWidth in config.json.")
+        Stepper(value: Binding(
+            get: { model.file.mosaicMinimumPaneHeight },
+            set: { value in Task { await model.saveKey(.mosaicMinimumPaneHeight, .number(value)) } }
+        ), in: PaddleConfig.mosaicMinimumPaneRange, step: 20) {
+            Text("Smallest pane height: \(Int(model.file.mosaicMinimumPaneHeight)) pt")
+        }
+        .help("mosaicMinimumPaneHeight in config.json.")
+        SettingsLearnMore(
+            summary: "If the window would shrink a pane below these sizes, only the focused pane shows until there is room again.",
+            detail: "Freeform Mosaics keep their card sizes; Tidy Up retiles them to the default layout new Mosaics start with, or a grid."
+        )
+    }
+
+    @ViewBuilder private var motionRows: some View {
+        Picker("Animation", selection: Binding(
+            get: { model.file.mosaicAnimation },
+            set: { value in Task { await model.saveKey(.mosaicAnimation, .string(value.rawValue)) } }
+        )) {
+            Text("Follow Reduce Motion").tag(MosaicAnimation.system)
+            Text("Full").tag(MosaicAnimation.full)
+            Text("Reduced (no movement)").tag(MosaicAnimation.reduced)
+            Text("Off").tag(MosaicAnimation.off)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicAnimation in config.json.")
+        Picker("Speed", selection: Binding(
+            get: { model.file.mosaicAnimationSpeed },
+            set: { value in Task { await model.saveKey(.mosaicAnimationSpeed, .string(value.rawValue)) } }
+        )) {
+            Text("Snappy").tag(MosaicAnimationSpeed.snappy)
+            Text("Smooth").tag(MosaicAnimationSpeed.smooth)
+            Text("Relaxed").tag(MosaicAnimationSpeed.relaxed)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicAnimationSpeed in config.json.")
+        .disabled(model.file.mosaicAnimation == .off || model.file.mosaicAnimation == .reduced)
+        Toggle("Move panes aside while dragging", isOn: Binding(
+            get: { model.file.mosaicLiveDragPreview },
+            set: { value in Task { await model.saveKey(.mosaicLiveDragPreview, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicLiveDragPreview in config.json.")
+        SettingsLearnMore(
+            summary: "Full uses a spring; Reduced jumps panes and only fades chrome; Follow Reduce Motion follows macOS or Appearance.",
+            detail: "Off shows only a drop highlight while dragging, with no pane movement."
+        )
+    }
+
+    @ViewBuilder private var bordersRows: some View {
+        Picker("Divider grips", selection: Binding(
+            get: { model.file.mosaicDividerGrips },
+            set: { value in Task { await model.saveKey(.mosaicDividerGrips, .string(value.rawValue)) } }
+        )) {
+            Text("Always shown").tag(MosaicDividerGrips.always)
+            Text("Shown on hover").tag(MosaicDividerGrips.hover)
+            Text("Hidden").tag(MosaicDividerGrips.hidden)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicDividerGrips in config.json. The divider still resizes when its grip is hidden.")
+        Toggle("Snap dividers to halves and thirds", isOn: Binding(
+            get: { model.file.mosaicDividerSnapping },
+            set: { value in Task { await model.saveKey(.mosaicDividerSnapping, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicDividerSnapping in config.json.")
+        Picker("Double-clicking a divider", selection: Binding(
+            get: { model.file.mosaicDividerDoubleClick },
+            set: { value in Task { await model.saveKey(.mosaicDividerDoubleClick, .string(value.rawValue)) } }
+        )) {
+            Text("Evens out that divider").tag(MosaicDividerDoubleClick.divider)
+            Text("Evens out every pane").tag(MosaicDividerDoubleClick.all)
+            Text("Does nothing").tag(MosaicDividerDoubleClick.nothing)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicDividerDoubleClick in config.json.")
+        Picker("Pane corners", selection: Binding(
+            get: { model.file.mosaicPaneCorners },
+            set: { value in Task { await model.saveKey(.mosaicPaneCorners, .string(value.rawValue)) } }
+        )) {
+            Text("Rounded").tag(MosaicPaneCorners.rounded)
+            Text("Square").tag(MosaicPaneCorners.square)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicPaneCorners in config.json.")
+        Picker("Focused pane", selection: Binding(
+            get: { model.file.mosaicFocusMarker },
+            set: { value in Task { await model.saveKey(.mosaicFocusMarker, .string(value.rawValue)) } }
+        )) {
+            Text("Has an edge").tag(MosaicFocusMarker.ring)
+            Text("Others are dimmed").tag(MosaicFocusMarker.dim)
+            Text("Isn't marked").tag(MosaicFocusMarker.none)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicFocusMarker in config.json.")
+        if model.file.mosaicFocusMarker == .dim {
+            LabeledContent("Dim the others by") {
+                Slider(value: Binding(
+                    get: { model.file.mosaicDimAmount },
+                    set: { value in Task { await model.saveKey(.mosaicDimAmount, .number((value * 100).rounded() / 100)) } }
+                ), in: PaddleConfig.mosaicDimRange)
+                .frame(width: 160)
+                Text("\(Int((model.file.mosaicDimAmount * 100).rounded())) %").monospacedDigit().frame(width: 40, alignment: .trailing)
+            }
+            .help("mosaicDimAmount in config.json, 0.05 to 0.7.")
+        }
+    }
+
+    @ViewBuilder private var toolbarRows: some View {
+        Picker("Back, forward, reload and address", selection: Binding(
+            get: { model.file.mosaicPaneBars },
+            set: { value in Task { await model.saveKey(.mosaicPaneBars, .string(value.rawValue)) } }
+        )) {
+            Text("Always shown").tag(MosaicPaneBars.always)
+            Text("Shown on hover").tag(MosaicPaneBars.hover)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicPaneBars in config.json.")
+        Picker("Size", selection: Binding(
+            get: { model.file.mosaicToolbarSize },
+            set: { value in Task { await model.saveKey(.mosaicToolbarSize, .string(value.rawValue)) } }
+        )) {
+            Text("Regular").tag(MosaicToolbarSize.regular)
+            Text("Compact").tag(MosaicToolbarSize.compact)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicToolbarSize in config.json.")
+        ForEach(MosaicToolbarButton.allCases, id: \.self) { button in
+            Toggle(MosaicPane.title(of: button), isOn: Binding(
+                get: { model.file.mosaicToolbarButtons.contains(button) },
+                set: { on in
+                    var chosen = Set(model.file.mosaicToolbarButtons)
+                    if on { chosen.insert(button) } else { chosen.remove(button) }
+                    let ordered = MosaicToolbarButton.allCases.filter(chosen.contains).map { JSONValue.string($0.rawValue) }
+                    Task { await model.saveKey(.mosaicToolbarButtons, .array(ordered)) }
+                }
+            ))
+            .settingsAccentToggle()
+        }
+        .help("mosaicToolbarButtons in config.json.")
+        SettingsLearnMore(
+            summary: "On hover, each pane's toolbar overlays the page; ⌘L focuses the address field.",
+            detail: "The site icon (for dragging) and the address field stay visible."
+        )
+    }
+
+    @ViewBuilder private var draggingRows: some View {
+        Picker("Move a pane by its", selection: Binding(
+            get: { model.file.mosaicPaneGrab },
+            set: { value in Task { await model.saveKey(.mosaicPaneGrab, .string(value.rawValue)) } }
+        )) {
+            Text("Site icon").tag(MosaicPaneGrab.icon)
+            Text("Grip handle").tag(MosaicPaneGrab.grip)
+            Text("Whole toolbar").tag(MosaicPaneGrab.toolbar)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicPaneGrab in config.json. The address field always stays for typing.")
+        Toggle("⌥⌘-drag a page to move its pane", isOn: Binding(
+            get: { model.file.mosaicModifierDrag },
+            set: { value in Task { await model.saveKey(.mosaicModifierDrag, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicModifierDrag in config.json.")
+        Toggle("Drag the window by the empty toolbar", isOn: Binding(
+            get: { model.file.mosaicWindowDrag },
+            set: { value in Task { await model.saveKey(.mosaicWindowDrag, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicWindowDrag in config.json. Double-click follows your system setting (zoom or minimize).")
+        SettingsLearnMore(
+            summary: "Drop a pane on another pane's edge to split, or on its middle to swap.",
+            detail: "The empty middle of the Mosaic toolbar moves the window, like the title bar."
+        )
+    }
+
+    @ViewBuilder private var openingRows: some View {
+        Picker("⌘T while a Mosaic shows", selection: Binding(
+            get: { model.file.mosaicNewTab },
+            set: { value in Task { await model.saveKey(.mosaicNewTab, .string(value.rawValue)) } }
+        )) {
+            Text("Opens a tab").tag(MosaicOpening.tab)
+            Text("Adds a pane").tag(MosaicOpening.pane)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicNewTab in config.json. A full Mosaic opens a tab.")
+        Picker("Links a pane opens in a new tab", selection: Binding(
+            get: { model.file.mosaicLinks },
+            set: { value in Task { await model.saveKey(.mosaicLinks, .string(value.rawValue)) } }
+        )) {
+            Text("Open as tabs").tag(MosaicOpening.tab)
+            Text("Open as panes").tag(MosaicOpening.pane)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicLinks in config.json. ⌘-click, middle-click and target=_blank links; windows a script opens (sign-ins) stay tabs.")
+        Picker("A new pane takes half of", selection: Binding(
+            get: { model.file.mosaicNewPanePlacement },
+            set: { value in Task { await model.saveKey(.mosaicNewPanePlacement, .string(value.rawValue)) } }
+        )) {
+            Text("The largest pane").tag(PanePlacement.largest)
+            Text("The focused pane").tag(PanePlacement.focused)
+            Text("The last pane").tag(PanePlacement.last)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicNewPanePlacement in config.json.")
+        Picker("New Mosaics start as", selection: Binding(
+            get: { model.file.mosaicDefaultLayout },
+            set: { value in Task { await model.saveKey(.mosaicDefaultLayout, .string(value.rawValue)) } }
+        )) {
+            Text("Wherever you drop").tag(MosaicDefaultLayout.asDropped)
+            Text("Columns").tag(MosaicDefaultLayout.columns)
+            Text("Rows").tag(MosaicDefaultLayout.rows)
+            Text("Grid").tag(MosaicDefaultLayout.grid)
+            Text("Main and Stack").tag(MosaicDefaultLayout.mainAndStack)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicDefaultLayout in config.json.")
+        Toggle("Re-tile when panes join or leave", isOn: Binding(
+            get: { model.file.mosaicAutoArrange },
+            set: { value in Task { await model.saveKey(.mosaicAutoArrange, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicAutoArrange in config.json. Uses the layout above.")
+        .disabled(model.file.mosaicDefaultLayout == .asDropped)
+    }
+
+    @ViewBuilder private var focusRows: some View {
+        Picker("⇧⌘D (Dark Mode) in a Mosaic", selection: Binding(
+            get: { model.file.mosaicDarkMode },
+            set: { value in Task { await model.saveKey(.mosaicDarkMode, .string(value.rawValue)) } }
+        )) {
+            Text("Switches the focused pane's site").tag(MosaicDarkMode.site)
+            Text("Switches every pane together").tag(MosaicDarkMode.unified)
+            Text("Switches the focused pane only").tag(MosaicDarkMode.perPane)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicDarkMode in config.json. Unified and per pane aren't saved; right-click a pane's toolbar to set one pane.")
+        Picker("Zoom (⌘+ ⌘− ⌘0) changes", selection: Binding(
+            get: { model.file.mosaicZoom },
+            set: { value in Task { await model.saveKey(.mosaicZoom, .string(value.rawValue)) } }
+        )) {
+            Text("The focused pane").tag(MosaicZoom.focused)
+            Text("Every pane").tag(MosaicZoom.all)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicZoom in config.json.")
+        Toggle("Focus the pane under the pointer", isOn: Binding(
+            get: { model.file.mosaicFocusFollowsPointer },
+            set: { value in Task { await model.saveKey(.mosaicFocusFollowsPointer, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicFocusFollowsPointer in config.json. After the pointer rests on it for a moment; never while you type in an address.")
+        Picker("Sound plays from", selection: Binding(
+            get: { model.file.mosaicSound },
+            set: { value in Task { await model.saveKey(.mosaicSound, .string(value.rawValue)) } }
+        )) {
+            Text("Every pane").tag(MosaicSound.all)
+            Text("The focused pane only").tag(MosaicSound.focused)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicSound in config.json. The other panes are muted while unfocused; muting or unmuting one yourself takes it out of this.")
+        Picker("⌘W in a pane", selection: Binding(
+            get: { model.file.mosaicCloseKey },
+            set: { value in Task { await model.saveKey(.mosaicCloseKey, .string(value.rawValue)) } }
+        )) {
+            Text("Closes the tab").tag(MosaicCloseKey.closeTab)
+            Text("Takes it out of the Mosaic").tag(MosaicCloseKey.removePane)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicCloseKey in config.json.")
+        SettingsCaption("Right-click a pane's toolbar to turn dark mode on or off for that pane alone.")
+    }
+
+    @ViewBuilder private var stripRows: some View {
+        Picker("A Mosaic's item shows", selection: Binding(
+            get: { model.file.mosaicStripIcon },
+            set: { value in Task { await model.saveKey(.mosaicStripIcon, .string(value.rawValue)) } }
+        )) {
+            Text("Its icon").tag(MosaicStripIcon.icon)
+            Text("Its panes' site icons").tag(MosaicStripIcon.favicons)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicStripIcon in config.json.")
+        Picker("An unnamed Mosaic is called by", selection: Binding(
+            get: { model.file.mosaicStripName },
+            set: { value in Task { await model.saveKey(.mosaicStripName, .string(value.rawValue)) } }
+        )) {
+            Text("The focused pane's site").tag(MosaicStripName.focused)
+            Text("Every pane's site").tag(MosaicStripName.all)
+        }
+        .settingsMenuValueLabel()
+        .help("mosaicStripName in config.json. Rename Mosaic… gives it a name of its own.")
+        Toggle("Shade Mosaic items so they stand out from tabs", isOn: Binding(
+            get: { model.file.mosaicStripShading },
+            set: { value in Task { await model.saveKey(.mosaicStripShading, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicStripShading in config.json.")
+        if model.file.mosaicStripShading {
+            MosaicShadingRows(model: model)
+        }
+    }
+
+    @ViewBuilder private var backgroundRows: some View {
+        Toggle("Keep the last Mosaic ready", isOn: Binding(
+            get: { model.file.mosaicStaysReady },
+            set: { value in Task { await model.saveKey(.mosaicStaysReady, .bool(value)) } }
+        ))
+        .settingsAccentToggle()
+        .help("mosaicStaysReady in config.json.")
+        SettingsLearnMore(
+            summary: "On, every pane stays attached when you leave the Mosaic so return is instant.",
+            detail: "Off keeps only the focused pane attached, saving a little CPU. Some sites refresh when hidden."
+        )
+        MosaicTimerPicker(model: model, key: .mosaicFreezeAfterMinutes, title: "Freeze a Mosaic after",
+                          tabValue: model.file.tabFreezeAfterMinutes, value: model.file.mosaicFreezeAfterMinutes)
+        MosaicTimerPicker(model: model, key: .mosaicSleepAfterMinutes, title: "Put a Mosaic to sleep after",
+                          tabValue: model.file.tabSleepAfterMinutes, value: model.file.mosaicSleepAfterMinutes)
+        SettingsLearnMore(
+            summary: "A background Mosaic freezes and sleeps as one unit, timed from the last pane you used.",
+            detail: "Sound, uploads, unsaved changes or notify permission keeps the whole Mosaic awake."
+        )
     }
 }
 
@@ -338,7 +454,6 @@ private struct MosaicTimerPicker: View {
     let model: SettingsModel
     let key: PaddleConfig.CodingKeys
     let title: String
-    /// The tab timer it follows when unset.
     let tabValue: Double
     let value: Double?
 
@@ -360,6 +475,7 @@ private struct MosaicTimerPicker: View {
                 Text(Self.label(minutes)).tag(minutes)
             }
         }
+        .settingsMenuValueLabel()
         .help("\(key.rawValue) in config.json: left out follows the tab setting, 0 = never.")
     }
 
@@ -397,6 +513,7 @@ private struct MosaicShadingRows: View {
             Divider()
             Text("Custom").tag(Self.custom)
         }
+        .settingsMenuValueLabel()
         .help("mosaicStripColor in config.json: accent, icon, a color name or #rrggbb. Icon tint falls back to the accent for a Mosaic without one.")
         if isCustom {
             ColorPicker("Custom color", selection: Binding(
@@ -424,6 +541,7 @@ private struct MosaicShadingRows: View {
             Text("Fill").tag(MosaicStripStyle.fill)
             Text("Outline").tag(MosaicStripStyle.outline)
         }
+        .settingsMenuValueLabel()
         .help("mosaicStripStyle in config.json.")
         LabeledContent("Preview") {
             HStack(spacing: 6) {
