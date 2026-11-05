@@ -8,5 +8,7 @@ build/
 *.xcodeproj/xcuserdata/
 .DS_Store
 .cursor/
+.claude/
 .video_agent/
+out/
 __pycache__/
