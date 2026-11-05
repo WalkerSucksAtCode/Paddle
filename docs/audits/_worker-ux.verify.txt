@@ -1,0 +1,26 @@
+date: 2026-11-05 09:16:04 EST
+tree: main @ 015dc73
+
+git status --short (audit worktree):
+?? docs/audits/
+?? docs/evidence/
+
+wc -l _worker-ux.md:
+     210 docs/audits/_worker-ux.md
+count ### FA-UX-:
+12
+
+rg -c accessibilityLabel App/Paddle --glob '*.swift' | tail (main tree):
+App/Paddle/UI/TabGroupViews.swift:1
+App/Paddle/UI/MultiPanes.swift:7
+App/Paddle/UI/MediaControlsPopover.swift:1
+App/Paddle/UI/MosaicBar.swift:5
+App/Paddle/UI/SpaceViews.swift:4
+App/Paddle/UI/PDFToolbarHUD.swift:7
+App/Paddle/UI/Tabs/TabStrip.swift:6
+App/Paddle/UI/Bookmarks.swift:3
+App/Paddle/UI/Tabs/ViewItems.swift:4
+App/Paddle/UI/Tabs/VerticalTabs.swift:8
+
+accessibilityLabel total (main):
+135

@@ -1,0 +1,18 @@
+date: 2026-11-05 09:08 EST
+git status --short:
+?? docs/audits/
+?? docs/evidence/
+wc -l docs/audits/_worker-perf.md:
+     239 docs/audits/_worker-perf.md
+FA-PERF heading count:
+12
+
+measurements.md sections (dated headers):
+## 2026-11-05: Track B product pass (no full `footprint` protocol)
+## 2026-10-19: on-demand extensions (`extensionsOnDemand`), audit branch
+## 2026-10-15: main (263b85a) against build 49, Safari, Chrome and Firefox
+
+Section classification:
+  MEASURED with method: ## 2026-10-15 (Release footprint idle/loaded/restored); ## 2026-10-19 (on-demand extensions, Debug, paddle_state).
+  Not a regression gate / partial: ## 2026-11-05 Track B (explicitly no idle/8-site footprint re-run).
+  Comment-only (no dated section): table 'Numbers in code comments without a record here' (orphan SW MB, malloc zone, scriptlets, Tab/WebEnvironment ms/MB claims, etc.).

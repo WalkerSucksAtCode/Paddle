@@ -1,0 +1,20 @@
+date: 2026-11-05 09:15:00 EST
+trees: main @ 015dc73 | PR #3 cursor/smart-dark-mode-c272 @ aa33b81
+
+git status --short (audit worktree Paddle-wt/full-audit-readonly):
+?? docs/audits/
+?? docs/evidence/
+
+wc -l docs/audits/_worker-darkmode.md:
+     208
+
+count ### FA-DRK-:
+11
+
+DarkModePreference cases (rg PaddleConfig.swift):
+main:    case off, system, always
+PR #3:   case off, system, smart, native
+
+PR #3 always migration (rg smart-dark-mode PaddleConfig.swift):
+163:        if raw == "always" {
+164:            self = .smart
