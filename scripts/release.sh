@@ -88,6 +88,11 @@ echo "repo: $ROOT"
 step build
 BUILD_LOG="$LOG_DIR/xcodebuild.log"
 BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD)"
+# Track B build 156 shipped from the old private history; public main must not reuse it.
+MIN_BUILD_NUMBER=157
+if (( BUILD_NUMBER < MIN_BUILD_NUMBER )); then
+  BUILD_NUMBER=$MIN_BUILD_NUMBER
+fi
 MARKETING_PREFIX="$(awk -F'"' '/^    MARKETING_VERSION:/ {print $2; exit}' "$ROOT/project.yml")"
 [[ -n "$MARKETING_PREFIX" ]] || fail build "no MARKETING_VERSION in project.yml"
 MARKETING_PREFIX="${MARKETING_PREFIX%.*}"
@@ -143,7 +148,11 @@ echo "$ENTITLEMENTS"
 if grep -q 'get-task-allow' <<<"$ENTITLEMENTS"; then
   fail entitlements "com.apple.security.get-task-allow is present (debug entitlement; notarization rejects it)"
 fi
-pass entitlements "no get-task-allow"
+if grep -q 'web-browser.public-key-credential' <<<"$ENTITLEMENTS"; then
+  pass entitlements "browser passkey entitlement embedded (WebAuthn for arbitrary RPs when Apple granted capability)"
+else
+  pass entitlements "no get-task-allow (browser passkey entitlement absent — passkeys off; see docs/passkeys.md)"
+fi
 
 # ---- zip -----------------------------------------------------------------------------------------
 # make_zip <dest>: zips $APP via a temporary name; mv replaces an older <dest> in one step, so <dest> is never

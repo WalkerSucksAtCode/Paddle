@@ -3,6 +3,14 @@
 Memory baselines, one section per measured release, newest first. Compare a new build against the latest section
 with the same method; the regression threshold is 10 % or 50 MB per scenario, whichever is larger.
 
+## 2026-11-05: Track B product pass (no full `footprint` protocol)
+
+Shipped on branch `cursor/paddle-lightness-track-b-7085` (Developer ID build **153** at `/Applications/Paddle.app`): `ScrollRestoreScript` Back/SPA scroll restore for timeline sites, orphan service-worker grace **30 s** (was 45 s in code comments' baseline), and Settings/README copy for `keepNotifyingSitesLive` / per-site `freeze` RAM vs missed in-tab notifications.
+
+**Not a regression gate:** a fresh idle / 8-site loaded / restored session using the 2026-10-15 method (`footprint -f bytes`, 75 s settle) was not run — it would have required quitting the user's live session during the pass. Re-run that protocol before comparing to 2026-10-15/19. Orphan-worker and BFCache MB claims below remain comment-only until then.
+
+See also `docs/lightness-track-b.md` for PR #1 scope and out-of-scope engine work (P9–P11 not done).
+
 ## 2026-10-19: on-demand extensions (`extensionsOnDemand`), audit branch
 
 Machine: Mac16,7, macOS 27.0.1 (26A434). Paddle 0.1.0 Debug build from `build/DerivedData.noindex` (main at 2fb59f9 plus

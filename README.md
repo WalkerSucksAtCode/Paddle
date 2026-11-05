@@ -2,7 +2,7 @@
 
 Personal macOS browser on the system WebKit (`WKWebView`). Config is plain files. Idle background tabs freeze, then sleep.
 
-It identifies as the installed Safari. EasyList and EasyPrivacy compile to WebKit content-blocker lists. Long-form docs: [wiki](https://github.com/WalkerSucksAtCode/Paddle/wiki).
+It identifies as the installed Safari. EasyList and EasyPrivacy compile to WebKit content-blocker lists. Long-form docs: [`docs/passkeys.md`](docs/passkeys.md), [`docs/measurements.md`](docs/measurements.md).
 
 Config, filters, userscripts and themes live in `~/Library/Application Support/Paddle/` (Paddle > Open Config Folder). Edit, then Paddle > Reload Config (⌥⌘,). Settings (⌘,) writes `config.json`.
 
@@ -18,7 +18,7 @@ Config, filters, userscripts and themes live in `~/Library/Application Support/P
 
 ## Install
 
-`scripts/release.sh` builds a Developer ID Release (hardened runtime, secure timestamp), then `codesign --verify --deep --strict`. It refuses a build with `get-task-allow`. Each step prints PASS, FAIL or SKIP. The marketing version is `project.yml`'s `0.1` prefix plus the commit count (`0.1.156`); the build number is that same count. Debug Xcode builds keep `0.1.0` / `1`.
+`scripts/release.sh` builds a Developer ID Release (hardened runtime, secure timestamp), then `codesign --verify --deep --strict`. It refuses a build with `get-task-allow`. Each step prints PASS, FAIL or SKIP. The marketing version is `project.yml`'s `0.1` prefix plus the commit count (`0.1.156`); the build number is that same count, floored at **157** so it cannot collide with the last old-history notarized build (156). Debug Xcode builds keep `0.1.0` / `1`.
 
 - no flags: zip to `dist/Paddle-<version>-<build>-unnotarized.zip`
 - `--notarize`: `notarytool` with `$NOTARY_PROFILE`, staple, `spctl`, then write `dist/Paddle-<version>-<build>.zip`
@@ -192,7 +192,7 @@ Updates daily while `extensionUpdates` is on. Extra permissions wait for Allow. 
 
 First run: Allow, Only When I Click, or Don't Allow. Answers in `extension-permissions.json`, tied to the extension's identity so a reused folder name asks again. `webRequestBlocking` without declarative rules does not block here (WebKit ignores blocking answers); uBlock Origin MV2 is in that boat. Paddle's own lists still run.
 
-Native messaging only to Paddle's compat channel (`com.walker.paddle.compat`). No history/bookmarks/downloads APIs. Personas: Firefox build → `moz-extension://`, else Chrome-like, Safari-only untouched. Overlay in `extension-overlays/` (`paddle-prelude.js`, `paddle-content.js`). Proton Pass: no site logos, HTTP auth fill, clipboard auto-clear, or desktop-app unlock; sign-in, vault, autofill, save prompt and passkeys do not need those.
+Native messaging only to Paddle's compat channel (`com.walker.paddle.compat`). No history/bookmarks/downloads APIs. Personas: Firefox build → `moz-extension://`, else Chrome-like, Safari-only untouched. Overlay in `extension-overlays/` (`paddle-prelude.js`, `paddle-content.js`). **`tabs.update({ muted })` / `tab.mutedInfo`** use the same mute path as Tabs > Mute Tab. Proton Pass: no site logos, HTTP auth fill, clipboard auto-clear, or desktop-app unlock; sign-in, vault, autofill, save prompt and extension passkeys do not need those. **Website** passkeys in tabs need Apple's browser entitlement (`docs/passkeys.md`).
 
 `extension-id-salt` derives per-install ids; unreadable means no extension loads. Storage is under `~/Library/WebKit/com.walker.Paddle/WebExtensions/`.
 
@@ -224,10 +224,16 @@ Once per session, as a sheet: `run_js` per site; `open_url` to a local-network h
 
 Peer must be this user's signed `paddle-mcp` (identifier `paddle-mcp`, same Developer ID team as the app). Cap 8 clients, 16 in-flight calls, 5 s to read a reply, 1 MB per line. Toolbar shows "Claude connected". Private windows are invisible. No tool reads Keychain, clipboard, downloads, or files outside the support folder.
 
-## Not supported
+## Not supported (yet)
 
-- **Web Push.** Needs an Apple push entitlement a third-party browser does not get by default.
-- **Apple Pay and Payment Request.** Same: missing entitlement.
+- **Web Push** — notifications while Paddle is quit or the tab is closed. Needs Apple's push entitlement; **Walker has requested it.** Until granted, Paddle supports the page notification API only while a tab is open (`sites.<host>.notifications`, `keepNotifyingSitesLive`).
+- **Apple Pay and Payment Request** — not available without Apple's payment entitlements.
+- **Browser passkeys (WebAuthn for arbitrary sites)** — needs Apple's managed entitlement on Team VB3UP263YT. Passkeys form **submitted (Request ID `84Z8XFC523`, pending Apple)**; `BrowserPasskeyCoordinator` and docs are in the repo, but Release signing keeps the entitlement commented out until Apple approves. See [`docs/passkeys.md`](docs/passkeys.md).
+
+## Limits
+
+- **SPA Back scroll** — `ScrollRestoreScript` retries restore for about **5 s**; back/forward commits defer per-site zoom ~900 ms. A site can still miss if it moves scroll later or replaces the scroll container.
+- **Instant Back vs RAM** — freezing or leaving a tab drops WebKit's in-process back/forward cache on purpose. History and scroll restore still apply; Back may reload instead of an instant cached page.
 
 ## Contributing
 

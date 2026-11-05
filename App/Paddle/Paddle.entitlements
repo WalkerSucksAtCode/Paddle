@@ -10,5 +10,9 @@
 	<true/>
 	<key>com.apple.security.personal-information.addressbook</key>
 	<true/>
+	<!-- Release signing: enable after Apple grants passkeys Request ID 84Z8XFC523 (notarize rejects until then).
+	<key>com.apple.developer.web-browser.public-key-credential</key>
+	<true/>
+	-->
 </dict>
 </plist>

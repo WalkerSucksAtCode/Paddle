@@ -67,6 +67,7 @@
 		746D8AE754715FD5F613325D /* Scriptlets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */; };
 		7705A324728754EEC878C999 /* ViewItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED9B208736D3CD78F794EA09 /* ViewItems.swift */; };
 		7F0D999617D5C5488C986CAF /* StoreInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622C488303FD517D47056F39 /* StoreInstaller.swift */; };
+		80E75F010700D1BED3487AA8 /* BrowserPasskeyCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13EDABAC96E4B940401C9EEC /* BrowserPasskeyCoordinator.swift */; };
 		82D2196BCAE45461C6DEEDFD /* PrivacySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7ED48B391F11998BD4520C /* PrivacySettings.swift */; };
 		8682F6C461619D04A7436F15 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 482A1E734550D576E90F7F71 /* Assets.xcassets */; };
 		87C6D0593E0ED2F7BE658144 /* AddressSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C15A9E81DAC94F9C6B17A0 /* AddressSuggestions.swift */; };
@@ -163,9 +164,10 @@
 		0FF189A4771C73A817501D59 /* ShortcutsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsPane.swift; sourceTree = "<group>"; };
 		11E5FE7EECAC5C0800D39F69 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
 		11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePane.swift; sourceTree = "<group>"; };
+		122683B3009C1A520570901C /* track-b-port-b80f */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "track-b-port-b80f"; path = .; sourceTree = SOURCE_ROOT; };
+		13EDABAC96E4B940401C9EEC /* BrowserPasskeyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPasskeyCoordinator.swift; sourceTree = "<group>"; };
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		16BFB45ACF93E74D21B96C92 /* ContactAutofill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactAutofill.swift; sourceTree = "<group>"; };
-		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		22F4A5F2E7709D55FB100130 /* PDFToolbarHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFToolbarHUD.swift; sourceTree = "<group>"; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
 		24907D6E3DCB49AB1779D634 /* paddle-mcp */ = {isa = PBXFileReference; includeInIndex = 0; path = "paddle-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -323,6 +325,7 @@
 		262F6F6BBABDFEAB73CA91F0 /* Web */ = {
 			isa = PBXGroup;
 			children = (
+				13EDABAC96E4B940401C9EEC /* BrowserPasskeyCoordinator.swift */,
 				16BFB45ACF93E74D21B96C92 /* ContactAutofill.swift */,
 				02E7809C8918A663DD060962 /* DevelopMenu.swift */,
 				ADA58B4D797F83211511883E /* Downloads.swift */,
@@ -505,7 +508,7 @@
 		EE9A42472076AC52EB1A94D9 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				20B7618470421579DB9FBC74 /* Paddle */,
+				122683B3009C1A520570901C /* track-b-port-b80f */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -642,6 +645,7 @@
 				AA1C532B2F2AFD7C39F1E0EA /* BridgeSocketServer.swift in Sources */,
 				BBFDDBB44717A20FCF8E6112 /* BrowserImport.swift in Sources */,
 				13D3BB886642D3AD60FEBE55 /* BrowserModel.swift in Sources */,
+				80E75F010700D1BED3487AA8 /* BrowserPasskeyCoordinator.swift in Sources */,
 				2CA38AA326D099B9B9F7A8C1 /* BrowserView.swift in Sources */,
 				BC21EC9BE8081632B3F11365 /* BrowserWindowController.swift in Sources */,
 				919F620EBA3AFF98602BB16D /* ChromeStyle.swift in Sources */,

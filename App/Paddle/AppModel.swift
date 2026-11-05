@@ -257,6 +257,11 @@ final class AppModel {
         // Windows are on screen; extensions find them through the registered windows. Session-restored extension
         // pages wait for this (deferred wake).
         await extensions.loadAll(config: config)
+        if let window = frontWindow?.window {
+            BrowserPasskeyCoordinator.shared.prepareAfterLaunch(frontWindow: window)
+        } else {
+            BrowserPasskeyCoordinator.shared.prepareAfterLaunch(frontWindow: nil)
+        }
         // Store extensions are checked for updates shortly after launch, then hourly (`ExtensionUpdater.checkIfDue`).
         Task {
             try? await Task.sleep(for: .seconds(30))
@@ -1721,7 +1726,7 @@ final class AppModel {
     }
 
     /// How long a WebContent process may run service workers with no page in it before they are stopped.
-    static let orphanWorkerGrace: TimeInterval = 45
+    static let orphanWorkerGrace: TimeInterval = 30
 
     /// Stops service workers once a process has run them with no page in it for `orphanWorkerGrace`: a site's
     /// worker outlives its last tab in that tab's whole process (measured: 218 MB still up 3.5 min after closing

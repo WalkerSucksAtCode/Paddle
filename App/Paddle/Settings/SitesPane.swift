@@ -134,7 +134,7 @@ struct SitesPane: View {
 
             sessionSection
 
-            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies at once, the rest from the next page load. \(Self.builtInAgents) Web Push (notifications while a site is closed) isn't supported.")
+            Text("Each entry covers its subdomains; a longer host's entry wins. Zoom applies at once, the rest from the next page load. Freeze Auto follows keepNotifyingSitesLive for notify-allowed sites (WebContent process and RAM until cpuSleepPercent, maxAwakeTabs or memory pressure); Never keeps the same live cost; Always or keepNotifyingSitesLive off saves RAM and CPU but misses in-tab notifications in the background. \(Self.builtInAgents) Web Push (notifications while a site is closed) isn't supported.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -263,7 +263,7 @@ struct SitesPane: View {
         }
         .labelsHidden()
         .disabled(model.controlsDisabled)
-        .help("Whether this site's background tabs freeze. Auto: like any tab, except a site allowed to notify stays live. Never: keeps running and doesn't sleep for being idle. Always: freezes even if it can notify. " + source(row, .freeze))
+        .help("sites.<host>.freeze in config.json. Auto: idle freeze like any tab; if keepNotifyingSitesLive is on and notifications are allowed, the tab stays unfrozen with its WebContent process and RAM so in-tab messages can arrive. Never: always unfrozen and out of idle sleep (same RAM and CPU cost). Always: freezes even when notifications are allowed, saving RAM and CPU but missing new messages while the tab is in the background (Paddle has no Web Push); turning keepNotifyingSitesLive off does the same for all notify sites. " + source(row, .freeze))
     }
 
     /// Default (Safari's), Chrome, Firefox, Custom (a hand-written string; shown only when set), or Custom… to type one.
