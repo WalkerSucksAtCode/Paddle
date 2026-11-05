@@ -23,8 +23,14 @@ public enum DarkModeScript {
           let invertTextImages = \(invertTextImagesStr);
           let currentOverride = null;
 
+          // A frame follows the tab's site (the outermost ancestor), so a site set to light keeps its embeds light.
           function getHost() {
-            return String(location.hostname || '').toLowerCase().replace(/\\.$/, '');
+            let hostname = location.hostname || '';
+            try {
+              const origins = window.top === window ? null : location.ancestorOrigins;
+              if (origins && origins.length) hostname = new URL(origins[origins.length - 1]).hostname;
+            } catch (e) {}
+            return String(hostname).toLowerCase().replace(/\\.$/, '');
           }
 
           function shouldBeDark() {
@@ -62,6 +68,9 @@ public enum DarkModeScript {
               html[data-paddle-dark-mode="active"] [role="img"],
               html[data-paddle-dark-mode="active"] [style*="background-image"] {
                 filter: invert(100%) hue-rotate(180deg) !important;
+              }
+              html[data-paddle-dark-mode="active"] :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"]) :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"]) {
+                filter: none !important;
               }
             `;
             (document.head || document.documentElement || document).appendChild(style);
@@ -107,7 +116,16 @@ public enum DarkModeScript {
             return null;
           }
 
+          // Measures the page without Paddle's own inversion: its dark background would otherwise read as a dark
+          // site and switch dark mode off on the next check.
           function isNaturallyDark() {
+            const html = document.documentElement;
+            const ours = html && html.getAttribute('data-paddle-dark-mode');
+            if (ours) html.removeAttribute('data-paddle-dark-mode');
+            try { return measureNaturallyDark(); } finally { if (ours) html.setAttribute('data-paddle-dark-mode', ours); }
+          }
+
+          function measureNaturallyDark() {
             try {
               const elementsToCheck = [
                 document.documentElement,
