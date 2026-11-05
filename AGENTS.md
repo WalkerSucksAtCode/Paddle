@@ -35,5 +35,6 @@ Personal macOS web browser built on the system WebKit (`WKWebView`). Goals: reso
 - Awake tabs that are not sleeping should switch instantly. A laggy tab change is a bug.
 - `resumeMediaOnSelect` stays off by default. Switching tabs must not start audio unless the user turns that on.
 - Control-bridge MCP uses `/Applications/Paddle.app/Contents/Helpers/paddle-mcp`.
-- `ScrollRestoreScript` (page world, document start) records inner-column scroll before SPA navigations and restores it after Back on timeline sites such as X. Reapplying per-site zoom on each document commit (`applySiteZoom` from `pageCommitted`) can reset that scroll during back/forward restoration.
+- Browser passkeys: `BrowserPasskeyCoordinator` at launch; WebKit WebAuthn when Apple grants `com.apple.developer.web-browser.public-key-credential` (Request ID **84Z8XFC523**, pending). Keep the entitlement out of Release signing until Apple approves (`docs/passkeys.md`).
+- `ScrollRestoreScript` (page world, document start) records inner-column scroll before SPA navigations and restores it after Back on timeline sites such as X, retrying for several seconds when the site resets the column late. On a back/forward commit, `applySiteZoom` and site dark mode wait ~900 ms so layout does not run before that restore; restore ignores trusted scroll from `pageZoom` reflow until the user wheels, keys, or points.
 - Public GitHub: outsiders fork and open a PR against `main`. Do not add write collaborators. Do not commit secrets, credentials, notary profiles, or personal emails. Walker merges or closes.

@@ -521,6 +521,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         trackErrorPageItem(webView)
         tab?.committedPost = mainFrameIsPost
         tab?.blockedPopups = []
+        tab?.committingNavigationType = mainFrameNavigationType
         tab?.pageCommitted()
         guard let tab, let url = webView.url else { return }
         defer {

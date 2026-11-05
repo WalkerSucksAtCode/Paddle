@@ -80,4 +80,104 @@ struct ScrollRestoreScriptTests {
         _ = webView
         try? FileManager.default.removeItem(at: folder)
     }
+
+    /// Assigning `pageZoom` during the restore window must not cancel column restore (same-host Back after WebKit reflow).
+    @Test func columnRestoreSurvivesPageZoomDuringRestoreWindow() async {
+        let (webView, folder) = page("""
+        <style>
+          html, body { margin: 0; height: 100%; overflow: hidden; }
+          #col { height: 240px; overflow: auto; }
+          #inner { height: 4000px; }
+        </style>
+        <div id="col" data-testid="primaryColumn"><div id="inner"></div></div>
+        <script>
+          const col = document.getElementById('col');
+          col.scrollTop = 800;
+          setTimeout(() => {
+            history.pushState({}, '', '#post');
+            col.scrollTop = 0;
+            window.__reset = true;
+          }, 80);
+          addEventListener('popstate', () => { window.__popped = true; });
+        </script>
+        """)
+        func flag(_ name: String) async -> Bool {
+            (try? await webView.evaluateJavaScript("window.\(name) === true")) as? Bool ?? false
+        }
+        let loadDeadline = ContinuousClock.now + .seconds(30)
+        var reset = false
+        while !reset, ContinuousClock.now < loadDeadline {
+            reset = await flag("__reset")
+            if !reset { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(reset)
+        webView.goBack()
+        var popped = false
+        while !popped, ContinuousClock.now < loadDeadline {
+            popped = await flag("__popped")
+            if !popped { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(popped)
+        webView.pageZoom = 1.25
+        let deadline = ContinuousClock.now + .seconds(2)
+        var top: Double?
+        while ContinuousClock.now < deadline {
+            top = await columnTop(webView)
+            if let top, top >= 700 { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(top ?? 0 >= 700)
+        try? FileManager.default.removeItem(at: folder)
+    }
+
+    /// X-class sites reset the column hundreds of milliseconds after `popstate`; restore must keep fighting until then.
+    @Test func columnComesBackAfterLateSiteResetOnBack() async {
+        let (webView, folder) = page("""
+        <style>
+          html, body { margin: 0; height: 100%; overflow: hidden; }
+          #col { height: 240px; overflow: auto; }
+          #inner { height: 4000px; }
+        </style>
+        <div id="col" data-testid="primaryColumn"><div id="inner"></div></div>
+        <script>
+          const col = document.getElementById('col');
+          col.scrollTop = 800;
+          setTimeout(() => {
+            history.pushState({}, '', '#post');
+            col.scrollTop = 0;
+            window.__reset = true;
+          }, 80);
+          addEventListener('popstate', () => {
+            window.__popped = true;
+            setTimeout(() => { col.scrollTop = 0; window.__lateReset = true; }, 900);
+          });
+        </script>
+        """)
+        func flag(_ name: String) async -> Bool {
+            (try? await webView.evaluateJavaScript("window.\(name) === true")) as? Bool ?? false
+        }
+        let loadDeadline = ContinuousClock.now + .seconds(30)
+        var reset = false
+        while !reset, ContinuousClock.now < loadDeadline {
+            reset = await flag("__reset")
+            if !reset { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(reset)
+        webView.goBack()
+        var lateReset = false
+        while !lateReset, ContinuousClock.now < loadDeadline {
+            lateReset = await flag("__lateReset")
+            if !lateReset { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        #expect(lateReset, "site never reset the column after Back")
+        let deadline = ContinuousClock.now + .seconds(3)
+        var top: Double?
+        while ContinuousClock.now < deadline {
+            top = await columnTop(webView)
+            if let top, top >= 700 { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(top ?? 0 >= 700)
+        try? FileManager.default.removeItem(at: folder)
+    }
 }

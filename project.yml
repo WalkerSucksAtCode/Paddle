@@ -50,6 +50,8 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: App/Paddle/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Paddle/Paddle.entitlements
+        # `com.apple.developer.web-browser.public-key-credential` is a managed capability: Xcode signing succeeds
+        # only after Apple enables it on Team VB3UP263YT. See docs/passkeys.md.
         CODE_SIGN_IDENTITY[sdk=macosx*]: Apple Development
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         # The compiler's runtime main-actor checks crash in swift_task_isCurrentExecutor on macOS 27.0.1 (the main

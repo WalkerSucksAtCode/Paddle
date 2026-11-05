@@ -89,6 +89,20 @@ final class ExtensionTab: NSObject, WKWebExtensionTab {
         tab?.isPinned ?? false
     }
 
+    func isMuted(for context: WKWebExtensionContext) -> Bool {
+        tab?.isMuted ?? false
+    }
+
+    func setMuted(_ muted: Bool, for context: WKWebExtensionContext) async throws {
+        guard let tab else { throw PaddleExtensionError.noWindow }
+        guard Tab.supportsMuting else { throw PaddleExtensionError.unsupported("Muting tabs") }
+        tab.setMuted(muted)
+    }
+
+    func isPlayingAudio(for context: WKWebExtensionContext) -> Bool {
+        tab?.isPlayingAudio ?? false
+    }
+
     func setPinned(_ pinned: Bool, for context: WKWebExtensionContext) async throws {
         guard let tab, let browser else { throw PaddleExtensionError.noWindow }
         guard !tab.isPreview else { throw PaddleExtensionError.unsupported("Pinning the link preview") }

@@ -162,6 +162,10 @@ final class Tab: Identifiable {
     @ObservationIgnored var committedPost = false
     /// Main-frame commits so far, so an answer that took a round trip can tell whether the page changed meanwhile.
     @ObservationIgnored private var commitCount = 0
+    /// Navigation type for the commit `pageCommitted()` is handling; set by `TabWebDelegate` just before that call.
+    @ObservationIgnored var committingNavigationType: WKNavigationType?
+    /// Cancels a deferred site-settings apply when the tab navigates again before it runs.
+    @ObservationIgnored private var deferredSiteSettingsTask: Task<Void, Never>?
 
     init(url: URL?, title: String = "", isPinned: Bool = false, savedState: Any? = nil, isPrivate: Bool = false) {
         self.url = url
@@ -409,7 +413,11 @@ final class Tab: Identifiable {
         container.addSubview(webView)
         showWakeCover(over: webView)
         observe(webView)
-        audioObserver = AudioPlaybackObserver(webView) { [weak self] playing in self?.isPlayingAudio = playing }
+        audioObserver = AudioPlaybackObserver(webView) { [weak self] playing in
+            guard let self, playing != isPlayingAudio else { return }
+            isPlayingAudio = playing
+            AppModel.shared.existingExtensions(for: profileID)?.tabChanged(self, .playingAudio)
+        }
         if isMuted { applyMute(to: webView) }
         isAwake = true
         generation += 1
@@ -669,8 +677,8 @@ final class Tab: Identifiable {
         if own == nil { sourceHTML = nil }
         // Extension pages and Paddle's own pages get no block lists, so they never need the reload.
         loadedUnblocked = own == nil && extensionPageID == nil && !AppModel.shared.web.blockersReady.isReady
-        applySiteZoom()
-        applySiteDarkMode(systemIsDark: AppModel.shared.effectiveAppearanceIsDark)
+        applySiteSettingsAfterCommit(backForward: committingNavigationType == .backForward)
+        committingNavigationType = nil
         // A navigation inside the tab is a session change too (its URL and history), not only tab and window changes.
         if !isPrivate && !isPreview { AppModel.shared.sessionChanged() }
     }
@@ -885,6 +893,7 @@ final class Tab: Identifiable {
         guard Self.supportsMuting, muted != isMuted else { return }
         isMuted = muted
         if let webView { applyMute(to: webView) }
+        AppModel.shared.existingExtensions(for: profileID)?.tabChanged(self, .muted)
     }
 
     func toggleMute() {
@@ -940,6 +949,26 @@ final class Tab: Identifiable {
     var siteHost: String? {
         guard extensionPageID == nil, let url = webView?.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         return url.host()
+    }
+
+    /// Applies per-site zoom and dark mode after a commit. Back/forward waits so `ScrollRestoreScript` can finish
+    /// before `pageZoom` layout runs.
+    private func applySiteSettingsAfterCommit(backForward: Bool) {
+        deferredSiteSettingsTask?.cancel()
+        let systemDark = AppModel.shared.effectiveAppearanceIsDark
+        if backForward {
+            let generation = commitCount
+            deferredSiteSettingsTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self, !Task.isCancelled, self.commitCount == generation else { return }
+                self.applySiteZoom()
+                self.applySiteDarkMode(systemIsDark: systemDark)
+            }
+        } else {
+            deferredSiteSettingsTask = nil
+            applySiteZoom()
+            applySiteDarkMode(systemIsDark: systemDark)
+        }
     }
 
     /// Sets the page's zoom to its site's (`AppModel.siteZoom`), the default zoom for a page with no site (file:,
