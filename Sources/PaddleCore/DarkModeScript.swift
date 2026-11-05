@@ -1,16 +1,20 @@
 import Foundation
 
 /// Injected at document start in the isolated content world (`.defaultClient`).
-/// Sets `color-scheme` before first paint. A page that is already dark (computed background, `data-theme`,
-/// or `theme-color`) is left alone so it is not inverted twice. Light pages get inverted backgrounds and text;
-/// photos, video, icons, and embeds are left alone. `window.__paddleDarkMode.setDarkMode(on)` toggles it live.
-/// When `invertTextImages` is active, images that are clearly dark text on a bright background (text screenshots,
-/// documents) are filtered into dark mode, and any image can be toggled via Option-click or the context menu.
+/// Applies smart invert or native `color-scheme` before first paint. Smart mode skips pages that are already dark
+/// (`isNaturallyDark`). `window.__paddleDarkMode.setPolicy({ engine, invertTextImages })` switches engines live;
+/// `setDarkMode(on)` remains for compat (`true` → smart, `false` → off).
 public enum DarkModeScript {
-    public static func source(for sites: [String: SiteSettings], defaultDarkMode: Bool, invertTextImages: Bool = false) -> String {
+    public static func source(
+        for sites: [String: SiteSettings],
+        defaultEngine: PageDarkEngine,
+        globalDarkMode: DarkModePreference = .off,
+        invertTextImages: Bool = false
+    ) -> String {
         let table = hostTable(sites)
         let tableJSON = json(table)
-        let defaultDarkStr = defaultDarkMode ? "true" : "false"
+        let defaultEngineStr = defaultEngine.rawValue
+        let globalDarkNativeStr = (globalDarkMode == .native) ? "true" : "false"
         let invertTextImagesStr = invertTextImages ? "true" : "false"
 
         return """
@@ -19,11 +23,11 @@ public enum DarkModeScript {
 
         (function () {
           const T = new Map(\(tableJSON));
-          let defaultDark = \(defaultDarkStr);
+          let defaultEngine = '\(defaultEngineStr)';
+          let globalDarkNative = \(globalDarkNativeStr);
           let invertTextImages = \(invertTextImagesStr);
-          let currentOverride = null;
+          let engineOverride = null;
 
-          // A frame follows the tab's site (the outermost ancestor), so a site set to light keeps its embeds light.
           function getHost() {
             let hostname = location.hostname || '';
             try {
@@ -33,29 +37,44 @@ public enum DarkModeScript {
             return String(hostname).toLowerCase().replace(/\\.$/, '');
           }
 
-          function shouldBeDark() {
-            if (currentOverride !== null) return currentOverride;
-            const host = getHost();
-            if (!host) return defaultDark;
+          function resolveSiteToken(host) {
+            if (!host) return null;
             for (let h = host; h !== '';) {
               if (T.has(h)) return T.get(h);
               const dot = h.indexOf('.');
               h = dot < 0 ? '' : h.slice(dot + 1);
             }
-            return defaultDark;
+            return null;
+          }
+
+          function tokenToEngine(token) {
+            if (token === 'light') return 'off';
+            if (token === 'native') return 'native';
+            if (token === 'dark') return globalDarkNative ? 'native' : 'smart';
+            return null;
+          }
+
+          function resolveBaseEngine() {
+            const token = resolveSiteToken(getHost());
+            const fromSite = tokenToEngine(token);
+            if (fromSite !== null) return fromSite;
+            return defaultEngine;
+          }
+
+          function currentEngine() {
+            if (engineOverride !== null) return engineOverride;
+            return resolveBaseEngine();
           }
 
           const STYLE_ID = 'paddle-dark-mode-styles';
+          const NATIVE_STYLE_ID = 'paddle-dark-mode-native';
           const IMAGE_STYLE_ID = 'paddle-text-image-styles';
 
-          function ensureStyles() {
+          function ensureSmartStyles() {
             if (document.getElementById(STYLE_ID)) return;
             const style = document.createElement('style');
             style.id = STYLE_ID;
             style.textContent = `
-              :root {
-                color-scheme: dark !important;
-              }
               html[data-paddle-dark-mode="active"] {
                 filter: invert(90%) hue-rotate(180deg) !important;
                 background-color: #181a1b !important;
@@ -71,6 +90,18 @@ public enum DarkModeScript {
               }
               html[data-paddle-dark-mode="active"] :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"]) :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"]) {
                 filter: none !important;
+              }
+            `;
+            (document.head || document.documentElement || document).appendChild(style);
+          }
+
+          function ensureNativeStyles() {
+            if (document.getElementById(NATIVE_STYLE_ID)) return;
+            const style = document.createElement('style');
+            style.id = NATIVE_STYLE_ID;
+            style.textContent = `
+              :root {
+                color-scheme: dark !important;
               }
             `;
             (document.head || document.documentElement || document).appendChild(style);
@@ -97,10 +128,20 @@ public enum DarkModeScript {
             (document.head || document.documentElement || document).appendChild(style);
           }
 
-          function removeStyles() {
+          function removeSmartStyles() {
             const el = document.getElementById(STYLE_ID);
             if (el) el.remove();
             document.documentElement.removeAttribute('data-paddle-dark-mode');
+          }
+
+          function removeNativeStyles() {
+            const el = document.getElementById(NATIVE_STYLE_ID);
+            if (el) el.remove();
+          }
+
+          function removeAllDarkStyles() {
+            removeSmartStyles();
+            removeNativeStyles();
           }
 
           function parseLuminance(colorStr) {
@@ -116,8 +157,6 @@ public enum DarkModeScript {
             return null;
           }
 
-          // Measures the page without Paddle's own inversion: its dark background would otherwise read as a dark
-          // site and switch dark mode off on the next check.
           function isNaturallyDark() {
             const html = document.documentElement;
             const ours = html && html.getAttribute('data-paddle-dark-mode');
@@ -148,20 +187,22 @@ public enum DarkModeScript {
                 const lum = parseLuminance(metaTheme.content);
                 if (lum !== null && lum < 0.45) return true;
               }
-            } catch (e) {
-              // Computed style or a missing attribute can throw; treat that as not dark.
-            }
+            } catch (e) {}
             return false;
           }
 
           function isDarkModeActive() {
-            return shouldBeDark() || isNaturallyDark();
+            const engine = currentEngine();
+            if (engine === 'smart') return true;
+            if (engine === 'off' && invertTextImages && isNaturallyDark()) return true;
+            return false;
           }
 
           function evaluateAndApply() {
-            const darkDesired = shouldBeDark();
-            if (!darkDesired) {
-              removeStyles();
+            const engine = currentEngine();
+
+            if (engine === 'off') {
+              removeAllDarkStyles();
               if (invertTextImages && isNaturallyDark()) {
                 ensureImageStyles();
                 scanImages();
@@ -169,9 +210,15 @@ public enum DarkModeScript {
               return;
             }
 
-            ensureStyles();
+            if (engine === 'native') {
+              removeSmartStyles();
+              ensureNativeStyles();
+              return;
+            }
 
-            // If the website already rendered natively in dark mode, do not invert it!
+            removeNativeStyles();
+            ensureSmartStyles();
+
             if (isNaturallyDark()) {
               document.documentElement.removeAttribute('data-paddle-dark-mode');
             } else {
@@ -338,12 +385,13 @@ public enum DarkModeScript {
             mutationObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'] });
           }
 
-          // At document-start, inject the style tag so color-scheme: dark triggers native dark palette immediately
-          if (shouldBeDark()) {
-            ensureStyles();
+          const bootEngine = currentEngine();
+          if (bootEngine === 'smart') {
+            ensureSmartStyles();
+          } else if (bootEngine === 'native') {
+            ensureNativeStyles();
           }
 
-          // Evaluate once DOM is loaded, and again after a short delay for late-hydrating SPAs
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
               evaluateAndApply();
@@ -356,18 +404,31 @@ public enum DarkModeScript {
           setTimeout(evaluateAndApply, 400);
 
           window.__paddleDarkMode = {
+            setPolicy(policy) {
+              if (policy && policy.engine) {
+                engineOverride = String(policy.engine);
+              }
+              if (policy && typeof policy.invertTextImages === 'boolean') {
+                invertTextImages = policy.invertTextImages;
+              }
+              evaluateAndApply();
+            },
+            setKeepLight() {
+              engineOverride = 'off';
+              evaluateAndApply();
+            },
             setDarkMode(on) {
-              currentOverride = Boolean(on);
+              engineOverride = on ? 'smart' : 'off';
               evaluateAndApply();
             },
             toggle() {
-              const next = !shouldBeDark();
-              currentOverride = next;
+              const next = currentEngine() === 'off';
+              engineOverride = next ? 'smart' : 'off';
               evaluateAndApply();
               return next;
             },
             isEnabled() {
-              return shouldBeDark();
+              return currentEngine() !== 'off';
             },
             toggleLastClickedImage(imageURL) {
               let target = findTargetImage(lastContextMenuTarget);
@@ -400,15 +461,22 @@ public enum DarkModeScript {
         """
     }
 
-    /// Extracts normalized host keys where `darkMode` is explicitly configured.
+    /// Extracts normalized host keys where `darkMode` is explicitly configured (not Auto).
     static func hostTable(_ sites: [String: SiteSettings]) -> [[Any]] {
-        var table: [String: Bool] = [:]
+        var table: [String: String] = [:]
         for (key, settings) in sites.sorted(by: { PaddleConfig.hostKeyPrecedes($0.key, $1.key) }) {
-            if let darkMode = settings.darkMode {
-                table[PaddleConfig.normalizedHost(key)] = darkMode
+            guard let mode = settings.darkMode else { continue }
+            let token: String? = switch mode {
+            case .light: "light"
+            case .dark: "dark"
+            case .native: "native"
+            case .auto: nil
+            }
+            if let token {
+                table[PaddleConfig.normalizedHost(key)] = token
             }
         }
-        return table.keys.sorted().map { [$0, table[$0] ?? false] }
+        return table.keys.sorted().map { [$0, table[$0] ?? "light"] }
     }
 
     private static func json(_ table: [[Any]]) -> String {

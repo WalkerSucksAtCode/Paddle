@@ -145,41 +145,72 @@ struct SitePolicyTests {
         #expect(SiteSettings.entry(nil, setting: .freeze, to: .string("never")) == ["freeze": "never"])
     }
 
-    @Test func darkModePolicyAndScriptTests() {
+    @Test func darkModePolicyAndScriptTests() throws {
         var config = PaddleConfig()
         #expect(!config.sitePolicy(forHost: "example.com").darkMode)
+        #expect(config.sitePolicy(forHost: "example.com").pageDarkEngine == .off)
 
-        // Always dark
-        config.darkMode = .always
+        let alwaysDecoded = try PaddleConfig.decode(Data(#"{"darkMode": "always"}"#.utf8))
+        #expect(alwaysDecoded.darkMode == .smart)
+
+        config.darkMode = .smart
         #expect(config.sitePolicy(forHost: "example.com").darkMode)
+        #expect(config.sitePolicy(forHost: "example.com").pageDarkEngine == .smart)
 
-        // System follows systemIsDark
+        config.darkMode = .native
+        #expect(config.sitePolicy(forHost: "example.com").pageDarkEngine == .native)
+
         config.darkMode = .system
-        #expect(config.sitePolicy(forHost: "example.com", systemIsDark: false).darkMode == false)
-        #expect(config.sitePolicy(forHost: "example.com", systemIsDark: true).darkMode == true)
+        #expect(config.sitePolicy(forHost: "example.com", systemIsDark: false).pageDarkEngine == .off)
+        #expect(config.sitePolicy(forHost: "example.com", systemIsDark: true).pageDarkEngine == .smart)
 
-        // Per-site override wins
+        config.darkMode = .smart
         config.sites = [
-            "light.com": SiteSettings(darkMode: false),
-            "dark.com": SiteSettings(darkMode: true),
+            "light.com": SiteSettings(darkMode: .light),
+            "dark.com": SiteSettings(darkMode: .dark),
+            "native.com": SiteSettings(darkMode: .native),
         ]
-        #expect(config.sitePolicy(forHost: "dark.com", systemIsDark: false).darkMode == true)
-        #expect(config.sitePolicy(forHost: "light.com", systemIsDark: true).darkMode == false)
+        #expect(config.sitePolicy(forHost: "dark.com", systemIsDark: false).pageDarkEngine == .smart)
+        #expect(config.sitePolicy(forHost: "light.com", systemIsDark: true).pageDarkEngine == .off)
+        #expect(config.sitePolicy(forHost: "native.com").pageDarkEngine == .native)
 
-        #expect(SiteSettings.entry(nil, setting: .darkMode, to: true) == ["darkMode": true])
-        #expect(SiteSettings.entry(nil, setting: .darkMode, to: false) == nil)
+        config.darkMode = .native
+        #expect(config.sitePolicy(forHost: "dark.com").pageDarkEngine == .native)
 
-        let script = DarkModeScript.source(for: config.sites, defaultDarkMode: true)
-        #expect(script.contains("paddle-dark-mode-styles"))
-        #expect(script.contains("window.__paddleDarkMode"))
+        let boolSite = try PaddleConfig.decode(Data(#"{"sites": {"legacy.com": {"darkMode": true}, "off.com": {"darkMode": false}}}"#.utf8))
+        #expect(boolSite.sites["legacy.com"]?.darkMode == .dark)
+        #expect(boolSite.sites["off.com"]?.darkMode == .light)
+
+        let autoSite = try PaddleConfig.decode(Data(#"{"sites": {"auto.com": {"darkMode": "auto"}}}"#.utf8))
+        #expect(autoSite.sites["auto.com"]?.darkMode == nil)
+
+        #expect(SiteSettings.entry(nil, setting: .darkMode, to: .string("auto")) == nil)
+        #expect(SiteSettings.entry(nil, setting: .darkMode, to: .string("light")) == ["darkMode": "light"])
+
+        let script = DarkModeScript.source(
+            for: config.sites,
+            defaultEngine: config.pageDarkEngine(systemIsDark: true),
+            globalDarkMode: config.darkMode
+        )
+        #expect(script.contains("setPolicy"))
+        #expect(script.contains("color-scheme: dark"))
+        #expect(script.contains("data-paddle-dark-mode"))
+        #expect(script.contains("setKeepLight"))
         #expect(script.contains("dark.com"))
+        #expect(script.contains("'native'"))
+        #expect(script.contains("'smart'"))
+        #expect(DarkModePreference.allCases == [.off, .system, .smart, .native])
     }
 
     @MainActor
     @Test func darkModeScriptExecutesInWebKit() async throws {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        let script = DarkModeScript.source(for: ["example.com": SiteSettings(darkMode: true)], defaultDarkMode: false)
+        let script = DarkModeScript.source(
+            for: ["example.com": SiteSettings(darkMode: .dark)],
+            defaultEngine: .smart,
+            globalDarkMode: .smart
+        )
         configuration.userContentController.addUserScript(WKUserScript(
             source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient
         ))
@@ -206,7 +237,12 @@ struct SitePolicyTests {
     @Test func textImageInversionTogglesInWebKit() async throws {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
-        let script = DarkModeScript.source(for: ["example.com": SiteSettings(darkMode: true)], defaultDarkMode: false, invertTextImages: true)
+        let script = DarkModeScript.source(
+            for: ["example.com": SiteSettings(darkMode: .dark)],
+            defaultEngine: .off,
+            globalDarkMode: .smart,
+            invertTextImages: true
+        )
         configuration.userContentController.addUserScript(WKUserScript(
             source: script, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient
         ))
