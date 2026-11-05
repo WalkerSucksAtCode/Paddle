@@ -31,4 +31,23 @@ public struct ReaderArticle: Codable, Equatable, Sendable {
         let words = textContent.split { $0.isWhitespace || $0.isPunctuation }.count
         self.readingTimeMinutes = readingTimeMinutes ?? max(1, Int((Double(words) / 200.0).rounded()))
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, byline, publishedTime, siteName, excerpt, contentHTML, textContent, readingTimeMinutes
+    }
+
+    /// `ReaderExtractor.extractionScript` sends no `readingTimeMinutes`: it is worked out from `textContent` when absent.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            title: try c.decode(String.self, forKey: .title),
+            byline: try c.decodeIfPresent(String.self, forKey: .byline),
+            publishedTime: try c.decodeIfPresent(String.self, forKey: .publishedTime),
+            siteName: try c.decodeIfPresent(String.self, forKey: .siteName),
+            excerpt: try c.decodeIfPresent(String.self, forKey: .excerpt),
+            contentHTML: try c.decode(String.self, forKey: .contentHTML),
+            textContent: try c.decode(String.self, forKey: .textContent),
+            readingTimeMinutes: try c.decodeIfPresent(Int.self, forKey: .readingTimeMinutes)
+        )
+    }
 }

@@ -762,12 +762,23 @@ final class Tab: Identifiable {
         guard let webView, isAwake, !isShowingErrorPage else { return }
         unfreeze()
         webView.evaluateJavaScript(ReaderExtractor.extractionScript, in: nil, in: .defaultClient) { [weak self] result in
-            guard let self, case .success(let value) = result,
-                  let json = value as? String,
-                  let data = json.data(using: .utf8) else { return }
-            if let article = try? JSONDecoder().decode(ReaderArticle.self, from: data) {
-                self.readerArticle = article
+            guard let self else { return }
+            let value: Any
+            switch result {
+            case .success(let v): value = v
+            case .failure(let error):
+                Self.log.error("reader extraction script failed: \(String(describing: error), privacy: .public)")
+                return
+            }
+            guard let json = value as? String else {
+                Self.log.notice("reader extraction found no article (returned \(String(describing: type(of: value)), privacy: .public))")
+                return
+            }
+            do {
+                self.readerArticle = try JSONDecoder().decode(ReaderArticle.self, from: Data(json.utf8))
                 self.isReaderAvailable = true
+            } catch {
+                Self.log.error("reader article did not decode: \(String(describing: error), privacy: .public)")
             }
         }
     }
