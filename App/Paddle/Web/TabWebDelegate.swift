@@ -232,7 +232,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         if preferences.responds(to: setColorSchemePreference) {
             typealias SetScheme = @convention(c) (AnyObject, Selector, Int) -> Void
             let set = unsafeBitCast(preferences.method(for: setColorSchemePreference), to: SetScheme.self)
-            set(preferences, setColorSchemePreference, policy.darkMode ? 2 : 0)
+            set(preferences, setColorSchemePreference, policy.pageDarkEngine != .off ? 2 : 0)
         }
         guard supportsSiteAutoplay else { return }
         // `_WKWebsiteAutoplayPolicy`: 0 is the configuration's default (sound waits for a click or key, the "muted"

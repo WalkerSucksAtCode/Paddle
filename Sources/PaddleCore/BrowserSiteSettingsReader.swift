@@ -258,7 +258,7 @@ public enum SiteSettingsMapper {
         case .notifications: site.notifications.map { .string($0.rawValue) }
         case .httpsOnly: site.httpsOnly.map { .bool($0) }
         case .popups: site.popups.map { .bool($0) }
-        case .darkMode: site.darkMode.map { .bool($0) }
+        case .darkMode: site.darkMode.map { .string($0.rawValue) }
         case .freeze: site.freeze.map { .string($0.rawValue) }
         }
     }

@@ -1,5 +1,30 @@
 import Foundation
 
+/// How a page applies dark mode in the injected script.
+public enum PageDarkEngine: String, Sendable, Equatable {
+    case off, smart, native
+
+    /// Effective engine from a site override and the global preference.
+    public static func resolved(
+        site: SiteSettings.SiteDarkMode,
+        global: DarkModePreference,
+        systemIsDark: Bool
+    ) -> PageDarkEngine {
+        switch site {
+        case .light: return .off
+        case .native: return .native
+        case .dark: return global == .native ? .native : .smart
+        case .auto:
+            switch global {
+            case .off: return .off
+            case .native: return .native
+            case .smart: return .smart
+            case .system: return systemIsDark ? .smart : .off
+            }
+        }
+    }
+}
+
 /// Effective settings for one host: `sites` merged longest suffix first per field
 /// (`PaddleConfig.siteSettings(forHost:)`), with Paddle's default for every unset field.
 public struct SitePolicy: Sendable, Equatable {
@@ -15,8 +40,12 @@ public struct SitePolicy: Sendable, Equatable {
     public var httpsOnly: Bool
     /// True lets the host's pages open windows without a click.
     public var popups: Bool
-    /// True forces website dark mode; false forces light mode; follows global setting by default.
-    public var darkMode: Bool
+    /// Per-site dark mode override; `.auto` follows the global setting.
+    public var darkModeOverride: SiteSettings.SiteDarkMode
+    /// How dark mode is applied on this host after resolving global and site settings.
+    public var pageDarkEngine: PageDarkEngine
+    /// True when `pageDarkEngine` is not off (compat for callers that only need a boolean).
+    public var darkMode: Bool { pageDarkEngine != .off }
     /// Whether this host's background tabs freeze; `auto` follows the global rules.
     public var freeze: SiteSettings.Freeze
 
@@ -25,7 +54,12 @@ public struct SitePolicy: Sendable, Equatable {
     public static let defaults = SitePolicy(SiteSettings())
 
     /// `defaultZoom` is the zoom of a site with no `zoom` of its own (`PaddleConfig.defaultZoom`).
-    public init(_ settings: SiteSettings, defaultZoom: Double = 1, defaultDarkMode: Bool = false) {
+    public init(
+        _ settings: SiteSettings,
+        defaultZoom: Double = 1,
+        globalDarkMode: DarkModePreference = .off,
+        systemIsDark: Bool = false
+    ) {
         zoom = settings.zoom.map(Self.normalizedZoom) ?? Self.normalizedZoom(defaultZoom)
         javaScript = settings.javaScript ?? true
         autoplay = settings.autoplay ?? .muted
@@ -34,7 +68,12 @@ public struct SitePolicy: Sendable, Equatable {
         notifications = settings.notifications ?? .ask
         httpsOnly = settings.httpsOnly ?? true
         popups = settings.popups ?? false
-        darkMode = settings.darkMode ?? defaultDarkMode
+        darkModeOverride = settings.darkMode ?? .auto
+        pageDarkEngine = PageDarkEngine.resolved(
+            site: darkModeOverride,
+            global: globalDarkMode,
+            systemIsDark: systemIsDark
+        )
         freeze = settings.freeze ?? .auto
     }
 
@@ -63,7 +102,12 @@ extension PaddleConfig {
     /// come only from `host`'s own entry, as browsers keep permissions per origin, so an answer for example.com doesn't
     /// also answer for every subdomain of it.
     public func sitePolicy(forHost host: String, systemIsDark: Bool = false) -> SitePolicy {
-        var policy = SitePolicy(siteSettings(forHost: host), defaultZoom: defaultZoom, defaultDarkMode: defaultDarkMode(systemIsDark: systemIsDark))
+        var policy = SitePolicy(
+            siteSettings(forHost: host),
+            defaultZoom: defaultZoom,
+            globalDarkMode: darkMode,
+            systemIsDark: systemIsDark
+        )
         let normalized = PaddleConfig.normalizedHost(host)
         let own = siteSettingsKeys(forHost: host)
             .filter { PaddleConfig.normalizedHost($0) == normalized }
@@ -161,7 +205,7 @@ extension SiteSettings {
         case .notifications: return .string(d.notifications.rawValue)
         case .httpsOnly: return .bool(d.httpsOnly)
         case .popups: return .bool(d.popups)
-        case .darkMode: return .bool(d.darkMode)
+        case .darkMode: return .string(SiteSettings.SiteDarkMode.auto.rawValue)
         case .freeze: return .string(d.freeze.rawValue)
         }
     }
