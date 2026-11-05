@@ -115,21 +115,20 @@ No separate Release-only RAM features found in audited files; **2026-10-15 footp
 ### FA-PERF-01 — Post–Track B RAM baseline not re-measured
 - **Severity:** S2  
 - **Area:** Measurements / regression gate  
-- **Mechanism:** `docs/measurements.md` §2026-11-05; `lightness-track-b.md` P2 **Blocked**  
-- **Evidence:** measurements.md:6–10; lightness-track-b.md:14–15  
-- **User impact:** Shipped scroll/SW-grace changes lack idle/8-site/restored **MEASURED** comparison to 2026-10-15 Release.  
-- **Disposition:** Open  
-- **Suggested fix shape:** Re-run 2026-10-15 protocol on Release Developer ID build when a quit-safe window exists; add new section.  
+- **Mechanism:** `docs/measurements.md` §2026-11-05 Release 0.1.161  
+- **Evidence:** measurements.md (idle/loaded rows); commit a99bc4f @ `/Applications/Paddle.app`  
+- **User impact:** Release footprint row exists; comparison to §2026-10-15 is still confounded by live multi-window session and `controlBridge` on.  
+- **Disposition:** Closed (row added; isolated regression gate still optional follow-up)  
 - **Tree:** main  
 
 ### FA-PERF-02 — Orphan service-worker RAM claims unverified
 - **Severity:** S2  
 - **Area:** Service workers / WebContent processes  
 - **Mechanism:** `AppModel.stopOrphanServiceWorkers` + `orphanWorkerGrace` 30 s; comments at AppModel.swift:1731–1733  
-- **Evidence:** measurements.md comment-only table (AppModel.swift:1708 row)  
-- **User impact:** Mitigation exists; magnitude of Reddit/benchmark leaks **UNVERIFIED** in doc sections.  
-- **Disposition:** Open (measurement debt)  
-- **Suggested fix shape:** Footprint or `ProcessMemory.snapshot()` time-series after closing SW-heavy tabs; add measurements section.  
+- **Evidence:** measurements.md §2026-11-05 FA-PERF-02 table; AppModel.swift:1708 comment row still comment-only  
+- **User impact:** Bounded Reddit close shows ~340 MB total drop by 30 s; **`serviceWorkers` row stayed 0**; 218/647 MB comment magnitudes **UNVERIFIED**.  
+- **Disposition:** Open (comment magnitudes only)  
+- **Suggested fix shape:** Optional: instrument worker-attributed MB or reproduce comment scenario on a throwaway profile.  
 - **Tree:** main  
 
 ### FA-PERF-03 — Pool-wide `_terminateServiceWorkers` is coarse
@@ -166,10 +165,9 @@ No separate Release-only RAM features found in audited files; **2026-10-15 footp
 - **Severity:** S2  
 - **Area:** Extensions  
 - **Mechanism:** `ExtensionHost.parkIdleExtensions`; measurements §2026-10-19 Debug DerivedData  
-- **Evidence:** measurements.md:14–28; ExtensionHost.swift:1293–1296  
-- **User impact:** **193 MB** table savings **MEASURED** (§2026-10-19); Release parity **UNVERIFIED**.  
-- **Disposition:** Open (re-measure on Release)  
-- **Suggested fix shape:** Repeat `paddle_state` protocol on notarized Release with same extension set.  
+- **Evidence:** measurements.md §2026-11-05 FA-PERF-06 table (Release 0.1.161)  
+- **User impact:** **60 MB** New Tab / **95 MB** with five sites on Release (vs **193 MB** Debug with different extension mix).  
+- **Disposition:** Closed (Release re-measured)  
 - **Tree:** main  
 
 ### FA-PERF-07 — Per-page script stack always includes dark mode + scroll restore

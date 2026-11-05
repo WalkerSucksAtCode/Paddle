@@ -3,6 +3,68 @@
 Memory baselines, one section per measured release, newest first. Compare a new build against the latest section
 with the same method; the regression threshold is 10 % or 50 MB per scenario, whichever is larger.
 
+## 2026-11-05: Release 0.1.161 (161), notarized `/Applications/Paddle.app` @ a99bc4f
+
+Machine: Mac16,7 (Apple M4 Pro, 48 GB), macOS 27.2 (26B123).
+
+Build: Developer ID notarized Paddle **0.1.161 (161)** at `/Applications/Paddle.app`, commit **a99bc4f** on `main`.
+Walker's live `config.json` (content blocking, installed extensions, `controlBridge: true`, New Tab feeds, `darkMode:
+always`, `extensionsOnDemand: true` by default). Other non-private browser windows stayed open during **FA-PERF-01**
+runs, so `memoryMB.total` and the footprint sum below are **whole-app** totals, not an isolated single-window session
+like §2026-10-15 (`controlBridge` was off there). Site #8 uses `https://example.com` instead of the 2026-10-15 local
+static file; the rest match §2026-10-15's eight URLs.
+
+### FA-PERF-01 — footprint protocol (idle / 8-site loaded)
+
+Method: dedicated measurement window via the control bridge; **75 s** settle; sum of `footprint -f bytes` over every pid
+macOS holds Paddle responsible for (`responsibility_get_pid_responsible_for_pid`), cross-checked against
+`paddle_state` → `memoryMB.total` (matched within 1 MB every sample). Fresh launches were not forced between idle
+runs (live session). **Restored** (8-tab session restore, one tab awake) was not run — would require replacing the
+user's `session.json` during a live profile.
+
+| Scenario | Median MB | Range MB | WebContent processes (approx.) |
+|---|---|---|---|
+| Idle (2 runs, one blank tab in measure window) | 141 | 141–141 | 3 |
+| Loaded (8 sites awake in measure window, 3 runs) | 573 | 569–1021 | 8–9 |
+
+Per-run totals (MB): idle **141**, **141**; loaded **1021**, **569**, **573**. The first loaded run (**1021**) looked
+like a compile/warm-up outlier (filter compile or cold WebContent); later runs clustered ~570 MB. Do **not** treat this
+as a clean regression gate against §2026-10-15 Release **587** MB without a quit-isolated rerun with `controlBridge`
+off and one window.
+
+### FA-PERF-02 — orphan service worker (bounded)
+
+Method: new window, load `https://www.reddit.com/r/popular/`, wait 30 s, close tab, sample `paddle_state` and footprint
+sum every 15–60 s for 4 min (`orphanWorkerGrace` is **30 s** in `AppModel`).
+
+| Seconds after close | Total MB | `memoryMB.serviceWorkers` |
+|---|---|---|
+| 0 | 465 | 0 |
+| 15 | 195 | 0 |
+| 30 | 126 | 0 |
+| 45–240 | 124–126 | 0 |
+
+Total memory fell ~340 MB within 30 s of closing the tab; the **`serviceWorkers` breakdown stayed 0** (WebKit did not
+attribute orphan worker RAM to that bucket in this run). The **218 MB / 647 MB** figures in `AppModel.swift` comments
+remain **UNVERIFIED** — this session did not reproduce those magnitudes on the worker row.
+
+### FA-PERF-06 — on-demand extensions on Release
+
+Method: toggle `extensionsOnDemand` in `config.json` (not bridge-settable), relaunch Paddle between scenarios, open sites
+in a fresh measure window, **75 s** settle, then six `paddle_state` samples every 10 s (drop the first high sample;
+median of the rest). Same five awake URLs as §2026-10-19 when noted.
+
+| Scenario | `memoryMB.extensions` loaded / parked | `memoryMB.total` loaded / parked | Saved by parking |
+|---|---|---|---|
+| New Tab only | 41 / 14 | 207 / 147 | 60 MB |
+| New Tab + 5 sites | 41 / 14 | 551 / 456 | 95 MB |
+
+Release parity with §2026-10-19 Debug is **directionally similar** for New Tab only (~60 MB); savings with five sites are
+**lower here (95 MB vs 193 MB)**, likely extension set / always-loaded vs on-demand mix (Walker's config disables several
+store extensions) and the live multi-window totals above.
+
+Raw probe output (not committed): `build/fa-perf-full.log`, `build/fa-perf-06.json` under a local checkout.
+
 ## 2026-11-05: Track B product pass (no full `footprint` protocol)
 
 Shipped on branch `cursor/paddle-lightness-track-b-7085` (Developer ID build **153** at `/Applications/Paddle.app`): `ScrollRestoreScript` Back/SPA scroll restore for timeline sites, orphan service-worker grace **30 s** (was 45 s in code comments' baseline), and Settings/README copy for `keepNotifyingSitesLive` / per-site `freeze` RAM vs missed in-tab notifications.

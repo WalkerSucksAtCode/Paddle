@@ -55,8 +55,8 @@ Worker phrases “OK”, “By design”, “Accept”, “Closable”, “Infor
 |---|---|---|---|---|---|
 | FA-HYG-01 | S2 | hygiene | No GitHub Actions workflows | Needs Walker | main |
 | FA-HYG-02 | S3 | hygiene | CONTRIBUTING claims shortcut names are tested; only config keys are | Open | main |
-| FA-HYG-03 | S4 | hygiene | README example still `0.1.156`; count is 157 | Open | main |
-| FA-HYG-04 | S4 | hygiene | AGENTS.md same stale `0.1.156` example | Open | main |
+| FA-HYG-03 | S4 | hygiene | README example still `0.1.156`; count is 157 | Fixed | main |
+| FA-HYG-04 | S4 | hygiene | AGENTS.md same stale `0.1.156` example | Fixed | main |
 | FA-HYG-05 | S3 | hygiene | `measurements.md` still says “330 MB in README”; README does not | Open | main |
 | FA-HYG-06 | S3 | hygiene | `scripts/bench.py` undocumented outside its header | Open | main |
 | FA-HYG-07 | S4 | hygiene | Blank issues enabled; SECURITY.md wants advisories | Accepted risk | main |
@@ -133,12 +133,12 @@ Worker phrases “OK”, “By design”, “Accept”, “Closable”, “Infor
 | FA-NET-14 | S4 | network | Apple Pay / Payment Request absent | Out-of-scope (Apple entitlement) | main |
 | FA-NET-15 | S4 | network | Audio autoplay gated; muted video allowed | Accepted risk | main |
 | FA-NET-16 | S4 | network | Filter fetches https-only + 50 MB cap | Closed | main |
-| FA-PERF-01 | S2 | perf | No post–Track B Release footprint row | Open | main |
+| FA-PERF-01 | S2 | perf | No post–Track B Release footprint row | Closed | main |
 | FA-PERF-02 | S2 | perf | Orphan SW 218/647 MB claims unverified | Open | main |
 | FA-PERF-03 | S4 | perf | Pool-wide `_terminateServiceWorkers` | Accepted risk | main |
 | FA-PERF-04 | S4 | perf | WebKit “other” / BFCache / prewarm RAM | Out-of-scope (Apple entitlement) | main |
 | FA-PERF-05 | S3 | perf | Global `org.WebKit.lowMemory` on background | Accepted risk | main |
-| FA-PERF-06 | S2 | perf | On-demand savings measured on Debug only | Open | main |
+| FA-PERF-06 | S2 | perf | On-demand savings measured on Debug only | Closed | main |
 | FA-PERF-07 | S3 | perf | Dark + scroll scripts always injected | Accepted risk | main |
 | FA-PERF-08 | S3 | perf | Comment-only MB/ms table still in measurements | Open | main |
 | FA-PERF-09 | S3 | perf | Sweep `isBusy()` JS every minute per awake tab | Accepted risk | main |
