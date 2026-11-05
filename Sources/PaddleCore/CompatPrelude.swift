@@ -82,11 +82,16 @@ public struct CompatPlan: Codable, Sendable, Equatable {
             ((root[key] as? [Any]) ?? []).compactMap { $0 as? String }
                 .filter { !$0.contains("/") && !$0.contains("*") && !$0.hasPrefix("<") }
         }
+        let required = names("permissions")
+        let optional = names("optional_permissions")
+        let webKit = ExtensionCompat.webKitPermissionNames
+        let autoShimmed = Array(Set(required + optional).subtracting(webKit)).sorted()
+        let resolvedShimmed = shimmedPermissions.isEmpty ? autoShimmed : shimmedPermissions
         let page = ((root["background"] as? [String: Any])?["page"] as? String).flatMap(ExtensionCompat.containedPath)
         return CompatPlan(
             persona: persona, runtimeID: runtimeID, versions: versions.raised(for: root), manifest: text,
-            requiredPermissions: names("permissions"), optionalPermissions: names("optional_permissions"),
-            shimmedPermissions: shimmedPermissions, popupPath: ExtensionCompat.popupPath(manifest: root),
+            requiredPermissions: required, optionalPermissions: optional,
+            shimmedPermissions: resolvedShimmed, popupPath: ExtensionCompat.popupPath(manifest: root),
             backgroundPage: page, shims: compat.shimsEnabled, installReason: installReason
         )
     }
