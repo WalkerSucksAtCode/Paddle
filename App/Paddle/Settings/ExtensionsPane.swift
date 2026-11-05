@@ -92,6 +92,7 @@ struct ExtensionsPane: View {
         }
         .task {
             StoreInstaller.shared.reloadSources()
+            ExtensionUpdater.shared.refreshStatusesFromDisk()
             while !Task.isCancelled {
                 memory = ExtensionMemory.sample()
                 try? await Task.sleep(for: .seconds(5))
@@ -116,13 +117,14 @@ struct ExtensionsPane: View {
                 if updater.checking || updater.adopting {
                     ProgressView().controlSize(.small).accessibilityLabel("Checking for updates")
                 }
-                if let note = updater.note {
-                    Label(note, systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .help(note)
-                }
+            }
+            if let note = updater.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             LabeledContent("Last checked") { Text(lastCheckedText) }
                 .help("The newest check among the extensions installed from a store.")
@@ -155,15 +157,10 @@ struct ExtensionsPane: View {
         return store == .chromeWebStore || store == .mozillaAddons
     }
 
-    /// The last update result for a folder, as an icon plus words (never colour alone).
-    private func lastResult(_ folder: String) -> (text: String, symbol: String)? {
-        guard let text = ExtensionUpdater.shared.statuses[folder] else { return nil }
-        let symbol: String
-        if text.hasPrefix("updated") || text.hasPrefix("up to date") { symbol = "checkmark.circle" }
-        else if text.contains("waiting for permission") { symbol = "hourglass" }
-        else if text.contains("declined") { symbol = "hand.raised" }
-        else { symbol = "exclamationmark.triangle" }
-        return (text.prefix(1).uppercased() + text.dropFirst(), symbol)
+    /// Durable last check result from `extension-sources.json`.
+    private func lastResult(_ folder: String) -> (text: String, symbol: String, checked: Date)? {
+        guard let record = StoreInstaller.shared.record(forFolder: folder), let outcome = record.lastOutcome else { return nil }
+        return (outcome.settingsSummary(record: record), outcome.settingsSymbol(), outcome.at)
     }
 
     /// The add-on id of an untracked folder's manifest, when it has one (it may be kept updated).
@@ -179,6 +176,7 @@ struct ExtensionsPane: View {
         let state = status(summary, enabled: enabled)
         let origin = source(summary.folder)
         let result = lastResult(summary.folder)
+        let recordVersion = StoreInstaller.shared.record(forFolder: summary.folder)?.version ?? summary.version
         HStack(spacing: 10) {
             icon(summary)
             VStack(alignment: .leading, spacing: 2) {
@@ -193,12 +191,20 @@ struct ExtensionsPane: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-                .help([state.text, origin.text, result?.text].compactMap { $0 }.joined(separator: ". "))
+                .help([state.text, origin.text, result.map { $0.text }].compactMap { $0 }.joined(separator: ". "))
                 if let result {
-                    Text(result.text)
+                    HStack(spacing: 4) {
+                        Image(systemName: result.symbol).symbolRenderingMode(.monochrome)
+                        Text("Checked \(result.checked.formatted(date: .abbreviated, time: .shortened)) · \(result.text)")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else if isTracked(summary.folder), !recordVersion.isEmpty {
+                    Text("Installed \(recordVersion) · no check recorded yet")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
@@ -237,7 +243,20 @@ struct ExtensionsPane: View {
     @ViewBuilder private func details(_ summary: ExtensionFolderSummary) -> some View {
         let enabled = host.isEnabled(summary.folder, config: model.file)
         let updater = ExtensionUpdater.shared
+        let record = StoreInstaller.shared.record(forFolder: summary.folder)
         if isTracked(summary.folder) {
+            if let record, let outcome = record.lastOutcome {
+                LabeledContent("Last result") {
+                    Label(outcome.settingsSummary(record: record), systemImage: outcome.settingsSymbol())
+                }
+                LabeledContent("Last checked") {
+                    Text(outcome.at.formatted(date: .abbreviated, time: .shortened))
+                }
+            }
+            let installedVersion = record?.version ?? (summary.version.isEmpty ? nil : summary.version)
+            LabeledContent("Installed version") {
+                Text(installedVersion ?? "Unknown")
+            }
             LabeledContent("Updates") {
                 if updater.checkingFolders.contains(summary.folder) {
                     ProgressView().controlSize(.small).accessibilityLabel("Checking \(summary.displayName) for an update")
@@ -257,7 +276,6 @@ struct ExtensionsPane: View {
 
         let origin = source(summary.folder)
         LabeledContent("Source") { Label(origin.text, systemImage: origin.symbol) }
-        let record = StoreInstaller.shared.record(forFolder: summary.folder)
         if record?.adopted == true {
             LabeledContent("Updates") {
                 Button("Stop Updating") {

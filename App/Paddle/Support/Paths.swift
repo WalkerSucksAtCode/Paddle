@@ -55,6 +55,8 @@ enum Paths {
     static let extensionInstalls = support.appending(path: "extension-installs.json")
     /// Where each store-installed extension folder came from (`ExtensionSources`), written by `StoreInstaller`.
     static let extensionSources = support.appending(path: "extension-sources.json")
+    /// Last manual update-check batch summary (`ExtensionUpdateBatchSummary`).
+    static let extensionUpdateBatch = support.appending(path: "extension-update-last.json")
     /// WebKit's own storage for extensions (`storage.local` and the like), one folder per context
     /// `uniqueIdentifier`, under the default controller configuration. Paddle only moves a folder when an
     /// extension's id changes (`ExtensionHost.moveStorage`); WebKit owns what is inside.

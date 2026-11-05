@@ -99,11 +99,12 @@ Sidebar order matches `SettingsPane`: General, Appearance, Profiles, Tabs & Memo
 - `TabsMemoryPane.swift`: Learn more + picker/toggle styling.
 - `SettingsViews.swift`: Sites pane summary (camera fix retained).
 - **Round 2:** `GeneralPane.swift` (Search/New Tab Learn more, default-browser layout), `ProfilesPane.swift`, `PrivacyPane.swift`, `ExtensionsPane.swift`, `ControlBridgeViews.swift`.
+- **Extension update UX:** `ExtensionUpdateOutcome` + `lastOutcome` on `extension-sources.json` records; `extension-update-last.json` batch summary; Settings + Extensions menu read persisted outcomes ([evidence](evidence/extension-update-ux-2026-11-05/extensions-after-check.png)).
 
 ---
 
 ## Verification
 
-- `swift test`: 1142 tests passed on this branch (after round 2).
+- `swift test`: 1146 tests passed on this branch (after round 2 + extension update UX).
 - Screenshots: Debug build Settings panes via control-bridge `window_snapshot` (round 2 refresh for general, profiles, privacy, extensions, advanced).
 - User prefs: not modified (Settings navigation only for captures).

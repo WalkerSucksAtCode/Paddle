@@ -16,17 +16,33 @@ import WebKit
 final class ExtensionUpdater {
     static let shared = ExtensionUpdater()
 
-    /// The last result per folder, shown in the Extensions menu. Replaced as each folder is checked.
+    /// The last result per folder, shown in the Extensions menu. Replaced as each folder is checked; reloaded from
+    /// `extension-sources.json` on `refreshStatusesFromDisk()`.
     private(set) var statuses: [String: String] = [:]
     private(set) var checking = false
     /// The folders being checked now (a subset of a running check), for the progress indicator on their rows.
     private(set) var checkingFolders: Set<String> = []
     /// An adoption offer or an adoption is in progress (a question may be open).
     private(set) var adopting = false
-    /// The result of the last Check All Now, or why it didn't run, for the Settings > Extensions Updates section.
+    /// The result of the last Check All Now, persisted in `extension-update-last.json` for Settings.
     private(set) var note: String?
+    /// Parsed batch summary backing `note`.
+    private(set) var lastBatch: ExtensionUpdateBatchSummary?
     @ObservationIgnored private var lastSweep = Date.distantPast
     @ObservationIgnored private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
+
+    private init() { loadBatchSummary() }
+
+    /// Reloads per-folder status lines from `extension-sources.json` (after Settings opens or sources reload).
+    func refreshStatusesFromDisk() {
+        let installer = StoreInstaller.shared
+        guard installer.sourcesError == nil else { return }
+        for (folder, record) in installer.allRecords where Self.fromUpdatableStore(record) {
+            if let outcome = record.lastOutcome {
+                statuses[folder] = outcome.legacyStatusLine(installedVersion: record.version)
+            }
+        }
+    }
 
     /// The note in the update alert for an add-on whose certificate chain wasn't checked, as the install alert says.
     private static let unverifiedNotice =
@@ -100,28 +116,28 @@ final class ExtensionUpdater {
     func checkAll() async {
         switch await manualSweep() {
         case .problem(let title, let lines):
-            showSummary(title: title, lines: lines)
+            let alert = NSAlert()
+            alert.messageText = title
+            alert.informativeText = lines.joined(separator: "\n")
+            alert.runModal()
         case .folders(let folders):
             let results = await check(folders)
             showSummary(
                 title: "Checked \(folders.count) store extension\(folders.count == 1 ? "" : "s")",
-                lines: folders.map { "\($0): \(results[$0] ?? "")" }
+                folders: folders, outcomes: results
             )
         }
     }
 
-    /// Settings > Extensions > Check All Now: the same sweep as `checkAll` without the alert; `note` and `statuses` show
-    /// the outcome.
+    /// Settings > Extensions > Check All Now: the same sweep as `checkAll` without the alert; `note` and persisted
+    /// outcomes show the outcome.
     func checkAllNow() async {
-        note = nil
         switch await manualSweep() {
         case .problem(let title, let lines):
             note = ([title] + lines).joined(separator: " ")
         case .folders(let folders):
             let results = await check(folders)
-            let failed = results.values.filter { $0.hasPrefix("not updated") }.count
-            note = "Checked \(folders.count) store extension\(folders.count == 1 ? "" : "s")"
-                + (failed == 0 ? "" : "; \(failed) could not be updated")
+            saveBatch(ExtensionUpdateBatchSummary.build(at: Date(), folderCount: folders.count, outcomes: results))
         }
     }
 
@@ -129,7 +145,8 @@ final class ExtensionUpdater {
     /// result is in `statuses[folder]`. Refused (with a line on the row) while another check or an install runs.
     func checkNow(folder: String) async {
         if let reason = busyReason {
-            statuses[folder] = "not checked: \(reason)"
+            let outcome = ExtensionUpdateOutcome(kind: .notChecked, at: Date(), detail: reason)
+            remember(folder: folder, outcome: outcome, touchLastCheck: false)
             return
         }
         _ = await check([folder])
@@ -140,7 +157,7 @@ final class ExtensionUpdater {
     /// and checked right away. The outcome is in `statuses[folder]`.
     func adoptNow(folder: String) async {
         if let reason = busyReason {
-            statuses[folder] = "not tracked: \(reason)"
+            remember(folder: folder, outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: reason), touchLastCheck: false)
             return
         }
         adopting = true
@@ -149,7 +166,11 @@ final class ExtensionUpdater {
         do {
             adopted = try await adoptWithoutAsking(folder: folder)
         } catch {
-            statuses[folder] = "not tracked: \(Self.reason(error))"
+            remember(
+                folder: folder,
+                outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: Self.reason(error)),
+                touchLastCheck: false
+            )
             adopting = false
             return
         }
@@ -164,22 +185,30 @@ final class ExtensionUpdater {
         let installer = StoreInstaller.shared
         installer.reloadSources()
         if let problem = installer.sourcesError {
-            statuses[folder] = "not tracked: \(problem)"
+            remember(folder: folder, outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: problem), touchLastCheck: false)
             return false
         }
         let manifest = Paths.extensions.appending(path: folder, directoryHint: .isDirectory).appending(path: "manifest.json")
         guard !folder.isEmpty, !folder.hasPrefix("."), !folder.contains("/"), installer.sources.records[folder] == nil,
               let data = try? Data(contentsOf: manifest), let gecko = ExtensionAdoption.geckoID(manifest: data) else {
-            statuses[folder] = "not tracked: it has no add-on id, or it is already tracked"
+            remember(
+                folder: folder,
+                outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: "it has no add-on id, or it is already tracked"),
+                touchLastCheck: false
+            )
             return false
         }
         let addon = try await installer.lookupAddon(slug: gecko)
         guard ExtensionAdoption.acceptsLookup(guid: addon.guid, geckoID: gecko) else {
-            statuses[folder] = "not tracked: addons.mozilla.org's add-on has a different id"
+            remember(
+                folder: folder,
+                outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: "addons.mozilla.org's add-on has a different id"),
+                touchLastCheck: false
+            )
             return false
         }
         if let problem = await installer.adopt(folder: folder, guid: addon.guid, slug: nil) {
-            statuses[folder] = "not tracked: \(problem)"
+            remember(folder: folder, outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: problem), touchLastCheck: false)
             return false
         }
         return true
@@ -243,7 +272,7 @@ final class ExtensionUpdater {
             guard fm.fileExists(atPath: directory.path) else { continue }
             if keep {
                 if let problem = await installer.adopt(folder: folder, guid: addon.guid, slug: nil) {
-                    statuses[folder] = "not tracked: \(problem)"
+                    remember(folder: folder, outcome: ExtensionUpdateOutcome(kind: .failed, at: Date(), detail: problem), touchLastCheck: false)
                 } else {
                     adopted.append(folder)
                     log.info("extension adoption \(folder, privacy: .public): kept updated")
@@ -276,65 +305,77 @@ final class ExtensionUpdater {
         record.store == .chromeWebStore || record.store == .mozillaAddons
     }
 
-    /// Checks each folder in turn and returns each one's result line, which `statuses` keeps as well.
-    private func check(_ folders: [String]) async -> [String: String] {
+    /// Checks each folder in turn and returns each one's outcome, which is persisted on the record and in `statuses`.
+    private func check(_ folders: [String]) async -> [String: ExtensionUpdateOutcome] {
         checking = true
         defer { checking = false }
-        var results: [String: String] = [:]
+        var results: [String: ExtensionUpdateOutcome] = [:]
         for folder in folders {
             checkingFolders.insert(folder)
-            let result = await checkFolder(folder)
+            let outcome = await checkFolder(folder)
             checkingFolders.remove(folder)
-            results[folder] = result
-            statuses[folder] = result
-            log.info("extension update \(folder, privacy: .public): \(result, privacy: .public)")
+            results[folder] = outcome
+            statuses[folder] = outcome.legacyStatusLine(installedVersion: StoreInstaller.shared.record(forFolder: folder)?.version)
+            log.info("extension update \(folder, privacy: .public): \(self.statuses[folder] ?? "", privacy: .public)")
         }
         return results
     }
 
     // MARK: - One folder
 
-    /// One folder's check. Returns the line the Extensions menu and the log show.
-    private func checkFolder(_ folder: String) async -> String {
+    /// One folder's check. Persists `lastOutcome` (and `lastCheck` when the store was consulted successfully).
+    private func checkFolder(_ folder: String) async -> ExtensionUpdateOutcome {
         let now = Date()
         let installer = StoreInstaller.shared
         let fm = FileManager.default
-        // The folder name comes from extension-sources.json and becomes paths: a plain folder name directly in extensions/.
-        guard !folder.isEmpty, !folder.hasPrefix("."), !folder.contains("/") else { return "not updated: its folder name isn't a plain name" }
+        guard !folder.isEmpty, !folder.hasPrefix("."), !folder.contains("/") else {
+            return recordFailure(folder: folder, now: now, detail: "its folder name isn't a plain name")
+        }
         installer.reloadSources()
-        if let problem = installer.sourcesError { return problem }
-        guard let record = installer.sources.records[folder] else { return "not updated: it isn't recorded as a store install" }
+        if let problem = installer.sourcesError {
+            return recordFailure(folder: folder, now: now, detail: problem)
+        }
+        guard let record = installer.sources.records[folder] else {
+            return recordFailure(folder: folder, now: now, detail: "it isn't recorded as a store install")
+        }
         let destination = Paths.extensions.appending(path: folder, directoryHint: .isDirectory)
-        // Never recreate a folder the user removed: that would bring back an extension they deleted.
-        guard fm.fileExists(atPath: destination.path) else { return "not updated: its folder is gone" }
-        guard let installed = record.version else { return "not updated: no installed version is recorded" }
+        guard fm.fileExists(atPath: destination.path) else {
+            return recordFailure(folder: folder, now: now, detail: "its folder is gone")
+        }
+        guard let installed = record.version else {
+            return recordFailure(folder: folder, now: now, detail: "no installed version is recorded")
+        }
         let compare = record.store == .chromeWebStore ? ExtensionVersion.compareChrome : ExtensionVersion.compareToolkit
 
-        // The check counts once it reaches an answer: up to date, declined, or updated. A failed request, download or
-        // package check leaves the folder due, so the next run tries again instead of a day later.
-        func done(_ status: String) -> String {
-            installer.changeRecord(folder) { $0.lastCheck = now }
-            return status
+        func succeed(_ outcome: ExtensionUpdateOutcome) -> ExtensionUpdateOutcome {
+            remember(folder: folder, outcome: outcome, touchLastCheck: true)
+            return outcome
         }
+
         let answer: StoreAnswer?
         do {
             answer = try await askStore(record, installed: installed)
         } catch {
-            return "not updated: \(Self.reason(error))"
+            return recordFailure(folder: folder, now: now, detail: Self.reason(error), from: installed)
         }
-        guard let answer else { return done("up to date") }
+        guard let answer else {
+            return succeed(ExtensionUpdateOutcome(kind: .upToDate, at: now, fromVersion: installed))
+        }
         let newest = answer.version
-        guard let order = compare(newest, installed) else { return done("not updated: version \(newest) isn't in the store's format") }
-        guard order == .orderedDescending else { return done("up to date") }
+        guard let order = compare(newest, installed) else {
+            return succeed(ExtensionUpdateOutcome(kind: .failed, at: now, fromVersion: installed, storeVersion: newest, detail: "version \(newest) isn't in the store's format"))
+        }
+        guard order == .orderedDescending else {
+            return succeed(ExtensionUpdateOutcome(kind: .upToDate, at: now, fromVersion: installed, storeVersion: newest))
+        }
         if installer.record(forFolder: folder)?.declinedVersion == newest {
-            return done("update \(newest) declined; not asked again")
+            return succeed(ExtensionUpdateOutcome(kind: .declined, at: now, fromVersion: installed, storeVersion: newest))
         }
 
-        // The same download and checks as an install, into `.staged-<folder>` (names starting with "." never load).
         let token = String(UUID().uuidString.prefix(8)).lowercased()
         let staging = Paths.extensions.appending(path: ".staged-\(folder)", directoryHint: .isDirectory)
         let scratch = fm.temporaryDirectory.appending(path: "Paddle-update-\(token)", directoryHint: .isDirectory)
-        try? fm.removeItem(at: staging)  // left behind by a check that never finished
+        try? fm.removeItem(at: staging)
         defer {
             try? FileManager.default.removeItem(at: staging)
             try? FileManager.default.removeItem(at: scratch)
@@ -345,31 +386,32 @@ final class ExtensionUpdater {
             case .chromeWebStore:
                 checked = try await installer.fetchChrome(id: record.id, staging: staging, scratch: scratch)
             case .mozillaAddons:
-                // The file named by the lookup `askStore` made, so the store is asked once for this check.
                 guard let addon = answer.addon else { throw StoreInstaller.Refusal("the store's answer named no file") }
                 checked = try await installer.fetchAddon(addon, slug: record.slug, staging: staging, scratch: scratch)
             case .appex, .folder:
                 throw StoreInstaller.Refusal("it didn't come from a store Paddle updates from")
             }
         } catch {
-            return "not updated: \(Self.reason(error))"
+            return recordFailure(folder: folder, now: now, detail: Self.reason(error), from: installed, storeVersion: newest)
         }
         let package = checked.package
         let wantedID = record.store == .chromeWebStore ? record.id.lowercased() : record.id
-        guard checked.id == wantedID else { return "not updated: the package is for another extension" }
+        guard checked.id == wantedID else {
+            return recordFailure(folder: folder, now: now, detail: "the package is for another extension", from: installed, storeVersion: newest)
+        }
         guard let version = package.version, version == newest else {
-            return "not updated: the package is version \(package.version ?? "none"), not the \(newest) the store named"
+            let pkg = package.version ?? "none"
+            return recordFailure(folder: folder, now: now, detail: "the package is version \(pkg), not the \(newest) the store named", from: installed, storeVersion: newest)
         }
         guard compare(version, installed) == .orderedDescending else {
-            return "not updated: \(version) isn't newer than the installed \(installed) (downgrades are refused)"
+            return recordFailure(folder: folder, now: now, detail: "\(version) isn't newer than the installed \(installed) (downgrades are refused)", from: installed, storeVersion: newest)
         }
 
-        // What the new version asks for, as WebKit reads it, and what the user hasn't granted (the same rule a load uses).
         let webExtension: WKWebExtension
         do {
             webExtension = try await WKWebExtension(resourceBaseURL: package.folder)
         } catch {
-            return "not updated: \(error.localizedDescription)"
+            return recordFailure(folder: folder, now: now, detail: error.localizedDescription, from: installed, storeVersion: newest)
         }
         let name = ExtensionPermissionText.sanitize(webExtension.displayName ?? folder)
         let patterns = webExtension.allRequestedMatchPatterns
@@ -383,20 +425,19 @@ final class ExtensionUpdater {
             let after = try Data(contentsOf: package.folder.appending(path: "manifest.json"))
             added = try ExtensionPermissionDiff.added(from: before, to: after)
         } catch {
-            return "not updated: the manifests can't be compared (\(error.localizedDescription))"
+            return recordFailure(folder: folder, now: now, detail: "the manifests can't be compared (\(error.localizedDescription))", from: installed, storeVersion: newest)
         }
         guard let asks = AppModel.shared.extensionUpdateAsks(folder: folder, name: name, requested: requested, added: added) else {
-            return "not updated: extension-permissions.json is unreadable"
+            return recordFailure(folder: folder, now: now, detail: "extension-permissions.json is unreadable", from: installed, storeVersion: newest)
         }
 
-        // Asks for nothing new, verified and unedited: swap in quietly. Otherwise the installed copy keeps running and the
-        // alert decides; files the user changed in the folder are named there, as an install over them does.
         let unverified = !checked.verified
         let grants = !asks.permissions.isEmpty || !asks.hosts.isEmpty
         let edited = await installer.changedFiles(in: folder)
         let firstOfAdopted = ExtensionAdoption.needsAlertOnFirstUpdate(record: record)
         if grants || unverified || !edited.isEmpty || firstOfAdopted {
-            statuses[folder] = "update \(version) waiting for permission"
+            let waiting = ExtensionUpdateOutcome(kind: .waitingPermission, at: now, fromVersion: installed, storeVersion: version)
+            remember(folder: folder, outcome: waiting, touchLastCheck: false)
             var notices: [String] = []
             if unverified { notices.append(Self.unverifiedNotice) }
             if firstOfAdopted { notices.append(Self.adoptedNotice) }
@@ -410,26 +451,28 @@ final class ExtensionUpdater {
             )
             guard allowed else {
                 installer.changeRecord(folder) { $0.declinedVersion = version }
-                return done("update \(version) declined; not asked again")
+                return succeed(ExtensionUpdateOutcome(kind: .declined, at: now, fromVersion: installed, storeVersion: version))
             }
         }
 
-        // The alert and the downloads took time: the record must still say what was checked against (an install of this
-        // folder meanwhile would have replaced it), and the folder must still be there.
         installer.reloadSources()
-        if let problem = installer.sourcesError { return problem }
+        if let problem = installer.sourcesError {
+            return recordFailure(folder: folder, now: now, detail: problem, from: installed, storeVersion: newest)
+        }
         guard let current = installer.sources.records[folder], current.store == record.store, current.id == record.id,
-              current.version == installed else { return "not updated: the installed copy changed while it was checked" }
-        guard fm.fileExists(atPath: destination.path) else { return "not updated: its folder is gone" }
+              current.version == installed else {
+            return recordFailure(folder: folder, now: now, detail: "the installed copy changed while it was checked", from: installed, storeVersion: newest)
+        }
+        guard fm.fileExists(atPath: destination.path) else {
+            return recordFailure(folder: folder, now: now, detail: "its folder is gone", from: installed, storeVersion: newest)
+        }
 
-        // The swap, the record, then the grants: if the grants can't be written, the next load asks as it does for any
-        // new request, so the update is never silently widened.
         do {
             try installer.place(
                 package, into: folder, store: checked.store, id: checked.id, slug: checked.slug, verified: checked.verified, token: token
             )
         } catch {
-            return "not updated: \(Self.reason(error))"
+            return recordFailure(folder: folder, now: now, detail: Self.reason(error), from: installed, storeVersion: newest)
         }
         log.info("extension update \(folder, privacy: .public): version \(version, privacy: .public), verified \(checked.verified, privacy: .public)")
         if grants {
@@ -437,7 +480,7 @@ final class ExtensionUpdater {
         }
         let host = AppModel.shared
         Task { await host.reconcileExtensions(reloading: [folder]) }
-        return done("updated to \(version)")
+        return succeed(ExtensionUpdateOutcome(kind: .updated, at: now, fromVersion: installed, storeVersion: version))
     }
 
     /// What the store named for an update: the newest version, and for an add-on the lookup it came from.
@@ -477,10 +520,54 @@ final class ExtensionUpdater {
     }
 
     /// The summary alert for a manual check: one line per folder.
-    private func showSummary(title: String, lines: [String]) {
+    private func showSummary(title: String, folders: [String], outcomes: [String: ExtensionUpdateOutcome]) {
+        let installer = StoreInstaller.shared
+        let lines = folders.map { folder -> String in
+            let record = installer.record(forFolder: folder)
+            let outcome = outcomes[folder] ?? record?.lastOutcome
+            if let record, let outcome {
+                return "\(folder): \(outcome.settingsSummary(record: record))"
+            }
+            return "\(folder): \(outcomes[folder]?.legacyStatusLine(installedVersion: record?.version) ?? "unknown")"
+        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = lines.map { ExtensionPermissionText.sanitize($0, max: 240) }.joined(separator: "\n")
         alert.runModal()
+        saveBatch(ExtensionUpdateBatchSummary.build(at: Date(), folderCount: folders.count, outcomes: outcomes))
+    }
+
+    private func remember(folder: String, outcome: ExtensionUpdateOutcome, touchLastCheck: Bool) {
+        StoreInstaller.shared.changeRecord(folder) { record in
+            record.lastOutcome = outcome
+            if touchLastCheck { record.lastCheck = outcome.at }
+        }
+        statuses[folder] = outcome.legacyStatusLine(installedVersion: StoreInstaller.shared.record(forFolder: folder)?.version)
+    }
+
+    private func recordFailure(
+        folder: String, now: Date, detail: String, from: String? = nil, storeVersion: String? = nil
+    ) -> ExtensionUpdateOutcome {
+        let outcome = ExtensionUpdateOutcome(kind: .failed, at: now, fromVersion: from, storeVersion: storeVersion, detail: detail)
+        remember(folder: folder, outcome: outcome, touchLastCheck: false)
+        return outcome
+    }
+
+    private func loadBatchSummary() {
+        guard FileManager.default.fileExists(atPath: Paths.extensionUpdateBatch.path),
+              let data = try? Data(contentsOf: Paths.extensionUpdateBatch),
+              let batch = try? ExtensionUpdateBatchSummary.decodeFile(data) else { return }
+        lastBatch = batch
+        note = batch.settingsNote
+    }
+
+    private func saveBatch(_ batch: ExtensionUpdateBatchSummary) {
+        lastBatch = batch
+        note = batch.settingsNote
+        do {
+            try batch.encoded().write(to: Paths.extensionUpdateBatch.resolvingSymlinksInPath(), options: .atomic)
+        } catch {
+            log.error("extension-update-last.json could not be written: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
