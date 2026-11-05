@@ -7,7 +7,7 @@ public struct TabSnapshot: Sendable, Equatable {
     public var isAwake: Bool
     public var isSelected: Bool
     public var isPinned: Bool
-    /// Audio, video, camera or mic. Never put to sleep.
+    /// Audio, video, camera, mic, or Picture-in-Picture. Never put to sleep.
     public var isBusy: Bool
     /// When this tab's process started using at least the CPU limit without a break; nil when under it or unknown.
     public var cpuBusySince: Date?

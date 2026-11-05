@@ -1595,7 +1595,7 @@ final class AppModel {
     }
 
     /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),
-    /// and tabs playing media or using the camera/mic stay awake.
+    /// and tabs playing media, in Picture-in-Picture, or using the camera/mic stay awake.
     func sweepSleepingTabs(memoryPressure: Bool = false) {
         stopOrphanServiceWorkers(now: Date())
         for host in extensionHosts { host.parkIdleExtensions(config: config) }

@@ -55,6 +55,7 @@ final class WebEnvironment {
     /// `paddlePageScript` is added once. `removeAllUserScripts` does not remove it.
     @ObservationIgnored private var didInstallPageScriptBridge = false
     @ObservationIgnored private var didInstallPageWorkMonitor = false
+    @ObservationIgnored private var didInstallPictureInPictureMonitor = false
     @ObservationIgnored private var didInstallContactAutofill = false
     /// Contact autofill's own world: its message handler is reachable only from here, never from the page.
     private static let contactAutofillWorld = WKContentWorld.world(name: ContactAutofillScript.worldName)
@@ -439,6 +440,14 @@ final class WebEnvironment {
         // Remembers a column's scroll position across Back. See `ScrollRestoreScript`.
         contentController.addUserScript(WKUserScript(
             source: ScrollRestoreScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page
+        ))
+
+        if !didInstallPictureInPictureMonitor {
+            didInstallPictureInPictureMonitor = true
+            contentController.add(PictureInPictureMonitor.shared, contentWorld: .page, name: PictureInPictureScript.handlerName)
+        }
+        contentController.addUserScript(WKUserScript(
+            source: PictureInPictureScript.monitorSource, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page
         ))
 
         // `contactAutofill`: the fill chip on name, email, phone and address fields, in https main frames only. Pages

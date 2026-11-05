@@ -50,6 +50,7 @@
 		4FCB6755611238489C8BA11B /* SettingsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25922B0DB334CF68223037F6 /* SettingsTabView.swift */; };
 		5083A791C81EBC4EA0C9B41B /* DefaultBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6530EAC311359B8BE8A9C3 /* DefaultBrowser.swift */; };
 		51F4933CF1904CF98671BEBC /* ExtensionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C9DA319BFF5861193143849 /* ExtensionToolbar.swift */; };
+		56CF51C049AB710168405150 /* PictureInPictureMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9888E010C9C50174991DB8B8 /* PictureInPictureMonitor.swift */; };
 		5BAC47A720A6614AC9522F78 /* MosaicBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6659A292C6CF8268DE0007E2 /* MosaicBar.swift */; };
 		5BEF3239AF03AC645E9B0763 /* MediaControlsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0562CFD09A0530167FD11F4 /* MediaControlsPopover.swift */; };
 		5C478FFBF2FEFB8939B4F03F /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35942D5DECDC242D193A6BA /* SettingsViews.swift */; };
@@ -225,6 +226,7 @@
 		95CE29B04855CC44145361B8 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		9876CA38653BAEDD29A0EE0E /* ProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStore.swift; sourceTree = "<group>"; };
 		9881BDAB3248D8FEB481C88A /* BrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserView.swift; sourceTree = "<group>"; };
+		9888E010C9C50174991DB8B8 /* PictureInPictureMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PictureInPictureMonitor.swift; sourceTree = "<group>"; };
 		98C6A2F4AFE93544F200F0A2 /* ExtensionsMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsMenu.swift; sourceTree = "<group>"; };
 		9EA9AC156AF192EE10ED699C /* SettingsModel+Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsModel+Shortcuts.swift"; sourceTree = "<group>"; };
 		9EC0BC9516656911C0F1EF09 /* HistoryWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryWindow.swift; sourceTree = "<group>"; };
@@ -327,6 +329,7 @@
 				0F4F309759477C08BF952345 /* FaviconStore.swift */,
 				051B514CEEDC0054FF8F84AB /* PageScriptBridge.swift */,
 				631287FC6D8A4ACC34AED794 /* PageWorkMonitor.swift */,
+				9888E010C9C50174991DB8B8 /* PictureInPictureMonitor.swift */,
 				38280EEDA7BA22769BDF3025 /* PopupProbe.swift */,
 				2E2F588F97DE1CB701E99CBB /* Scriptlets.swift */,
 				4E738271B0E98F1FB293EBE1 /* SelectorValidator.swift */,
@@ -684,6 +687,7 @@
 				0F04F03A6413237CABB691D4 /* PageScriptBridge.swift in Sources */,
 				F5B57FC07010B601C9BAE641 /* PageWorkMonitor.swift in Sources */,
 				155D75229E6FB2CCF84341A8 /* Paths.swift in Sources */,
+				56CF51C049AB710168405150 /* PictureInPictureMonitor.swift in Sources */,
 				891D142EAA22B1223D898C39 /* PopupBlockedButton.swift in Sources */,
 				1A56D996881623A870C71228 /* PopupProbe.swift in Sources */,
 				9D1DD6B67A237E0F27BFD667 /* PrivacyPane.swift in Sources */,

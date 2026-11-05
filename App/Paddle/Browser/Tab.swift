@@ -63,6 +63,8 @@ final class Tab: Identifiable {
     var isCapturing = false
     /// The page is making sound (WebKit's private `_isPlayingAudio`; stays false where that is missing).
     var isPlayingAudio = false
+    /// A video on this page is in the system Picture-in-Picture window (`PictureInPictureScript`).
+    var isInPictureInPicture = false
     /// Muted by the user. Kept while the tab sleeps and applied again to the next web view.
     private(set) var isMuted = false
     /// Belongs to a private window: its web views use the private data store, and nothing it does is written to
@@ -527,6 +529,7 @@ final class Tab: Identifiable {
         hideContactChip()
         endWakeCover()
         guard let webView else { return }
+        exitPictureInPictureIfNeeded()
         // Before the first page commits there is no history worth keeping; waking then loads the URL again. The
         // "Extension not loaded" page keeps the history it was standing in for.
         if !showsExtensionUnavailable && !awaitingBlockers {
@@ -548,6 +551,7 @@ final class Tab: Identifiable {
         audioObserver?.invalidate()
         audioObserver = nil
         isPlayingAudio = false
+        isInPictureInPicture = false
         // WebKit raises NSInternalInconsistencyException ("The WKWebView is suspended") from `stopLoading` on a frozen
         // page. Thrown through the sweep's Task it corrupts Swift's executor tracking and crashes Paddle minutes later
         // in an unrelated actor check. A frozen page never loads (`freeze()` skips loading pages), so nothing to stop.
@@ -680,6 +684,7 @@ final class Tab: Identifiable {
     /// visible tab shows a crash page with a Reload button instead of reloading by itself, so a page that crashes as
     /// it loads can't loop; it says why when WebKit does (too much memory or CPU).
     func processTerminated(reason: TerminationReason? = nil) {
+        isInPictureInPicture = false
         Self.log.notice("web content process ended: \(reason.map { String(describing: $0) } ?? "no reason given", privacy: .public), \(self.browser?.isVisible(self) == true ? "visible, reloading" : "background, sleeping", privacy: .public)")
         guard browser?.isVisible(self) == true, let webView else {
             sleep()
@@ -855,6 +860,7 @@ final class Tab: Identifiable {
     /// Making sound or using camera/mic: never put to sleep (`MediaActivity`). Where WebKit's sound flag can't be
     /// observed, any media playing counts, which takes a round trip to the page.
     func isBusy() async -> Bool {
+        if isInPictureInPicture { return true }
         guard let webView else { return false }
         // A frozen page runs nothing, so it plays nothing; asking it would wait on a page that can't answer, and
         // WebKit raises from the call while a freeze is still in flight.
@@ -902,33 +908,24 @@ final class Tab: Identifiable {
 
     // MARK: - Picture in Picture
 
-    /// Toggles Picture in Picture for any playing HTML5 video on this tab's page.
+    /// Toggles Picture in Picture for an HTML5 video on this tab's page.
     func togglePictureInPicture() {
         guard let webView, isAwake, !isShowingErrorPage else { return }
         // The tab menu and media popover can reach a frozen background tab.
         unfreeze()
-        Task { @MainActor in
-            let script = """
-            (async () => {
-                if (document.pictureInPictureElement) {
-                    await document.exitPictureInPicture();
-                    return true;
-                }
-                const videos = Array.from(document.querySelectorAll('video'));
-                if (!videos.length) return false;
-                const playing = videos.find(v => !v.paused && !v.ended && v.readyState > 1)
-                             || videos.find(v => !v.paused)
-                             || videos.slice().sort((a,b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight))[0];
-                if (!playing) return false;
-                if (playing.disablePictureInPicture) {
-                    playing.disablePictureInPicture = false;
-                }
-                await playing.requestPictureInPicture();
-                return true;
-            })()
-            """
-            _ = try? await webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
+        // Must run in the same turn as the menu/shortcut or `requestPictureInPicture()` loses user activation.
+        webView.evaluateJavaScript(PictureInPictureScript.toggle, in: nil, in: .page) { result in
+            if case .failure(let error) = result {
+                Self.log.debug("picture in picture: \(error.localizedDescription, privacy: .public)")
+            }
         }
+    }
+
+    /// Closes PiP before dropping the web view so WebKit doesn't keep a stray decoder.
+    func exitPictureInPictureIfNeeded() {
+        guard isInPictureInPicture, let webView, isAwake else { return }
+        webView.evaluateJavaScript(PictureInPictureScript.exit, in: nil, in: .page) { _ in }
+        isInPictureInPicture = false
     }
 
     /// Certificate details of the TLS connection, or nil for non-HTTPS pages.
