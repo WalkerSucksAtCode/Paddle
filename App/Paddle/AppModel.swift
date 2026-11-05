@@ -1677,9 +1677,11 @@ final class AppModel {
             let profileOf = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0.profileID) })
             let groups = Dictionary(grouping: snapshots) { profileOf[$0.id] ?? ProfileStore.defaultID }
                 .map { (policy: policies[$0.key] ?? policy, tabs: $0.value) }
-            let decided = policy.decide(groups, now: now, memoryPressure: memoryPressure)
+            let mounted = Set(windows.flatMap { $0.model.mountedWebTabs.map(\.id) })
+            let decided = policy.decide(groups, now: now, memoryPressure: memoryPressure, mounted: mounted)
             let ids = Set(decided.sleep)
             let freezeIDs = decided.freeze
+            for tab in tabs where mounted.contains(tab.id) && tab.isFrozen { tab.unfreeze() }
             if !freezeIDs.isEmpty {
                 let freezing = Set(freezeIDs)
                 var froze = 0

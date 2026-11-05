@@ -42,7 +42,7 @@ Main **instant-switch** risk: a tab can stay **mounted but frozen** (not selecte
 - **Mechanism:** `AppModel.sweepSleepingTabs` → `TabSleepPolicy.tabsToFreeze` (not `isSelected`) → `Tab.freeze()` while tab remains in `BrowserModel.mountedWebTabs` (`previousSelectedID`, hover successor, `mosaicStaysReady` panes). Reselect: `BrowserModel.activate` → `Tab.wake()` → `Tab.unfreeze()`; `MountedWebPages.Coordinator.wait(for:)` may hold outgoing page up to **`presentationLimit` 300 ms** when presentation callback deferred on suspended page (`Tab.whenLive`).  
 - **Evidence:** `BrowserModel.swift` `mountedWebTabs`, `activate`; `Tab.swift` `freeze`/`unfreeze`/`isSuspendedInWebKit`; `WebContainer.swift` `MountedWebPages` `attached`/`wait`; `TabSleepPolicy.swift` `tabsToFreeze` filter `!isSelected`; `AppModel.swift` sweep freeze loop.  
 - **User impact:** Switch back to a tab that was still “warm” in the mount set can show the previous page briefly or feel sluggish after idle freeze, despite AGENTS “awake tabs switch instantly” (tab is awake + frozen, not asleep).  
-- **Disposition:** Fix candidate  
+- **Disposition:** Fixed-on-PR  
 - **Suggested fix shape:** Exclude `mountedWebTabs` ids from freeze while still mounted, or unfreeze + pre-present on mount set membership change before user selects; measure with `SwitchTrace` category `switch`.  
 - **Tree:** `main` @ `015dc73` only (no PR diff).
 

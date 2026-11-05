@@ -100,14 +100,16 @@ public struct TabSleepPolicy: Sendable, Equatable {
     /// awake and keeps its page, so `tabsToSleep` can still sleep it later. Same protections as sleep: never
     /// selected, never busy, uploading or staying live, never pinned unless `sleepPinnedTabs`. Only tabs idle for
     /// `freezeAfter`.
-    /// Tabs in `discard` are skipped because the caller is about to sleep them.
+    /// Tabs in `discard` are skipped because the caller is about to sleep them. Tabs in `mounted` stay warm: their
+    /// pages stay in the window for an opacity flip on switch, so freezing would add resume and presentation wait.
     /// - Parameter discard: the tabs `tabsToSleep` chose for this sweep.
-    public func tabsToFreeze(_ tabs: [TabSnapshot], now: Date, excluding discard: Set<UUID>) -> [UUID] {
+    /// - Parameter mounted: tab ids whose pages stay window-attached for an instant opacity switch.
+    public func tabsToFreeze(_ tabs: [TabSnapshot], now: Date, excluding discard: Set<UUID>, mounted: Set<UUID> = []) -> [UUID] {
         return tabs
             .filter {
                 let limit = freezeAfter(for: $0)
                 return limit > 0 && $0.isAwake && !$0.isFrozen && !$0.isSelected && !$0.isBusy && !$0.isUploading && !$0.staysLive
-                    && (sleepPinnedTabs || !$0.isPinned) && !discard.contains($0.id)
+                    && (sleepPinnedTabs || !$0.isPinned) && !discard.contains($0.id) && !mounted.contains($0.id)
                     && now.timeIntervalSince($0.lastActive) >= limit
             }
             .sorted { $0.lastActive < $1.lastActive }
@@ -172,7 +174,8 @@ public struct TabSleepPolicy: Sendable, Equatable {
     /// all of them do, unless one pane must stay as it is (on screen, playing, uploading, a live site; for sleep, also
     /// unsaved changes), and then none does. Under memory pressure only on screen and playing hold a Mosaic.
     public func decide(
-        _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool = false
+        _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool = false,
+        mounted: Set<UUID> = []
     ) -> (sleep: [UUID], freeze: [UUID]) {
         let latest = Dictionary(groups.flatMap(\.tabs).compactMap { tab in tab.mosaic.map { ($0, tab.lastActive) } }, uniquingKeysWith: max)
         let groups = groups.map { group in
@@ -182,7 +185,7 @@ public struct TabSleepPolicy: Sendable, Equatable {
                 return tab
             })
         }
-        let decided = decideEach(groups, now: now, memoryPressure: memoryPressure)
+        let decided = decideEach(groups, now: now, memoryPressure: memoryPressure, mounted: mounted)
         let all = groups.flatMap(\.tabs)
         let sleep = Self.asOne(decided.sleep, in: all) { tab in
             tab.isSelected || tab.isBusy || (!memoryPressure && (tab.isUploading || tab.guardsUnload || tab.staysLive))
@@ -212,7 +215,8 @@ public struct TabSleepPolicy: Sendable, Equatable {
     }
 
     private func decideEach(
-        _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool
+        _ groups: [(policy: TabSleepPolicy, tabs: [TabSnapshot])], now: Date, memoryPressure: Bool,
+        mounted: Set<UUID>
     ) -> (sleep: [UUID], freeze: [UUID]) {
         let all = groups.flatMap(\.tabs)
         // The cap and memory pressure span every group, but each group's own `sleepPinnedTabs` decides whether its
@@ -244,7 +248,7 @@ public struct TabSleepPolicy: Sendable, Equatable {
         }
         let order = Dictionary(all.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         let sleep = chosen.sorted { order[$0, default: 0] < order[$1, default: 0] }
-        let freeze = groups.flatMap { $0.policy.tabsToFreeze($0.tabs, now: now, excluding: chosen) }
+        let freeze = groups.flatMap { $0.policy.tabsToFreeze($0.tabs, now: now, excluding: chosen, mounted: mounted) }
         return (sleep, freeze)
     }
 }

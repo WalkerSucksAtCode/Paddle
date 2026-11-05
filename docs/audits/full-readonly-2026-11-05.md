@@ -75,7 +75,7 @@ Worker phrases “OK”, “By design”, “Accept”, “Closable”, “Infor
 | FA-ARC-09 | S4 | architecture | `paddle_state` triggers `measureMemory` | Accepted risk | main |
 | FA-ARC-10 | S4 | architecture | Helper authenticates socket uid only | Accepted risk | main |
 | FA-ARC-11 | S4 | architecture | Socket queue → MainActor hop pattern | Closed | main |
-| FA-TAB-01 | S2 | tabs | Mounted-but-frozen tab misses instant switch | Open | main |
+| FA-TAB-01 | S2 | tabs | Mounted-but-frozen tab misses instant switch | Fixed-on-PR | main |
 | FA-TAB-02 | S4 | tabs | Leaving a tab clears BFCache | Accepted risk | main |
 | FA-TAB-03 | S3 | tabs | 900 ms zoom defer vs scroll-restore window | Open | main |
 | FA-TAB-04 | S4 | tabs | Cold wake after sleep is not instant | Accepted risk | main |
