@@ -38,7 +38,7 @@ final class ControlBridge {
 
     var isListening: Bool { server != nil }
 
-    /// "0.1.0 (1)": the running app's version and build.
+    /// Running app's marketing version and build, e.g. `0.1.156 (156)` on a Release from `scripts/release.sh`.
     static var appVersion: String {
         let info = Bundle.main.infoDictionary
         let version = info?["CFBundleShortVersionString"] as? String ?? "?"

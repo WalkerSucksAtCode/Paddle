@@ -17,8 +17,9 @@
 # outside a check (or Ctrl-C) marks the step it was in as FAIL through the ERR/INT traps.
 # Only a notarized, stapled build is written to dist/ without the -unnotarized suffix.
 # Signing is set on the xcodebuild command line only; project.yml stays on automatic Apple Development signing.
-# CURRENT_PROJECT_VERSION is the commit count on the command line (project.yml's "1" stays the Debug value), so
-# each release has its own build number: <b> in the zip names and the install line is the built app's CFBundleVersion.
+# CURRENT_PROJECT_VERSION is the commit count on the command line (project.yml's "1" stays the Debug value).
+# MARKETING_VERSION is that same count on the project.yml prefix (0.1.0 → 0.1.156), so the user-visible version
+# moves with every Release. Zip names and the install line use both: Paddle-<version>-<build>.
 # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO keeps Xcode from adding get-task-allow, which it otherwise does here.
 set -Eeuo pipefail
 
@@ -86,7 +87,13 @@ echo "repo: $ROOT"
 # ---- build ---------------------------------------------------------------------------------------
 step build
 BUILD_LOG="$LOG_DIR/xcodebuild.log"
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD)"
+MARKETING_PREFIX="$(awk -F'"' '/^    MARKETING_VERSION:/ {print $2; exit}' "$ROOT/project.yml")"
+[[ -n "$MARKETING_PREFIX" ]] || fail build "no MARKETING_VERSION in project.yml"
+MARKETING_PREFIX="${MARKETING_PREFIX%.*}"
+MARKETING_VERSION="${MARKETING_PREFIX}.${BUILD_NUMBER}"
 echo "xcodebuild Release -> $DERIVED (log: $BUILD_LOG)"
+echo "version $MARKETING_VERSION ($BUILD_NUMBER)"
 if ! xcodebuild -project "$ROOT/Paddle.xcodeproj" -scheme Paddle -configuration Release \
     -derivedDataPath "$DERIVED" \
     CODE_SIGN_STYLE=Manual \
@@ -95,7 +102,8 @@ if ! xcodebuild -project "$ROOT/Paddle.xcodeproj" -scheme Paddle -configuration 
     PROVISIONING_PROFILE_SPECIFIER= \
     OTHER_CODE_SIGN_FLAGS=--timestamp \
     CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
-    CURRENT_PROJECT_VERSION="$(git -C "$ROOT" rev-list --count HEAD)" \
+    MARKETING_VERSION="$MARKETING_VERSION" \
+    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     clean build >"$BUILD_LOG" 2>&1; then
   grep -E 'error:|BUILD FAILED' "$BUILD_LOG" | tail -20 >&2 || true
   fail build "xcodebuild failed, see $BUILD_LOG"

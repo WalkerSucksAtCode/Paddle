@@ -31,7 +31,7 @@ Personal macOS web browser built on the system WebKit (`WKWebView`). Goals: reso
 - A passing `swift test` proves the core only. Do not say the app builds or a feature works unless `xcodebuild` ran and the feature was exercised in the running app this session.
 - Resource claims need a measurement (process footprint, WebContent process count), not reasoning from code.
 - Keep `README.md`'s config keys and shortcut action names in sync with `PaddleConfig` and `MainMenu`.
-- Before calling browser work done, build a Release Developer ID app with `scripts/release.sh --notarize --install` and install to `/Applications/Paddle.app`. Walker runs that copy, not a Debug build under `build/`.
+- Before calling browser work done, build a Release Developer ID app with `scripts/release.sh --notarize --install` and install to `/Applications/Paddle.app`. Walker runs that copy, not a Debug build under `build/`. Release sets `MARKETING_VERSION` to `<prefix>.<commit count>` (`0.1.0` in `project.yml` → `0.1.156`) and `CURRENT_PROJECT_VERSION` to that count; do not leave a shipped app at a frozen `0.1.0`.
 - Awake tabs that are not sleeping should switch instantly. A laggy tab change is a bug.
 - `resumeMediaOnSelect` stays off by default. Switching tabs must not start audio unless the user turns that on.
 - Control-bridge MCP uses `/Applications/Paddle.app/Contents/Helpers/paddle-mcp`.
