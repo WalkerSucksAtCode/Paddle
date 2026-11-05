@@ -152,7 +152,7 @@ Only write keys you change. A new install is `{}`. Settings writes the file and 
 | `extensionToolbar` | `{}` | Button placement per folder: `"pinned"` (default), `"menu"`, `"hidden"` |
 | `extensionCompat` | `{}` | Per folder: `persona` (`chrome` / `firefox` / `native` / `none`), `shims`, `publicID`, `private`. Changing `persona` or `publicID` issues a new id and moves storage |
 | `extensionUpdates` | `true` | Daily store-update check for Chrome Web Store and addons.mozilla.org installs |
-| `extensionsOnDemand` | `true` | Site-specific extensions unload after 5 minutes off those sites (~60 MB with one tab, ~190 MB with six; `docs/measurements.md`) |
+| `extensionsOnDemand` | `true` | Site-specific extensions unload after 5 minutes off those sites (~60 MB with one tab, ~190 MB with six; `docs/measurements.md`). No Settings toggle yet; edit in config.json |
 | `extensionsInPrivate` | `false` | Run extensions in private windows. `extensionCompat.<folder>.private` overrides |
 | `shortcuts` | `{}` | `{"nextTab": "cmd+option+right", "closeTab": "none"}`. Shifted keys as the base key plus `shift` (`cmd+shift+[`). Needs `cmd` or `ctrl` unless it is an F key |
 

@@ -29,7 +29,7 @@ enum SettingsPane: String, CaseIterable {
         case .tabsMemory: "Tab freezing, automatic memory sleep, and background performance."
         case .mosaic: "Several tabs at once: layout, pane toolbars, and how a Mosaic behaves in the background."
         case .privacy: "Ad and tracker blocking, filter lists, HTTPS upgrades, and browsing history."
-        case .sites: "Per-site permissions for zoom, JavaScript, autoplay, location, and camera."
+        case .sites: "Per-site overrides for zoom, JavaScript, autoplay, blocking, pop-ups, location, notifications, freeze, and user agent."
         case .extensions: "WebExtensions management, permissions, and private window access."
         case .shortcuts: "Custom keyboard shortcuts for menu items and browser actions."
         case .advanced: "Developer tools, configuration editor, and control bridge automation."
