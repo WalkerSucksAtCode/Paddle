@@ -1,8 +1,8 @@
-# Settings audit (2026-11-05, UI polish pass)
+# Settings audit (2026-11-05, UI polish pass + round 2)
 
 **App (after screenshots):** Debug build from this branch (`build/DerivedData.noindex/…/Paddle.app`).  
 **Reference install:** `/Applications/Paddle.app` **0.1.157 (157)** (notarized).  
-**Evidence:** [`docs/evidence/settings-audit-2026-11-05/`](evidence/settings-audit-2026-11-05/) — **after** polish at pane root; **before** at [`before/`](evidence/settings-audit-2026-11-05/before/).  
+**Evidence:** [`docs/evidence/settings-audit-2026-11-05/`](evidence/settings-audit-2026-11-05/) — **after** at pane root; **before** initial audit at [`before/`](evidence/settings-audit-2026-11-05/before/); **round-1 after** (post first polish, pre round 2) at [`before-round-2/`](evidence/settings-audit-2026-11-05/before-round-2/).  
 **Method:** Code inventory + live Settings navigation; config cross-check via `paddle-mcp` `read_config` where needed.
 
 ---
@@ -10,13 +10,13 @@
 ## Executive summary
 
 **Aesthetics (primary)**  
-Settings had a consistent functional surface but poor *scanability*: four-column masonry dumps (especially Mosaic, Privacy, Extensions), menu values tinted in theme accent green, and multi-paragraph “README walls” in Sites and Tabs & Memory. This PR lands shared form rhythm (max two columns by default, Mosaic single column + jump bar + collapsible groups), primary-colored menu values, `SettingsLearnMore` footers, a slimmer Sites table with a **More…** sheet for rare columns, and the Sites subtitle fix (no false per-site camera claim).
+Settings had a consistent functional surface but poor *scanability*: four-column masonry dumps (especially Mosaic, Privacy, Extensions), menu values tinted in theme accent green, and multi-paragraph “README walls” across General, Profiles, Privacy, Tabs & Memory, Sites, and Advanced. This PR lands shared form rhythm (max two columns by default, Mosaic single column + jump bar + collapsible groups), primary-colored menu values, `SettingsLearnMore` footers, a slimmer Sites table with a **More…** sheet for rare columns, the Sites subtitle fix (no false per-site camera claim), and a **round 2** pass that collapses the remaining caption walls (Privacy filter lists, General Search/New Tab, Profiles footer, Advanced bridge disclaimer), fixes default-browser status wrapping, and separates extension **status** text (secondary) from **toggle** accent.
 
 **Function / config (secondary)**  
 All ten panes map to `PaddleConfig` / README keys as before. Remaining **config gaps** (unchanged by polish): `extensionsOnDemand` and `sitePersonas` have no Settings controls (README notes file-only for on-demand). No crashes or blank panes observed.
 
-**Top aesthetic debts after this PR (P2–P3)**  
-Privacy and Extensions still use long `SettingsCaption` blocks under filter lists and extension cards; General Search/New Tab footers could move to Learn more; Extensions grid is still one card per extension (dense but intentional).
+**Residual aesthetic notes (honest)**  
+Extensions remain one card per installed folder by design; with many extensions the pane scrolls (single-column layout when ≥5 folders). No further P2–P3 items from the original scorecard remain open.
 
 ---
 
@@ -26,16 +26,16 @@ Severity: **P0** broken · **P1** misleading/harmful · **P2** polish gap · **P
 
 | Pane | Hierarchy / grouping | Density / scroll | Typography / copy | Accent discipline | Form consistency | Table / list | Empty states | A11y notes | Evidence (after) |
 |------|----------------------|------------------|-------------------|-------------------|------------------|--------------|--------------|------------|------------------|
-| General | Good section cards | OK 2-col | Search footers still 2 lines | **Fixed** menu values | Baseline | N/A | Default browser row truncates when narrow | Toggles distinct from values | [general.png](evidence/settings-audit-2026-11-05/general.png) |
+| General | Good section cards | OK 2-col | **Fixed** Search/New Tab → Learn more | **Fixed** menu values | Baseline | N/A | **Fixed** default browser wraps | Toggles distinct from values | [general.png](evidence/settings-audit-2026-11-05/general.png) |
 | Appearance | Clear Theme / Windows | OK | OK | **Fixed** pickers | Matches General | N/A | Missing theme shows “not found” | Segmented appearance OK | [appearance.png](evidence/settings-audit-2026-11-05/appearance.png) |
-| Profiles | Per-profile sections | Long footer caption | One essay remains | OK | 2-col masonry | N/A | loadError message | Rename fields labeled | [profiles.png](evidence/settings-audit-2026-11-05/profiles.png) |
+| Profiles | Per-profile sections | **Fixed** footer → Learn more | **Fixed** | OK | 2-col masonry | N/A | loadError message | Rename fields labeled | [profiles.png](evidence/settings-audit-2026-11-05/profiles.png) |
 | Tabs & Memory | 4 section cards | **Fixed** essay → Learn more | **Fixed** | **Fixed** | **Fixed** 2-col (was 3 orphan cols) | N/A | Memory readout clear | Sleep custom field labeled | [tabsMemory.png](evidence/settings-audit-2026-11-05/tabsMemory.png) |
 | Mosaic | **Fixed** jump + disclosures | **Fixed** collapsed groups | **Fixed** Learn more | **Fixed** | **Fixed** 1-col stack | N/A | N/A | Jump bar horizontal scroll | [mosaic.png](evidence/settings-audit-2026-11-05/mosaic.png) |
-| Privacy | Named sections | **Fixed** 2-col max | Long list footers remain (P2) | **Fixed** pickers | **Fixed** rhythm | Filter list readable | Empty rules message | Fraud toggle labeled | [privacy.png](evidence/settings-audit-2026-11-05/privacy.png) |
+| Privacy | Named sections | **Fixed** 2-col max | **Fixed** list footers → Learn more | **Fixed** pickers + toggles | **Fixed** rhythm | Filter list readable | Empty rules message | Fraud toggle labeled | [privacy.png](evidence/settings-audit-2026-11-05/privacy.png) |
 | Sites | Table + session | **Fixed** fewer columns | **Fixed** subtitle + footers | **Fixed** More button primary | Custom layout | **Fixed** More… sheet | Empty table overlay | Table combine a11y | [sites.png](evidence/settings-audit-2026-11-05/sites.png) |
-| Extensions | Per-extension cards | Still dense (P2) | Details disclosure OK | Status “Running” still accent (P3) | **Fixed** 2-col cards | Card scan OK | No extensions message | Busy progress announced | [extensions.png](evidence/settings-audit-2026-11-05/extensions.png) |
+| Extensions | Per-extension cards | **Fixed** slimmer rows; 1-col when ≥5 (P3 residual: scroll) | Details disclosure OK | **Fixed** status secondary; toggles accent | **Fixed** 2-col / 1-col | Card scan OK | No extensions message | Busy progress announced | [extensions.png](evidence/settings-audit-2026-11-05/extensions.png) |
 | Shortcuts | Single list section | OK | OK | OK | OK | List | N/A | Search in sidebar | [shortcuts.png](evidence/settings-audit-2026-11-05/shortcuts.png) |
-| Advanced | 3 logical groups | **Fixed** 2-col | Bridge essay remains (P2) | **Fixed** | **Fixed** | N/A | Problems empty state | Setup command copy | [advanced.png](evidence/settings-audit-2026-11-05/advanced.png) |
+| Advanced | 3 logical groups | **Fixed** 2-col | **Fixed** bridge disclaimer → Learn more | **Fixed** bridge toggles accent | **Fixed** | N/A | Problems empty state | Setup command copy | [advanced.png](evidence/settings-audit-2026-11-05/advanced.png) |
 
 ### Before → after (high-signal)
 
@@ -45,6 +45,8 @@ Severity: **P0** broken · **P1** misleading/harmful · **P2** polish gap · **P
 | Sites | 11 columns; footer essay | 8 columns + More… sheet (Pop-ups, Freeze, UA) | [before/sites.png](evidence/settings-audit-2026-11-05/before/sites.png) |
 | Tabs & Memory | Paragraph under Sleeping tabs; 3 uneven columns | Learn more; balanced 2-col cards | [before/tabsMemory.png](evidence/settings-audit-2026-11-05/before/tabsMemory.png) |
 | All Form panes | Green menu values (theme accent) | `.tint(.primary)` on forms + `.settingsMenuValueLabel()` on pickers; toggles keep accent | e.g. [before/general.png](evidence/settings-audit-2026-11-05/before/general.png) |
+| General / Profiles / Privacy / Advanced | Caption walls under Search, profiles footer, filter lists, bridge | `SettingsLearnMore` one-line summaries | e.g. [before-round-2/privacy.png](evidence/settings-audit-2026-11-05/before-round-2/privacy.png) |
+| Extensions | Accent “Running” on status line | Secondary caption + monochrome symbol; load toggle stays accent | [before-round-2/extensions.png](evidence/settings-audit-2026-11-05/before-round-2/extensions.png) |
 
 ---
 
@@ -58,10 +60,12 @@ Severity: **P0** broken · **P1** misleading/harmful · **P2** polish gap · **P
 | P2 | Tabs & Memory | README wall under freeze | **Fixed** `SettingsLearnMore` | tabsMemory after |
 | P2 | Global | Green picker values | **Fixed** form tint + picker modifier | general/appearance after |
 | P2 | Global | 4-col masonry | **Fixed** `maxColumns: 2` (Mosaic `1`) | privacy/extensions after |
-| P2 | Privacy | Filter list footer essays | Follow-up: Learn more on list sections | privacy after |
-| P2 | Extensions | Many cards, accent “Running” | Follow-up: secondary label for status text | extensions after |
-| P3 | General | “Another browser is th…” truncation | Wider min column or wrap | general after |
-| P3 | Advanced | Long control-bridge disclaimer | Learn more disclosure | advanced after |
+| P2 | Privacy | Filter list footer essays | **Fixed** `SettingsLearnMore` on list sections | privacy after / before-round-2 |
+| P2 | Extensions | Many cards, accent “Running” | **Fixed** secondary status; density polish; **P3 residual** scroll with many folders | extensions after |
+| P2 | General | Search/New Tab caption walls | **Fixed** `SettingsLearnMore` | general after |
+| P2 | Profiles | Long profiles footer | **Fixed** `SettingsLearnMore` | profiles after |
+| P3 | General | “Another browser is th…” truncation | **Fixed** stacked default-browser row + wrap | general after |
+| P3 | Advanced | Long control-bridge disclaimer | **Fixed** `SettingsLearnMore` | advanced after |
 
 ---
 
@@ -94,11 +98,12 @@ Sidebar order matches `SettingsPane`: General, Appearance, Profiles, Tabs & Memo
 - `SitesPane.swift`: slimmer table, `siteMoreSheet`, Learn more footers.
 - `TabsMemoryPane.swift`: Learn more + picker/toggle styling.
 - `SettingsViews.swift`: Sites pane summary (camera fix retained).
+- **Round 2:** `GeneralPane.swift` (Search/New Tab Learn more, default-browser layout), `ProfilesPane.swift`, `PrivacyPane.swift`, `ExtensionsPane.swift`, `ControlBridgeViews.swift`.
 
 ---
 
 ## Verification
 
-- `swift test`: 1142 tests passed on this branch.
-- Screenshots: Debug build Settings tab, post-polish (paths above).
-- User prefs: not modified (navigation only).
+- `swift test`: 1142 tests passed on this branch (after round 2).
+- Screenshots: Debug build Settings panes via control-bridge `window_snapshot` (round 2 refresh for general, profiles, privacy, extensions, advanced).
+- User prefs: not modified (Settings navigation only for captures).
