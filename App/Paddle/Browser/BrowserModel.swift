@@ -329,6 +329,11 @@ final class BrowserModel {
             previous.returnsToOpener = false
         }
         if previous !== tab, let previous, previous.hostsWebView, previous.webView != nil { previousSelectedID = previous.id }
+        // The tab you leave drops the pages WebKit keeps for an instant Back now rather than at its freeze: a page left for
+        // another site keeps a whole web process (measured 2026-11-04: 460 MB, gone at once). Back there reloads.
+        if previous !== tab, let previous, let leftView = previous.webView, !previous.isSuspendedInWebKit {
+            _ = PrivateAPI.callVoid("_clearBackForwardCache", on: leftView)
+        }
         hoverWork?.cancel()
         hoveredTabID = nil
         selectedID = tab.id

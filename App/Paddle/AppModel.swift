@@ -1399,6 +1399,9 @@ final class AppModel {
             })
         }
         updateSampler()
+        powerObservers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { AppModel.shared.appResignedActive() }
+        })
         // Low Power Mode and thermal changes: the sleep policy tightens at once rather than at the next sweep.
         for name in [Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification] {
             powerObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
@@ -1744,6 +1747,13 @@ final class AppModel {
 
     /// Trims WebKit memory: purges in-memory caches across website data stores, and asks
     /// WebKit to run JavaScript garbage collection and clear process caches.
+    /// Paddle went to the background: WebKit's low-memory signal trims every running page, the one you were reading too
+    /// (you aren't looking at it now). Frozen pages ignore it. It reaches other apps' web views as well.
+    func appResignedActive() {
+        WebKitLowMemory.post()
+        log.info("in the background: sent WebKit's low-memory signal")
+    }
+
     func trimWebKitMemory() {
         web.emptyMemoryCaches()
         // The trim acts on a web view's process pool (a forced collection in every one of its processes), so once per

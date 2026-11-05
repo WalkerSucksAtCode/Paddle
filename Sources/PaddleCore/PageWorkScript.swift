@@ -6,8 +6,10 @@ import Foundation
 ///
 /// An upload is a `fetch` or `XMLHttpRequest` whose body carries at least 64 KB (a file, a large blob or string) or is
 /// a stream, counted until the request ends. Short posts (analytics, chat messages, autosave pings) don't count. Unsaved
-/// changes is a `beforeunload` listener on the window or an `onbeforeunload` handler: what sites add while a form is
-/// dirty. Nothing here changes what the page sends or sees beyond the wrapped functions themselves.
+/// changes is a `beforeunload` listener on the window or an `onbeforeunload` handler in a frame the user has typed into
+/// (a trusted `input` event in a text field, text area, select or editable element) since it loaded or last submitted a
+/// form. A listener alone doesn't count: YouTube, Gmail and news sites keep one for analytics, which held them awake.
+/// Nothing here changes what the page sends or sees beyond the wrapped functions themselves.
 public enum PageWorkScript {
     public static let handlerName = "paddlePageWork"
     /// Bytes of request body that make a request an upload.
@@ -24,10 +26,11 @@ public enum PageWorkScript {
       let uploads = 0;
       const listeners = new Set();
       let handlerSet = false;
+      let edited = false;
       let sent = 'false:false';
       const report = (gone) => {
         const uploading = !gone && uploads > 0;
-        const guardsUnload = !gone && (listeners.size > 0 || handlerSet);
+        const guardsUnload = !gone && edited && (listeners.size > 0 || handlerSet);
         const key = uploading + ':' + guardsUnload;
         if (key === sent) return;
         sent = key;
@@ -124,6 +127,15 @@ public enum PageWorkScript {
         });
         break;
       }
+
+      const editable = (el) => !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT'
+        || (el.tagName === 'INPUT' && !/^(button|submit|reset|image|hidden|checkbox|radio|range|color)$/i.test(el.type || '')));
+      window.addEventListener('input', (e) => {
+        if (edited || !e.isTrusted || !editable(e.target)) return;
+        edited = true;
+        report(false);
+      }, true);
+      window.addEventListener('submit', () => { edited = false; report(false); }, true);
 
       window.addEventListener('pagehide', () => report(true), true);
       window.addEventListener('pageshow', () => report(false), true);

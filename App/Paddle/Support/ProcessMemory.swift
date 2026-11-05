@@ -1,7 +1,23 @@
 import Darwin
 import Foundation
+import notify
 import PaddleCore
 import WebKit
+
+/// WebKit's memory-pressure simulation (`org.WebKit.lowMemory`): every running WebKit process on the Mac, Paddle's and
+/// other apps' web views, drops caches and collects. Suspended (frozen) pages don't act on it. Measured 2026-11-04: a
+/// live Gmail page went from 584 to 385 MB within 10 s and stayed there.
+enum WebKitLowMemory {
+    private static var lastPosted: Date?
+
+    /// Posts the signal, at most once a minute.
+    static func post() {
+        let now = Date()
+        if let lastPosted, now.timeIntervalSince(lastPosted) < 60 { return }
+        lastPosted = now
+        notify_post("org.WebKit.lowMemory")
+    }
+}
 
 /// Memory of Paddle's processes: physical footprint, the same number Activity Monitor shows as "Memory".
 enum ProcessMemory {

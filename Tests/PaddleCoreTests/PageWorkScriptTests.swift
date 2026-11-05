@@ -35,11 +35,13 @@ struct PageWorkScriptTests {
 
     @Test func beforeunloadListenerAndHandlerReportUnsavedChanges() async {
         let (webView, recorder) = page("""
+        <input id="field">
         <script>
           const f = () => {};
           addEventListener('beforeunload', f);
-          setTimeout(() => removeEventListener('beforeunload', f), 50);
-          setTimeout(() => { window.onbeforeunload = () => 'unsaved'; }, 100);
+          setTimeout(() => { document.getElementById('field').focus(); document.execCommand('insertText', false, 'x'); }, 50);
+          setTimeout(() => removeEventListener('beforeunload', f), 100);
+          setTimeout(() => { window.onbeforeunload = () => 'unsaved'; }, 150);
         </script>
         """)
         await wait(recorder) { $0.count >= 3 }
