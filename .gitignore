@@ -12,3 +12,8 @@ build/
 .video_agent/
 out/
 __pycache__/
+.env
+.env.*
+*.p12
+*.p8
+*.mobileprovision

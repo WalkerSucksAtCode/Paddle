@@ -36,3 +36,4 @@ Personal macOS web browser built on the system WebKit (`WKWebView`). Goals: reso
 - `resumeMediaOnSelect` stays off by default. Switching tabs must not start audio unless the user turns that on.
 - Control-bridge MCP uses `/Applications/Paddle.app/Contents/Helpers/paddle-mcp`.
 - `ScrollRestoreScript` (page world, document start) records inner-column scroll before SPA navigations and restores it after Back on timeline sites such as X. Reapplying per-site zoom on each document commit (`applySiteZoom` from `pageCommitted`) can reset that scroll during back/forward restoration.
+- Public GitHub: outsiders fork and open a PR against `main`. Do not add write collaborators. Do not commit secrets, credentials, notary profiles, or personal emails. Walker merges or closes.

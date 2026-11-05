@@ -228,3 +228,8 @@ Peer must be this user's signed `paddle-mcp` (identifier `paddle-mcp`, same Deve
 
 - **Web Push.** Needs an Apple push entitlement a third-party browser does not get by default.
 - **Apple Pay and Payment Request.** Same: missing entitlement.
+
+## Contributing
+
+Fork and open a pull request against `main`. Walker merges or closes. See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports go to [private advisories](SECURITY.md), not issues.
+
