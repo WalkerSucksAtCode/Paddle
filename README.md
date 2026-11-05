@@ -18,7 +18,7 @@ Config, filters, userscripts and themes live in `~/Library/Application Support/P
 
 ## Install
 
-`scripts/release.sh` builds a Developer ID Release (hardened runtime, secure timestamp), then `codesign --verify --deep --strict`. It refuses a build with `get-task-allow`. Each step prints PASS, FAIL or SKIP. The marketing version is `project.yml`'s `0.1` prefix plus the commit count (`0.1.156`); the build number is that same count, floored at **157** so it cannot collide with the last old-history notarized build (156). Debug Xcode builds keep `0.1.0` / `1`.
+`scripts/release.sh` builds a Developer ID Release (hardened runtime, secure timestamp), then `codesign --verify --deep --strict`. It refuses a build with `get-task-allow`. Each step prints PASS, FAIL or SKIP. The marketing version is `project.yml`'s `0.1` prefix plus the commit count (`0.1.161`); the build number is that same count, floored at **157** so it cannot collide with the last old-history notarized build (156). Debug Xcode builds keep `0.1.0` / `1`.
 
 - no flags: zip to `dist/Paddle-<version>-<build>-unnotarized.zip`
 - `--notarize`: `notarytool` with `$NOTARY_PROFILE`, staple, `spctl`, then write `dist/Paddle-<version>-<build>.zip`
