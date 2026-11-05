@@ -75,6 +75,9 @@ public enum DarkModeScript {
             const style = document.createElement('style');
             style.id = STYLE_ID;
             style.textContent = `
+              :root {
+                color-scheme: dark !important;
+              }
               html[data-paddle-dark-mode="active"] {
                 filter: invert(90%) hue-rotate(180deg) !important;
                 background-color: #181a1b !important;
@@ -85,10 +88,27 @@ public enum DarkModeScript {
               html[data-paddle-dark-mode="active"] picture,
               html[data-paddle-dark-mode="active"] iframe,
               html[data-paddle-dark-mode="active"] [role="img"],
-              html[data-paddle-dark-mode="active"] [style*="background-image"] {
+              html[data-paddle-dark-mode="active"] [style*="background-image"],
+              html[data-paddle-dark-mode="active"] .gm-style,
+              html[data-paddle-dark-mode="active"] .mapboxgl-map,
+              html[data-paddle-dark-mode="active"] .mapboxgl-canvas,
+              html[data-paddle-dark-mode="active"] .leaflet-container,
+              html[data-paddle-dark-mode="active"] .leaflet-pane,
+              html[data-paddle-dark-mode="active"] [class*="apple-map"],
+              html[data-paddle-dark-mode="active"] .monaco-editor,
+              html[data-paddle-dark-mode="active"] .cm-editor,
+              html[data-paddle-dark-mode="active"] .CodeMirror,
+              html[data-paddle-dark-mode="active"] .ace_editor,
+              html[data-paddle-dark-mode="active"] #docs-editor,
+              html[data-paddle-dark-mode="active"] #docs-editor canvas,
+              html[data-paddle-dark-mode="active"] .pdfViewer,
+              html[data-paddle-dark-mode="active"] .canvasWrapper,
+              html[data-paddle-dark-mode="active"] embed,
+              html[data-paddle-dark-mode="active"] object,
+              html[data-paddle-dark-mode="active"] [style*="mix-blend-mode"] {
                 filter: invert(100%) hue-rotate(180deg) !important;
               }
-              html[data-paddle-dark-mode="active"] :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"]) :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"]) {
+              html[data-paddle-dark-mode="active"] :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"], .gm-style, .mapboxgl-map, .mapboxgl-canvas, .leaflet-container, .leaflet-pane, [class*="apple-map"], .monaco-editor, .cm-editor, .CodeMirror, .ace_editor, #docs-editor, .pdfViewer, .canvasWrapper, embed, object, [style*="mix-blend-mode"]) :is(img, video, canvas, picture, iframe, [role="img"], [style*="background-image"], .gm-style, .mapboxgl-map, .mapboxgl-canvas, .leaflet-container, .leaflet-pane, [class*="apple-map"], .monaco-editor, .cm-editor, .CodeMirror, .ace_editor, #docs-editor, .pdfViewer, .canvasWrapper, embed, object, [style*="mix-blend-mode"]) {
                 filter: none !important;
               }
             `;
@@ -164,28 +184,112 @@ public enum DarkModeScript {
             try { return measureNaturallyDark(); } finally { if (ours) html.setAttribute('data-paddle-dark-mode', ours); }
           }
 
+          const DARK_CLASSES = ['dark', 'dark-mode', 'darkMode', 'theme-dark', 'night-mode', 'is-dark', 'docs-darkmode-on'];
+          const THEME_ATTRS = ['data-theme', 'data-color-mode', 'data-bs-theme', 'data-mdb-theme', 'theme'];
+
+          function isOverlaySized(el) {
+            if (!el || el === document.documentElement || el === document.body) return false;
+            const w = el.clientWidth, h = el.clientHeight;
+            return w > 0 && h > 0 && w <= 1 && h <= 1;
+          }
+
+          function schemeIncludesDark(el) {
+            if (!el) return false;
+            try {
+              const cs = (window.getComputedStyle(el).colorScheme || '').toLowerCase();
+              return cs.includes('dark');
+            } catch (e) { return false; }
+          }
+
+          function withSiteColorScheme(fn) {
+            const tweaks = [];
+            for (const el of [document.getElementById(STYLE_ID), document.getElementById(NATIVE_STYLE_ID)]) {
+              if (!el || !el.sheet) continue;
+              try {
+                const rules = el.sheet.cssRules;
+                for (let i = 0; i < rules.length; i++) {
+                  const r = rules[i];
+                  if (r.selectorText === ':root' && r.style && r.style.colorScheme) {
+                    tweaks.push([r, r.style.getPropertyValue('color-scheme'), r.style.getPropertyPriority('color-scheme')]);
+                    r.style.removeProperty('color-scheme');
+                  }
+                }
+              } catch (e) {}
+            }
+            if (!tweaks.length && (document.getElementById(STYLE_ID) || document.getElementById(NATIVE_STYLE_ID))) {
+              return false;
+            }
+            try { return fn(); }
+            finally {
+              for (const [r, v, pri] of tweaks) {
+                try { r.style.setProperty('color-scheme', v, pri); } catch (e) {}
+              }
+            }
+          }
+
+          function attrThemeDark(el) {
+            if (!el || !el.getAttribute) return false;
+            for (const name of THEME_ATTRS) {
+              const v = (el.getAttribute(name) || '').toLowerCase();
+              if (v.includes('dark')) return true;
+            }
+            const mode = (el.getAttribute('data-color-mode') || '').toLowerCase();
+            if (mode === 'auto' && el.getAttribute('data-dark-theme')) {
+              try {
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return true;
+              } catch (e) {}
+              if (schemeIncludesDark(el)) return true;
+            }
+            if (el.hasAttribute('dark')) return true;
+            if (el.classList) {
+              for (const c of DARK_CLASSES) {
+                if (el.classList.contains(c)) return true;
+              }
+            }
+            return false;
+          }
+
+          function luminanceDark(el) {
+            if (!el || isOverlaySized(el)) return false;
+            const lum = parseLuminance(window.getComputedStyle(el).backgroundColor);
+            return lum !== null && lum < 0.45;
+          }
+
           function measureNaturallyDark() {
             try {
-              const elementsToCheck = [
-                document.documentElement,
-                document.body,
-                document.querySelector('main, #root, #app, #__next, ytd-app, [role="main"]')
-              ];
-              for (const el of elementsToCheck) {
-                if (!el) continue;
-                const lum = parseLuminance(window.getComputedStyle(el).backgroundColor);
-                if (lum !== null && lum < 0.45) return true;
-              }
-
               const html = document.documentElement;
-              const theme = (html.getAttribute('data-theme') || html.getAttribute('data-color-mode') || html.getAttribute('theme') || '').toLowerCase();
-              if (theme.includes('dark')) return true;
-              if (html.classList.contains('dark') || (document.body && document.body.classList.contains('dark'))) return true;
+              const body = document.body;
+              const main = document.querySelector('main, #root, #app, #__next, ytd-app, [role="main"]');
+              if (luminanceDark(html) || luminanceDark(body) || luminanceDark(main)) return true;
+
+              if (withSiteColorScheme(() => schemeIncludesDark(html) || schemeIncludesDark(body))) return true;
+
+              const metaScheme = document.querySelector('meta[name="color-scheme"]');
+              if (metaScheme && String(metaScheme.content || '').toLowerCase().includes('dark')) return true;
 
               const metaTheme = document.querySelector('meta[name="theme-color"]');
               if (metaTheme && metaTheme.content) {
                 const lum = parseLuminance(metaTheme.content);
                 if (lum !== null && lum < 0.45) return true;
+              }
+
+              if (attrThemeDark(html) || attrThemeDark(body)) return true;
+              const ytd = document.querySelector('ytd-app');
+              if (ytd && (ytd.hasAttribute('dark') || attrThemeDark(ytd))) return true;
+
+              if (body) {
+                const nodes = body.getElementsByTagName('*');
+                let seen = 0;
+                for (let i = 0; i < nodes.length && seen < 8; i++) {
+                  const el = nodes[i];
+                  if (el.tagName.indexOf('-') < 0) continue;
+                  seen++;
+                  const root = el.shadowRoot;
+                  if (!root) continue;
+                  if (attrThemeDark(el) || luminanceDark(el)) return true;
+                  const inner = root.querySelector('main, #root, #app, #__next, [role="main"]') || root.firstElementChild;
+                  if (inner && (luminanceDark(inner) || attrThemeDark(inner))) return true;
+                }
               }
             } catch (e) {}
             return false;
@@ -385,6 +489,24 @@ public enum DarkModeScript {
             mutationObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset'] });
           }
 
+          let themeObserver = null;
+          let themeTimer = null;
+          function startThemeObserver() {
+            if (!('MutationObserver' in window)) return;
+            if (!themeObserver) {
+              themeObserver = new MutationObserver(() => {
+                if (themeTimer) clearTimeout(themeTimer);
+                themeTimer = setTimeout(() => {
+                  themeTimer = null;
+                  evaluateAndApply();
+                }, 100);
+              });
+            }
+            const opts = { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-color-mode', 'data-bs-theme', 'dark', 'theme'] };
+            if (document.documentElement) themeObserver.observe(document.documentElement, opts);
+            if (document.body) themeObserver.observe(document.body, opts);
+          }
+
           const bootEngine = currentEngine();
           if (bootEngine === 'smart') {
             ensureSmartStyles();
@@ -392,16 +514,21 @@ public enum DarkModeScript {
             ensureNativeStyles();
           }
 
+          startThemeObserver();
+
           if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
               evaluateAndApply();
               startMutationObserver();
+              startThemeObserver();
             }, { once: true });
           } else {
             evaluateAndApply();
             startMutationObserver();
+            startThemeObserver();
           }
           setTimeout(evaluateAndApply, 400);
+          setTimeout(evaluateAndApply, 1600);
 
           window.__paddleDarkMode = {
             setPolicy(policy) {

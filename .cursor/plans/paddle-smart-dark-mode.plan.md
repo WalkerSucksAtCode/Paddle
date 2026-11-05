@@ -1,6 +1,6 @@
 # Paddle smart dark mode
 
-Status: planning. Worktree `/Users/Walker/Code/Projects/Paddle-wt/smart-dark-mode` on `cursor/smart-dark-mode-c272` from `origin/main` (`015dc73`). Settings aesthetic PR `cursor/settings-ui-audit-a3f0` is a sibling worktree — do not merge or restyle it. Extend the existing Sites "Dark mode" column; do not add a second control.
+Status: W1 audited. Worktree `/Users/Walker/Code/Projects/Paddle-wt/smart-dark-mode` on `cursor/smart-dark-mode-c272` from `origin/main` (`015dc73`). Settings aesthetic PR `cursor/settings-ui-audit-a3f0` is a sibling worktree — do not merge or restyle it. Extend the existing Sites "Dark mode" column; do not add a second control.
 
 Workers never edit this file. Parent audits `git diff` + Done look before any `- [x]`.
 
@@ -241,8 +241,8 @@ After W1, W2 and W3 are path-disjoint (script vs App) and may run in parallel.
 
 ## Todos
 
-- [ ] W1 PaddleCore types, policy resolution, DarkModeScript API (`setPolicy`, host table strings, native/off/smart engines), unit tests
-- [ ] W2 Smart detector, CSS exclusions, SPA re-eval (debounce, no invert storms)
+- [x] W1 PaddleCore types, policy resolution, DarkModeScript API (`setPolicy`, host table strings, native/off/smart engines), unit tests
+- [x] W2 Smart detector, CSS exclusions, SPA re-eval (debounce, no invert storms)
 - [ ] W3 App wiring, Settings pickers, View submenu + Keep Light, README
 - [ ] W4 Debug `xcodebuild` + `swift test`; live evidence shots; draft PR
 

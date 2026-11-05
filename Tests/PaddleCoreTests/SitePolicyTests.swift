@@ -199,6 +199,13 @@ struct SitePolicyTests {
         #expect(script.contains("dark.com"))
         #expect(script.contains("'native'"))
         #expect(script.contains("'smart'"))
+        #expect(script.contains(".gm-style"))
+        #expect(script.contains(".monaco-editor"))
+        #expect(script.contains("#docs-editor"))
+        #expect(script.contains("colorScheme"))
+        #expect(script.contains("1600"))
+        #expect(script.contains("attributeFilter"))
+        #expect(script.contains("meta[name=\"color-scheme\"]"))
         #expect(DarkModePreference.allCases == [.off, .system, .smart, .native])
     }
 
