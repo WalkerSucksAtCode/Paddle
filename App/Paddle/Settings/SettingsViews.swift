@@ -228,11 +228,14 @@ struct SettingsDisclosure<Content: View>: View {
 /// grouped form, so its rows keep a form's styling (switches, trailing values); the outer scroll view does the
 /// scrolling.
 struct SettingsForm<Content: View>: View {
+    /// At most two columns so dense panes match General/Appearance rhythm (no four-column dumps).
+    var maxColumns: Int = 2
+    var minColumnWidth: CGFloat = 400
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollView {
-            MasonryLayout(minColumnWidth: 380, maxColumns: 4, spacing: 0) {
+            MasonryLayout(minColumnWidth: minColumnWidth, maxColumns: maxColumns, spacing: 0) {
                 Group(sections: content) { sections in
                     ForEach(sections.indices, id: \.self) { index in
                         card(index, hasHeader: !sections[index].header.isEmpty)
@@ -262,6 +265,7 @@ struct SettingsForm<Content: View>: View {
             }
         }
         .formStyle(.grouped)
+        .tint(.primary)
         .scrollDisabled(true)
         .scrollContentBackground(.hidden)
         // A grouped form keeps a clear inset above and below its section, more above when the section has no
@@ -332,6 +336,7 @@ struct ConfigToggle: View {
             get: { model.file[keyPath: value] },
             set: { on in Task { await model.saveKey(key, .bool(on)) } }
         ))
+        .settingsAccentToggle()
         .help("\(key.rawValue) in config.json. \(help)")
         .disabled(model.controlsDisabled)
     }

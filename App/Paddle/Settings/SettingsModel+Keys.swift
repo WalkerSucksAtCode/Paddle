@@ -47,3 +47,36 @@ struct SettingsCaption: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
+
+/// One scannable line; optional disclosure for the long explanation (no README walls in the pane).
+struct SettingsLearnMore: View {
+    let summary: String
+    let detail: String
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(summary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if expanded {
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button(expanded ? "Show less" : "Learn more…") { expanded.toggle() }
+                .buttonStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(.primary)
+        }
+    }
+}
+
+/// Menu pickers show the closed value in label color; toggles keep theme accent via `settingsAccentToggle()`.
+extension View {
+    func settingsMenuValueLabel() -> some View { tint(.primary) }
+
+    func settingsAccentToggle() -> some View { tint(Color.accentColor) }
+}
