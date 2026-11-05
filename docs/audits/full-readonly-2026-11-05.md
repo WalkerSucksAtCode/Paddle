@@ -107,7 +107,7 @@ Worker phrases “OK”, “By design”, “Accept”, “Closable”, “Infor
 | FA-EXT-02 | S4 | extensions | MV2 `webRequestBlocking` does not block | Accepted risk | main |
 | FA-EXT-03 | S4 | extensions | `extensionsOnDemand` has no Settings control | Open | main |
 | FA-EXT-04 | S4 | extensions | No `chrome.history` / `bookmarks` / `downloads` | Accepted risk | main |
-| FA-EXT-05 | S3 | extensions | `shimmedPermissions` never set at load | Open | main |
+| FA-EXT-05 | S3 | extensions | `shimmedPermissions` never set at load | Fixed-on-PR | main |
 | FA-EXT-06 | S4 | extensions | Native messaging only `com.walker.paddle.compat` | Closed | main |
 | FA-EXT-07 | S4 | extensions | Store ZIP path uses `ZipSafety` | Closed | main |
 | FA-EXT-08 | S3 | extensions | AMO chain needs bundled Mozilla root | Accepted risk | main |
@@ -251,7 +251,7 @@ Passkeys: entitlement XML-commented; `BrowserPasskeyCoordinator` checks `SecTask
 
 ### Extensions
 
-Load path: scan → persona → overlay clone → `WKWebExtension`. Native messaging is bus-only. **FA-EXT-05:** `CompatPlan.make` is invoked without `shimmedPermissions`; `webKitPermissionNames` omits `notifications` / `favicon`, so prelude E23 shims never fire for those declared names. **FA-EXT-03:** `extensionsOnDemand` is config-only (Settings worker should not mint a second Open ID; alias this).
+Load path: scan → persona → overlay clone → `WKWebExtension`. Native messaging is bus-only. **FA-EXT-05:** `CompatPlan.make` now fills `shimmedPermissions` from manifest names WebKit does not know (Fixed-on-PR). **FA-EXT-03:** `extensionsOnDemand` is config-only (Settings worker should not mint a second Open ID; alias this).
 
 ### Networking / blocking
 
@@ -303,7 +303,7 @@ Contrast cap is code, not eyeballing: `ThemeContrast.maxTintStrength` requires 4
 | WebKit engine RAM / BFCache / per-registration SW stop | Apple / engine (lightness P9–P13) | FA-PERF-03, FA-PERF-04 |
 | ATS-in-WebContent + HTTPS-only exceptions | Closable product | FA-SEC-01 |
 | Mounted-tab freeze | Closable Paddle | FA-TAB-01 |
-| Empty `shimmedPermissions` | Closable Paddle | FA-EXT-05 |
+| Empty `shimmedPermissions` at load | Fixed-on-PR | FA-EXT-05 |
 | Settings IA | Closable via PR #2 | FA-SET-01…10 Fixed-on-PR; FA-SET-11/16 still Open |
 | Smart dark | Closable via PR #3 | FA-DRK-02/03/04 Fixed-on-PR; FA-DRK-06 Open on PR |
 

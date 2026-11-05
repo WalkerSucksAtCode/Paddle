@@ -103,6 +103,7 @@ struct CompatPreludeTests {
         let plan = try Self.plan()
         #expect(plan.requiredPermissions == ["storage", "tabs", "favicon", "notifications"])
         #expect(plan.optionalPermissions == ["cookies"])
+        #expect(plan.shimmedPermissions == ["favicon", "notifications"])
         #expect(plan.popupPath == "popup.html")
         #expect(plan.paddleGranted == ["nativeMessaging"])
         let raised = try CompatPlan.make(manifestData: Data(#"{"minimum_chrome_version":"170"}"#.utf8), persona: .chrome, runtimeID: "x")
@@ -198,7 +199,7 @@ struct CompatPreludeTests {
         #expect(Self.eval(c, "globalThis[Symbol.for('paddle.compat')].errors") == #"["i18n: boom"]"#)
         #expect(Self.eval(c, "typeof chrome.storage.managed.get") == #""function""#)
         #expect(Self.eval(c, "chrome.action.getUserSettings !== undefined && chrome.tabs.TAB_ID_NONE === -1") == "true")
-        #expect(Self.settle(c, "chrome.permissions.getAll().then(r => r.permissions)") == #"["storage","tabs"]"#)
+        #expect(Self.settle(c, "chrome.permissions.getAll().then(r => r.permissions)") == #"["storage","tabs","favicon","notifications"]"#)
     }
 
     // MARK: - Gating
@@ -224,21 +225,22 @@ struct CompatPreludeTests {
 
     @Test func permissionsHidePaddlesGrantAndAnswerUnknownNames() throws {
         let c = try Self.run(try Self.plan(.chrome))
-        #expect(Self.settle(c, "chrome.permissions.getAll()") == #"{"permissions":["storage","tabs"],"origins":["<all_urls>"]}"#)
+        #expect(Self.settle(c, "chrome.permissions.getAll()") == #"{"permissions":["storage","tabs","favicon","notifications"],"origins":["<all_urls>"]}"#)
         #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['storage']})") == "true")
         #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['nativeMessaging']})") == "false")
-        #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['favicon']})") == "false", "E23: no rejection")
-        #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['storage', 'favicon']})") == "false")
+        #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['favicon']})") == "true", "declared WebKit-unknown names are shimmed at load")
+        #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['storage', 'favicon']})") == "true")
+        #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['bookmarks']})") == "false", "E23: undeclared unknown names still false, not rejected")
         #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['cookies']})") == "false")
         #expect(Self.settle(c, "chrome.permissions.request({permissions: ['nativeMessaging']})") == "ERR:Only permissions specified in the manifest may be requested.")
-        #expect(Self.settle(c, "chrome.permissions.request({permissions: ['cookies', 'favicon']})") == "false")
+        #expect(Self.settle(c, "chrome.permissions.request({permissions: ['cookies', 'favicon']})") == "true")
         #expect(Self.settle(c, "chrome.permissions.request({permissions: ['cookies']})") == "true")
         #expect(Self.eval(c, "__requested.permissions") == #"["cookies"]"#)
     }
 
     @Test func declaredOrShimmedNamesShow() throws {
-        var plan = try Self.plan(.chrome, manifest: #"{"manifest_version":3,"permissions":["storage","nativeMessaging","notifications"]}"#)
-        plan.shimmedPermissions = ["notifications"]
+        let plan = try Self.plan(.chrome, manifest: #"{"manifest_version":3,"permissions":["storage","nativeMessaging","notifications"]}"#)
+        #expect(plan.shimmedPermissions == ["notifications"])
         let c = try Self.run(plan)
         #expect(Self.settle(c, "chrome.permissions.getAll().then(r => r.permissions)") == #"["storage","tabs","nativeMessaging","notifications"]"#)
         #expect(Self.settle(c, "chrome.permissions.contains({permissions: ['notifications', 'nativeMessaging']})") == "true")
@@ -251,7 +253,7 @@ struct CompatPreludeTests {
         c.evaluateScript("__flush()")
         #expect(Self.eval(c, "__cb") == #"["no_update",true]"#)
         c.evaluateScript("chrome.permissions.contains({permissions: ['favicon']}, (r) => { globalThis.__cb2 = r; })")
-        #expect(Self.eval(c, "__cb2") == "false")
+        #expect(Self.eval(c, "__cb2") == "true")
 
         #expect(Self.settle(c, "chrome.storage.managed.set({a: 1})") == "ERR:This is a read-only store.")
         c.evaluateScript("globalThis.__nativeLastError = undefined; chrome.storage.managed.set({a: 1}, (r) => { globalThis.__cb3 = [r, chrome.runtime.lastError && chrome.runtime.lastError.message]; })")
