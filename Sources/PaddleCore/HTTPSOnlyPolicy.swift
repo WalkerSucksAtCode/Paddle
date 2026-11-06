@@ -23,20 +23,20 @@ public enum HTTPSOnlyPolicy {
     }
 
     /// True for hosts that never leave the machine or network: localhost, `.local`, `.home.arpa`, `.internal`,
-    /// single-label names, and loopback, private and link-local IP addresses.
+    /// single-label names, loopback, private and link-local IP addresses in any `inet_aton` spelling (`127.1`,
+    /// `0x7f.1`, octal), and `.onion` services, which never carry a cert for their own name so an upgrade only
+    /// breaks them (Chrome and Firefox exempt them too).
     public static func isLocal(host: String) -> Bool {
         var host = host.lowercased()
         if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
         while host.hasSuffix(".") { host.removeLast() }
         if host.isEmpty { return false }
         if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local")
-            || host.hasSuffix(".home.arpa") || host.hasSuffix(".internal") { return true }
+            || host.hasSuffix(".home.arpa") || host.hasSuffix(".internal") || host.hasSuffix(".onion") { return true }
         if host.contains(":") { return isLocalIPv6(host) }
-        let octets = host.split(separator: ".", omittingEmptySubsequences: false)
-        if octets.count == 4, octets.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }) {
-            let n = octets.compactMap { Int($0) }
-            guard n.count == 4, n.allSatisfy({ $0 <= 255 }) else { return false }
-            return n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1]))
+        if let v4 = PrivateHost.parseIPv4(host) {
+            let n = [UInt8((v4 >> 24) & 0xFF), UInt8((v4 >> 16) & 0xFF)]
+            return n[0] == 0 || n[0] == 127 || n[0] == 10 || (n[0] == 172 && (16...31).contains(n[1]))
                 || (n[0] == 192 && n[1] == 168) || (n[0] == 169 && n[1] == 254)
         }
         return !host.contains(".")

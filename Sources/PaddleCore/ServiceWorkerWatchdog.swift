@@ -14,7 +14,9 @@ public struct ServiceWorkerWatchdog: Sendable {
     /// How long a main-frame navigation waits for its response before Paddle looks for a stuck worker.
     public static let patience: TimeInterval = 6
     public var cooldown: TimeInterval
-    private var lastStop: Date?
+    /// Last stop per registered site: one always-slow site cools down its own stops, not every other site's too —
+    /// the stop itself is pool-wide, so the cooldown is the only thing keeping it narrow.
+    private var lastStops: [String: Date] = [:]
 
     public init(cooldown: TimeInterval = 30) {
         self.cooldown = cooldown
@@ -23,19 +25,25 @@ public struct ServiceWorkerWatchdog: Sendable {
     /// Whether to stop service workers for a navigation to `host` that is still waiting, given the sites WebKit lists
     /// with worker registrations (record display names: registrable domains or bare hosts). Records the stop when yes.
     public mutating func shouldStop(host: String, registeredSites: Set<String>, now: Date = Date()) -> Bool {
-        guard Self.hasRegistration(for: host, in: registeredSites) else { return false }
-        if let lastStop, now.timeIntervalSince(lastStop) < cooldown { return false }
-        lastStop = now
+        guard let site = Self.registration(for: host, in: registeredSites) else { return false }
+        if let last = lastStops[site], now.timeIntervalSince(last) < cooldown { return false }
+        lastStops[site] = now
         return true
+    }
+
+    /// The `registeredSites` entry that is `host` or a parent domain of it (`reddit.com` covers `www.reddit.com`);
+    /// nil when the site has no registration. First match in sorted order, so the answer is deterministic.
+    public static func registration(for host: String, in registeredSites: Set<String>) -> String? {
+        let host = host.lowercased()
+        guard !host.isEmpty else { return nil }
+        return registeredSites.sorted().first { site in
+            let site = site.lowercased()
+            return !site.isEmpty && (host == site || host.hasSuffix("." + site))
+        }
     }
 
     /// Whether one of `registeredSites` is `host` or a parent domain of it (`reddit.com` covers `www.reddit.com`).
     public static func hasRegistration(for host: String, in registeredSites: Set<String>) -> Bool {
-        let host = host.lowercased()
-        guard !host.isEmpty else { return false }
-        return registeredSites.contains { site in
-            let site = site.lowercased()
-            return !site.isEmpty && (host == site || host.hasSuffix("." + site))
-        }
+        registration(for: host, in: registeredSites) != nil
     }
 }

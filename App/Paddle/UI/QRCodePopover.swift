@@ -8,6 +8,7 @@ struct QRCodePopover: View {
     let title: String
     @Environment(\.chromeTheme) private var theme
     @State private var copied = false
+    @State private var image: NSImage?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -19,7 +20,9 @@ struct QRCodePopover: View {
                 Spacer()
             }
 
-            if let image = generateQRCode(from: url.absoluteString) {
+            // Generated once per presented page, not per render (the copied toggle and theme changes re-rendered
+            // the CIFilter each time before).
+            if let image {
                 Image(nsImage: image)
                     .interpolation(.none)
                     .resizable()
@@ -55,6 +58,7 @@ struct QRCodePopover: View {
         }
         .padding(14)
         .frame(width: 240)
+        .task(id: url.absoluteString) { image = generateQRCode(from: url.absoluteString) }
     }
 
     private func generateQRCode(from string: String) -> NSImage? {

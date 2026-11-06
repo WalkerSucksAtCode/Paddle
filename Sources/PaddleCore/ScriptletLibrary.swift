@@ -110,7 +110,10 @@ public enum ScriptletLibrary {
       if (s !== '') {
         // `/re/flags` only with real regex flags, so a path-like needle such as `/ads/banner` stays a substring.
         const m = /^\/(.+)\/([dgimsuvy]*)$/.exec(s);
-        if (m) re = new P.RegExp(m[1], m[2].replace(/[gy]/g, ''));
+        // A needle a hostile or typo'd list entry could hang the page's regex engine on: too long, or a quantified
+        // group wrapping another quantifier (`(a+)+`, the classic runaway). Those fall back to plain-text matching.
+        const runaway = m !== null && (m[1].length > 256 || /\([^()]*[+*][^()]*\)[+*{]/.test(m[1]));
+        if (m !== null && !runaway) re = new P.RegExp(m[1], m[2].replace(/[gy]/g, ''));
         else {
           const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           re = new P.RegExp(exact ? '^' + escaped + '$' : escaped);

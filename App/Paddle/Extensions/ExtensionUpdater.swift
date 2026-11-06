@@ -296,7 +296,10 @@ final class ExtensionUpdater {
         installer.reloadSources()
         guard installer.sourcesError == nil else { return [] }
         return installer.sources.records
-            .filter { Self.fromUpdatableStore($0.value) && ExtensionUpdatePolicy.shouldCheck(lastCheck: $0.value.lastCheck, now: now, enabled: enabled) }
+            .filter {
+                Self.fromUpdatableStore($0.value)
+                    && ExtensionUpdatePolicy.shouldCheck(lastCheck: $0.value.lastCheck, now: now, enabled: enabled, seed: $0.key)
+            }
             .keys.sorted()
     }
 

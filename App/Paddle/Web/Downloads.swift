@@ -227,13 +227,21 @@ final class DownloadStore {
         let reserved = Set(items.filter { $0.state == .running }.compactMap { $0.destination?.path.lowercased() })
         var candidate = folder.appending(path: safe)
         var n = 1
-        while FileManager.default.fileExists(atPath: candidate.path) || reserved.contains(candidate.path.lowercased()) {
+        while FileManager.default.fileExists(atPath: candidate.path)
+            || reserved.contains(candidate.path.lowercased()) || claimed.contains(candidate.path.lowercased()) {
             let name = ext.isEmpty ? "\(base) (\(n))" : "\(base) (\(n)).\(ext)"
             candidate = folder.appending(path: name)
             n += 1
         }
         return candidate
     }
+
+    /// Paths claimed by downloads still choosing a destination (a save panel can wait while another download
+    /// starts), so two that begin together can't both pick a name only one can write.
+    private var claimed: Set<String> = []
+
+    func claim(_ destination: URL) { claimed.insert(destination.path.lowercased()) }
+    func release(_ destination: URL) { claimed.remove(destination.path.lowercased()) }
 }
 
 /// Runs a main-thread update at most once per `interval`, however often `schedule` is called from any thread: the
@@ -274,6 +282,11 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
         let destination: URL
         // The window's profile may set its own folder and Ask (a private window's is the default profile's).
         let config = item?.browser?.config ?? AppModel.shared.config
+        // Claimed before any await: a save panel below can wait while another download starts and would otherwise
+        // pick the same free name. Released on return, once the chosen destination is on the item.
+        let provisional = store.uniqueDestination(for: suggestedFilename, in: DownloadStore.folder(using: config))
+        store.claim(provisional)
+        defer { store.release(provisional) }
         if config.askWhereToDownload {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = suggestedFilename
@@ -306,7 +319,7 @@ final class DownloadDelegate: NSObject, WKDownloadDelegate {
                 destination = chosen
             }
         } else {
-            destination = store.uniqueDestination(for: suggestedFilename, in: DownloadStore.folder(using: config))
+            destination = provisional
         }
         Self.log.info("download started")
         if let item {

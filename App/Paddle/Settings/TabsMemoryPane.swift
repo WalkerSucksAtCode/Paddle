@@ -90,6 +90,12 @@ struct TabsMemoryPane: View {
             }
 
             Section("Memory") {
+                Toggle("Drop Back cache on navigation", isOn: Binding(
+                    get: { model.file.dropBackForwardCacheOnNavigate },
+                    set: { value in Task { await model.saveKey(.dropBackForwardCacheOnNavigate, .bool(value)) } }
+                ))
+                .help("dropBackForwardCacheOnNavigate")
+                .disabled(model.controlsDisabled)
                 Toggle("Show memory in toolbar", isOn: Binding(
                     get: { model.file.showTabMemory },
                     set: { value in Task { await model.saveKey(.showTabMemory, .bool(value)) } }

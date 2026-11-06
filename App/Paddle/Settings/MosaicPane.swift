@@ -11,6 +11,8 @@ struct MosaicPane: View {
     @State private var openToolbars = false
     @State private var openFocus = false
     @State private var openAdvanced = false
+    /// The dim slider's draft: shown while dragging, saved once when the drag ends.
+    @State private var dimDraft: Double?
 
     var body: some View {
         SettingsForm(maxColumns: 1, minColumnWidth: 520) {
@@ -212,14 +214,23 @@ struct MosaicPane: View {
         if model.file.mosaicFocusMarker == .dim {
             LabeledContent("Dim the others by") {
                 Slider(value: Binding(
-                    get: { model.file.mosaicDimAmount },
-                    set: { value in Task { await model.saveKey(.mosaicDimAmount, .number((value * 100).rounded() / 100)) } }
-                ), in: PaddleConfig.mosaicDimRange)
+                    get: { dimDraft ?? model.file.mosaicDimAmount },
+                    set: { dimDraft = ($0 * 100).rounded() / 100 }
+                ), in: PaddleConfig.mosaicDimRange, onEditingChanged: { editing in
+                    // Saved when the drag ends, as the tint-strength slider does: a write per tick is a config
+                    // write and a live apply per pixel.
+                    guard !editing, let value = dimDraft else { return }
+                    Task {
+                        await model.saveKey(.mosaicDimAmount, .number(value))
+                        dimDraft = nil
+                    }
+                })
                 .frame(width: 160)
-                Text("\(Int((model.file.mosaicDimAmount * 100).rounded())) %").monospacedDigit().frame(width: 40, alignment: .trailing)
+                Text("\(Int(((dimDraft ?? model.file.mosaicDimAmount) * 100).rounded())) %").monospacedDigit().frame(width: 40, alignment: .trailing)
             }
             .help("mosaicDimAmount in config.json, 0.05 to 0.7.")
         }
+
     }
 
     @ViewBuilder private var toolbarRows: some View {
@@ -493,6 +504,9 @@ private struct MosaicTimerPicker: View {
 private struct MosaicShadingRows: View {
     let model: SettingsModel
     @State private var custom = Color.orange
+    /// Slider drafts: shown while dragging, saved once when the drag ends (a config write per tick otherwise).
+    @State private var strengthDraft: Double?
+    @State private var colorSaveTask: Task<Void, Never>?
 
     private static let custom = "custom"
     private var color: String { model.file.mosaicStripColor }
@@ -520,17 +534,29 @@ private struct MosaicShadingRows: View {
                 get: { RGBColor(hex: color).map { Color(rgb: $0) } ?? custom },
                 set: { value in
                     custom = value
-                    Task { await model.saveKey(.mosaicStripColor, .string("#" + ThemeColorHex.hex(of: value))) }
+                    // Debounced 400 ms: the color panel sends a change per step (the `CustomColorWell` pattern).
+                    colorSaveTask?.cancel()
+                    colorSaveTask = Task {
+                        try? await Task.sleep(for: .milliseconds(400))
+                        guard !Task.isCancelled else { return }
+                        await model.saveKey(.mosaicStripColor, .string("#" + ThemeColorHex.hex(of: value)))
+                    }
                 }
             ), supportsOpacity: false)
         }
         LabeledContent("Strength") {
             Slider(value: Binding(
-                get: { model.file.mosaicStripStrength },
-                set: { value in Task { await model.saveKey(.mosaicStripStrength, .number(value.rounded())) } }
-            ), in: PaddleConfig.mosaicStripStrengthRange)
+                get: { strengthDraft ?? model.file.mosaicStripStrength },
+                set: { strengthDraft = $0.rounded() }
+            ), in: PaddleConfig.mosaicStripStrengthRange, onEditingChanged: { editing in
+                guard !editing, let value = strengthDraft else { return }
+                Task {
+                    await model.saveKey(.mosaicStripStrength, .number(value))
+                    strengthDraft = nil
+                }
+            })
             .frame(width: 160)
-            Text("\(Int(model.file.mosaicStripStrength)) %").monospacedDigit().frame(width: 40, alignment: .trailing)
+            Text("\(Int(strengthDraft ?? model.file.mosaicStripStrength)) %").monospacedDigit().frame(width: 40, alignment: .trailing)
         }
         .help("mosaicStripStrength in config.json, 4 to 60.")
         Picker("Style", selection: Binding(

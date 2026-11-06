@@ -2,8 +2,9 @@ import Foundation
 
 /// Page-controlled text (a link, a file name) cleaned for a dialog.
 public enum DisplayText {
-    /// Newlines and tabs become spaces; other control characters and bidi override characters are dropped, so a page
-    /// can't add lines to a prompt or reverse its text; then the first `limit` characters.
+    /// Newlines and tabs become spaces; other control characters, bidi overrides and bidi marks (which reorder
+    /// text without showing anything) are dropped, so a page can't add lines to a prompt or reverse its text; then
+    /// the first `limit` characters.
     public static func cleaned(_ text: String, limit: Int = 200) -> String {
         var scalars = String.UnicodeScalarView()
         for s in text.unicodeScalars {

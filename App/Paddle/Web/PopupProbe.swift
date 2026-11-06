@@ -80,7 +80,7 @@ final class PopupProbe: NSObject, WKNavigationDelegate {
         if let url, scheme == "http", let secure = HTTPSOnlyPolicy.upgrade(
             url, enabled: app.config.httpsOnly,
             siteAllowsHTTP: !app.config.sitePolicy(forHost: url.host() ?? "").httpsOnly,
-            sessionExceptions: app.httpExceptions(isPrivate: isPrivate)
+            sessionExceptions: app.httpExceptions(isPrivate: isPrivate, profile: profileID)
         ) {
             if upgraded {
                 blocked(url)

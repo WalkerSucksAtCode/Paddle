@@ -596,6 +596,11 @@ extension PaneNode: Codable {
     private enum CodingKeys: String, CodingKey { case tab, axis, ratio, first, second }
 
     public init(from decoder: Decoder) throws {
+        // A hand-edited session.json can nest `first`/`second` arbitrarily deep; the stack would overflow before
+        // the lenient per-item decoder could catch it. Thrown here, the error lands where it is handled.
+        guard decoder.codingPath.count < 64 else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "pane layout nested too deeply"))
+        }
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if let id = try c.decodeIfPresent(String.self, forKey: .tab) {
             self = .tab(id)

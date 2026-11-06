@@ -19,6 +19,9 @@ enum InstallFromLinkPanel {
         panel.title = "Install Extension from Link"
         panel.isReleasedWhenClosed = false
         panel.contentViewController = NSHostingController(rootView: InstallFromLinkView().environment(\.chromeScale, AppModel.shared.chromeScale))
+        // Closing with the close box must forget the panel, or the next install re-presents this stale one —
+        // old text, old result, and never a sheet again (`BrowserImportController` does the same).
+        panel.delegate = InstallFromLinkPanel.sharedDelegate
         window = panel
         if let parent, parent.attachedSheet == nil {
             parent.beginSheet(panel)
@@ -35,6 +38,16 @@ enum InstallFromLinkPanel {
             parent.endSheet(panel)
         } else {
             panel.close()
+        }
+    }
+
+    /// Nil the static out when the panel is closed any way (the close box has no other route here).
+    private static let sharedDelegate = PanelDelegate()
+
+    private final class PanelDelegate: NSObject, NSWindowDelegate {
+        func windowWillClose(_ notification: Notification) {
+            guard (notification.object as? NSWindow) === InstallFromLinkPanel.window else { return }
+            InstallFromLinkPanel.window = nil
         }
     }
 }

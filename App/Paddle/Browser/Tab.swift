@@ -694,9 +694,20 @@ final class Tab: Identifiable {
         // Extension pages and Paddle's own pages get no block lists, so they never need the reload.
         loadedUnblocked = own == nil && extensionPageID == nil && !AppModel.shared.web.blockersReady.isReady
         applySiteSettingsAfterCommit(backForward: committingNavigationType == .backForward)
+        clearBackForwardCacheAfterCommit()
         committingNavigationType = nil
         // A navigation inside the tab is a session change too (its URL and history), not only tab and window changes.
         if !isPrivate && !isPreview { AppModel.shared.sessionChanged() }
+    }
+
+    /// When `dropBackForwardCacheOnNavigate` is on, a same-tab commit other than Back, Forward or Reload drops the
+    /// page WebKit kept for an instant Back. Off (the default), that cache stays so media can keep playing and Back
+    /// can restore the page. Freezing a background tab still clears the cache. A nil type (session restore, a
+    /// load that never reported one) is left alone. Back and forward still run `ScrollRestoreScript`.
+    private func clearBackForwardCacheAfterCommit() {
+        guard AppModel.shared.config.dropBackForwardCacheOnNavigate else { return }
+        guard let type = committingNavigationType, type != .backForward, type != .reload, let webView else { return }
+        PrivateAPI.callVoid("_clearBackForwardCache", on: webView)
     }
 
     /// Why WebKit stopped a web process (`_WKProcessTerminationReason`, private WebKit API).

@@ -128,7 +128,12 @@ struct ExtensionPermissionsTests {
         let gecko: [String: Any] = ["browser_specific_settings": ["gecko": ["id": "Ext@Example.org"]], "key": key]
         #expect(ExtensionIdentity.permissionIdentity(manifest: gecko, verifiedStoreID: "abc") == "gecko:ext@example.org")
         #expect(ExtensionIdentity.permissionIdentity(manifest: [:], verifiedStoreID: "ABC") == "store:abc")
-        #expect(ExtensionIdentity.permissionIdentity(manifest: [:], verifiedStoreID: nil) == nil)
+        // A folder that declares nothing gets a content identity, so a same-named folder with a different manifest
+        // can't inherit its grants; two calls for the same manifest agree.
+        let content = ExtensionIdentity.permissionIdentity(manifest: ["name": "x"], verifiedStoreID: nil)
+        #expect(content?.hasPrefix("content:") == true)
+        #expect(content == ExtensionIdentity.permissionIdentity(manifest: ["name": "x"], verifiedStoreID: nil))
+        #expect(content != ExtensionIdentity.permissionIdentity(manifest: ["name": "y"], verifiedStoreID: nil))
         let chrome = ExtensionIdentity.permissionIdentity(manifest: ["key": key], verifiedStoreID: "abc")
         #expect(chrome == ExtensionIdentity.chromeID(manifestKey: key).map { "chrome:" + $0 })
     }

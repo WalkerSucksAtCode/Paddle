@@ -107,10 +107,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Gives the keyboard to the page: the link preview's while one shows, else the selected tab's.
+    /// Gives the keyboard to the page: the link preview's while one shows, else the selected tab's. Leaves the
+    /// keyboard where it is while the user is typing — the address field, the find bar, a rename — so a web view
+    /// recreation or a script-driven switch mid-sentence doesn't yank focus onto the page.
     func focusWebView() {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.model.renamingTabID == nil, self.model.renamingGroupID == nil else { return }
+            if self.model.isEditingAddress || self.model.findVisible { return }
+            // A field editor holding the keyboard (address field, find bar, any text the window hosts) keeps it:
+            // a page field is a web view, so an NSText first responder here is always Paddle's own UI.
+            if self.window?.firstResponder is NSText { return }
             let webView = self.model.preview?.webView ?? self.model.selectedTab?.webView
             if let webView, webView.window === self.window {
                 self.window?.makeFirstResponder(webView)
@@ -150,10 +156,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// `askBeforeClosingWindow`: a window with more than one tab (any space) asks in a sheet first. Quitting and the
-    /// last tab closing (`close()`) don't come through here.
+    /// last tab closing (`close()`) don't come through here. A second ⌘W while the sheet is up returns false
+    /// instead of stacking another sheet on the one already attached.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         let count = model.allTabs.count
         guard model.config.askBeforeClosingWindow, count > 1 else { return true }
+        guard sender.attachedSheet == nil else { return false }
         let alert = NSAlert()
         alert.messageText = "Close this window and its \(count) tabs?"
         alert.informativeText = "Its tabs close with it."

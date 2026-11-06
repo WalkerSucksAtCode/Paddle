@@ -1,4 +1,5 @@
 import Foundation
+import zlib
 
 /// ZIP central directory before unpack, and the unpacked folder after. Refused: ZIP64, split archives,
 /// encryption, compression other than stored/deflate, links and special files, names that could land
@@ -183,12 +184,12 @@ public enum ZipSafety {
         guard (try? fileManager.attributesOfItem(atPath: root)[.type] as? FileAttributeType) == .typeDirectory else {
             throw Refusal.unpackedMismatch("the folder itself")
         }
-        var files: [String: UInt64] = [:]
+        var files: [String: (size: UInt64, crc: UInt32)] = [:]
         var directories = Set<String>()
         var optional = Set<String>()
         for entry in entries {
             let name = entry.name.precomposedStringWithCanonicalMapping
-            if entry.isDirectory { directories.insert(name) } else { files[name] = entry.uncompressedSize }
+            if entry.isDirectory { directories.insert(name) } else { files[name] = (entry.uncompressedSize, entry.crc32) }
             if entry.isMacMetadata { optional.insert(name) }
             var parent = ""
             for component in name.split(separator: "/").dropLast() {
@@ -207,7 +208,11 @@ public enum ZipSafety {
             case .typeDirectory?:
                 guard directories.contains(path) else { throw Refusal.unpackedMismatch(path) }
             case .typeRegular?:
-                guard let size = files[path], (attributes[.size] as? NSNumber)?.uint64Value == size else {
+                guard let expected = files[path], (attributes[.size] as? NSNumber)?.uint64Value == expected.size else {
+                    throw Refusal.unpackedMismatch(path)
+                }
+                // Size alone can't tell extraction corruption from the real file; the central directory's CRC can.
+                if crc32(of: root + "/" + path, fileManager: fileManager) != expected.crc {
                     throw Refusal.unpackedMismatch(path)
                 }
             default:
@@ -218,6 +223,21 @@ public enum ZipSafety {
         for path in Set(files.keys).union(directories) where !seen.contains(path) && !optional.contains(path) {
             throw Refusal.unpackedMismatch(path)
         }
+    }
+
+    /// The CRC-32 of one unpacked file, streamed. Zero for an empty file, like the archive's field.
+    private static func crc32(of path: String, fileManager: FileManager) -> UInt32? {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return nil }
+        defer { try? handle.close() }
+        var crc: UInt32 = 0
+        while autoreleasepool(invoking: {
+            guard let chunk = try? handle.read(upToCount: 1 << 16), !chunk.isEmpty else { return false }
+            crc = UInt32(truncatingIfNeeded: chunk.withUnsafeBytes { raw in
+                zlib.crc32(UInt(crc), raw.baseAddress?.assumingMemoryBound(to: UInt8.self), uInt(raw.count))
+            })
+            return true
+        }) {}
+        return crc
     }
 
     // MARK: - Pieces

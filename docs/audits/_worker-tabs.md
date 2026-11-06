@@ -10,9 +10,9 @@
 
 ## Executive summary
 
-Awake **single-pane** tab switches are engineered as **opacity flips** over a small mounted set (`BrowserModel.mountedWebTabs` → `MountedWebPages`), with optional **`_doAfterNextPresentationUpdate:`** wait (300 ms cap). **`BrowserModel.activate`** always **`Tab.wake()`** / **`Tab.unfreeze()`** and clears the previous tab’s BFCache via **`PrivateAPI.callVoid("_clearBackForwardCache", on:)`**. Background tabs **freeze** (`Tab.freeze()` → `_suspendPage:`) then **sleep** (`Tab.sleep()` drops `WKWebView`) under **`AppModel.sweepSleepingTabs`** and **`TabSleepPolicy`**. **Mosaic** panes use per-pane **`WebContainer`** (all panes stay in the window); sleep policy treats mosaic panes as one unit (`TabSnapshot.mosaic`). **Back/forward scroll** is page-world **`ScrollRestoreScript`**; per-site zoom after BF navigations is deferred in **`Tab.applySiteSettingsAfterCommit`**. **PiP** is **`PictureInPictureScript`** + **`PictureInPictureMonitor`** → **`Tab.isInPictureInPicture`** (busy / no sleep). **Downloads** are **`DownloadStore`** / **`DownloadDelegate`** (in-memory list). **Find** is **`BrowserModel.find`** + **`FindBar`** / menu **`paddleFind*`**. **Spaces/groups** live in **`BrowserModel`** stashes + **`SessionRecord`**.
+Awake **single-pane** tab switches are engineered as **opacity flips** over a small mounted set (`BrowserModel.mountedWebTabs` → `MountedWebPages`), with optional **`_doAfterNextPresentationUpdate:`** wait (300 ms cap). **`BrowserModel.activate`** always **`Tab.wake()`** / **`Tab.unfreeze()`**; it no longer clears the previous tab’s BFCache (split views keep multiple panes mounted; clearing matched neither Safari nor Chrome). Background tabs **freeze** (`Tab.freeze()` → `_suspendPage:`), which clears BFCache before suspend, then **sleep** (`Tab.sleep()` drops `WKWebView`) under **`AppModel.sweepSleepingTabs`** and **`TabSleepPolicy`**. **Mosaic** panes use per-pane **`WebContainer`** (all panes stay in the window); sleep policy treats mosaic panes as one unit (`TabSnapshot.mosaic`). **Back/forward scroll** is page-world **`ScrollRestoreScript`**; per-site zoom after BF navigations is deferred in **`Tab.applySiteSettingsAfterCommit`**. **PiP** is **`PictureInPictureScript`** + **`PictureInPictureMonitor`** → **`Tab.isInPictureInPicture`** (busy / no sleep). **Downloads** are **`DownloadStore`** / **`DownloadDelegate`** (in-memory list). **Find** is **`BrowserModel.find`** + **`FindBar`** / menu **`paddleFind*`**. **Spaces/groups** live in **`BrowserModel`** stashes + **`SessionRecord`**.
 
-Main **instant-switch** risk: a tab can stay **mounted but frozen** (not selected) and pay **unfreeze + presentation wait** on return. **Instant Back** is intentionally weakened when leaving a tab (BFCache clear on select and on freeze).
+Main **instant-switch** risk: a tab can stay **mounted but frozen** (not selected) and pay **unfreeze + presentation wait** on return. **Instant Back** trade: freeze still clears BFCache before suspend; tab switch alone does not.
 
 ---
 
@@ -20,7 +20,7 @@ Main **instant-switch** risk: a tab can stay **mounted but frozen** (not selecte
 
 | Concern | Primary calls / types | Notes |
 |--------|------------------------|-------|
-| Select tab | `BrowserModel.select` → `activate` → `Tab.wake`, mosaic `others` wake | `SwitchTrace.activated` logs `live` / `frozen: resumed` / `cold: page created` |
+| Select tab | `BrowserModel.select` → `activate` → `Tab.wake`, mosaic `others` wake | No `_clearBackForwardCache` here; `SwitchTrace.activated` logs `live` / `frozen: resumed` / `cold: page created` |
 | Mount / show page | `mountedWebTabs`, `MountedWebPages`, `WebContainer` | Opacity not `isHidden`; detached tabs throttled |
 | Freeze | `AppModel.sweepSleepingTabs` → `TabSleepPolicy.decide` → `Tab.freeze` | Also `_clearBackForwardCache` inside `freeze()` |
 | Sleep | `Tab.sleep` | Saves `interactionState`, drops view, `exitPictureInPictureIfNeeded` |
@@ -49,12 +49,12 @@ Main **instant-switch** risk: a tab can stay **mounted but frozen** (not selecte
 ### FA-TAB-02 — Leaving a tab clears BFCache (Instant Back trade)
 - **Severity:** S4  
 - **Area:** tabs / back-forward  
-- **Mechanism:** `BrowserModel.activate` calls `PrivateAPI.callVoid("_clearBackForwardCache", on: leftView)` when leaving a live previous tab; `Tab.freeze()` clears again before `_suspendPage:`.  
-- **Evidence:** `BrowserModel.swift` ~332–336; `Tab.swift` `freeze()` ~603–606; `README.md` “Instant Back vs RAM”.  
-- **User impact:** Back to a site left via tab switch may **reload** instead of WebKit in-process BFCache instant restore; scroll may still be restored via `ScrollRestoreScript` after reload.  
-- **Disposition:** Accepted product limit  
-- **Suggested fix shape:** None unless RAM policy changes; document in release notes only.  
-- **Tree:** `main` @ `015dc73`.
+- **Mechanism (superseded):** `BrowserModel.activate` used to call `_clearBackForwardCache` when leaving a tab; **removed** so mounted/split panes and SPAs match Safari/Chrome. `Tab.freeze()` still clears before `_suspendPage:`; optional `dropBackForwardCacheOnNavigate` clears on in-tab navigations.  
+- **Evidence:** `BrowserModel.swift` `activate`; `Tab.swift` `freeze()`; `README.md` “Instant Back vs RAM”.  
+- **User impact:** Tab switches no longer force BF pages to drop; instant Back after a switch is closer to other browsers; RAM from old BF entries is reclaimed on freeze, sleep, memory pressure, and ballooned `reapCachedWebProcesses`.  
+- **Disposition:** Addressed (behavior change)  
+- **Suggested fix shape:** —  
+- **Tree:** historical snapshot vs current branch.
 
 ### FA-TAB-03 — Back/forward: zoom defer vs scroll restore window
 - **Severity:** S3  

@@ -86,8 +86,16 @@ public enum PrivateAPI {
         }
         if let pool {
             callVoid("_garbageCollectJavaScriptObjectsForTesting", on: pool)
-            callVoid("_clearWebProcessCache", on: pool)
+            clearWebProcessCache(on: pool)
         }
+    }
+
+    /// Drops cached WebContent processes on a process pool (`_clearWebProcessCache`).
+    /// Does not force a JavaScript collection. `trimWebKitMemory` does both, and that collection runs in every live
+    /// process, including the page on screen, so the memory sweep uses this call on its own.
+    @discardableResult
+    public static func clearWebProcessCache(on pool: NSObject) -> Bool {
+        callVoid("_clearWebProcessCache", on: pool)
     }
 }
 

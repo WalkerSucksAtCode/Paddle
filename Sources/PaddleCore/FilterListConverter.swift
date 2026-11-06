@@ -6,9 +6,10 @@ import Foundation
 ///
 /// Supported: `||host^` / `|anchor` / `*` / `^` network rules with common options (`third-party`, `domain=`,
 /// resource types, `match-case`, `important`), `/regex/` rules `RegexTranslator` can rewrite exactly, `@@`
-/// exceptions (including `$document` site allowlisting), `##` hiding (generic and per-domain) and `#@#`
-/// exceptions. Skipped: scriptlets, extended selectors, and options WebKit cannot express (`redirect`, `csp`,
-/// `removeparam`, `replace=/…/`, ...). Skipped lines and refused regex are counted, never guessed.
+/// exceptions (including `$document` site allowlisting and `$generichide` / `$elemhide` cosmetic opt-outs),
+/// `$badfilter` (the rule it names is dropped, not kept blocking), `##` hiding (generic and per-domain) and
+/// `#@#` exceptions. Skipped: scriptlets, extended selectors, and options WebKit cannot express (`redirect`,
+/// `csp`, `removeparam`, `replace=/…/`, ...). Skipped lines and refused regex are counted, never guessed.
 ///
 /// `subdocument` / `frame` become WebKit's `document` type limited to `load-context: child-frame`; a bare
 /// `document` would also block navigating to the site. Same for the `document` part of a rule with only
@@ -33,7 +34,7 @@ public enum FilterListConverter {
     public static let maxRulesPerList = 150_000
     /// Part of the compiled-list cache key. Bump it whenever the JSON for the same list text changes, so lists
     /// compiled by the previous converter are recompiled instead of loaded from WebKit's cache.
-    public static let converterVersion = 8
+    public static let converterVersion = 9
 
     public struct Result: Sendable {
         public var json: String
@@ -49,6 +50,8 @@ public enum FilterListConverter {
         /// `/regex/` lines turned into rules (one or more each), and those `RegexTranslator` refused.
         public var regexTranslated: Int
         public var regexRefused: Int
+        /// Lines consumed by `$badfilter`: each target rule a `$badfilter` line named, plus the `$badfilter` lines.
+        public var badFiltered = 0
         public var truncated: Bool
         /// Some rule in `json` came from a `/regex/` line (the list's or a shared exception).
         public var containsRegexRules: Bool
@@ -164,6 +167,11 @@ public enum FilterListConverter {
         /// `#@#` exceptions: selector to the domains (`*domain`) it must not hide on, and selectors excepted everywhere.
         var cosmeticExceptions: [String: [String]] = [:]
         var globalExceptions: Set<String> = []
+        /// Hosts of `@@||host^$generichide` / `$elemhide` exceptions: no generic (respectively no) cosmetic hiding there.
+        var genericHideHosts: Set<String> = []
+        var elemHideHosts: Set<String> = []
+        /// Lines neutralized by a `$badfilter` line (the target rules and the `$badfilter` lines themselves).
+        var badFiltered = 0
         var skips = SkipBreakdown()
         var styleInjection = 0
         var invalidSelectors = 0
@@ -197,6 +205,7 @@ public enum FilterListConverter {
 
     static func parse(_ text: String, shared: SharedExceptions = .none) -> Parsed {
         var parsed = Parsed()
+        let badFilters = badFilterTargets(text)
 
         for rawLine in text.split(whereSeparator: \.isNewline) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -248,12 +257,23 @@ public enum FilterListConverter {
                 continue
             }
 
+            // A `$badfilter` line and the rule it names share a key; both are consumed here, before either could
+            // become a rule (the `$badfilter` line alone is not a block, and the rule it names must not become one).
+            if let key = networkKey(line), badFilters.contains(key) {
+                parsed.badFiltered += 1
+                continue
+            }
+
             let rules: [Rule]
             switch networkRules(line) {
             case .unsupported(let reason): parsed.skip(reason); continue
             case .refusedRegex: parsed.regexRefused += 1; continue
             case .rules(let made): rules = made
             case .regex(let made): rules = made; parsed.regexTranslated += 1
+            case .cosmeticException(let host, let genericOnly):
+                // `@@||host^$generichide` (or `$elemhide`): the site opted out of cosmetic hiding.
+                if genericOnly { parsed.genericHideHosts.insert(host) } else { parsed.elemHideHosts.insert(host) }
+                continue
             }
             for rule in rules {
                 if rule.action.type == "ignore-previous-rules" {
@@ -283,18 +303,41 @@ public enum FilterListConverter {
             excepted.append(CosmeticChunk(trigger: trigger, selectors: [selector]))
         }
 
+        // `@@||host^$generichide` (and `$elemhide`, which covers specific selectors too): generic hiding skips those
+        // hosts outright. `unless-domain` cannot join an `if-domain` trigger, so the specific side is handled below.
+        let genericOptOut = (parsed.genericHideHosts.union(parsed.elemHideHosts)).sorted().map { "*" + $0 }
+        let genericTrigger: Trigger = {
+            var trigger = Trigger(urlFilter: ".*")
+            if !genericOptOut.isEmpty { trigger.unlessDomain = genericOptOut }
+            return trigger
+        }()
+
         var generic: [String] = []
         for selector in parsed.genericSelectors where !parsed.globalExceptions.contains(selector) {
-            if let domains = parsed.cosmeticExceptions[selector] { except(selector, unless: domains) } else { generic.append(selector) }
+            if let domains = parsed.cosmeticExceptions[selector] {
+                except(selector, unless: domains + genericOptOut.filter { !domains.contains($0) })
+            } else {
+                generic.append(selector)
+            }
         }
         for start in stride(from: 0, to: generic.count, by: size) {
-            chunks.append(CosmeticChunk(trigger: Trigger(urlFilter: ".*"), selectors: Array(generic[start..<min(start + size, generic.count)])))
+            chunks.append(CosmeticChunk(trigger: genericTrigger, selectors: Array(generic[start..<min(start + size, generic.count)])))
         }
         for key in parsed.domainOrder {
             guard let (ifDomains, unlessDomains) = parseDomains(key, separator: ","),
                   let all = parsed.domainSelectors[key] else { continue }
+            // `$elemhide` opts a site out of its specific selectors too. A domain list the host sits in loses the
+            // whole group (WebKit cannot take one site out of an `if-domain` list); hiding too little beats hiding
+            // on a site that opted out — the same call `#@#` exceptions make.
+            if ifDomains.contains(where: { domain in
+                parsed.elemHideHosts.contains { domainsOverlap(domain, "*" + $0) }
+            }) { continue }
             var trigger = Trigger(urlFilter: ".*")
-            if !ifDomains.isEmpty { trigger.ifDomain = ifDomains } else { trigger.unlessDomain = unlessDomains }
+            if !ifDomains.isEmpty { trigger.ifDomain = ifDomains } else {
+                var skipped = unlessDomains
+                for host in parsed.elemHideHosts.map({ "*" + $0 }) where !skipped.contains(host) { skipped.append(host) }
+                trigger.unlessDomain = skipped
+            }
             var selectors: [String] = []
             for selector in all where !parsed.globalExceptions.contains(selector) {
                 guard let domains = parsed.cosmeticExceptions[selector] else { selectors.append(selector); continue }
@@ -361,6 +404,7 @@ public enum FilterListConverter {
             invalidSelectors: parsed.invalidSelectors + invalidSelectors,
             regexTranslated: parsed.regexTranslated,
             regexRefused: parsed.regexRefused,
+            badFiltered: parsed.badFiltered,
             truncated: truncated,
             containsRegexRules: rules.contains(where: \.isRegex)
         )
@@ -373,6 +417,9 @@ public enum FilterListConverter {
         case rules([Rule])
         /// A `/regex/` line, one rule per url-filter `RegexTranslator` gave.
         case regex([Rule])
+        /// `@@||host^$generichide` / `$elemhide`: the host where cosmetic hiding is switched off (`genericOnly`
+        /// separates the two — `$elemhide` also lifts the site-specific selectors).
+        case cosmeticException(host: String, genericOnly: Bool)
         case refusedRegex(RegexTranslator.Refusal)
         case unsupported(SkipReason)
     }
@@ -403,6 +450,8 @@ public enum FilterListConverter {
         var isDocumentAllowlist = false
         var isImportant = false
         var framesOnly = false
+        var isCosmeticOptOut = false
+        var cosmeticOptOutGenericOnly = false
         /// A positive type option was given; if they all map to no WebKit type (`$object`), the rule has no form.
         var typeListed = false
 
@@ -428,6 +477,10 @@ public enum FilterListConverter {
             case "document", "doc":
                 guard isException, !negated else { return .unsupported(.option("document")) }
                 isDocumentAllowlist = true
+            case "generichide", "ghide", "elemhide", "ehide":
+                guard isException, !negated else { return .unsupported(.option(optionKey(name))) }
+                isCosmeticOptOut = true
+                cosmeticOptOutGenericOnly = name == "generichide" || name == "ghide"
             default:
                 guard let types = resourceTypeMap[name] else { return .unsupported(.option(optionKey(name))) }  // option WebKit can't express
                 if negated { excludedTypes.formUnion(types) } else { resourceTypes.formUnion(types); typeListed = true }
@@ -444,6 +497,21 @@ public enum FilterListConverter {
             }
             guard let host = plainHost(pattern) else { return .unsupported(.option("document (not a site)")) }
             return .rules([siteAllowRule(host)])
+        }
+
+        if isCosmeticOptOut {
+            // `@@||example.com^$generichide` / `$elemhide`: cosmetic hiding is switched off for the site, the same
+            // no-other-constraints shape as `$document`.
+            if trigger.loadType != nil || trigger.ifDomain != nil || trigger.unlessDomain != nil
+                || !resourceTypes.isEmpty || !excludedTypes.isEmpty {
+                let name = cosmeticOptOutGenericOnly ? "generichide" : "elemhide"
+                return .unsupported(.option("\(name) (with other options)"))
+            }
+            guard let host = plainHost(pattern) else {
+                let name = cosmeticOptOutGenericOnly ? "generichide" : "elemhide"
+                return .unsupported(.option("\(name) (not a site)"))
+            }
+            return .cosmeticException(host: host, genericOnly: cosmeticOptOutGenericOnly)
         }
 
         // Only plugin types (`$object`): WebKit has no plugin type, and without one the rule would block every type.
@@ -583,24 +651,69 @@ public enum FilterListConverter {
         if p.hasSuffix("^") { p = p.dropLast() }
         let host = p.lowercased()
         guard !host.isEmpty, host.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" }) else { return nil }
-        if !anchored, !host.contains(".") || host.hasPrefix(".") || host.hasSuffix(".") { return nil }
+        // A trailing dot never matches a real hostname, so `||example.com.^` must not become a dead allowlist.
+        if host.hasPrefix(".") || host.hasSuffix(".") { return nil }
+        if !anchored, !host.contains(".") { return nil }
         return host
+    }
+
+    /// The pattern and options of a network line, split the way `networkRules` splits them (before any option is
+    /// interpreted): the identity `$badfilter` matching works on.
+    static func networkParts(_ line: String) -> (exception: Bool, pattern: String, options: [String])? {
+        var body = Substring(line)
+        let isException = body.hasPrefix("@@")
+        if isException { body = body.dropFirst(2) }
+        var pattern = body
+        var options: [Substring] = []
+        if let dollar = body.lastIndex(of: "$"), case let tail = body[body.index(after: dollar)...], !tail.isEmpty, !tail.contains("/") {
+            pattern = body[..<dollar]
+            options = tail.split(separator: ",")
+        }
+        return (isException, String(pattern), options.map(String.init))
+    }
+
+    /// The identity of a network line for `$badfilter`: `@@` marker, pattern, and option set with `badfilter`
+    /// itself taken out — order and duplicates ignored, pattern lowercased (a filter that differs only by case
+    /// from its twin is not a different filter to neutralize).
+    static func networkKey(_ parts: (exception: Bool, pattern: String, options: [String])) -> String {
+        (parts.exception ? "@@" : "") + parts.pattern.lowercased() + "$"
+            + parts.options.filter { $0 != "badfilter" && $0 != "~badfilter" }.sorted().joined(separator: ",")
+    }
+
+    static func networkKey(_ line: String) -> String? {
+        networkParts(line).map(networkKey)
+    }
+
+    /// The rules `text`'s `$badfilter` lines neutralize: uBlock Origin drops the exact rule each names (same
+    /// pattern, same options minus `$badfilter`), instead of letting it keep blocking. Paddle consumes both the
+    /// `$badfilter` line and its target, counting them as `badFiltered`.
+    static func badFilterTargets(_ text: String) -> Set<String> {
+        var keys: Set<String> = []
+        for rawLine in text.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            guard let parts = networkParts(line),
+                  parts.options.contains(where: { $0 == "badfilter" || $0 == "~badfilter" }) else { continue }
+            keys.insert(networkKey(parts))
+        }
+        return keys
     }
 
     /// Splits `a.com,~b.a.com` into WebKit `if-domain` / `unless-domain` lists (`*` prefix = include subdomains).
     /// WebKit cannot combine both in one trigger, so when positives exist the negatives are dropped, which is
     /// only right when each negative lies outside every positive. A negative that equals or sits under a positive
-    /// (`a.com|~b.a.com`), or an invalid negative (`~amazon.*`), has no form: nil, so the rule is skipped.
+    /// (`a.com|~b.a.com`), or any entry WebKit cannot take (`~amazon.*`, a trailing dot), has no form: nil, so
+    /// the whole rule is skipped and tallied — never silently narrowed to the entries that did parse. A bare `*`
+    /// positive constrains nothing and is simply ignored.
     static func parseDomains(_ list: String, separator: Character) -> ([String], [String])? {
         var ifs: [String] = []
         var unlesses: [String] = []
         for raw in list.split(separator: separator) {
             let negated = raw.hasPrefix("~")
             let domain = (negated ? raw.dropFirst() : raw).lowercased()
+            if domain == "*" { continue }
             guard !domain.isEmpty, domain.allSatisfy({ ($0.isASCII && $0.isLetter) || $0.isNumber || $0 == "." || $0 == "-" }),
                   !domain.hasSuffix(".") else {
-                if negated { return nil }
-                continue
+                return nil
             }
             if negated { unlesses.append("*" + domain) } else { ifs.append("*" + domain) }
         }

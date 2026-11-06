@@ -23,12 +23,20 @@ nonisolated enum BoundedDownload {
             throw TooLarge()
         }
         var data = Data()
-        for try await byte in bytes {
-            guard cap.add(1) else {
+        // Chunked: `for try await byte` costs one async hop and one append per byte — millions for a 2 MB feed.
+        var iterator = bytes.makeAsyncIterator()
+        while true {
+            var chunk: [UInt8] = []
+            chunk.reserveCapacity(64 * 1024)
+            while chunk.count < 64 * 1024, let byte = try await iterator.next() {
+                chunk.append(byte)
+            }
+            guard !chunk.isEmpty else { break }
+            guard cap.add(chunk.count) else {
                 bytes.task.cancel()
                 throw TooLarge()
             }
-            data.append(byte)
+            data.append(contentsOf: chunk)
         }
         return (data, response)
     }

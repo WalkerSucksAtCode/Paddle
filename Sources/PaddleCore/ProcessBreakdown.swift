@@ -39,6 +39,7 @@ public struct ProcessBreakdown: Equatable, Sendable {
     /// The UI process itself.
     public var app: UInt64 = 0
     /// WebContent processes with no attributable view and no workers: back-forward cache, prewarmed, exiting.
+    /// `CachedWebProcess.reapable` is the large view-less subset the sweep drops; the prewarm spare stays.
     public var other: UInt64 = 0
     /// Processes macOS holds Paddle responsible for that WebKit didn't report: AutoFill, audio and other helpers
     /// (and, when WebKit's process list is unavailable, every WebContent process no tab claimed).
@@ -116,5 +117,27 @@ public struct ProcessBreakdown: Equatable, Sendable {
         result.helpers = round(helpers)
         result.perTab = perTab.mapValues(round)
         return result
+    }
+}
+
+/// Which view-less WebContent processes are leftovers rather than the idle prewarm spare.
+/// A breakdown's `other` row also includes processes whose views nobody claimed; those still have views, so they stay.
+public enum CachedWebProcess {
+    /// `_warmInitialProcess` leaves one idle WebContent process of about 7 MB. View-less processes at or below
+    /// this stay: that spare, and site-isolation or card frames (often 20–40 MB). A leftover the size of a
+    /// previous document (hundreds of MB) is above it, and the sweep may drop it.
+    public static let spareCeiling: UInt64 = 128 * 1_048_576
+
+    /// Processes the memory sweep may drop: no web view, no service or shared worker, footprint above `spareCeiling`.
+    public static func reapable<View>(
+        _ processes: [WebContentProcess<View>],
+        spareCeiling: UInt64 = CachedWebProcess.spareCeiling
+    ) -> [WebContentProcess<View>] {
+        processes.filter { process in
+            process.views.isEmpty
+                && !process.runsServiceWorkers
+                && !process.runsSharedWorkers
+                && process.footprint > spareCeiling
+        }
     }
 }

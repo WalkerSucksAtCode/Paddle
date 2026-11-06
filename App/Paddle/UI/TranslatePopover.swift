@@ -128,8 +128,7 @@ struct TranslatePopover: View {
     private func translateWebPage() {
         guard let url = tab.url else { return }
         tab.showTranslatePopover = false
-        let encoded = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url.absoluteString
-        if let target = URL(string: "https://translate.google.com/translate?sl=auto&tl=\(targetLanguage)&u=\(encoded)") {
+        if let target = URL(string: "https://translate.google.com/translate?sl=auto&tl=\(targetLanguage)&u=\(Self.encoded(url))") {
             tab.load(target)
         }
     }
@@ -137,10 +136,17 @@ struct TranslatePopover: View {
     private func openInDeepL() {
         guard let url = tab.url else { return }
         tab.showTranslatePopover = false
-        let encoded = url.absoluteString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? url.absoluteString
-        if let target = URL(string: "https://www.deepl.com/translator#auto/\(targetLanguage)/\(encoded)") {
+        if let target = URL(string: "https://www.deepl.com/translator#auto/\(targetLanguage)/\(Self.encoded(url))") {
             tab.load(target)
         }
+    }
+
+    /// For a URL carried inside another URL: `urlQueryAllowed` alone leaves `&`, `=` and `?` standing, so the page's
+    /// own query string would split the carrier's parameters at its first `&`.
+    private static func encoded(_ url: URL) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=?#")
+        return url.absoluteString.addingPercentEncoding(withAllowedCharacters: allowed) ?? url.absoluteString
     }
 
     private func revertToOriginal() {

@@ -5,10 +5,11 @@ public enum DownloadFilename {
     public static let fallback = "download"
     public static let maxBytes = 255
 
-    /// Bidirectional override and isolate controls: they make a name read differently from what it is ("exe.txt" shown
-    /// as "txt.exe" reversed).
+    /// Bidirectional override and isolate controls, and the bidi marks (LRM, RLM, ALM): they make a name read
+    /// differently from what it is ("exe.txt" shown as "txt.exe" reversed, or a segment silently reordered).
     static func isBidiOverride(_ s: Unicode.Scalar) -> Bool {
         (0x202A...0x202E).contains(s.value) || (0x2066...0x2069).contains(s.value)
+            || s.value == 0x200E || s.value == 0x200F || s.value == 0x061C
     }
 
     /// Path separators and ":" become "-"; control and bidi override characters go; leading dots and whitespace go

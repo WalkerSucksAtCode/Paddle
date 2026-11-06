@@ -4,11 +4,14 @@ import PaddleCore
 
 /// Bookmarks in bookmarks.json: a plain file you can edit by hand (Paddle > Reload Config re-reads it, and an
 /// in-app edit re-reads it first when it changed on disk, so hand edits are never overwritten).
-@Observable
-final class BookmarkStore {
-    private(set) var tree = BookmarkTree()
-    /// Set when bookmarks.json exists but can't be read. Paddle then never writes the file, so nothing is lost.
-    private(set) var loadError: String?
+    @Observable
+    final class BookmarkStore {
+        private(set) var tree = BookmarkTree()
+        /// Set when bookmarks.json exists but can't be read. Paddle then never writes the file, so nothing is lost.
+        private(set) var loadError: String?
+        /// Match keys of every bookmarked URL, so the toolbar star is a set lookup instead of a full-tree walk per
+        /// render. Rebuilt wherever `tree` is assigned.
+        @ObservationIgnored private var bookmarkKeys: Set<String> = []
     /// An in-app edit not yet written to disk.
     @ObservationIgnored private var dirty = false
     /// bookmarks.json's modification date and size as last read or written; nil when there was no file.
@@ -34,20 +37,28 @@ final class BookmarkStore {
     }
 
     /// Reads bookmarks.json. An in-app edit still waiting to be saved is written first, unless the file changed
-    /// on disk since, in which case the hand edit wins.
+    /// on disk since, in which case the hand edit wins. A write that fails leaves the edit pending — re-reading
+    /// the file would drop it silently, so the in-memory tree stands and the save is retried.
     func load() {
         saveWork?.cancel()
         saveWork = nil
         if dirty, !diskChanged { saveNow() }
+        guard !dirty || diskChanged else {
+            log.error("bookmarks.json couldn't be written; the edit stays in memory and the next save retries it")
+            scheduleSave()
+            return
+        }
         dirty = false
         diskStamp = Self.stamp()
         guard FileManager.default.fileExists(atPath: Paths.bookmarks.path) else {
             tree = BookmarkTree()
+            refreshKeys()
             loadError = nil
             return
         }
         do {
             tree = try BookmarkTree.decode(Data(contentsOf: Paths.bookmarks))
+            refreshKeys()
             loadError = nil
         } catch {
             loadError = "bookmarks.json: \(PaddleConfig.describe(error))"
@@ -66,6 +77,7 @@ final class BookmarkStore {
         let before = tree
         change(&tree)
         guard tree != before else { return }
+        refreshKeys()
         if let undoManager = (NSApp.keyWindow ?? NSApp.mainWindow)?.undoManager {
             registerUndo(undoManager, restoring: before, actionName)
         }
@@ -93,7 +105,7 @@ final class BookmarkStore {
 
     func isBookmarked(_ url: URL?) -> Bool {
         guard let url else { return false }
-        return !tree.bookmarks(for: HistoryStore.storedURL(url)).isEmpty
+        return bookmarkKeys.contains(BookmarkTree.matchKey(HistoryStore.storedURL(url)))
     }
 
     /// The star and Bookmarks > Bookmark This Page: adds the page to the end of the bookmarks bar, or removes
@@ -164,18 +176,25 @@ final class BookmarkStore {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
-    /// Undo swaps the whole tree back; redo is registered the same way.
+    /// Undo swaps the whole tree back; redo is registered the same way. A hand edit to bookmarks.json since the
+    /// edit being undone is re-read first and wins, exactly as it does over a new in-app edit.
     private func registerUndo(_ undoManager: UndoManager, restoring old: BookmarkTree, _ actionName: String) {
         undoManager.registerUndo(withTarget: self) { store in
             MainActor.assumeIsolated {
+                if store.diskChanged { store.load() }
                 guard store.loadError == nil else { return }
                 let current = store.tree
                 store.tree = old
+                store.refreshKeys()
                 store.registerUndo(undoManager, restoring: current, actionName)
                 store.scheduleSave()
             }
         }
         undoManager.setActionName(actionName)
+    }
+
+    private func refreshKeys() {
+        bookmarkKeys = Set(tree.allBookmarks.compactMap { $0.url.map(BookmarkTree.matchKey) })
     }
 }
 

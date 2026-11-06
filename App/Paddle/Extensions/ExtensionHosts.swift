@@ -81,22 +81,30 @@ extension AppModel {
 
     /// A new folder installed from a window of `profile` (not the default): on in that profile (profiles.json) and
     /// off in the default profile (`extensions.<folder>` false in config.json), so it runs only where it was installed.
+    /// The config write is tried twice — a setting saved while the install ran conflicts with the first attempt, and
+    /// the retry applies the turn-off on top of it. Still failing, the folder stays on in the default profile
+    /// (unlisted folders default on) and the log says so plainly.
     func installOnlyInProfile(folder: String, profile: ProfileID) async {
         guard profile != ProfileStore.defaultID, profiles.contains(profile) else { return }
         profiles.setExtension(folder: folder, on: true, for: profile)
-        let disk: Data
-        do {
-            disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
-        } catch {
-            Logger(subsystem: "com.walker.Paddle", category: "extensions").error("extensions.\(folder, privacy: .private) not turned off: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        switch await writeConfig([ConfigChange("extensions", folder, .bool(false))], base: disk) {
-        case .written: break
-        case .conflict(let paths):
-            Logger(subsystem: "com.walker.Paddle", category: "extensions").error("extensions.\(folder, privacy: .private) not turned off: changed on disk (\(paths.count) paths)")
-        case .failed(let reason):
-            Logger(subsystem: "com.walker.Paddle", category: "extensions").error("extensions.\(folder, privacy: .private) not turned off: \(reason, privacy: .public)")
+        let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
+        for attempt in 0..<2 {
+            let disk: Data
+            do {
+                disk = try Self.readConfigFile(Paths.config.resolvingSymlinksInPath())
+            } catch {
+                log.error("extensions.\(folder, privacy: .private) not turned off: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            switch await writeConfig([ConfigChange("extensions", folder, .bool(false))], base: disk) {
+            case .written: return
+            case .conflict(let paths):
+                if attempt == 0 { continue }
+                log.error("extensions.\(folder, privacy: .private) not turned off: changed on disk (\(paths.count) paths); it runs in the default profile too until turned off in Settings > Extensions")
+            case .failed(let reason):
+                log.error("extensions.\(folder, privacy: .private) not turned off: \(reason, privacy: .public); it runs in the default profile too until turned off in Settings > Extensions")
+                return
+            }
         }
     }
 

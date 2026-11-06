@@ -145,15 +145,28 @@ public struct SessionStore {
     }
 
     /// State file names that appear anywhere in any session.json.bad copy, read as text since it didn't decode.
-    private func statesNamedByBadFiles() -> Set<String> {
+    /// Cached per bad-file mtime: every debounced save re-asks, and re-reading every bad copy each time (they
+    /// never change once written) made one broken session.json cost its full text parse every ≤30 s forever.
+    private mutating func statesNamedByBadFiles() -> Set<String> {
         let pattern = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.state/
         var names = Set<String>()
         for url in badFiles {
+            let stamp = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            if let cached = badFileNames[url], cached.stamp == stamp {
+                names.formUnion(cached.names)
+                continue
+            }
             guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-            names.formUnion(text.matches(of: pattern).map { String($0.output) })
+            let found = Set(text.matches(of: pattern).map { String($0.output) })
+            badFileNames[url] = (stamp, found)
+            names.formUnion(found)
         }
+        // A bad file deleted since the last read drops out of the cache with its entry.
+        badFileNames = badFileNames.filter { badFiles.contains($0.key) }
         return names
     }
+
+    @ObservationIgnored private var badFileNames: [URL: (stamp: Date?, names: Set<String>)] = [:]
 
     /// `<UUID>.state`: the only names `load` reads, so a hand-edited session.json can't point outside sessions/.
     static func isStateFileName(_ name: String) -> Bool {

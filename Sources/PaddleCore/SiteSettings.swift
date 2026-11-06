@@ -151,6 +151,9 @@ extension PaddleConfig {
     public static func normalizedHost(_ host: String) -> String {
         var host = host.lowercased()
         while host.hasSuffix(".") { host.removeLast() }
+        // A port: `URL.host` drops it while punycoding, which would fold a Unicode `exämple.com:8080` onto the bare
+        // host's key and make two settings one. Keys with a port (or any other unusable form) match only themselves.
+        if host.contains(":") { return host }
         guard host.contains(where: { !$0.isASCII }), let encoded = URL(string: "https://\(host)/")?.host else {
             return host
         }

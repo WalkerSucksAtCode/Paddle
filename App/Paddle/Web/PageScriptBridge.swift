@@ -15,12 +15,10 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
     private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
     /// Pending runs per tab web view (same scale as `BridgeLimits.maxPendingCalls`); extras are dropped.
     private static let maxQueuedJobsPerWebView = 16
-    private var queue: [Job] = []
-    private var running = false
-    private weak var runningWebView: WKWebView?
+    /// One FIFO per web view: one tab's slow or hung script must not hold up every other tab's queued page scripts.
+    private var lanes: [ObjectIdentifier: (queue: [Job], running: Bool)] = [:]
 
     private struct Job {
-        weak var webView: WKWebView?
         let frame: WKFrameInfo
         let source: String
         let note: String
@@ -38,7 +36,9 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
             log.error("refused a page-script request")
             return
         }
-        if pendingCount(for: webView) >= Self.maxQueuedJobsPerWebView {
+        let key = ObjectIdentifier(webView)
+        let pending = (lanes[key]?.queue.count ?? 0) + ((lanes[key]?.running ?? false) ? 1 : 0)
+        if pending >= Self.maxQueuedJobsPerWebView {
             log.error("page-script queue full for web view (\(Self.maxQueuedJobsPerWebView, privacy: .public) pending)")
             return
         }
@@ -47,39 +47,34 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
             return
         }
         let source = Self.program(code: code, url: urlString, dataset: Self.dataset(body["dataset"], base: ext.baseURL))
-        queue.append(Job(webView: webView, frame: message.frameInfo, source: source, note: "\(ext.name) \(path)"))
-        drain()
+        lanes[key, default: ([], false)].queue.append(Job(frame: message.frameInfo, source: source, note: "\(ext.name) \(path)"))
+        drain(webView)
     }
 
-    private func pendingCount(for webView: WKWebView) -> Int {
-        var count = queue.reduce(into: 0) { partial, job in
-            if job.webView === webView { partial += 1 }
-        }
-        if running, runningWebView === webView { count += 1 }
-        return count
-    }
-
-    private func drain() {
-        guard !running, !queue.isEmpty else { return }
-        let job = queue.removeFirst()
-        guard let webView = job.webView else {
-            drain()
-            return
-        }
-        running = true
-        runningWebView = webView
+    private func drain(_ webView: WKWebView) {
+        let key = ObjectIdentifier(webView)
+        guard var lane = lanes[key], !lane.running, !lane.queue.isEmpty else { return }
+        let job = lane.queue.removeFirst()
+        lane.running = true
+        lanes[key] = lane
         let note = job.note
         // A queued job's page may have been frozen since; scripts raise on a suspended page.
         Tab.owning(webView)?.unfreeze()
-        webView.evaluateJavaScript(job.source, in: job.frame, in: .page) { result in
+        webView.evaluateJavaScript(job.source, in: job.frame, in: .page) { [weak self] result in
             if case .failure(let error) = result {
-                self.log.error("page script failed (\(note, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+                self?.log.error("page script failed (\(note, privacy: .public)): \(error.localizedDescription, privacy: .public)")
             } else {
-                self.log.info("page script ran (\(note, privacy: .public))")
+                self?.log.info("page script ran (\(note, privacy: .public))")
             }
-            self.running = false
-            self.runningWebView = nil
-            self.drain()
+            guard let self else { return }
+            var lane = self.lanes[key] ?? ([], false)
+            lane.running = false
+            if lane.queue.isEmpty {
+                self.lanes[key] = nil  // the lane goes with the burst of work; a dead web view leaves nothing behind
+            } else {
+                self.lanes[key] = lane
+                self.drain(webView)
+            }
         }
     }
 

@@ -619,8 +619,10 @@ final class ExtensionHost {
             autoDenied[current.name] = nil
             unload(current, closingTabs: false)
             let config = AppModel.shared.config
+            let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
             let pending = await loadEntries([current.entry], config: config)
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
+            if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
             finishLoad()
         }.value
     }
@@ -905,9 +907,9 @@ final class ExtensionHost {
             context.deniedPermissionMatchPatterns = deniedHosts
         }
         // nativeMessaging reaches only Paddle's bus (`CompatBus`), so it is granted on the context, never written to the
-        // manifest or the permissions file: always under the v2 prelude (which hides it from `permissions.getAll`
-        // unless declared), otherwise only when the manifest asks for it.
-        let grantsBus = setup.runsV2Prelude || webExtension.requestedPermissions.contains(.nativeMessaging)
+        // manifest or the permissions file — and only when the manifest itself declares it (the prelude doesn't call
+        // the bus today; when it does, it gets its own channel, not this grant).
+        let grantsBus = webExtension.requestedPermissions.contains(.nativeMessaging)
             || webExtension.optionalPermissions.contains(.nativeMessaging)
         // Otherwise denied outright: a grant from an earlier v2 run (WebKit may keep it) must not outlive the prelude
         // that hides it, and no native app is ever launched.
@@ -1224,8 +1226,10 @@ final class ExtensionHost {
             guard let current = loaded.first(where: { $0.name == name }) else { return }
             loadInProgress = true
             unload(current, closingTabs: false)
+            let contextsBefore = Set(loaded.map { ObjectIdentifier($0.context) })
             let pending = await loadEntries([current.entry], config: config)
             for item in pending { await serialized { await self.promptAndLoad(item, config: config) } }
+            if loaded.contains(where: { !contextsBefore.contains(ObjectIdentifier($0.context)) }) { await renewTabsForLoadedContexts() }
             finishLoad()
         }
     }

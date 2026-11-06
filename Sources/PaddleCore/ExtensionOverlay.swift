@@ -98,6 +98,22 @@ public enum ExtensionOverlay {
     /// Written last into a finished overlay: the source fingerprint it was made from and what it holds.
     static let stampFileName = ".paddle-overlay.json"
 
+    /// The overlay folder for `name` under `plan`: `<name>` for a 4b or persona-native load, `<name>.<8 hex>`
+    /// otherwise. The key hashes the plan's answer-dependent parts (permissions and shims the prelude embeds),
+    /// `installReason` excluded since it is rewritten in place — so two profiles whose answers differ each read
+    /// their own prelude instead of the last loader's overwriting everyone's.
+    static func folderName(name: String, plan: CompatPlan?) -> String {
+        guard let plan, plan.persona.runsPersonaPrelude else { return name }
+        var keyed = plan
+        keyed.installReason = nil
+        // `sortedKeys`: without it the encoder's dictionary order varies per encode, and the same plan would
+        // hash to a different folder each time.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let data = (try? encoder.encode(keyed)) ?? Data(plan.runtimeID.utf8)
+        return name + "." + SHA256.hash(data: data).prefix(4).map { String(format: "%02x", $0) }.joined()
+    }
+
     struct Stamp: Codable, Equatable {
         let fingerprint: String
         let copiedBytes: Int64?
@@ -127,7 +143,8 @@ public enum ExtensionOverlay {
         guard let manifest = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any] else {
             throw ExtensionCompat.PatchError.notAnObject
         }
-        let target = overlays.appendingPathComponent(name, isDirectory: true)
+        let folderName = Self.folderName(name: name, plan: plan)
+        let target = overlays.appendingPathComponent(folderName, isDirectory: true)
         let persona = plan?.persona ?? .none
         let v2 = persona.runsPersonaPrelude
         guard persona != .native, v2 || ExtensionCompat.needsPrelude(manifest: manifest) else {
@@ -270,8 +287,17 @@ public enum ExtensionOverlay {
     public static func remove(name: String, in overlays: URL, fileManager: FileManager = .default) {
         guard !name.isEmpty, !name.contains("/"), name != ".", name != ".." else { return }
         let target = overlays.appendingPathComponent(name, isDirectory: true)
-        guard fileManager.fileExists(atPath: target.path) else { return }
-        try? fileManager.removeItem(at: target)
+        if fileManager.fileExists(atPath: target.path) {
+            try? fileManager.removeItem(at: target)
+        }
+        // The plan-keyed variants (`<name>.<8 hex>`), never `<name>` plus a longer real name of its own.
+        let variantPrefix = name + "."
+        for entry in (try? fileManager.contentsOfDirectory(atPath: overlays.path)) ?? [] {
+            guard entry.hasPrefix(variantPrefix),
+                  entry.count == variantPrefix.count + 8,
+                  entry.dropFirst(variantPrefix.count).allSatisfy({ $0.isHexDigit && $0.isASCII }) else { continue }
+            try? fileManager.removeItem(at: overlays.appendingPathComponent(entry, isDirectory: true))
+        }
     }
 
     // MARK: - Files

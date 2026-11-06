@@ -30,11 +30,17 @@ final class NewTabStore {
     var hiddenFrequent: [String] { data.hiddenFrequent }
 
     /// Reads newtab.json. An in-app edit still waiting to be saved is written first, unless the file changed
-    /// on disk since, in which case the hand edit wins.
+    /// on disk since, in which case the hand edit wins. A write that fails leaves the edit pending — re-reading
+    /// the file would drop it silently, so the in-memory data stands and the save is retried.
     func load() {
         saveWork?.cancel()
         saveWork = nil
         if dirty, !diskChanged { saveNow() }
+        guard !dirty || diskChanged else {
+            log.error("newtab.json couldn't be written; the edit stays in memory and the next save retries it")
+            scheduleSave()
+            return
+        }
         dirty = false
         diskStamp = Self.stamp()
         guard FileManager.default.fileExists(atPath: Paths.newTab.path) else {
@@ -200,10 +206,12 @@ final class NewTabStore {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
-    /// Undo swaps the whole list back; redo is registered the same way.
+    /// Undo swaps the whole list back; redo is registered the same way. A hand edit to newtab.json since the
+    /// edit being undone is re-read first and wins, exactly as it does over a new in-app edit.
     private func registerUndo(_ undoManager: UndoManager, restoring old: NewTabSites, _ actionName: String) {
         undoManager.registerUndo(withTarget: self) { store in
             MainActor.assumeIsolated {
+                if store.diskChanged { store.load() }
                 guard store.loadError == nil else { return }
                 let current = store.data
                 store.data = old

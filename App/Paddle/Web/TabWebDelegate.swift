@@ -45,9 +45,14 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         default: break
         }
         if byUser || paddleLoad { return true }
-        let key = "_isRedirect"
-        if action.responds(to: NSSelectorFromString(key)), (action.value(forKey: key) as? Bool) == true { return previous }
+        if isRedirect(action) { return previous }
         return false
+    }
+
+    /// A server redirect: the navigation continues the one before it (private WebKit API; not a redirect when missing).
+    private static func isRedirect(_ action: WKNavigationAction) -> Bool {
+        let key = "_isRedirect"
+        return action.responds(to: NSSelectorFromString(key)) && (action.value(forKey: key) as? Bool) == true
     }
 
     /// Host of the frame that asked for a navigation, read through KVC because WebKit can leave it nil.
@@ -84,6 +89,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             mainFrameNavigationType = navigationAction.navigationType
             mainFrameIsPost = navigationAction.request.httpMethod?.uppercased() == "POST"
             mainFrameResponded = false
+            pendingMainFrameURL = url
             mainFrameStartedByUser = Self.startedByUser(navigationAction, byUser: byUser,
                                                         paddleLoad: navigationAction.request.url == tab?.url || tab?.typedNavigationPending == true,
                                                         previous: mainFrameStartedByUser)
@@ -174,9 +180,11 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             switch url.scheme?.lowercased() ?? "" {
             case "file":
                 let onFilePage = webView.url?.scheme?.lowercased() == "file"
-                if !mainFrameStartedByUser && !onFilePage { return (.cancel, preferences) }
+                // A redirect into the sandbox schemes inherits "user-initiated" from the click that started the
+                // chain; no site the user chose should land one there, so the inheritance is not honored here.
+                if (!mainFrameStartedByUser || Self.isRedirect(navigationAction)) && !onFilePage { return (.cancel, preferences) }
             case "data", "blob":
-                if !mainFrameStartedByUser { return (.cancel, preferences) }
+                if !mainFrameStartedByUser || Self.isRedirect(navigationAction) { return (.cancel, preferences) }
             default:
                 break
             }
@@ -197,7 +205,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let secure = HTTPSOnlyPolicy.upgrade(
             url, enabled: app.config.httpsOnly,
             siteAllowsHTTP: !tab.config.sitePolicy(forHost: host).httpsOnly,
-            sessionExceptions: app.httpExceptions(isPrivate: tab.isPrivate)
+            sessionExceptions: app.httpExceptions(isPrivate: tab.isPrivate, profile: tab.profileID)
         ) else { return false }
         let normalized = PaddleConfig.normalizedHost(host)
         // Sent back to http:// for the same host within 10 s, by a redirect, script or meta refresh (not by the user
@@ -504,6 +512,9 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var mainFrameStartedByUser = false
     /// The pending main-frame navigation sends a form post (`Tab.committedPost`).
     private var mainFrameIsPost = false
+    /// The pending main-frame navigation's request URL: at provisional start `webView.url` still names the page
+    /// being left, which would send the service-worker watchdog after the previous site's workers.
+    private var pendingMainFrameURL: URL?
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         tab?.hoveredLink = nil
@@ -517,7 +528,9 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     private func watchForStuckServiceWorker(_ webView: WKWebView) {
         stuckServiceWorkerCheck?.cancel()
-        guard Self.isWebPage(webView.url), let host = webView.url?.host(percentEncoded: false) else { return }
+        // `pendingMainFrameURL` (set in decidePolicyFor) is the page this navigation is going to; `webView.url` at
+        // provisional start is still the one being left, so a cross-site navigation would watch the wrong site.
+        guard Self.isWebPage(pendingMainFrameURL), let host = pendingMainFrameURL?.host(percentEncoded: false) else { return }
         stuckServiceWorkerCheck = Task { [weak self, weak webView] in
             try? await Task.sleep(for: .seconds(ServiceWorkerWatchdog.patience))
             guard !Task.isCancelled, let self, let webView, !self.mainFrameResponded else { return }

@@ -784,6 +784,73 @@ struct FilterListConverterTests {
         #expect(trigger(cosmetic[0])["if-domain"] as? [String] == ["*a.com"])
     }
 
+    /// A mixed domain list with an entry WebKit can't take skips the whole rule (tallied), never narrows silently
+    /// to the entries that did parse.
+    @Test func mixedDomainListWithUnusableEntrySkipsWholeRule() throws {
+        #expect(try rules("/ads/$domain=amazon.*|foo.com").isEmpty)
+        let result = FilterListConverter.convert("||q.test^$domain=amazon.*|foo.com")
+        #expect(result.skips.other == 1)
+        // A bare `*` constrains nothing: the rule keeps its other domains.
+        let any = try rules("||q.test^$domain=*|foo.com,script")
+        #expect(trigger(any[0])["if-domain"] as? [String] == ["*foo.com"])
+    }
+
+    /// `$badfilter` drops the rule it names — same pattern, same options minus `$badfilter` — instead of leaving
+    /// it blocking; the `$badfilter` line itself is consumed too, and neither counts as a skip.
+    @Test func badFilterNeutralizesItsTarget() throws {
+        let text = """
+        ||ads.example.com^
+        ||ads.example.com^$badfilter
+        ||keep.example.com^
+        ||other.example.com^$script,badfilter
+        ||other.example.com^$script
+        @@||fine.example.com^$document
+        @@||fine.example.com^$document,badfilter
+        """
+        let r = try rules(text)
+        let filters = r.compactMap { trigger($0)["url-filter"] as? String }
+        #expect(filters.count == 1)
+        #expect(filters[0].contains("keep"))
+        let result = FilterListConverter.convert(text)
+        #expect(result.badFiltered == 6)
+        #expect(result.skips.total == 0)
+        // Option order in the target does not matter to the identity.
+        #expect(try rules("||x.example.com^$script,badfilter\n||x.example.com^$script").isEmpty)
+        #expect(try rules("||x.example.com^$badfilter\n||x.example.com^").isEmpty)
+        // A `$badfilter` with no matching target consumes only itself.
+        #expect(FilterListConverter.convert("||lonely.example.com^$badfilter").badFiltered == 1)
+    }
+
+    /// `@@||site^$generichide` lifts generic hiding on the site (an `unless-domain` on the generic chunks) without
+    /// touching its specific selectors; `$elemhide` lifts both.
+    @Test func genericAndElemHideExceptions() throws {
+        let generic = try rules("##.ad-banner\n@@||noscripts.example^$generichide")
+        let genericTrigger = try #require(generic.first.map(trigger))
+        #expect(genericTrigger["unless-domain"] as? [String] == ["*noscripts.example"])
+        let specific = try rules("site.example##.ad-slot\n@@||noscripts.example^$generichide")
+        let specificTrigger = try #require(specific.first.map(trigger))
+        #expect(specificTrigger["if-domain"] as? [String] == ["*site.example"])
+        #expect(specificTrigger["unless-domain"] == nil)
+
+        let elem = try rules("##.ad-banner\nsite.example##.ad-slot\nother.example##.ad-slot\n@@||site.example^$elemhide")
+        let elemFilters = elem.compactMap { action($0)["selector"] as? String == nil ? nil : trigger($0) }
+        // The site-specific chunk for the opted-out site is gone; the other site's stays, generic chunks skip the site.
+        #expect(!elemFilters.contains { ($0["if-domain"] as? [String])?.contains("*site.example") == true })
+        #expect(elemFilters.contains { ($0["if-domain"] as? [String])?.contains("*other.example") == true })
+        #expect(elemFilters.contains { ($0["unless-domain"] as? [String]) == ["*site.example"] })
+        // Generichide on a block rule, or elemhide with other constraints, stays a tallied skip.
+        let refused = FilterListConverter.convert("||x.example^$generichide\n@@||y.example^$elemhide,third-party\n@@/path^$generichide")
+        #expect(refused.skips.options == ["generichide": 1, "elemhide (with other options)": 1, "generichide (not a site)": 1])
+    }
+
+    /// A trailing dot in an anchored `$document` allowlist pattern never matches a hostname: the line is tallied,
+    /// not turned into a dead allow rule.
+    @Test func trailingDotHostIsNotASite() {
+        let result = FilterListConverter.convert("@@||example.com.$document")
+        #expect(result.ruleCount == 0)
+        #expect(result.skips.options["document (not a site)"] == 1)
+    }
+
     @Test func documentExceptionWithOtherOptionsIsSkipped() throws {
         for option in ["domain=a.com", "third-party", "~third-party", "first-party", "script"] {
             #expect(try rules("@@||x.com^$document,\(option)").isEmpty, "\(option)")

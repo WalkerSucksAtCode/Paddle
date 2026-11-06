@@ -81,11 +81,28 @@ final class ConfigWatcher {
         schedule()
     }
 
-    /// Session saves and favicon writes land in the same folder; the stamp check in `onChange` skips those cheaply.
+    /// Session saves and favicon writes land in the same folder; an event that leaves config.json's stamp —
+    /// inode, size, mtime — exactly as it was is dropped here instead of costing a debounced onChange that
+    /// reads the file and does nothing. A real in-place write changes mtime, so it still gets through, and the
+    /// duplicate event the file watch sends for the same write dedupes through `lastSeenStamp`.
     private func folderChanged() {
-        if ConfigStamp(Paths.config.resolvingSymlinksInPath())?.inode != fileInode { watchFile() }
-        schedule()
+        guard let stamp = ConfigStamp(Paths.config.resolvingSymlinksInPath()) else {
+            schedule()  // gone: let onChange handle it (a reload creates it again)
+            return
+        }
+        if stamp.inode != fileInode {
+            watchFile()
+            schedule()
+            return
+        }
+        if stamp != lastSeenStamp {
+            lastSeenStamp = stamp
+            schedule()
+        }
     }
+
+    /// The config stamp the last scheduled onChange saw.
+    private var lastSeenStamp: ConfigStamp?
 
     private func schedule() {
         pending?.cancel()

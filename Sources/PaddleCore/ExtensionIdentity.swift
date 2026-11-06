@@ -131,12 +131,17 @@ public enum ExtensionIdentity {
     }
 
     /// Who an extension is, for the permissions file: its gecko id, else the id of its manifest `key`, else its
-    /// verified store id (`verifiedStoreID`). nil when it has none of these.
+    /// verified store id (`verifiedStoreID`), else a hash of the manifest's own content. That last fallback is for
+    /// hand-dropped folders that declare nothing: without it their records keep `identity: nil` forever and any
+    /// same-named folder inherits their grants; with it, a different manifest is a different extension. nil only
+    /// when even the manifest can't be hashed (it wasn't JSON to begin with).
     public static func permissionIdentity(manifest: [String: Any], verifiedStoreID: String?) -> String? {
         if let gecko = geckoID(manifest: manifest) { return "gecko:" + gecko.lowercased() }
         if let key = manifest["key"] as? String, let id = chromeID(manifestKey: key) { return "chrome:" + id }
         if let verifiedStoreID { return "store:" + verifiedStoreID.lowercased() }
-        return nil
+        guard let data = try? JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys]) else { return nil }
+        let digest = SHA256.hash(data: data).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return "content:" + digest
     }
 
     /// Where an extension folder's storage may have been filed under an earlier id (`priorStorageIDs`), keeping only
@@ -151,6 +156,9 @@ public enum ExtensionIdentity {
     }
 
     /// `https://<id>.chromiumapp.org/<path>`: Chrome's `identity.getRedirectURL`.
+    ///
+    /// Groundwork for the compat prelude's `identity` API (`launchWebAuthFlow`), not wired to it yet — no production
+    /// caller at the moment, kept with its tests like `trustedLists` is.
     public static func chromeRedirectURL(id: String, path: String = "") -> URL? {
         URL(string: "https://\(id).chromiumapp.org/" + path.drop { $0 == "/" })
     }

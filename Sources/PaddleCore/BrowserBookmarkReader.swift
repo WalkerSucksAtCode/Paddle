@@ -98,14 +98,15 @@ public enum BrowserBookmarkReader {
         return tree
     }
 
-    private static func chromiumNode(_ node: [String: Any], _ counter: inout Counter) -> Bookmark? {
+    private static func chromiumNode(_ node: [String: Any], _ counter: inout Counter, depth: Int = 0) -> Bookmark? {
+        guard depth < 100 else { return nil }
         let title = node["name"] as? String ?? ""
         switch node["type"] as? String {
         case "url":
             guard let url = node["url"] as? String else { return nil }
             return counter.bookmark(title: title, url: url)
         case "folder":
-            let kids = ((node["children"] as? [[String: Any]]) ?? []).compactMap { chromiumNode($0, &counter) }
+            let kids = ((node["children"] as? [[String: Any]]) ?? []).compactMap { chromiumNode($0, &counter, depth: depth + 1) }
             return folder(title, kids)
         default:
             return nil
@@ -144,14 +145,17 @@ public enum BrowserBookmarkReader {
             throw BrowserImportError.unreadable("This doesn't look like a readable bookmarks database (\(error.message)).")
         }
         let byParent = Dictionary(grouping: rows, by: \.parent)
-        func children(of id: Int64) -> [Bookmark] {
-            (byParent[id] ?? []).sorted { $0.position < $1.position }.compactMap { row -> Bookmark? in
+        func children(of id: Int64, seen: Set<Int64> = []) -> [Bookmark] {
+            // A corrupt database can point a folder at its own ancestor; the seen set turns the cycle into a stop.
+            var seen = seen
+            guard seen.insert(id).inserted else { return [] }
+            return (byParent[id] ?? []).sorted { $0.position < $1.position }.compactMap { row -> Bookmark? in
                 switch row.type {
                 case 1:
                     guard let url = row.url else { return nil }
                     return counter.bookmark(title: row.title.isEmpty ? row.placeTitle : row.title, url: url)
                 case 2:
-                    return folder(row.title, children(of: row.id))
+                    return folder(row.title, children(of: row.id, seen: seen))
                 default:
                     return nil // separators
                 }
@@ -192,8 +196,9 @@ public enum BrowserBookmarkReader {
         return tree
     }
 
-    private static func safariChildren(_ node: [String: Any], _ counter: inout Counter) -> [Bookmark] {
-        ((node["Children"] as? [[String: Any]]) ?? []).compactMap { child -> Bookmark? in
+    private static func safariChildren(_ node: [String: Any], _ counter: inout Counter, depth: Int = 0) -> [Bookmark] {
+        guard depth < 100 else { return [] }
+        return ((node["Children"] as? [[String: Any]]) ?? []).compactMap { child -> Bookmark? in
             switch child["WebBookmarkType"] as? String {
             case "WebBookmarkTypeLeaf":
                 guard let url = child["URLString"] as? String else { return nil }
@@ -201,7 +206,7 @@ public enum BrowserBookmarkReader {
                 return counter.bookmark(title: title, url: url)
             case "WebBookmarkTypeList":
                 if child["ShouldOmitFromUI"] as? Bool == true { return nil }
-                return folder(child["Title"] as? String ?? "", safariChildren(child, &counter))
+                return folder(child["Title"] as? String ?? "", safariChildren(child, &counter, depth: depth + 1))
             default:
                 return nil // the History proxy
             }

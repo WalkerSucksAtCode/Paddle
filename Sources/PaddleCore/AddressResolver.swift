@@ -40,8 +40,19 @@ public struct AddressResolver: Sendable {
 
     private func hostLikeURL(_ input: String) -> URL? {
         let hostPart = input.split(whereSeparator: { "/?#".contains($0) }).first.map(String.init) ?? input
+        // A bracketed IPv6 literal ("[::1]", "[fe80::1]:8080") is one host; the colon split below would cut it at the
+        // first inner colon and leave "[" as the host.
+        if hostPart.hasPrefix("["), let close = hostPart.firstIndex(of: "]") {
+            let rest = hostPart[hostPart.index(after: close)...]
+            if rest.isEmpty || (rest.hasPrefix(":") && !rest.dropFirst().isEmpty && rest.dropFirst().allSatisfy(\.isNumber)) {
+                return URL(string: "http://" + input)
+            }
+            return nil
+        }
         let hostOnly = hostPart.split(separator: ":").first.map(String.init) ?? hostPart
-        let lower = hostOnly.lowercased()
+        // A single trailing dot is a valid FQDN form ("example.com."); the label checks below would see an empty label.
+        let stripped = hostOnly.hasSuffix(".") ? String(hostOnly.dropLast()) : hostOnly
+        let lower = stripped.lowercased()
 
         let isLocal = lower == "localhost"
             || lower.hasSuffix(".localhost")

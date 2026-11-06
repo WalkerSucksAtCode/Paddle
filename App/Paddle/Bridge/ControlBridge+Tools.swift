@@ -119,7 +119,7 @@ extension ControlBridge {
                 model.tabs(inSpace: space.id).map { tab -> JSONValue in
                     var entry: [String: JSONValue] = [
                         "id": .string(tab.id.uuidString), "title": .string(BridgeLimits.title(tab.displayTitle)),
-                        "url": .string(tab.url?.absoluteString ?? ""), "pinned": .bool(tab.isPinned),
+                        "url": .string(BridgeLimits.url(tab.url?.absoluteString ?? "")), "pinned": .bool(tab.isPinned),
                         "group": model.anyGroup(of: tab).map { .string($0.name) } ?? .null,
                         "asleep": .bool(tab.isAsleep), "selected": .bool(tab.id == model.selectedID),
                         "space": .string(space.name),
@@ -181,7 +181,7 @@ extension ControlBridge {
     private func pageSnapshot(_ args: [String: JSONValue]) async throws -> MCPToolResult {
         let found = try tab(args)
         let webView = try readableWebView(found.tab)
-        let image = try await webView.takeSnapshot(configuration: nil)
+        let image = try await snapshot(of: webView)
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil), let png = Self.png(cgImage) else {
             throw BridgeToolError("WebKit returned no snapshot")
         }
@@ -211,7 +211,7 @@ extension ControlBridge {
         let pages = controller.model.visibleTabs.compactMap(\.webView) + [previewView].compactMap { $0 }
         var pageRects: [NSRect] = []
         for webView in pages where webView.window === nsWindow && !webView.isHiddenOrHasHiddenAncestor {
-            guard let shot = try? await webView.takeSnapshot(configuration: nil) else { continue }
+            guard let shot = try? await snapshot(of: webView) else { continue }
             let frame = webView.convert(webView.bounds, to: content)
             let rect = content.isFlipped
                 ? NSRect(x: frame.minX, y: bounds.height - frame.maxY, width: frame.width, height: frame.height)
@@ -366,7 +366,7 @@ extension ControlBridge {
         }
         guard found.tab.browser != nil else { throw BridgeToolError("the tab closed") }
         let result: JSONValue = [
-            "title": .string(BridgeLimits.title(found.tab.displayTitle)), "url": .string(found.tab.url?.absoluteString ?? ""),
+            "title": .string(BridgeLimits.title(found.tab.displayTitle)), "url": .string(BridgeLimits.url(found.tab.url?.absoluteString ?? "")),
             "loading": .bool(found.tab.isLoading), "asleep": .bool(found.tab.isAsleep),
         ]
         return .text(Self.pageDataNote + MCPServerCore.untrusted(result.render(unit: "  ")))
@@ -497,7 +497,7 @@ extension ControlBridge {
     /// `text` with the site's cookie values (8 characters or more) replaced by `[cookie]`, cut to
     /// `BridgeLimits.maxReplyChars`. It is cut once before redacting, keeping room for the longest cookie, so
     /// redaction walks a bounded string and a cookie that starts inside the kept part is still caught whole. Encoded
-    /// copies still get through.
+    /// copies still get through. The scan-and-replace itself runs off the main actor; only the values cross over.
     private static func redactCookies(in text: String, for webView: WKWebView) async -> String {
         guard let host = webView.url?.host()?.lowercased() else { return BridgeLimits.truncated(text, limit: BridgeLimits.maxReplyChars) }
         let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies().filter { cookie in
@@ -505,9 +505,11 @@ extension ControlBridge {
             return cookie.value.count >= 8 && (host == domain || host.hasSuffix("." + domain))
         }
         let room = cookies.map(\.value.count).max() ?? 0
-        var text = text.count > BridgeLimits.maxReplyChars + room ? String(text.prefix(BridgeLimits.maxReplyChars + room)) : text
-        for cookie in cookies { text = text.replacingOccurrences(of: cookie.value, with: "[cookie]") }
-        return BridgeLimits.truncated(text, limit: BridgeLimits.maxReplyChars)
+        let head = text.count > BridgeLimits.maxReplyChars + room ? String(text.prefix(BridgeLimits.maxReplyChars + room)) : text
+        let values = cookies.map(\.value)
+        return await Task.detached(priority: .userInitiated) {
+            BridgeLimits.truncated(values.reduce(head) { $0.replacingOccurrences(of: $1, with: "[cookie]") }, limit: BridgeLimits.maxReplyChars)
+        }.value
     }
 
 
@@ -566,6 +568,26 @@ extension ControlBridge {
         let message = (error as NSError).userInfo["WKJavaScriptExceptionMessage"] as? String
         guard let message else { return error.localizedDescription }
         return "JavaScript exception: " + MCPServerCore.untrusted(message)
+    }
+
+    /// `webView.takeSnapshot`, failing after `seconds` if WebKit never calls back — the same race `evaluate` runs,
+    /// so a silent hang can't pin a bridge call (and its pending-call slot) forever.
+    private func snapshot(of webView: WKWebView, seconds: Int = 10) async throws -> NSImage {
+        try await withCheckedThrowingContinuation { continuation in
+            let once = ResumeOnceImage(continuation)
+            Task { @MainActor in
+                do {
+                    let image = try await webView.takeSnapshot(configuration: nil)
+                    once.resume(.success(image))
+                } catch {
+                    once.resume(.failure(BridgeToolError(Self.describe(error))))
+                }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                once.resume(.failure(BridgeToolError("the snapshot didn't finish within \(seconds) s")))
+            }
+        }
     }
 
     /// A PNG of `image`, at most `maxWidth` pixels wide, base64-encoded.
@@ -653,6 +675,18 @@ private final class ResumeOnce {
     init(_ continuation: CheckedContinuation<String, any Error>) { self.continuation = continuation }
 
     func resume(_ result: Result<String, any Error>) {
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}
+
+/// Same as `ResumeOnce`, for snapshot continuations (`NSImage` is not `Sendable`).
+private final class ResumeOnceImage {
+    private var continuation: CheckedContinuation<NSImage, any Error>?
+
+    init(_ continuation: CheckedContinuation<NSImage, any Error>) { self.continuation = continuation }
+
+    func resume(_ result: Result<NSImage, any Error>) {
         continuation?.resume(with: result)
         continuation = nil
     }

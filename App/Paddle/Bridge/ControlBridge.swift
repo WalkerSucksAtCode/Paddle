@@ -120,9 +120,12 @@ final class ControlBridge {
         do {
             result = try await perform(name, args)
         } catch let error as BridgeToolError {
-            result = .error(error.message)
+            result = BridgeLimits.clamped(.error(error.message))
         } catch {
-            result = .error(error.localizedDescription)
+            // Not a message Paddle wrote: Cocoa error text can carry file paths and underlying chains. Generic to the
+            // peer, detail to the log.
+            log.error("tool \(name, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            result = BridgeLimits.clamped(.error("the tool failed; Paddle's log has the reason"))
         }
         let summary = Self.summary(of: args)
         audit.append(AuditEntry(date: Date(), tool: name, summary: summary, ok: !result.isError))

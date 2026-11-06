@@ -136,7 +136,9 @@ public enum BrowserSessionReader {
     }
 
     private static func decodeFirefox(_ file: Data) throws -> [RawWindow] {
-        let json = try MozLZ4.decompress(file, maxOutput: 256 * 1024 * 1024)
+        // Real sessionstore files are a few MB; the default cap is plenty and a corrupt or hostile one
+        // can't force a quarter-gigabyte allocation plus a full JSON parse of it.
+        let json = try MozLZ4.decompress(file)
         guard let root = try JSONSerialization.jsonObject(with: json) as? [String: Any],
               let windows = root["windows"] as? [[String: Any]] else {
             throw BrowserImportError.unreadable("Paddle couldn't read Firefox's last session.")

@@ -34,6 +34,11 @@ public struct Bookmark: Codable, Sendable, Equatable, Hashable, Identifiable {
     /// Lenient, for hand-written files: a missing `id` becomes a fresh one, a missing `title` the address (empty
     /// for folders), and a node with no `url` is a folder whose missing `children` are empty.
     public init(from decoder: Decoder) throws {
+        // Guard against a corrupt or hostile file nesting folders without end: thrown, not crashed (see the
+        // lenient loader above).
+        guard decoder.codingPath.count < 128 else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "bookmarks nested too deeply"))
+        }
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         url = try container.decodeIfPresent(String.self, forKey: .url)

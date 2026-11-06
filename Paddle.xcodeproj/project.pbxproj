@@ -164,10 +164,10 @@
 		0FF189A4771C73A817501D59 /* ShortcutsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutsPane.swift; sourceTree = "<group>"; };
 		11E5FE7EECAC5C0800D39F69 /* Paths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paths.swift; sourceTree = "<group>"; };
 		11F390FE4632B9F88D25A6E6 /* AppearancePane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePane.swift; sourceTree = "<group>"; };
-		122683B3009C1A520570901C /* track-b-port-b80f */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "track-b-port-b80f"; path = .; sourceTree = SOURCE_ROOT; };
 		13EDABAC96E4B940401C9EEC /* BrowserPasskeyCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPasskeyCoordinator.swift; sourceTree = "<group>"; };
 		15D3F54905EC35B158EA5A1C /* ExtensionUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionUpdater.swift; sourceTree = "<group>"; };
 		16BFB45ACF93E74D21B96C92 /* ContactAutofill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactAutofill.swift; sourceTree = "<group>"; };
+		20B7618470421579DB9FBC74 /* Paddle */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Paddle; path = .; sourceTree = SOURCE_ROOT; };
 		22F4A5F2E7709D55FB100130 /* PDFToolbarHUD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFToolbarHUD.swift; sourceTree = "<group>"; };
 		2464BF3668FE341ACA2B64F2 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
 		24907D6E3DCB49AB1779D634 /* paddle-mcp */ = {isa = PBXFileReference; includeInIndex = 0; path = "paddle-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -508,7 +508,7 @@
 		EE9A42472076AC52EB1A94D9 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				122683B3009C1A520570901C /* track-b-port-b80f */,
+				20B7618470421579DB9FBC74 /* Paddle */,
 			);
 			name = Packages;
 			sourceTree = "<group>";

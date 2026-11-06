@@ -356,14 +356,19 @@ private struct DownloadRow: View {
             text += " — \(Self.bytes(Int64(rate)))/s"
             if let expected = item.expectedBytes, expected > item.receivedBytes {
                 let left = Double(expected - item.receivedBytes) / rate
-                let formatter = DateComponentsFormatter()
-                formatter.unitsStyle = .abbreviated
-                formatter.maximumUnitCount = 1
-                if let remaining = formatter.string(from: max(1, left)) { text += ", \(remaining) left" }
+                if let remaining = Self.remainingFormatter.string(from: max(1, left)) { text += ", \(remaining) left" }
             }
         }
         return text
     }
+
+    /// Built once, not per running row per progress tick.
+    private static let remainingFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 1
+        return formatter
+    }()
 
     private func status(_ text: String) -> some View {
         Text(text).chromeFont(size: 11).foregroundStyle(.secondary)

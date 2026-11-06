@@ -139,7 +139,7 @@ public enum ScriptletParser {
         var current = ""
         var quote: Character?
         var wasQuoted = false
-        var chars = Array(text)
+        let chars = Array(text)
         var i = 0
         func finish() {
             parts.append(wasQuoted ? current : current.trimmingCharacters(in: .whitespaces))
@@ -192,7 +192,6 @@ public enum ScriptletParser {
             }
         }
         guard quote == nil else { return nil }
-        chars.removeAll()
         if !current.isEmpty || wasQuoted || !parts.isEmpty { finish() }
         return parts
     }

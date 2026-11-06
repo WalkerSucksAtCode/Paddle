@@ -67,6 +67,12 @@ struct TabStrip: View {
                 HStack(spacing: 0) {
                     Color.clear.frame(width: leadingInset)
                         .tabSearchPopover(model: model)
+                        // Safari/Chrome parity: empty strip space offers New Tab and Reopen Closed Tab
+                        // (⇧⌘T is menu-only otherwise).
+                        .contextMenu {
+                            Button("New Tab") { model.newTab(url: nil) }
+                            Button("Reopen Closed Tab") { model.reopenClosedTab() }
+                        }
                     if model.spaces.count > 1 {
                         SpaceSwitcher(model: model)
                             .padding(.trailing, 4)

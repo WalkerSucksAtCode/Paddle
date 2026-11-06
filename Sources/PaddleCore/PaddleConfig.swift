@@ -231,6 +231,10 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     public var linkPreview: Bool
     /// Switching to a tab resumes its media and pauses the one you left. Off, a switch leaves whatever is playing alone.
     public var resumeMediaOnSelect: Bool
+    /// After a same-tab navigation that is not Back, Forward or Reload, drop WebKit's in-process back/forward cache.
+    /// Off, that cache stays so media can keep playing and Back can restore the page. Freezing a background tab still
+    /// drops the cache before `_suspendPage:`; switching tabs alone does not.
+    public var dropBackForwardCacheOnNavigate: Bool
     /// Warm a site's connection before it is opened: the address bar's top suggestion as you type, a link after the
     /// pointer rests on it, and DNS for a page's links. Never in private windows. Off, nothing connects before you
     /// press Return or click.
@@ -452,7 +456,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
     /// one; the raw values are the property names, as the synthesized keys were.
     public enum CodingKeys: String, CodingKey, CaseIterable {
         case homepage, newTabPage, searchTemplate, searchSuggestTemplate, historyDays
-        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, keepPageWorkRunning, keepNotifyingSitesLive, sessionHistoryTabs, linkPreview, resumeMediaOnSelect, speculativeLoading
+        case tabFreezeAfterMinutes, tabSleepAfterMinutes, maxAwakeTabs, sleepPinnedTabs, cpuSleepPercent, keepPageWorkRunning, keepNotifyingSitesLive, sessionHistoryTabs, linkPreview, resumeMediaOnSelect, dropBackForwardCacheOnNavigate, speculativeLoading
         case contentBlocking, filterLists, filterUpdateDays, scriptlets, trustedLists
         case userAgentSuffix, siteUserAgents, sites, sitePersonas
         case showTabMemory, showFullAddress, tabLayout, developerTools, httpsOnly, newTabFrequentSites, askWhereToDownload, downloadFolder
@@ -486,6 +490,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sessionHistoryTabs: Int = 30,
         linkPreview: Bool = true,
         resumeMediaOnSelect: Bool = false,
+        dropBackForwardCacheOnNavigate: Bool = false,
         speculativeLoading: Bool = true,
         contentBlocking: Bool = true,
         filterLists: [String] = PaddleConfig.defaultFilterLists,
@@ -602,6 +607,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         self.sessionHistoryTabs = sessionHistoryTabs
         self.linkPreview = linkPreview
         self.resumeMediaOnSelect = resumeMediaOnSelect
+        self.dropBackForwardCacheOnNavigate = dropBackForwardCacheOnNavigate
         self.speculativeLoading = speculativeLoading
         self.contentBlocking = contentBlocking
         self.filterLists = filterLists
@@ -726,6 +732,7 @@ public struct PaddleConfig: Codable, Sendable, Equatable {
         sessionHistoryTabs = c.decodeValue(.sessionHistoryTabs, d.sessionHistoryTabs, issues)
         linkPreview = c.decodeValue(.linkPreview, d.linkPreview, issues)
         resumeMediaOnSelect = c.decodeValue(.resumeMediaOnSelect, d.resumeMediaOnSelect, issues)
+        dropBackForwardCacheOnNavigate = c.decodeValue(.dropBackForwardCacheOnNavigate, d.dropBackForwardCacheOnNavigate, issues)
         speculativeLoading = c.decodeValue(.speculativeLoading, d.speculativeLoading, issues)
         contentBlocking = c.decodeValue(.contentBlocking, d.contentBlocking, issues)
         filterLists = c.decodeStrings(.filterLists, d.filterLists, issues)

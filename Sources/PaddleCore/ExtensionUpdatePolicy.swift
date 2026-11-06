@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// When store-installed extensions are checked for updates (`extensionUpdates` in config.json). Each extension is judged
@@ -9,11 +10,21 @@ public enum ExtensionUpdatePolicy {
 
     /// Whether an extension last asked its store at `lastCheck` (nil: never) should be asked again now.
     /// A date more than a day in the future means the clock was wrong when it was written, so the check is due.
-    public static func shouldCheck(lastCheck: Date?, now: Date, enabled: Bool) -> Bool {
+    /// `seed` (the folder name) spreads the due moment by up to four hours, so extensions installed together
+    /// don't all ask their store in the same minute every day.
+    public static func shouldCheck(lastCheck: Date?, now: Date, enabled: Bool, seed: String = "") -> Bool {
         guard enabled else { return false }
         guard let lastCheck else { return true }
         let age = now.timeIntervalSince(lastCheck)
         if age < -interval { return true }
-        return age >= interval
+        return age >= interval + jitter(for: seed)
+    }
+
+    /// A stable fraction of up to four hours for `seed`, surviving restarts (Chrome staggers its checks the same
+    /// way). Zero for an empty seed, so callers that pass none keep the plain once-a-day rhythm.
+    public static func jitter(for seed: String) -> TimeInterval {
+        guard !seed.isEmpty else { return 0 }
+        let digest = SHA256.hash(data: Data(seed.utf8)).prefix(4).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+        return TimeInterval(digest % 14_400)
     }
 }

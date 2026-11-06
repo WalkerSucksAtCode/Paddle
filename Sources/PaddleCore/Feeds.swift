@@ -33,7 +33,7 @@ public enum FeedParser {
     /// Nil when `data` isn't a feed (HTML, or XML of another kind).
     public static func parse(_ data: Data, base: URL) -> (title: String, items: [FeedItem])? {
         let delegate = Reader(base: base)
-        let parser = XMLParser(data: data)
+        let parser = XMLParser(data: sanitizeEntities(data))
         parser.shouldResolveExternalEntities = false
         parser.delegate = delegate
         _ = parser.parse()
@@ -117,9 +117,54 @@ public enum FeedParser {
     static func plainText(_ raw: String) -> String {
         var text = raw.replacingOccurrences(of: #"<[^>]*>"#, with: " ", options: .regularExpression)
         text = decodeEntities(text).replacingOccurrences(of: "&nbsp;", with: " ")
-        text = text.replacingOccurrences(of: #"&#(\d+);"#, with: "", options: .regularExpression)
+        text = decodeNumericReferences(text)
         return text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
+
+    /// `&#8212;` and friends left over in a title (usually double-escaped there) become the character, not a hole.
+    static func decodeNumericReferences(_ text: String) -> String {
+        guard text.contains("&#"), let regex = try? NSRegularExpression(pattern: #"&#(\d+);"#) else { return text }
+        let result = NSMutableString(string: text)
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let digits = Range(match.range(at: 1), in: text), let value = UInt32(text[digits]),
+                  value > 0, value <= 0x10FFFF, value != 0xFFFE, value != 0xFFFF,
+                  !(value < 0x20 && value != 0x9 && value != 0xA && value != 0xD),
+                  let scalar = Unicode.Scalar(value) else { continue }
+            result.replaceCharacters(in: match.range, with: String(Character(scalar)))
+        }
+        return result as String
+    }
+
+    /// XML declares five entities (`amp`, `lt`, `gt`, `quot`, `apos`); every HTML name beyond them (`&nbsp;`,
+    /// `&copy;`, …) is a hard parse error on macOS's XMLParser (error 26) that loses every item after it, and the
+    /// `resolveExternalEntityForName` hook is not consulted for undeclared internal ones. So the common names are
+    /// substituted — a space for the rest — before parsing. Only well-formed `&name;` sequences are touched;
+    /// numeric references XML resolves itself, and a non-UTF-8 feed passes through untouched.
+    static func sanitizeEntities(_ data: Data) -> Data {
+        guard let text = String(data: data, encoding: .utf8), text.contains("&"),
+              let regex = try? NSRegularExpression(pattern: #"&([a-zA-Z][a-zA-Z0-9]*);"#) else { return data }
+        let predefined: Set<String> = ["amp", "lt", "gt", "quot", "apos"]
+        let result = NSMutableString(string: text)
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let r = Range(match.range(at: 1), in: text) else { continue }
+            let name = String(text[r])
+            if !predefined.contains(name) {
+                result.replaceCharacters(in: match.range, with: htmlEntities[name] ?? " ")
+            }
+        }
+        return Data((result as String).utf8)
+    }
+
+    /// The entities that show up in feed titles; numeric references (`&#8212;`) XML always resolves itself.
+    static let htmlEntities: [String: String] = [
+        "nbsp": "\u{00A0}", "copy": "©", "reg": "®", "trade": "™", "hellip": "…", "mdash": "—", "ndash": "–",
+        "lsquo": "‘", "rsquo": "’", "ldquo": "“", "rdquo": "”", "laquo": "«", "raquo": "»", "deg": "°",
+        "plusmn": "±", "middot": "·", "bull": "•", "dagger": "†", "sect": "§", "para": "¶", "micro": "µ",
+        "frac12": "½", "frac14": "¼", "frac34": "¾", "sup1": "¹", "sup2": "²", "sup3": "³", "times": "×",
+        "divide": "÷", "euro": "€", "pound": "£", "yen": "¥", "cent": "¢", "szlig": "ß", "auml": "ä",
+        "ouml": "ö", "uuml": "ü", "Auml": "Ä", "Ouml": "Ö", "Uuml": "Ü", "aacute": "á", "eacute": "é",
+        "iacute": "í", "oacute": "ó", "uacute": "ú", "ntilde": "ñ", "ccedil": "ç", "aElig": "Æ", "oslash": "ø",
+    ]
 
     /// RFC 822 (RSS), ISO 8601 (Atom, Dublin Core), with or without fractional seconds.
     static func date(_ text: String) -> Date? {

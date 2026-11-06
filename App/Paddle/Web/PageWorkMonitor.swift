@@ -15,6 +15,12 @@ final class PageWorkMonitor: NSObject, WKScriptMessageHandler {
               let webView = message.webView,
               let tab = AppModel.shared.allTabs.first(where: { $0.webView === webView }) else { return }
         let work = Tab.PageWork(uploading: body["uploading"] as? Bool ?? false, guardsUnload: body["guardsUnload"] as? Bool ?? false)
-        tab.pageWork[id] = work.isIdle ? nil : work
+        // Capped: a long-lived page posting distinct ids can't grow the browser-side dictionary without end.
+        // A page needs a handful; past the cap the tab simply isn't marked busy by the extras.
+        if work.isIdle {
+            tab.pageWork[id] = nil
+        } else if tab.pageWork.count < 64 {
+            tab.pageWork[id] = work
+        }
     }
 }

@@ -112,6 +112,7 @@ struct MediaControlsPopover: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Pause Playback")
+                .accessibilityLabel("Pause Playback")
 
                 Button {
                     tab.toggleMute()
@@ -122,6 +123,7 @@ struct MediaControlsPopover: View {
                 }
                 .buttonStyle(.borderless)
                 .help(tab.isMuted ? "Unmute" : "Mute")
+                .accessibilityLabel(tab.isMuted ? "Unmute" : "Mute")
 
                 Button {
                     tab.togglePictureInPicture()
@@ -132,6 +134,7 @@ struct MediaControlsPopover: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Picture in Picture")
+                .accessibilityLabel("Picture in Picture")
             }
         }
         .padding(.vertical, 4)
@@ -144,11 +147,15 @@ struct MediaControlsPopover: View {
     }
 
     private func togglePlayback(in tab: Tab) {
+        // Pause-everything, like Safari's tab audio controls: if anything is playing it pauses all of it, and only a
+        // page where everything is already paused plays. Per-element toggling would start the paused video next to the
+        // playing one the button was aimed at.
         let script = """
         (() => {
             const media = Array.from(document.querySelectorAll('video, audio'));
+            const anyPlaying = media.some((m) => !m.paused);
             for (const m of media) {
-                if (m.paused) { m.play(); } else { m.pause(); }
+                if (anyPlaying) { if (!m.paused) { m.pause(); } } else { if (m.paused) { m.play().catch(() => {}); } }
             }
         })()
         """

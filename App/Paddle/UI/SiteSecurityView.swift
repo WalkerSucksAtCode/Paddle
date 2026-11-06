@@ -19,6 +19,10 @@ struct SiteSecurityView: View {
         let h = url.host(percentEncoded: false) ?? ""
         return h.hasPrefix("www.") ? String(h.dropFirst(4)) : h
     }
+    /// The host as every other caller passes it to the site settings: full, no `www.` strip. Prompts write keys
+    /// for the full host, and suffix matching can't bridge a stripped lookup to a `www.`-keyed entry — the
+    /// popover would show defaults for a site that has settings and edit a parallel entry.
+    private var settingsHost: String { url?.host(percentEncoded: false) ?? "" }
 
     private var scheme: String { url?.scheme?.lowercased() ?? "" }
     private var isHTTPS: Bool { scheme == "https" }
@@ -144,8 +148,9 @@ struct SiteSecurityView: View {
 
     private var permissionsSection: some View {
         // The window's profile may set its own values for this site; changes go where the value comes from.
-        let policy = tab.config.sitePolicy(forHost: host)
-        let key = tab.config.siteKey(forHost: host)
+        // `settingsHost` (the full host), not the display host: prompts key settings by the full host.
+        let policy = tab.config.sitePolicy(forHost: settingsHost)
+        let key = tab.config.siteKey(forHost: settingsHost)
         let profile = tab.profileID
         return VStack(alignment: .leading, spacing: 8) {
             Text("Permissions for this site")

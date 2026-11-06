@@ -18,6 +18,7 @@ final class AddressSuggestions {
     @ObservationIgnored private var fetch: Task<Void, Never>?
     @ObservationIgnored private weak var browser: BrowserModel?
     @ObservationIgnored private var warm: Task<Void, Never>?
+    @ObservationIgnored private var localSearch: Task<Void, Never>?
 
     /// Suggestion requests send and keep no cookies and cache nothing.
     private static let session: URLSession = {
@@ -49,10 +50,13 @@ final class AddressSuggestions {
         }
         // Phrases for "padd" still help while "paddl" is on its way; unrelated ones don't.
         if !query.lowercased().hasPrefix(phrasesQuery.lowercased()) { phrases = [] }
-        pages = Self.candidatePages(for: query, excluding: browser.selectedTab, in: browser)
+        // Open tabs at once (a handful, no I/O); the bookmark-tree walk and the history SQL share the network
+        // fetch's pause, so fast typing doesn't run either per keystroke.
+        pages = Self.openTabPages(for: query, excluding: browser.selectedTab, in: browser)
         // New text starts at the top row; only arriving search phrases keep a moved highlight.
         highlighted = 0
         rebuild()
+        searchSlowSources(for: query, in: browser)
         if Self.mayAskSearchEngine(query, previous: previous, searchTemplate: browser.config.searchTemplate) {
             fetchPhrases(for: query)
         } else {
@@ -102,6 +106,20 @@ final class AddressSuggestions {
         highlighted = 0
         fetch?.cancel()
         fetch = nil
+        localSearch?.cancel()
+        localSearch = nil
+    }
+
+    /// The slow half of `candidatePages` (bookmarks, history), one run per typing pause — the same 120 ms the
+    /// network fetch waits, instead of once per keystroke.
+    private func searchSlowSources(for query: String, in browser: BrowserModel) {
+        localSearch?.cancel()
+        localSearch = Task { [weak self, weak browser] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled, let self, let browser, self.text == query else { return }
+            self.pages += Self.searchedPages(for: query, in: browser)
+            self.rebuild()
+        }
     }
 
     private func rebuild() {
@@ -163,16 +181,21 @@ final class AddressSuggestions {
         }
     }
 
-    /// Open tabs, bookmarks and history. History is only read here, private windows included. A private window's
-    /// tabs are offered only in that window, and a profile's tabs and history only in that profile's windows.
-    private static func candidatePages(for query: String, excluding current: Tab?, in browser: BrowserModel) -> [SuggestionSource] {
-        let app = AppModel.shared
-        var pages: [SuggestionSource] = app.allTabs.compactMap { tab in
+    /// Open tabs — the fast half of the old one-shot search, run on every keystroke: a handful of tabs, no I/O.
+    /// A private window's tabs are offered only in that window; a profile's only in that profile's windows.
+    private static func openTabPages(for query: String, excluding current: Tab?, in browser: BrowserModel) -> [SuggestionSource] {
+        AppModel.shared.allTabs.compactMap { tab in
             guard tab !== current, tab.browser === browser || (!tab.isPrivate && tab.profileID == browser.profileID),
                   let url = tab.url, HistoryStore.isRecordable(url) else { return nil }
             return SuggestionSource(kind: .openTab(tab.id), title: tab.displayTitle, url: url.absoluteString)
         }
-        pages += app.bookmarks.tree.search(query).prefix(20).compactMap { bookmark in
+    }
+
+    /// Bookmarks and history — the slow half, run once per typing pause. History is only read here, private
+    /// windows included.
+    private static func searchedPages(for query: String, in browser: BrowserModel) -> [SuggestionSource] {
+        let app = AppModel.shared
+        var pages: [SuggestionSource] = app.bookmarks.tree.search(query).prefix(20).compactMap { bookmark in
             bookmark.url.map { SuggestionSource(kind: .bookmark, title: bookmark.title, url: $0) }
         }
         let now = Date()

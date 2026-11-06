@@ -86,6 +86,9 @@ final class WebEnvironment {
         let store = WKWebsiteDataStore(forIdentifier: uuid)
         Self.configureDataStoreIdentity(store, displayName: "Paddle")
         profileStores[profile] = store
+        // Without the delegate, that profile's pages read the default profile's notification answers and its
+        // service-worker notifications never reach `showNotification` at all.
+        WebsiteNotifications.shared.register(store: store, profile: profile)
         return store
     }
 
@@ -662,13 +665,18 @@ final class WebEnvironment {
         // Sidecars of lists that are current but not installed (no rules, or WebKit refused them).
         var sidecars: Set<String> = []
         var jobs: [CompileJob] = []
-        // Every filter list's text up front: each list carries the others' exceptions, so their text is part of its key.
-        let listTexts: [URL: String] = Dictionary(uniqueKeysWithValues: sources.filter { $0 != Paths.userFilters }.compactMap { file in
-            (try? String(contentsOf: file, encoding: .utf8)).map { (file, $0) }
-        })
+        // Every filter list's text up front: each list carries the others' exceptions, so their text is part of its
+        // key. Read off the main actor — EasyList + EasyPrivacy are megabytes, and this runs at startup and on every
+        // config reload.
+        let listFiles = sources.filter { $0 != Paths.userFilters }
+        let listTexts: [URL: String] = await Task.detached(priority: .utility) {
+            Dictionary(uniqueKeysWithValues: listFiles.compactMap { file in
+                (try? String(contentsOf: file, encoding: .utf8)).map { (file, $0) }
+            })
+        }.value
         for file in sources {
             let name = file.deletingPathExtension().lastPathComponent
-            guard let text = file == Paths.userFilters ? Self.readUserFilters() : try? String(contentsOf: file, encoding: .utf8) else {
+            guard let text = file == Paths.userFilters ? Self.readUserFilters() : listTexts[file] else {
                 let exists = FileManager.default.fileExists(atPath: file.path)
                 status.append(BlockerLine("\(name): \(exists ? "unreadable (not UTF-8 text)" : file == Paths.userFilters ? "no file" : "not downloaded yet")"))
                 continue
@@ -988,7 +996,10 @@ final class WebEnvironment {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 guard status == 200 else { failed("HTTP \(status)"); continue }
                 guard FilterListText.mayReplaceStoredList(data) else { failed("not a filter list"); continue }
-                try data.write(to: destination, options: .atomic)
+                // Written off the main actor: up to the 50 MB cap lands here at once.
+                try await Task.detached(priority: .utility) {
+                    try data.write(to: destination, options: .atomic)
+                }.value
                 report.lines.append("\(name): \(ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file))")
                 report.written += 1
                 filterUpdateProblems[file] = nil

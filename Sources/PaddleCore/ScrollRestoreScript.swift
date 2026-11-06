@@ -6,10 +6,12 @@ import Foundation
 /// column, then on a route change set that column back to the top and build it again. An immediate Back then
 /// lands at the top, because the site has not stored a position of its own yet. This script records the window
 /// and any scrolled column on the click (before the site's handler) and on `pushState`, and writes those
-/// positions back after `popstate` and after a back/forward load. Later writes cover a column the site resets
-/// once it has rebuilt, including resets that run hundreds of milliseconds after Back. A trusted scroll after
-/// wheel, key or pointer input cancels the rest, so a position the user picks in that window is left alone;
-/// layout scroll from `pageZoom` reflow is ignored.
+/// positions back after `popstate` and after a back/forward load. The full DOM walk a capture does is throttled
+/// to at most one every 250 ms, and keydowns on a page that has not used `pushState` yet refresh only the window
+/// position, so typing doesn't pay for it. Later writes cover a column the site resets once it has rebuilt,
+/// including resets that run hundreds of milliseconds after Back. A trusted scroll after wheel, key or pointer
+/// input cancels the rest, so a position the user picks in that window is left alone; layout scroll from
+/// `pageZoom` reflow is ignored.
 public enum ScrollRestoreScript {
     public static let source = #"""
     (() => {
@@ -124,9 +126,29 @@ public enum ScrollRestoreScript {
       let pending = null;
       let token = 0;
 
-      const capture = () => { pending = snapshot(); };
-      document.addEventListener('pointerdown', capture, true);
-      document.addEventListener('keydown', capture, true);
+      // Captures: a full one walks the DOM for scrolled columns and is throttled — it runs at most every 250 ms,
+      // and on keydown not at all until the page has used pushState once (typing on an ordinary page never needs
+      // it). Within the window and before that first pushState, only the window position is refreshed, which costs
+      // no layout read.
+      let lastFull = 0;
+      let sawPush = false;
+      const refreshWindow = () => {
+        if (!pending) pending = { x: 0, y: 0, nodes: [] };
+        pending.x = window.scrollX || 0;
+        pending.y = window.scrollY || 0;
+      };
+      const captureFull = () => {
+        const now = Date.now();
+        if (now - lastFull < 250) { refreshWindow(); return; }
+        lastFull = now;
+        pending = snapshot();
+      };
+      const captureKey = () => {
+        if (!sawPush) { refreshWindow(); return; }
+        captureFull();
+      };
+      document.addEventListener('pointerdown', captureFull, true);
+      document.addEventListener('keydown', captureKey, true);
 
       const schedule = (snap) => {
         if (!worth(snap)) return;
@@ -171,6 +193,7 @@ public enum ScrollRestoreScript {
 
       const push = history.pushState;
       history.pushState = function () {
+        sawPush = true;
         const leaving = trail[index].href;
         const snap = pending || snapshot();
         trail[index].snap = snap;

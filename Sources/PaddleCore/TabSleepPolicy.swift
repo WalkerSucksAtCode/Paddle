@@ -161,7 +161,7 @@ public struct TabSleepPolicy: Sendable, Equatable {
             }
         }
 
-        let order = Dictionary(uniqueKeysWithValues: eligible.enumerated().map { ($1.id, $0) })
+        let order = Dictionary(eligible.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         return chosen.sorted { order[$0, default: 0] < order[$1, default: 0] }
     }
 

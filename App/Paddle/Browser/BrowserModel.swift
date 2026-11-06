@@ -329,11 +329,11 @@ final class BrowserModel {
             previous.returnsToOpener = false
         }
         if previous !== tab, let previous, previous.hostsWebView, previous.webView != nil { previousSelectedID = previous.id }
-        // The tab you leave drops the pages WebKit keeps for an instant Back now rather than at its freeze: a page left for
-        // another site keeps a whole web process (measured 2026-11-04: 460 MB, gone at once). Back there reloads.
-        if previous !== tab, let previous, let leftView = previous.webView, !previous.isSuspendedInWebKit {
-            _ = PrivateAPI.callVoid("_clearBackForwardCache", on: leftView)
-        }
+        // Do not clear WebKit's back/forward cache here. Safari and Chrome keep cached history pages suspended until
+        // memory pressure or eviction; clearing on every tab switch (or split-pane focus) breaks SPAs and media the
+        // previous pane still shows (`mountedWebTabs` keeps multiple pages live). RAM is reclaimed when a background
+        // tab freezes (`Tab.freeze` clears before `_suspendPage:`), sleeps, or when `reapCachedWebProcesses` drops
+        // view-less ballooned WebContent.
         hoverWork?.cancel()
         hoveredTabID = nil
         selectedID = tab.id
@@ -712,7 +712,9 @@ final class BrowserModel {
     }
 
     /// Runs `body` with space `id` as the one in `tabs`, `groups` and `selectedID`, then puts things back. Nothing
-    /// is reported; for editing a hidden space.
+    /// is reported; for editing a hidden space. The restore writes a property only when `body` changed it: each of
+    /// these is an observable, and nine end-state-equal writes per hidden-space edit (a link opened in a background
+    /// space, an extension's `tabs.move`) would re-render every view that reads them, twice per property.
     private func withSpace<T>(_ id: String, _ body: () -> T) -> T {
         if id == activeSpaceID { return body() }
         let keep = Stash(tabs: tabs, groups: groups, selectedID: selectedID, splits: splits)
@@ -723,11 +725,16 @@ final class BrowserModel {
         splits = stash.splits
         let result = body()
         stashes[id] = Stash(tabs: tabs, groups: groups, selectedID: selectedID, splits: splits)
-        tabs = keep.tabs
-        groups = keep.groups
-        selectedID = keep.selectedID
-        splits = keep.splits
+        if !Self.sameTabs(keep.tabs, tabs) { tabs = keep.tabs }
+        if !Self.sameTabs(keep.groups, groups) { groups = keep.groups }
+        if keep.selectedID != selectedID { selectedID = keep.selectedID }
+        if keep.splits != splits { splits = keep.splits }
         return result
+    }
+
+    /// Same objects in the same order (`Tab`/`TabGroup` are references without `Equatable`).
+    private static func sameTabs<T: AnyObject>(_ a: [T], _ b: [T]) -> Bool {
+        a.count == b.count && zip(a, b).allSatisfy { $0 === $1 }
     }
 
     /// Shows space `id`: the current one's tabs are stashed (they keep their web views per the sleep policy), the

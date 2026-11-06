@@ -54,4 +54,17 @@ struct BridgeLimitsTests {
         #expect(BridgeLimits.busyReply(forLine: #"{"id":null}"#) == nil)
         #expect(BridgeLimits.busyReply(forLine: "not json") == nil)
     }
+
+    @Test func urlsAreCutAndOversizedImagesRefused() {
+        let long = "https://example.com/?" + String(repeating: "a", count: 5_000)
+        let cut = BridgeLimits.url(long)
+        #expect(cut.count == BridgeLimits.maxURLChars)
+        #expect(cut.hasSuffix("\u{2026}"))
+        #expect(BridgeLimits.url("https://example.com/") == "https://example.com/")
+
+        let fits = MCPToolResult(content: [.image(base64: String(repeating: "A", count: 1_000), mimeType: "image/png")])
+        #expect(BridgeLimits.clamped(fits).isError == false)
+        let huge = MCPToolResult(content: [.image(base64: String(repeating: "A", count: BridgeLimits.maxImageChars + 1), mimeType: "image/png")])
+        #expect(BridgeLimits.clamped(huge).isError == true)
+    }
 }

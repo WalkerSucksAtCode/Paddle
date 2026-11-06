@@ -492,7 +492,10 @@ private struct FrequentTile: View {
             .overlay { MiddleClickCatcher { openHere(background: true) } }
             .contextMenu {
                 Button("Open in New Tab") { openHere(background: true) }
-                Button("Pin to New Tab Page") { app.newTab.add(title: entry.title, url: entry.url) }
+                Button("Pin to New Tab Page") {
+                    // Refused (the page is full at 24 tiles): a beep, not a silent no-op.
+                    if !app.newTab.add(title: entry.title, url: entry.url) { NSSound.beep() }
+                }
                 Button("Don't Show This Site") { app.newTab.hideFrequent(host: host) }
             }
             .accessibilityElement(children: .ignore)

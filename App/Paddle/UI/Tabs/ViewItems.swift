@@ -216,7 +216,9 @@ struct ViewNameField: View {
         .padding(12)
         .onAppear {
             name = split.layout.name ?? ""
-            focused = true
+            // Next turn, like every other rename field: the click that opened this popover would otherwise take
+            // the focus straight back.
+            DispatchQueue.main.async { focused = true }
         }
     }
 

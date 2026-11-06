@@ -94,6 +94,7 @@ enum SettingsPane: String, CaseIterable {
             "tabFreezeAfterMinutes", "tabSleepAfterMinutes",
             "maxAwakeTabs", "cpuSleepPercent", "cpu", "sessionHistoryTabs", "back history", "showTabMemory", "toolbar",
             "awake", "linkPreview", "link preview", "audio", "resumeMediaOnSelect", "play the tab",
+            "dropBackForwardCacheOnNavigate", "back cache",
             "upload", "uploads", "unsaved", "keepPageWorkRunning", "notifications", "live", "keepNotifyingSitesLive",
         ]
         case .mosaic: [

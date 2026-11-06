@@ -26,6 +26,18 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// Whether the macOS authorization request has been made in this run. It is asked once.
     private var askedSystem = false
 
+    /// The persistent data stores this object answers for, by identity: the profile each one belongs to. The delegate
+    /// is installed on every profile's store, so a profile's pages read and show under their own profile's answers.
+    private var storeProfiles: [ObjectIdentifier: String] = [:]
+
+    /// Banner posts this window, per origin, and the origins already logged for throttling this run.
+    private var postedTimes: [String: [Date]] = [:]
+    private var loggedThrottle: Set<String> = []
+    /// A granted site can post at most this many banners per `postWindow`; past that they are dropped, so a page
+    /// looping `new Notification()` cannot banner-spam the desktop. The New Tab inbox still records each one.
+    private static let postLimit = 6
+    private static let postWindow: TimeInterval = 60
+
     /// The process pools that carry the page provider, by the slot number WebKit hands back as `clientInfo`.
     private var pagePools: [Int: PagePool] = [:]
     private var nextPagePoolSlot = 1
@@ -34,17 +46,31 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
     private var loggedMissingPageAPI = false
 
     /// Called once at launch, before any window: Notification Center's delegate (a click can launch the app, so it is
-    /// set before launch completes), then WebKit's delegate on the default data store. Private stores get neither.
+    /// set before launch completes), then WebKit's delegate on the default data store. Other profiles register when
+    /// their store is created (`WebEnvironment.dataStore(for:)`).
     func install(on store: WKWebsiteDataStore) {
         UNUserNotificationCenter.current().delegate = self
+        register(store: store, profile: ProfileStore.defaultID)
+        #if DEBUG
+        Self.verifySelectors()
+        #endif
+    }
+
+    /// WebKit's delegate on one profile's data store, so that profile's pages read their own answers and its
+    /// service-worker notifications are delivered (without this they silently never reach `showNotification`).
+    func register(store: WKWebsiteDataStore, profile: String) {
+        guard storeProfiles[ObjectIdentifier(store)] == nil else { return }
+        storeProfiles[ObjectIdentifier(store)] = profile
         if store.responds(to: Self.setDelegateSelector) {
             _ = store.perform(Self.setDelegateSelector, with: self)
         } else {
             Self.log.notice("website notifications are off: this WebKit has no WKWebsiteDataStore._delegate")
         }
-        #if DEBUG
-        Self.verifySelectors()
-        #endif
+    }
+
+    /// The profile a data store belongs to (the default profile's, when it isn't one Paddle registered).
+    private func profile(for store: WKWebsiteDataStore) -> String {
+        storeProfiles[ObjectIdentifier(store)] ?? ProfileStore.defaultID
     }
 
     /// The first yes in a run asks macOS once whether Paddle may post notifications. macOS shows its own prompt, which
@@ -102,10 +128,13 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         Self.log.info("page notification provider installed on \(self.pagePools.count) pool(s)")
     }
 
-    /// The permission answers a pool's page provider gives: none for a private window, the same answers as the data store otherwise.
+    /// The permission answers a pool's page provider gives: none for a private window, the default profile's answers
+    /// otherwise. A pool is shared by every profile's pages and this callback carries no page, so it cannot say whose
+    /// page asked; the data-store delegate (`notificationPermissions(for:)`) is the per-profile source pages actually
+    /// read, this only seeds WebKit's pool-level state.
     fileprivate func pagePermissions(slot: Int) -> [String: Bool] {
         guard let pool = pagePools[slot], !pool.isPrivate else { return [:] }
-        return permissionAnswers()
+        return permissionAnswers(profile: ProfileStore.defaultID)
     }
 
     /// A page notification WebKit showed. Shown only from a live, non-private pool, and only while the site is allowed.
@@ -200,33 +229,37 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - WebKit: permissions and notifications (_WKWebsiteDataStoreDelegate)
 
-    /// Read by WebKit for the origins of the default store, so `Notification.permission` reads "granted" or "denied"
-    /// on load: this run's answers, then each `sites` entry's allow or deny (the config wins). Origins are `scheme://host`.
+    /// Read by WebKit for the origins of a store, so `Notification.permission` reads "granted" or "denied" on load:
+    /// that profile's answers this run, then each `sites` entry's allow or deny (the config wins). Origins are
+    /// `scheme://host`. Stores Paddle didn't register (WebKit's own ephemeral ones) get no answers.
     @objc(notificationPermissionsForWebsiteDataStore:)
     func notificationPermissions(for dataStore: WKWebsiteDataStore) -> [String: NSNumber] {
-        guard dataStore === AppModel.shared.web.dataStore else { return [:] }
-        return permissionAnswers().mapValues { NSNumber(value: $0) }
+        guard storeProfiles[ObjectIdentifier(dataStore)] != nil else { return [:] }
+        return permissionAnswers(profile: profile(for: dataStore)).mapValues { NSNumber(value: $0) }
     }
 
-    /// The origin → allowed answers, from this run's answers and the `sites` entries (the config wins).
-    private func permissionAnswers() -> [String: Bool] {
+    /// The origin → allowed answers for one profile, from this run's answers in that profile and the `sites`
+    /// entries (the config wins).
+    private func permissionAnswers(profile: String) -> [String: Bool] {
         let app = AppModel.shared
         var answers: [String: Bool] = [:]
-        for answer in app[permissionsFor: false, profile: ProfileStore.defaultID].all where answer.kind == .notifications {
+        for answer in app[permissionsFor: false, profile: profile].all where answer.kind == .notifications {
             guard let url = URL(string: answer.site), let origin = Self.origin(of: url) else { continue }
             answers[origin] = answer.allowed
         }
-        for (origin, allowed) in app.config.notificationPermissions {
+        for (origin, allowed) in app.config(for: profile).notificationPermissions {
             answers[origin] = allowed
         }
         return answers
     }
 
-    /// A notification a page showed (`_WKNotificationData`, read through KVC). Shown only while the site is allowed:
-    /// its `sites` setting is allow, or it is `ask` and this run's answer was yes. Otherwise dropped and logged.
+    /// A notification a page showed (`_WKNotificationData`, read through KVC). Shown only while the site is allowed
+    /// in the store's profile: its `sites` setting is allow, or it is `ask` and this run's answer was yes. Otherwise
+    /// dropped and logged.
     @objc(websiteDataStore:showNotification:)
     func websiteDataStore(_ dataStore: WKWebsiteDataStore, showNotification notification: NSObject) {
-        guard dataStore === AppModel.shared.web.dataStore else { return }
+        guard storeProfiles[ObjectIdentifier(dataStore)] != nil else { return }
+        let profile = profile(for: dataStore)
         let originString = PrivateAPI.value(of: notification, forKey: "origin") as? String
         guard
             let url = (PrivateAPI.value(of: notification, forKey: "securityOrigin") as? URL)
@@ -237,7 +270,7 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             Self.log.notice("dropped a notification with no usable origin")
             return
         }
-        guard isAllowed(url, profile: ProfileStore.defaultID) else {
+        guard isAllowed(url, profile: profile) else {
             Self.log.notice("dropped a notification from \(host, privacy: .private): notifications are not allowed for it")
             return
         }
@@ -249,12 +282,12 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         // A service-worker notification has a registration URL; Web Push ones are not supported, only these.
         let persistent = (PrivateAPI.value(of: notification, forKey: "serviceWorkerRegistrationURL") as? URL) != nil
 
-        var userInfo: [AnyHashable: Any] = ["origin": origin, "uuid": uuid, "persistent": persistent, "profile": ProfileStore.defaultID]
+        var userInfo: [AnyHashable: Any] = ["origin": origin, "uuid": uuid, "persistent": persistent, "profile": profile]
         if let dict = PrivateAPI.call("dictionaryRepresentation", on: notification) as? NSDictionary,
            PropertyListSerialization.propertyList(dict, isValidFor: .binary) {
             userInfo["dict"] = dict
         }
-        post(title: title, body: body, tag: tag, origin: origin, profile: ProfileStore.defaultID, userInfo: userInfo)
+        post(title: title, body: body, tag: tag, origin: origin, profile: profile, userInfo: userInfo)
     }
 
     // MARK: - Shared by both WebKit paths
@@ -308,6 +341,20 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.userInfo = userInfo
         let identifier = tag.isEmpty ? uuid : "\(origin)#\(tag)"
         NotificationInbox.shared.record(origin: origin, host: host, title: title, body: body, profile: profile)
+        // The throttle: a page looping `new Notification()` cannot banner-spam the desktop. Dropped ones still land
+        // in the New Tab inbox above, and `onAdded` runs anyway so the page's `onshow` isn't left waiting.
+        let now = Date()
+        var times = (postedTimes[origin] ?? []).filter { now.timeIntervalSince($0) < Self.postWindow }
+        if times.count >= Self.postLimit {
+            if loggedThrottle.insert(origin).inserted {
+                Self.log.notice("dropping further banners from one site this minute (limit \(Self.postLimit, privacy: .public) per minute)")
+            }
+            postedTimes[origin] = times
+            onAdded?()
+            return identifier
+        }
+        times.append(now)
+        postedTimes[origin] = times
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
             if let error {
@@ -389,14 +436,15 @@ final class WebsiteNotifications: NSObject, UNUserNotificationCenterDelegate {
             pageClicked(id)
         }
         if userInfo["persistent"] as? Bool == true, let dict = userInfo["dict"] as? NSDictionary {
-            processPersistentClick(dict)
+            processPersistentClick(dict, profile: (userInfo["profile"] as? String) ?? ProfileStore.defaultID)
         }
     }
 
     /// A service-worker notification's click goes to the page's own `notificationclick` handler, through WebKit, on
-    /// the default data store. Guarded: a WebKit without the selector just gets no page-side click.
-    private func processPersistentClick(_ dict: NSDictionary) {
-        let store = AppModel.shared.web.dataStore
+    /// the data store of the profile the notification named. Guarded: a WebKit without the selector just gets no
+    /// page-side click.
+    private func processPersistentClick(_ dict: NSDictionary, profile: String) {
+        let store = AppModel.shared.web.dataStore(for: profile)
         guard store.responds(to: Self.persistentClickSelector) else {
             Self.log.notice("persistent notification click not delivered: WebKit lacks _processPersistentNotificationClick:")
             return

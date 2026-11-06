@@ -29,4 +29,13 @@ struct ServiceWorkerWatchdogTests {
         #expect(watchdog.shouldStop(host: "slow.example", registeredSites: [], now: start) == false)
         #expect(watchdog.shouldStop(host: "x.com", registeredSites: ["x.com"], now: start.addingTimeInterval(1)) == true)
     }
+
+    @Test func theCooldownIsPerSite() {
+        var watchdog = ServiceWorkerWatchdog(cooldown: 30)
+        let start = Date(timeIntervalSince1970: 1_000)
+        #expect(watchdog.shouldStop(host: "reddit.com", registeredSites: ["reddit.com", "x.com"], now: start) == true)
+        // A different site's stuck worker is released right away; only its own stop cools a site down.
+        #expect(watchdog.shouldStop(host: "x.com", registeredSites: ["reddit.com", "x.com"], now: start) == true)
+        #expect(watchdog.shouldStop(host: "www.x.com", registeredSites: ["reddit.com", "x.com"], now: start) == false)
+    }
 }

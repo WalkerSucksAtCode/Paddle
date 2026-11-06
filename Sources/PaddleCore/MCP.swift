@@ -201,7 +201,7 @@ public enum PaddleBridgeTools {
     /// the quit and close guards; external links; the saved contact card; New Tab content; the theme (a file name);
     /// the bridge's own switches; shortcuts; extensions and onboarding of them.
     public static let settingsOnlyConfigKeys: Set<String> = [
-        "resumeMediaOnSelect", "homepage", "newTabPage", "searchTemplate", "searchSuggestTemplate", "historyDays", "sessionHistoryTabs",
+        "resumeMediaOnSelect", "dropBackForwardCacheOnNavigate", "homepage", "newTabPage", "searchTemplate", "searchSuggestTemplate", "historyDays", "sessionHistoryTabs",
         "speculativeLoading", "contentBlocking", "filterLists", "filterUpdateDays", "scriptlets", "trustedLists",
         "userAgentSuffix", "siteUserAgents", "sites", "sitePersonas", "developerTools", "httpsOnly",
         "newTabFrequentSites", "askWhereToDownload", "downloadFolder", "onLaunch", "askBeforeQuitting",

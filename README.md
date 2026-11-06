@@ -54,6 +54,7 @@ Only write keys you change. A new install is `{}`. Settings writes the file and 
 | `cpuSleepPercent` | `30` | Sleep a background tab whose process holds this percent of one core for 3 minutes (0 = off). Skips shared processes, the visible tab, sound/camera/mic, and pins unless `sleepPinnedTabs` |
 | `sessionHistoryTabs` | `30` | How many tabs keep back/forward state in `sessions/` (plus every pin). 0 = pins only |
 | `resumeMediaOnSelect` | `false` | Switching tabs resumes audio on the one you open and pauses the one you left. Off, a switch leaves playback alone |
+| `dropBackForwardCacheOnNavigate` | `false` | After a same-tab navigation that is not Back, Forward or Reload, drop WebKit's in-process back/forward cache. Off, that cache stays so media can keep playing and Back can restore the page. Freezing a background tab still drops the cache; switching tabs alone does not |
 | `linkPreview` | `true` | Real ⌥-click (or Preview Link) opens an overlay instead of following. ⇧⌘Return makes it a tab. Off, ⌥-click follows. Page scripts cannot open one |
 | `speculativeLoading` | `true` | Warm DNS/connection for the address bar's top hit and hovered links. Off in private windows |
 | `contentBlocking` | `true` | Ad and tracker blocking |
@@ -233,7 +234,7 @@ Peer must be this user's signed `paddle-mcp` (identifier `paddle-mcp`, same Deve
 ## Limits
 
 - **SPA Back scroll** — `ScrollRestoreScript` retries restore for about **5 s**; back/forward commits defer per-site zoom ~900 ms. A site can still miss if it moves scroll later or replaces the scroll container.
-- **Instant Back vs RAM** — freezing or leaving a tab drops WebKit's in-process back/forward cache on purpose. History and scroll restore still apply; Back may reload instead of an instant cached page.
+- **Instant Back vs RAM** — freezing a background tab drops WebKit's in-process back/forward cache before suspend. A navigation inside the same tab keeps it unless `dropBackForwardCacheOnNavigate` is on (default off), so Back and playing media can continue like Safari and Chrome. Switching tabs does not clear that cache (split views keep several panes mounted). History and scroll restore still apply. A view-less WebContent process above 128 MB with no workers is dropped on the 60-second sweep (sooner when it is busy on the CPU), including while a foreground tab is playing — that process is not the live page; `_clearWebProcessCache` is pool-wide and does not run JS GC in every tab (`trimWebKitMemory` does). That reap is not the toggle. The idle prewarm process (about 7 MB) stays.
 
 ## Contributing
 

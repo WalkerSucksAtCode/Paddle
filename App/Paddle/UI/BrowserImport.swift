@@ -40,6 +40,10 @@ final class BrowserImportController: NSWindowController, NSWindowDelegate {
         window.contentViewController = host
     }
 
+    /// ⌘W when the window is standalone (no browser window in the responder chain to route it; History and
+    /// Bookmarks implement the same action on their controllers).
+    @objc func paddleCloseTab(_ sender: Any?) { window?.performClose(sender) }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
@@ -188,15 +192,20 @@ final class BrowserImportModel {
             || (includeSiteSettings && selected.hasSiteSettings) || !pendingInstalls.isEmpty
     }
 
+    /// The section being read right now, shown beside the spinner (a multi-second history read otherwise has no
+    /// signal beyond an indeterminate bar).
+    private(set) var step: String?
+
     func run() async {
         guard let source = selected, canRun else { return }
         isRunning = true
         var sections: [ImportReportSection] = []
-        if includeSettings, source.hasSettings { sections.append(await importSettings(from: source)) }
-        if includeHistory, source.hasHistory { sections.append(await importHistory(from: source)) }
-        if includeBookmarks, source.hasBookmarks { sections.append(await importBookmarks(from: source)) }
-        if includeOpenTabs, source.hasOpenTabs { sections.append(await importOpenTabs(from: source)) }
-        if includeSiteSettings, source.hasSiteSettings { sections.append(await importSiteSettings(from: source)) }
+        if includeSettings, source.hasSettings { step = "Reading settings…"; sections.append(await importSettings(from: source)) }
+        if includeHistory, source.hasHistory { step = "Reading history…"; sections.append(await importHistory(from: source)) }
+        if includeBookmarks, source.hasBookmarks { step = "Reading bookmarks…"; sections.append(await importBookmarks(from: source)) }
+        if includeOpenTabs, source.hasOpenTabs { step = "Reading open tabs…"; sections.append(await importOpenTabs(from: source)) }
+        if includeSiteSettings, source.hasSiteSettings { step = "Reading site settings…"; sections.append(await importSiteSettings(from: source)) }
+        step = nil
         let installs = pendingInstalls
         if !installs.isEmpty {
             let count = installs.count
@@ -441,7 +450,10 @@ private struct BrowserImportView: View {
                 form
             }
             HStack {
-                if model.isRunning { ProgressView().controlSize(.small) }
+                if model.isRunning {
+                    ProgressView().controlSize(.small)
+                    if let step = model.step { Text(step).chromeFont(size: 11).foregroundStyle(.secondary) }
+                }
                 Spacer()
                 if model.report == nil {
                     Button("Cancel") { close([]) }

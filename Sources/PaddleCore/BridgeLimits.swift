@@ -15,6 +15,12 @@ public enum BridgeLimits {
     public static let maxReplyChars = 200_000
     /// The most characters of a page-written title in a tool result.
     public static let maxTitleChars = 300
+    /// The most characters of a page-written URL in a tool result: a page can inflate a query string without end,
+    /// and one such URL would otherwise push a whole state listing past the reply clamp and get it cut wholesale.
+    public static let maxURLChars = 2_000
+    /// The most characters of base64 image one tool result carries (about 768 KB of PNG). The line the server sends
+    /// to the client has no cap in that direction, so this is the cap.
+    public static let maxImageChars = 768_000
 
     /// `text` cut to `limit` characters with a note saying how much was dropped, or `text` itself when it fits.
     public static func truncated(_ text: String, limit: Int) -> String {
@@ -31,14 +37,27 @@ public enum BridgeLimits {
         return String(text.prefix(maxTitleChars - 1)) + "\u{2026}"
     }
 
+    /// A page URL cut to `maxURLChars`, ending in an ellipsis when cut.
+    public static func url(_ text: String) -> String {
+        guard text.utf16.count > maxURLChars, text.count > maxURLChars else { return text }
+        return String(text.prefix(maxURLChars - 1)) + "\u{2026}"
+    }
+
     /// Room past `maxReplyChars` for what a tool adds around text it already cut: the untrusted-content tags, a
     /// heading note, the truncation note.
     public static let replyOverheadChars = 1_000
 
     /// The backstop for every reply: each text item cut to `maxReplyChars` once it passes that plus
     /// `replyOverheadChars` (a tool that cut its own text stays as it is), the closing untrusted-content tag kept.
+    /// An image past `maxImageChars` (a tall window) is refused rather than sent as a multi-megabyte line.
     public static func clamped(_ result: MCPToolResult) -> MCPToolResult {
         var result = result
+        if result.content.contains(where: { item in
+            if case .image(let base64, _) = item { return base64.count > maxImageChars }
+            return false
+        }) {
+            return .error("the snapshot is too large to send; shrink the window and try again")
+        }
         result.content = result.content.map { item in
             guard case .text(let text) = item, text.utf16.count > maxReplyChars + replyOverheadChars,
                   text.count > maxReplyChars + replyOverheadChars else { return item }

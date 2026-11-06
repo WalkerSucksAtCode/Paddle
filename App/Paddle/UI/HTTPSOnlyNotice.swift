@@ -53,14 +53,18 @@ struct HTTPSOnlyNotice: View {
     }
 
     private func continueOnce() {
-        if tab.isPrivate { AppModel.shared.privateHTTPExceptions.insert(key) } else { AppModel.shared.httpExceptions.insert(key) }
+        if tab.isPrivate {
+            AppModel.shared.privateHTTPExceptions.insert(key)
+        } else {
+            AppModel.shared.httpExceptions[tab.profileID, default: []].insert(key)
+        }
         tab.load(url)
     }
 
     private func alwaysAllow() async {
         let app = AppModel.shared
         let result = await app.writeSiteSetting(.httpsOnly, .bool(false), forKey: app.config.siteKey(forHost: host))
-        if case .written = result {} else { app.httpExceptions.insert(key) }
+        if case .written = result {} else { app.httpExceptions[tab.profileID, default: []].insert(key) }
         tab.load(url)
     }
 }

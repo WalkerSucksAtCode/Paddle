@@ -70,15 +70,17 @@ final class AppModel {
         set { if isPrivate { privatePermissions = newValue } else { sessionPermissions[profile] = newValue } }
     }
     /// Hosts (normalized, without `www.`) the user let load over http:// from the HTTPS-only notice in a normal
-    /// window, until Paddle quits. Never written to disk. Private windows use them too (`httpExceptions(isPrivate:)`).
-    @ObservationIgnored var httpExceptions: Set<String> = []
+    /// window, until Paddle quits — per profile, like the session permission answers above, so "Go Back to HTTP"
+    /// in one profile never speaks for another. Never written to disk. Private windows use them too
+    /// (`httpExceptions(isPrivate:profile:)`).
+    @ObservationIgnored var httpExceptions: [String: Set<String>] = [:]
     /// The same, let through from a private window: they apply only in private windows and are dropped when the last
     /// one closes, so a private choice doesn't carry into normal browsing.
     @ObservationIgnored var privateHTTPExceptions: Set<String> = []
 
     /// The http:// exceptions a tab of this kind of window follows.
-    func httpExceptions(isPrivate: Bool) -> Set<String> {
-        isPrivate ? httpExceptions.union(privateHTTPExceptions) : httpExceptions
+    func httpExceptions(isPrivate: Bool, profile: String) -> Set<String> {
+        isPrivate ? privateHTTPExceptions : (httpExceptions[profile] ?? [])
     }
     /// Zoom set in private windows, by `sites` key, for this run only: private windows write nothing to config.json.
     @ObservationIgnored var privateZooms: [String: Double] = [:]
@@ -93,6 +95,11 @@ final class AppModel {
     @ObservationIgnored private var lastKeptRunning = ""
     /// When the sweep first saw a WebContent process running service workers with no page in it (`stopOrphanServiceWorkers`).
     @ObservationIgnored private var orphanWorkersSince: Date?
+    /// When a view-less WebContent process above `CachedWebProcess.spareCeiling` was first seen (`reapCachedWebProcesses`).
+    @ObservationIgnored private var cachedProcessesSince: Date?
+    /// Last CPU time of those processes, so a busy leftover can skip the rest of the grace. The reading is
+    /// `ProcessMemory.cpuSeconds`, the same one the sleep sweep uses.
+    @ObservationIgnored private var cachedProcessCPU: [Int32: (seconds: TimeInterval, at: Date)] = [:]
     /// Open readouts that want the 5 s sampler even with `showTabMemory` off (Activity, Settings' memory pane).
     @ObservationIgnored private var memoryReaders = 0
     /// Activation and window-occlusion observers that start and stop the sampler.
@@ -495,15 +502,21 @@ final class AppModel {
 
         // Every key: the web environment keeps its own copy (user agents, inspector, block lists). User scripts and
         // user.css are re-read only for the keys they are built from (`scriptKeys`, from WebEnvironment.reloadUserScripts)
-        // or on Reload Config.
+        // or on Reload Config. `.sites` is in that set only for its per-site dark-mode entries (DarkModeScript's
+        // table) — a zoom-only or permissions-only `sites` edit changes no script, so it rebuilds nothing.
         let scriptKeys: Set<PaddleConfig.CodingKeys> = [
             .appearance, .darkMode, .sites, .invertTextImages, .underlineLinks, .contactAutofill, .sitePersonas, .keepPageWorkRunning,
         ]
+        let sitesDarkModeChanged = Self.darkModeSitesChanged(old.sites, new.sites)
         // A profile's keepPageWorkRunning feeds `anyProfileKeepsPageWork`, which the page-work script depends on.
         let profileKeepsPageWorkChanged = profilesChanged.contains {
             (oldProfiles[$0] ?? old).keepPageWorkRunning != config(for: $0).keepPageWorkRunning
         }
-        web.apply(new, reloadScripts: reloading || !keys.isDisjoint(with: scriptKeys) || profileKeepsPageWorkChanged)
+        let reloadScripts = reloading
+            || (!keys.subtracting([.sites]).isDisjoint(with: scriptKeys))
+            || (keys.contains(.sites) && sitesDarkModeChanged)
+            || profileKeepsPageWorkChanged
+        web.apply(new, reloadScripts: reloadScripts)
         if keys.contains(.historyDays) { openHistory() }
         if keys.contains(.shortcuts) { MainMenu.applyShortcuts(new.shortcuts) }
         if keys.contains(.controlBridge) { ControlBridge.shared.update(enabled: new.controlBridge) }
@@ -540,7 +553,7 @@ final class AppModel {
             for tab in allTabs { tab.applyGestures() }
         }
         if keys.contains(.sites) || keys.contains(.defaultZoom) { applySiteZoom() }
-        if keys.contains(.sites) || keys.contains(.darkMode) { applySiteDarkMode() }
+        if keys.contains(.darkMode) || (keys.contains(.sites) && sitesDarkModeChanged) { applySiteDarkMode() }
         if keys.contains(.invertTextImages) { for tab in allTabs { tab.applyInvertTextImages() } }
         // Scriptlets come from the same list files, so they are rebuilt with the block lists.
         if !keys.isDisjoint(with: [.contentBlocking, .filterLists, .scriptlets, .trustedLists])
@@ -577,6 +590,15 @@ final class AppModel {
     }
 
     /// The keys whose values differ. The switch is exhaustive, so a new key must say how it compares.
+    /// Whether any per-site `darkMode` entry (or the set of sites that have one) differs — the only part of
+    /// `sites` the user-script set reads (`DarkModeScript.source`'s table). Zoom, permissions and the rest don't.
+    private static func darkModeSitesChanged(_ old: [String: SiteSettings], _ new: [String: SiteSettings]) -> Bool {
+        let oldKeys = Set(old.filter { $0.value.darkMode != nil }.keys)
+        let newKeys = Set(new.filter { $0.value.darkMode != nil }.keys)
+        if oldKeys != newKeys { return true }
+        return oldKeys.contains { old[$0]?.darkMode != new[$0]?.darkMode }
+    }
+
     private static func changedKeys(_ old: PaddleConfig, _ new: PaddleConfig) -> Set<PaddleConfig.CodingKeys> {
         Set(PaddleConfig.CodingKeys.allCases.filter { key in
             switch key {
@@ -595,6 +617,7 @@ final class AppModel {
             case .sessionHistoryTabs: old.sessionHistoryTabs != new.sessionHistoryTabs
             case .linkPreview: old.linkPreview != new.linkPreview
             case .resumeMediaOnSelect: old.resumeMediaOnSelect != new.resumeMediaOnSelect
+            case .dropBackForwardCacheOnNavigate: old.dropBackForwardCacheOnNavigate != new.dropBackForwardCacheOnNavigate
             case .speculativeLoading: old.speculativeLoading != new.speculativeLoading
             case .contentBlocking: old.contentBlocking != new.contentBlocking
             case .filterLists: old.filterLists != new.filterLists
@@ -1433,6 +1456,9 @@ final class AppModel {
             MainActor.assumeIsolated {
                 AppModel.shared.log.notice("memory pressure: sleeping background tabs and trimming WebKit memory")
                 AppModel.shared.lastMemoryPressure = Date()
+                // Sampled first: the sweep ranks victims by footprint, and with the readout off the 5 s sampler
+                // has not been keeping the numbers current.
+                AppModel.shared.sampleMemory()
                 AppModel.shared.sweepSleepingTabs(memoryPressure: true)
                 AppModel.shared.trimWebKitMemory()
                 // Hands free malloc pages back to the system (vmmap, 2026-10-16: the default zone held ~24 MB unused).
@@ -1532,7 +1558,10 @@ final class AppModel {
         let rounded = breakdown.rounded()
         if memoryBreakdown != rounded { memoryBreakdown = rounded }
         if totalWebMemory != rounded.total { totalWebMemory = rounded.total }
-        // With the readout off, leave the per-tab numbers alone so the sampler doesn't show memory the user
+        // Kept whatever the readout shows: the memory-pressure sweep ranks victims by footprint, and with the
+        // numbers only maintained while the readout is on, that ranking silently degraded to pure LRU.
+        lastFootprints = Dictionary(uniqueKeysWithValues: rounded.perTab.map { ($0.key, ($0.value, rounded.sharedTabs.contains($0.key))) })
+        // With the readout off, leave the per-tab observables alone so the sampler doesn't show memory the user
         // turned off.
         guard config.showTabMemory else { return }
         for tab in tabs {
@@ -1541,6 +1570,11 @@ final class AppModel {
             if tab.sharesProcess != shares { tab.sharesProcess = shares }
         }
     }
+
+    /// The last sample's per-tab footprints and shared-process flags, kept regardless of `showTabMemory` (the
+    /// pressure sweep reads them; the sampler's 5 s timer itself stays gated on the readout, and a pressure
+    /// onset samples once before its first sweep).
+    @ObservationIgnored private var lastFootprints: [UUID: (bytes: UInt64, shares: Bool)] = [:]
 
     /// Configured tab sleep policy, tightened while Low Power Mode or heat constrains power (`TabSleepPolicy.adjusted(for:)`).
     var effectiveSleepPolicy: TabSleepPolicy { TabSleepPolicy(config: config).adjusted(for: power) }
@@ -1602,7 +1636,8 @@ final class AppModel {
     /// Applies the sleep policy across all windows. Visible tabs, pinned tabs (by default),
     /// and tabs playing media, in Picture-in-Picture, or using the camera/mic stay awake.
     func sweepSleepingTabs(memoryPressure: Bool = false) {
-        stopOrphanServiceWorkers(now: Date())
+        let now = Date()
+        stopOrphanServiceWorkers(now: now)
         for host in extensionHosts { host.parkIdleExtensions(config: config) }
         let policy = effectiveSleepPolicy
         Task {
@@ -1612,11 +1647,13 @@ final class AppModel {
             for tab in allTabs where tab.isAwake {
                 if await tab.isBusy() { busy.insert(tab.id) }
             }
+            // Media, Picture-in-Picture and capture, before sign-in popups are folded in below.
             // Under memory pressure freeing memory wins over keeping sign-in popups working.
             if !memoryPressure { busy.formUnion(liveOpenerPairs()) }
             let now = Date()
             // Both sides of a split view are on screen, so both count as selected.
             let selected = Set(windows.flatMap { $0.model.visibleTabs.map(\.id) })
+            reapCachedWebProcesses(now: now)
             let tabs = allTabs
             // A tab is sampled only when it could be judged: not selected, not playing, and not sharing its process with
             // another tab, whose CPU time would be counted twice. Any sweep that doesn't sample drops every clock, so the
@@ -1659,7 +1696,10 @@ final class AppModel {
                     cpuBusySince: sampling ? cpuUsage.busySince(tab.id).map { max($0, tab.lastActive) } : nil,
                     isFrozen: tab.isFrozen,
                     // A shared process stays up after this tab sleeps, so it doesn't count as memory this sleep frees.
-                    footprint: tab.sharesProcess ? 0 : (tab.memoryBytes ?? 0),
+                    // `lastFootprints` over `memoryBytes`: with the readout off the observables stay nil, but the
+                    // last sample's numbers are still here (a pressure onset samples once before its first sweep).
+                    footprint: (tab.sharesProcess || lastFootprints[tab.id]?.shares == true)
+                        ? 0 : (lastFootprints[tab.id]?.bytes ?? tab.memoryBytes ?? 0),
                     isUploading: uploading, guardsUnload: pageWork && tab.guardsUnload, staysLive: staysLive(tab),
                     mosaic: tab.browser?.mosaicID(of: tab)
                 )
@@ -1730,6 +1770,14 @@ final class AppModel {
     /// How long a WebContent process may run service workers with no page in it before they are stopped.
     static let orphanWorkerGrace: TimeInterval = 30
 
+    /// How long a view-less WebContent process above the reap ceiling may sit before the pool drops its process
+    /// cache. Long enough for a process that is already exiting to disappear on its own. The 60 s sweep is the
+    /// usual caller; a sooner sweep (memory pressure, Sleep Background Tabs) can act once this has passed.
+    static let cachedProcessGrace: TimeInterval = 15
+
+    /// Share of one core (1.0 = one full core) above which that leftover is dropped without the rest of the grace.
+    static let cachedProcessBusyShare: Double = 0.5
+
     /// Stops service workers once a process has run them with no page in it for `orphanWorkerGrace`: a site's
     /// worker outlives its last tab in that tab's whole process (measured: 218 MB still up 3.5 min after closing
     /// Reddit; 647 MB a minute after the benchmark closed its tabs). Chrome stops an idle worker after 30 s. WebKit can only stop every worker in a pool (private `-[WKProcessPool _terminateServiceWorkers]`),
@@ -1750,6 +1798,52 @@ final class AppModel {
         let stopped = pools.filter { PrivateAPI.callVoid("_terminateServiceWorkers", on: $0) }.count
         let megabytes = orphans.reduce(0) { $0 + $1.footprint } / 1_048_576
         log.notice("stopped service workers in \(stopped) pool(s): \(orphans.count) process(es) with no page, \(megabytes) MB")
+    }
+
+    /// Drops view-less WebContent processes above `CachedWebProcess.spareCeiling` (a large leftover, not the ~7 MB
+    /// prewarm spare or a small view-less frame).
+    /// A process swap can leave the previous page's process running with no `WKWebView`, so freeze and sleep never
+    /// see it (measured 2026-11-06: pid 38959, 2.7 GB, still in `other` hours later). Called from the sleep sweep,
+    /// not the 5 s memory sampler. `_clearWebProcessCache` once per pool, not `trimWebKitMemory`: the trim forces
+    /// a JavaScript collection in every live process, including the page on screen. A short grace lets a process
+    /// that is already exiting die on its own. One using the CPU skips the rest of the grace. View-less processes are
+    /// not a tab's live page; reaping them does not stop playback in the selected tab. Without the process list or the
+    /// selector, nothing happens.
+    private func reapCachedWebProcesses(now: Date) {
+        guard let snapshot = ProcessMemory.snapshot() else { return }
+        let reapable = CachedWebProcess.reapable(snapshot.webContent)
+        guard !reapable.isEmpty else {
+            cachedProcessesSince = nil
+            cachedProcessCPU = [:]
+            return
+        }
+        var busy = false
+        var nextCPU: [Int32: (seconds: TimeInterval, at: Date)] = [:]
+        for process in reapable {
+            guard let seconds = ProcessMemory.cpuSeconds(of: process.pid) else { continue }
+            if let previous = cachedProcessCPU[process.pid], seconds >= previous.seconds {
+                let wall = now.timeIntervalSince(previous.at)
+                // A second call in the same turn has almost no wall time, so its rate is noise.
+                if wall >= 1, (seconds - previous.seconds) / wall >= Self.cachedProcessBusyShare {
+                    busy = true
+                }
+            }
+            nextCPU[process.pid] = (seconds, now)
+        }
+        cachedProcessCPU = nextCPU
+        let since = cachedProcessesSince ?? now
+        cachedProcessesSince = since
+        guard busy || now.timeIntervalSince(since) >= Self.cachedProcessGrace else { return }
+        cachedProcessesSince = nil
+        cachedProcessCPU = [:]
+        let pools = [WebEnvironment.processPool, WebEnvironment.privateProcessPool].compactMap { $0 }
+        let cleared = pools.filter { PrivateAPI.clearWebProcessCache(on: $0) }.count
+        let megabytes = reapable.reduce(0) { $0 + $1.footprint } / 1_048_576
+        if busy {
+            log.notice("cleared web process cache in \(cleared) pool(s): \(reapable.count) process(es) with no page, \(megabytes) MB, busy")
+        } else {
+            log.notice("cleared web process cache in \(cleared) pool(s): \(reapable.count) process(es) with no page, \(megabytes) MB")
+        }
     }
 
     /// Trims WebKit memory: purges in-memory caches across website data stores, and asks

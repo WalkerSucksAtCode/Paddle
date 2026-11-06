@@ -403,9 +403,7 @@ private struct NavigationBar: View {
                 if model.extensionsAllowed, let host = model.extensionHost {
                     ExtensionToolbar(host: host, model: model, tab: tab, isPrivate: model.isPrivate, placements: app.config.extensionToolbar)
                 }
-                if app.config.alwaysShowDownloadsButton || !app.downloads.items(for: model).isEmpty {
-                    downloadsButton
-                }
+                DownloadsToolbarButton(app: app, model: model, theme: theme)
             }
             .fixedSize()
             if app.config.showTabMemory {
@@ -585,8 +583,20 @@ private struct NavigationBar: View {
         }
         .onChange(of: model.focusAddressRequest) {
             addressFocused = true
-            DispatchQueue.main.async { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) }
+            // Two turns: the first lets SwiftUI promote the field editor (the click that asked for focus could
+            // otherwise take focus straight back), the second selects against that editor, not whatever holds
+            // focus at that moment (a page, when `to: nil` sends into the responder chain).
+            DispatchQueue.main.async {
+                DispatchQueue.main.async { Self.selectAllInFieldEditor() }
+            }
         }
+    }
+
+    /// Select-all against the key window's field editor — the address field's text — not against whatever the
+    /// responder chain hands the action to (a page's web view would run its own select-all).
+    private static func selectAllInFieldEditor() {
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSText else { return }
+        editor.selectAll(nil)
     }
 
     /// The site shown in place of the address while the field isn't being edited (`showFullAddress` off): a web
@@ -667,50 +677,9 @@ private struct NavigationBar: View {
         }
     }
 
-    private var activeDownloads: Int {
-        app.downloads.items(for: model).filter { $0.state == .running }.count
-    }
+    // (The downloads button lives in `DownloadsToolbarButton` below: reading the download store in this view
+    // re-rendered the whole toolbar — address field included — at every progress tick.)
 
-    private var overallDownloadFraction: Double {
-        let active = app.downloads.items(for: model).filter { $0.state == .running }
-        guard !active.isEmpty else { return 0 }
-        let total = active.reduce(0.0) { $0 + $1.fraction }
-        return total / Double(active.count)
-    }
-
-    private var downloadsButton: some View {
-        Button {
-            model.downloadsVisible.toggle()
-        } label: {
-            ZStack {
-                if activeDownloads > 0 {
-                    Circle()
-                        .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
-                        .frame(width: 18, height: 18)
-                    Circle()
-                        .trim(from: 0, to: max(0.08, overallDownloadFraction))
-                        .stroke(theme?.accent ?? Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                        .frame(width: 18, height: 18)
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.2), value: overallDownloadFraction)
-                    Image(systemName: "arrow.down")
-                        .chromeFont(size: 8, weight: .bold)
-                        .foregroundStyle(theme?.accent ?? Color.accentColor)
-                } else {
-                    Glyph(name: "surf-download", size: 16, active: false)
-                        .frame(width: 26, height: 26)
-                }
-            }
-            .frame(width: 26, height: 26)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.borderless)
-        .help(activeDownloads > 0 ? "Downloading (\(activeDownloads))" : "Downloads (⌥⌘L)")
-        .accessibilityLabel("Downloads")
-        .popover(isPresented: $model.downloadsVisible, arrowEdge: .bottom) {
-            DownloadsView(store: app.downloads, isPrivate: model.isPrivate, profile: model.profileID, folder: DownloadStore.folder(using: model.config)).systemText()
-        }
-    }
 
     @ViewBuilder
     private var progressBar: some View {
@@ -790,6 +759,53 @@ struct TabProgressBar: View {
                     .animation(reducesMotion ? nil : .easeOut(duration: 0.2), value: tab.progress)
             }
             .frame(height: 2)
+        }
+    }
+}
+
+/// The toolbar's downloads button, its own view so a progress tick re-renders only this: the store's fraction is
+/// an observable the NavigationBar otherwise reads (five scans of the items list per render before that).
+private struct DownloadsToolbarButton: View {
+    let app: AppModel
+    let model: BrowserModel
+    let theme: ResolvedChromeTheme?
+
+    var body: some View {
+        let items = app.downloads.items(for: model)
+        let active = items.filter { $0.state == .running }
+        let overall = active.isEmpty ? 0.0 : active.reduce(0.0) { $0 + $1.fraction } / Double(active.count)
+        if app.config.alwaysShowDownloadsButton || !items.isEmpty {
+            Button {
+                model.downloadsVisible.toggle()
+            } label: {
+                ZStack {
+                    if !active.isEmpty {
+                        Circle()
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 2)
+                            .frame(width: 18, height: 18)
+                        Circle()
+                            .trim(from: 0, to: max(0.08, overall))
+                            .stroke(theme?.accent ?? Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .frame(width: 18, height: 18)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.easeInOut(duration: 0.2), value: overall)
+                        Image(systemName: "arrow.down")
+                            .chromeFont(size: 8, weight: .bold)
+                            .foregroundStyle(theme?.accent ?? Color.accentColor)
+                    } else {
+                        Glyph(name: "surf-download", size: 16, active: false)
+                            .frame(width: 26, height: 26)
+                    }
+                }
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help(active.isEmpty ? "Downloads (⌥⌘L)" : "Downloading (\(active.count))")
+            .accessibilityLabel("Downloads")
+            .popover(isPresented: Binding(get: { model.downloadsVisible }, set: { model.downloadsVisible = $0 }), arrowEdge: .bottom) {
+                DownloadsView(store: app.downloads, isPrivate: model.isPrivate, profile: model.profileID, folder: DownloadStore.folder(using: model.config)).systemText()
+            }
         }
     }
 }

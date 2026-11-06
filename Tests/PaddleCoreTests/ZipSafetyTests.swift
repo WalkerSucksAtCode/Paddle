@@ -1,6 +1,7 @@
 import Foundation
 @testable import PaddleCore
 import Testing
+import zlib
 
 struct ZipSafetyTests {
     private typealias Item = TestZip.Item
@@ -164,12 +165,19 @@ struct ZipSafetyTests {
         try Data(text.utf8).write(to: url)
     }
 
+    /// The CRC-32 of `text`, as the archive's central directory would carry it.
+    private func crc32(_ text: String) -> UInt32 {
+        Data(text.utf8).withUnsafeBytes { raw in
+            UInt32(truncatingIfNeeded: zlib.crc32(0, raw.baseAddress?.assumingMemoryBound(to: UInt8.self), uInt(raw.count)))
+        }
+    }
+
     @Test func unpackedTreeMustMatch() throws {
         let entries = [
-            ZipSafety.Entry(name: "manifest.json", isDirectory: false, uncompressedSize: 2, crc32: 0),
-            ZipSafety.Entry(name: "js/bg.js", isDirectory: false, uncompressedSize: 4, crc32: 0),
+            ZipSafety.Entry(name: "manifest.json", isDirectory: false, uncompressedSize: 2, crc32: crc32("{}")),
+            ZipSafety.Entry(name: "js/bg.js", isDirectory: false, uncompressedSize: 4, crc32: crc32("1234")),
             ZipSafety.Entry(name: "empty", isDirectory: true, uncompressedSize: 0, crc32: 0),
-            ZipSafety.Entry(name: "__MACOSX/._manifest.json", isDirectory: false, uncompressedSize: 4, crc32: 0),
+            ZipSafety.Entry(name: "__MACOSX/._manifest.json", isDirectory: false, uncompressedSize: 4, crc32: crc32("abcd")),
         ]
         let root = try makeTree { root in
             try write(root, "manifest.json", "{}")
@@ -184,6 +192,11 @@ struct ZipSafetyTests {
         try FileManager.default.removeItem(at: root.appending(path: "extra.js"))
 
         try write(root, "js/bg.js", "12345")
+        #expect(throws: ZipSafety.Refusal.unpackedMismatch("js/bg.js")) { try ZipSafety.verifyUnpacked(root, matches: entries) }
+        try write(root, "js/bg.js", "1234")
+
+        // Same size, different bytes: only the CRC tells this corruption from the real file.
+        try write(root, "js/bg.js", "5678")
         #expect(throws: ZipSafety.Refusal.unpackedMismatch("js/bg.js")) { try ZipSafety.verifyUnpacked(root, matches: entries) }
         try write(root, "js/bg.js", "1234")
 

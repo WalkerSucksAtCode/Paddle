@@ -196,7 +196,9 @@ struct SitesPane: View {
 
     private func darkModePicker(_ row: SiteRow) -> some View {
         Picker("Dark mode for \(row.key)", selection: Binding(
-            get: { model.file.sites[row.key]?.darkMode ?? .auto },
+            // The effective value, like the zoom cell beside it: a subdomain whose parent's entry sets dark mode
+            // would otherwise display "Auto" while its pages render dark.
+            get: { row.policy.darkModeOverride },
             set: { mode in set(.darkMode, .string(mode.rawValue), on: row) }
         )) {
             Text("Auto").tag(SiteSettings.SiteDarkMode.auto)

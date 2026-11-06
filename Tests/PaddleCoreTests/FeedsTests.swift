@@ -58,6 +58,30 @@ struct FeedsTests {
         let c = FeedItem(title: "c", link: base, published: Date(timeIntervalSince1970: 20), source: "s")
         #expect(FeedParser.sortedNewestFirst([a, b, c]).map(\.title) == ["c", "b", "a"])
     }
+
+    @Test func undeclaredHTMLEntityDoesNotEndTheFeed() throws {
+        let xml = """
+        <?xml version="1.0"?><rss version="2.0"><channel><title>Example News</title>
+        <item><title>First story</title><link>https://example.com/a</link></item>
+        <item><title>Second&nbsp;story &copy; Acme</title><link>https://example.com/b</link></item>
+        <item><title>Third &unknownentity; story</title><link>https://example.com/c</link></item>
+        </channel></rss>
+        """
+        let feed = try #require(FeedParser.parse(Data(xml.utf8), base: base))
+        guard feed.items.count == 3 else {
+            #expect(feed.items.count == 3, "items after the undeclared entity: \(feed.items.map(\.title))")
+            return
+        }
+        #expect(feed.items[1].link.absoluteString == "https://example.com/b")
+        #expect(feed.items[2].link.absoluteString == "https://example.com/c")
+        #expect(feed.items[1].title == "Second story © Acme")
+        #expect(feed.items[2].title == "Third story")
+    }
+
+    @Test func numericReferencesDecodeInsteadOfVanishing() {
+        #expect(FeedParser.plainText("Dash &#8212; done") == "Dash — done")
+        #expect(FeedParser.plainText("Bad &#0; &#999999999; end") == "Bad &#0; &#999999999; end")
+    }
 }
 
 struct FeedImageTests {

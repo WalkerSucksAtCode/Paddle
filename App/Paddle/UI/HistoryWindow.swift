@@ -56,6 +56,12 @@ private struct HistoryView: View {
     /// The profile whose history to show: the last ordinary browser window that became main. Updated by
     /// `didBecomeMainNotification`, since the front window itself isn't observable.
     @State private var profile: ProfileID = Self.frontProfile
+    /// The debounced query's task, and what the last run loaded: a changed one of those reloads at once instead
+    /// of waiting out the pause (a typed character waits; Show More, a cleared history, a profile switch don't).
+    @State private var reloadTask: Task<Void, Never>?
+    @State private var lastReloadedLimit = 300
+    @State private var lastReloadedGeneration = 0
+    @State private var lastReloadedProfile: ProfileID = ProfileStore.defaultID
     /// The profile the list was last loaded from; Remove and Open act on it, never on whichever window is in front.
     @State private var shownProfile: ProfileID = ProfileStore.defaultID
 
@@ -176,6 +182,25 @@ private struct HistoryView: View {
 
     private func reload() {
         shownProfile = profile
+        // A typed query waits out a short pause first: the LIKE search is a full scan, so fast typing shouldn't
+        // run one per keystroke. Everything else (history cleared, Show More, profile switch) reloads at once.
+        if !query.isEmpty, limit == lastReloadedLimit, app.historyGeneration == lastReloadedGeneration, profile == lastReloadedProfile {
+            reloadTask?.cancel()
+            reloadTask = Task {
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                runQuery()
+            }
+            return
+        }
+        reloadTask?.cancel()
+        runQuery()
+    }
+
+    private func runQuery() {
+        lastReloadedLimit = limit
+        lastReloadedGeneration = app.historyGeneration
+        lastReloadedProfile = profile
         guard let history = app.history(for: profile) else {
             visits = []
             pageCount = 0
