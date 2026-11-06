@@ -308,13 +308,12 @@ final class Tab: Identifiable {
         return webView
     }
 
-    /// Restores the saved page and history, or loads `url`.
+    /// Restores the saved page and history, or loads `url`. Session restore filters URLs in `Tab(record:)`, not here.
     private func startFirstLoad(_ webView: WKWebView) {
-        if let url, Self.sessionRestorableURL(url) != nil, let savedState {
+        if let savedState {
             skipNextCommitInHistory = true
-            // WebKit's blob is opaque; only restore it when the tab URL passed sessionRestorableURL.
             webView.interactionState = savedState
-        } else if let url, Self.sessionRestorableURL(url) != nil {
+        } else if let url {
             webView.load(URLRequest(url: url))
         }
     }
