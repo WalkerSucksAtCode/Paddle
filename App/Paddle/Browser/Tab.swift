@@ -175,9 +175,24 @@ final class Tab: Identifiable {
         self.isPrivate = isPrivate
     }
 
+    /// URLs saved in the session may load when the tab wakes; everything else becomes a New Tab (nil `url`).
+    private static func sessionRestorableURL(_ url: URL) -> URL? {
+        if OpenableURL.isAllowed(url) { return url }
+        if url.scheme?.lowercased() == "paddle", url.host()?.lowercased() == "settings" { return url }
+        if ExtensionIdentity.identifier(of: url) != nil { return url }
+        // OpenableURL blocks external file: PDF opens; a tab the user opened in Paddle may still persist one.
+        if url.isFileURL, !url.hasDirectoryPath, url.pathExtension.lowercased() == "pdf" {
+            if let host = url.host(percentEncoded: false), !host.isEmpty, host.lowercased() != "localhost" { return nil }
+            return url
+        }
+        return nil
+    }
+
     convenience init(record: TabRecord, isPrivate: Bool = false) {
+        let url = URL(string: record.url).flatMap { Self.sessionRestorableURL($0) }
+        let savedState = url != nil ? record.interactionState : nil
         self.init(
-            url: URL(string: record.url), title: record.title, isPinned: record.isPinned, savedState: record.interactionState,
+            url: url, title: record.title, isPinned: record.isPinned, savedState: savedState,
             isPrivate: isPrivate
         )
         sessionID = record.id
@@ -295,10 +310,11 @@ final class Tab: Identifiable {
 
     /// Restores the saved page and history, or loads `url`.
     private func startFirstLoad(_ webView: WKWebView) {
-        if let savedState {
+        if let url, Self.sessionRestorableURL(url) != nil, let savedState {
             skipNextCommitInHistory = true
+            // WebKit's blob is opaque; only restore it when the tab URL passed sessionRestorableURL.
             webView.interactionState = savedState
-        } else if let url {
+        } else if let url, Self.sessionRestorableURL(url) != nil {
             webView.load(URLRequest(url: url))
         }
     }

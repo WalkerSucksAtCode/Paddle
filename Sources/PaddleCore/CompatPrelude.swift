@@ -68,10 +68,30 @@ public struct CompatPlan: Codable, Sendable, Equatable {
         self.installReason = installReason
     }
 
+    /// WebKit-unknown permission names the prelude should treat as granted (E23). Required manifest names count unless
+    /// the permissions file denies them; optional names only when explicitly allowed.
+    public static func shimmedPermissionNames(
+        required: [String], optional: [String], decisions: [String: PermissionDecision]
+    ) -> [String] {
+        let webKit = ExtensionCompat.webKitPermissionNames
+        func countsAsGranted(_ name: String, defaultsWhenUnset: Bool) -> Bool {
+            switch decisions[name] {
+            case .none: defaultsWhenUnset
+            case .allow: true
+            case .deny: false
+            case .click: defaultsWhenUnset
+            }
+        }
+        var names = Set(required.filter { countsAsGranted($0, defaultsWhenUnset: true) })
+        names.formUnion(optional.filter { countsAsGranted($0, defaultsWhenUnset: false) })
+        return names.subtracting(webKit).sorted()
+    }
+
     /// A plan from the extension's original `manifest.json` bytes.
     public static func make(
         manifestData: Data, persona: Persona, runtimeID: String, compat: ExtensionCompatConfig = ExtensionCompatConfig(),
-        versions: BrowserVersions = .current, shimmedPermissions: [String] = [], installReason: String? = nil
+        versions: BrowserVersions = .current, shimmedPermissions: [String] = [],
+        permissionDecisions: [String: PermissionDecision]? = nil, installReason: String? = nil
     ) throws -> CompatPlan {
         guard let root = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any] else {
             throw ExtensionCompat.PatchError.notAnObject
@@ -88,10 +108,12 @@ public struct CompatPlan: Codable, Sendable, Equatable {
         let autoShimmed = Array(Set(required + optional).subtracting(webKit)).sorted()
         let resolvedShimmed = shimmedPermissions.isEmpty ? autoShimmed : shimmedPermissions
         let page = ((root["background"] as? [String: Any])?["page"] as? String).flatMap(ExtensionCompat.containedPath)
+        let shims = permissionDecisions.map { shimmedPermissionNames(required: required, optional: optional, decisions: $0) }
+            ?? resolvedShimmed
         return CompatPlan(
             persona: persona, runtimeID: runtimeID, versions: versions.raised(for: root), manifest: text,
             requiredPermissions: required, optionalPermissions: optional,
-            shimmedPermissions: resolvedShimmed, popupPath: ExtensionCompat.popupPath(manifest: root),
+            shimmedPermissions: shims, popupPath: ExtensionCompat.popupPath(manifest: root),
             backgroundPage: page, shims: compat.shimsEnabled, installReason: installReason
         )
     }
@@ -611,7 +633,7 @@ public enum CompatPrelude {
         const shimmed = new Set(P.shimmed), known = new Set(P.known);
         const hidden = new Set(P.granted.filter((x) => !declared.has(x)));
         // Each requested name: 'hide' (Paddle's own grant), 'shim' (Paddle answers yes), 'no', or 'webkit'.
-        const judge = (x) => hidden.has(x) ? 'hide' : known.has(x) ? 'webkit' : (shimmed.has(x) && required.has(x)) ? 'shim' : 'no';
+        const judge = (x) => hidden.has(x) ? 'hide' : known.has(x) ? 'webkit' : shimmed.has(x) ? 'shim' : 'no';
         const split = (q) => {
           q = q || {};
           const names = Array.isArray(q.permissions) ? q.permissions : [];
@@ -628,7 +650,7 @@ public enum CompatPrelude {
           if (typeof getAll === 'function') put(perms, 'getAll', callbackForm(async () => {
             const r = (await getAll.call(perms)) || {};
             const names = (r.permissions || []).filter((x) => !hidden.has(x));
-            for (const x of P.shimmed) if (required.has(x) && !names.includes(x)) names.push(x);
+            for (const x of P.shimmed) if (!names.includes(x)) names.push(x);
             return Object.assign({}, r, {permissions: names, origins: r.origins || []});
           }));
           if (typeof contains === 'function') put(perms, 'contains', callbackForm((q) => {

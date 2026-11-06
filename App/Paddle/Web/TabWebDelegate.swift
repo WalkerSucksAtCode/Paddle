@@ -169,6 +169,19 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             return (.cancel, preferences)
         }
 
+        // Main-frame file:/data:/blob: from page script (no user gesture) must not escape the web sandbox.
+        if isMainFrame {
+            switch url.scheme?.lowercased() ?? "" {
+            case "file":
+                let onFilePage = webView.url?.scheme?.lowercased() == "file"
+                if !mainFrameStartedByUser && !onFilePage { return (.cancel, preferences) }
+            case "data", "blob":
+                if !mainFrameStartedByUser { return (.cancel, preferences) }
+            default:
+                break
+            }
+        }
+
         if isMainFrame, let host = url.host() {
             if Self.isWebPage(url) { Self.apply((tab?.config ?? AppModel.shared.config).sitePolicy(forHost: host), to: preferences) }
             return (applySiteUserAgent(for: host, navigationAction, preferences, in: webView) ? .allow : .cancel, preferences)

@@ -149,10 +149,9 @@ if grep -q 'get-task-allow' <<<"$ENTITLEMENTS"; then
   fail entitlements "com.apple.security.get-task-allow is present (debug entitlement; notarization rejects it)"
 fi
 if grep -q 'web-browser.public-key-credential' <<<"$ENTITLEMENTS"; then
-  pass entitlements "browser passkey entitlement embedded (WebAuthn for arbitrary RPs when Apple granted capability)"
-else
-  pass entitlements "no get-task-allow (browser passkey entitlement absent — passkeys off; see docs/passkeys.md)"
+  fail entitlements "com.apple.developer.web-browser.public-key-credential is present (must stay out of Release signing until Apple approves Request ID 84Z8XFC523; see docs/passkeys.md)"
 fi
+pass entitlements "no get-task-allow (browser passkey entitlement absent — passkeys off; see docs/passkeys.md)"
 
 # ---- zip -----------------------------------------------------------------------------------------
 # make_zip <dest>: zips $APP via a temporary name; mv replaces an older <dest> in one step, so <dest> is never

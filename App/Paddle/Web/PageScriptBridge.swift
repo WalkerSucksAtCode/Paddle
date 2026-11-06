@@ -13,8 +13,11 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
     static let handlerName = "paddlePageScript"
 
     private let log = Logger(subsystem: "com.walker.Paddle", category: "extensions")
+    /// Pending runs per tab web view (same scale as `BridgeLimits.maxPendingCalls`); extras are dropped.
+    private static let maxQueuedJobsPerWebView = 16
     private var queue: [Job] = []
     private var running = false
+    private weak var runningWebView: WKWebView?
 
     private struct Job {
         weak var webView: WKWebView?
@@ -31,14 +34,29 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
               let webView = message.webView,
               let path = ExtensionWebAccess.scriptPath(of: url),
               let ext = Self.owner(of: url),
-              ExtensionWebAccess.isReachable(path: path, manifest: ext.webExtension.manifest, pageURL: message.frameInfo.request.url),
-              let code = Self.read(path, in: ext.entry.root) else {
+              ExtensionWebAccess.isReachable(path: path, manifest: ext.webExtension.manifest, pageURL: message.frameInfo.request.url) else {
+            log.error("refused a page-script request")
+            return
+        }
+        if pendingCount(for: webView) >= Self.maxQueuedJobsPerWebView {
+            log.error("page-script queue full for web view (\(Self.maxQueuedJobsPerWebView, privacy: .public) pending)")
+            return
+        }
+        guard let code = Self.read(path, in: ext.entry.root) else {
             log.error("refused a page-script request")
             return
         }
         let source = Self.program(code: code, url: urlString, dataset: Self.dataset(body["dataset"], base: ext.baseURL))
         queue.append(Job(webView: webView, frame: message.frameInfo, source: source, note: "\(ext.name) \(path)"))
         drain()
+    }
+
+    private func pendingCount(for webView: WKWebView) -> Int {
+        var count = queue.reduce(into: 0) { partial, job in
+            if job.webView === webView { partial += 1 }
+        }
+        if running, runningWebView === webView { count += 1 }
+        return count
     }
 
     private func drain() {
@@ -49,6 +67,7 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
             return
         }
         running = true
+        runningWebView = webView
         let note = job.note
         // A queued job's page may have been frozen since; scripts raise on a suspended page.
         Tab.owning(webView)?.unfreeze()
@@ -59,6 +78,7 @@ final class PageScriptBridge: NSObject, WKScriptMessageHandler {
                 self.log.info("page script ran (\(note, privacy: .public))")
             }
             self.running = false
+            self.runningWebView = nil
             self.drain()
         }
     }

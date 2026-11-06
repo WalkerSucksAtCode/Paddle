@@ -1037,8 +1037,11 @@ final class ExtensionHost {
             case .chrome, .firefox:
                 if let data {
                     do {
+                        // Manifest required + allowed optional, minus names WebKit reports (prelude E23 shims the rest).
+                        let permissionDecisions = decisions.byFolder[entry.name]?.permissions ?? [:]
                         plan = try CompatPlan.make(
                             manifestData: data, persona: persona, runtimeID: identity.runtimeID, compat: compat,
+                            permissionDecisions: permissionDecisions,
                             installReason: installs?.installReason(folder: entry.name)
                         )
                     } catch {
