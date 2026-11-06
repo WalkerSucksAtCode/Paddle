@@ -190,6 +190,7 @@ final class Tab: Identifiable {
 
     convenience init(record: TabRecord, isPrivate: Bool = false) {
         let url = URL(string: record.url).flatMap { Self.sessionRestorableURL($0) }
+        // Rejected URLs may still carry interactionState with back/forward entries the gate refused; drop url and state together or neither — restoring interactionState unconditionally would reopen that hole.
         let savedState = url != nil ? record.interactionState : nil
         self.init(
             url: url, title: record.title, isPinned: record.isPinned, savedState: savedState,
